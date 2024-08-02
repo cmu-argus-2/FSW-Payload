@@ -23,6 +23,7 @@ public:
     void Execute();
     int GetAttempts() const;
     int GetPriority() const;
+    int GetID() const;
     std::chrono::system_clock::time_point GetCreationTime() const;
 
 private:

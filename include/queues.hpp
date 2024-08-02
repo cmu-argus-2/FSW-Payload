@@ -35,10 +35,7 @@ private:
     };
 
     bool paused;
-    std::priority_queue<std::pair<int, Task>, std::vector<std::pair<int, Task>>, TaskComparator> task_queue;
-  
-
-
+    std::priority_queue<Task, std::vector<Task>, TaskComparator> task_queue;
 
 };
 
@@ -54,10 +51,7 @@ public:
     size_t Size() const;
     void Clear();
 
-
 };
-
-
 
 
 

@@ -36,6 +36,10 @@ int Task::GetPriority() const {
     return priority;
 }
 
+int Task::GetID() const {
+    return task_id;
+}
+
 std::chrono::system_clock::time_point Task::GetCreationTime() const {
     return created_at;
 }

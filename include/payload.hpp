@@ -18,8 +18,15 @@ class Payload
 public:
     Payload();
     // ~Payload();
+
+
+    void Initialize();
+
+
     void run();
 
+    const RX_Queue& GetRxQueue() const;
+    const TX_Queue& GetTxQueue() const;
 
 
 private:
@@ -27,6 +34,13 @@ private:
     PayloadState state;
     RX_Queue rx_queue;
     TX_Queue tx_queue;
+
+
+    void SwitchToState(PayloadState new_state);
+
+
+    void RunStartupHealthProcedures();
+    void RetrieveInternalStates();
     
     
 };

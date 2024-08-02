@@ -1,0 +1,64 @@
+#ifndef QUEUES_HPP
+#define QUEUES_HPP
+
+#include <queue>
+#include "task.hpp"
+
+class RX_Queue
+{   
+
+public:
+    RX_Queue();
+
+
+    void AddTask(const Task& task);
+    void Pause();
+    void Resume();
+    bool IsEmpty() const;
+    size_t Size() const;
+    void Clear();
+    void PrintAllTasks() const;
+
+
+
+private:
+
+    struct TaskComparator {
+        bool operator()(const Task& lhs, const Task& rhs) const 
+        {
+            // Higher priority first then earlier creation time as a tiebreaker
+            if (lhs.GetPriority() == rhs.GetPriority()) {
+                return lhs.GetCreationTime() > rhs.GetCreationTime(); // Earlier tasks have higher priority
+            }
+            return lhs.GetPriority() < rhs.GetPriority(); // Higher priority value means higher priority
+        }
+    };
+
+    bool paused;
+    std::priority_queue<std::pair<int, Task>, std::vector<std::pair<int, Task>>, TaskComparator> task_queue;
+  
+
+
+
+};
+
+class TX_Queue
+{
+public:
+    TX_Queue();
+
+    // void AddMsg();
+    void Pause();
+    void Resume();
+    bool IsEmpty() const;
+    size_t Size() const;
+    void Clear();
+
+
+};
+
+
+
+
+
+#endif // QUEUES_HPP

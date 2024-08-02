@@ -5,7 +5,7 @@ class Payload
 {
 public:
     Payload();
-    ~Payload();
+    // ~Payload();
     void run();
 };
 

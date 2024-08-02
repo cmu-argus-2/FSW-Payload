@@ -8,12 +8,6 @@ Payload::Payload()
 }
 
 
-Payload::~Payload()
-{
-    // Destructor
-}
-
-
 void Payload::run()
 {
     // Run the payload

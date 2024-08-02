@@ -2,9 +2,10 @@
 #include "task.hpp"
 
 
-Task::Task(int task_id, std::function<void(Payload*)> func, Payload* payload)
+Task::Task(int task_id, std::function<void(Payload*)> func, Payload* payload, int priority)
 : 
 task_id(task_id),
+priority(0),
 payload(payload),
 func(func),
 attempts(0)
@@ -29,4 +30,12 @@ void Task::Execute() {
 int Task::GetAttempts() const 
 { 
     return attempts; 
+}
+
+int Task::GetPriority() const {
+    return priority;
+}
+
+std::chrono::system_clock::time_point Task::GetCreationTime() const {
+    return created_at;
 }

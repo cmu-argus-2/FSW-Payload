@@ -1,5 +1,9 @@
+#include "spdlog/spdlog.h"
+
 #include "queues.hpp"
 #include <iostream>
+
+
 
 
 // RX_Queue 
@@ -15,7 +19,7 @@ void RX_Queue::AddTask(const Task& task) {
         task_queue.push(task);
     } else
     {
-        std::cout << "INFO: Queue is paused. Task not added." << std::endl;
+        SPDLOG_INFO("INFO: Queue is paused. Task not added.");
     }
 }
 

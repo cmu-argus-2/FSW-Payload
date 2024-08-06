@@ -1,5 +1,4 @@
 #include "payload.hpp"
-#include <iostream>
 
 const char* ToString(PayloadState state) {
     switch (state) {
@@ -18,13 +17,13 @@ Payload::Payload()
 state(PayloadState::STARTUP)
 {
     // Constructor
-    std::cout << "Payload state initialized to: " << ToString(state) << std::endl; // TODO Logging
+    SPDLOG_INFO("Payload state initialized to: {}", ToString(state)); 
 }
 
 void Payload::SwitchToState(PayloadState new_state) 
 {
     state = new_state;
-    std::cout << "Payload state changed to: " << ToString(state) << std::endl; // TODO Logging
+    SPDLOG_INFO("Payload state changed to: {}", ToString(state)); 
 }
 
 
@@ -43,7 +42,7 @@ void Payload::Initialize()
 void Payload::RunStartupHealthProcedures()
 {
     // Run startup health procedures
-    std::cout << "Running startup health procedures" << std::endl;
+    SPDLOG_INFO("Running startup health procedures");
     // TODO 
 }
 
@@ -51,7 +50,7 @@ void Payload::RunStartupHealthProcedures()
 void Payload::RetrieveInternalStates()
 {
     // Retrieve internal states
-    std::cout << "Retrieving internal states" << std::endl;
+    SPDLOG_INFO("Retrieving internal states");
     // TODO
 }
 
@@ -69,13 +68,13 @@ void Payload::AddCommandToQueue(CommandID command_id, const std::vector<uint8_t>
 
         // Add task to the RX queue
         rx_queue.AddTask(task);
-        std::cout << "Command added to RX queue" << std::endl; // TODO Logging
+        SPDLOG_INFO("Command added to RX queue"); 
     } 
     else 
     {
         // TODO: Handle invalid command ID case
         // Will transmit error message through comms
-        std::cout << "Invalid command ID" << std::endl;
+        SPDLOG_INFO("Invalid command ID");
     }
 
 
@@ -91,7 +90,7 @@ void Payload::Run()
     Initialize();
 
     // Run the payload
-    std::cout << "Payload is running" << std::endl;
+    SPDLOG_INFO("Payload is running");
 }
 
 

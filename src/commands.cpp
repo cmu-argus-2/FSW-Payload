@@ -1,6 +1,6 @@
 #include "commands.hpp"
 #include "payload.hpp"
-#include <iostream>
+
 
 // Command functions array definition 
 std::array<CommandFunction, COMMAND_NUMBER> COMMAND_FUNCTIONS = 
@@ -14,14 +14,14 @@ std::array<CommandFunction, COMMAND_NUMBER> COMMAND_FUNCTIONS =
 
 void start(Payload* payload, std::vector<uint8_t> data)
 {
-    std::cout << "Payload start" << std::endl;
+    SPDLOG_INFO("Payload start");
     // TODO
 }
 
 
 void shutdown(Payload* payload, std::vector<uint8_t> data)
 {
-    std::cout << "Payload shutdown" << std::endl;
+    SPDLOG_INFO("Payload shutdown");
     // TODO
 }
 
@@ -29,5 +29,5 @@ void shutdown(Payload* payload, std::vector<uint8_t> data)
 void request_state(Payload* payload, std::vector<uint8_t> data)
 {
     payload->GetState();
-    std::cout << "State is: " << ToString(payload->GetState()) << std::endl;
+    SPDLOG_INFO("State is: {} ", ToString(payload->GetState()));
 }

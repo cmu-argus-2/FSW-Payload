@@ -1,6 +1,8 @@
 #ifndef PAYLOAD_HPP
 #define PAYLOAD_HPP
 
+#include "spdlog/spdlog.h"
+
 #include "queues.hpp"
 #include "commands.hpp"
 

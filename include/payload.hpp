@@ -22,6 +22,7 @@ public:
 
 
     void Initialize();
+    const PayloadState& GetState() const;
 
     void Run();
 

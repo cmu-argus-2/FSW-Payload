@@ -1,9 +1,15 @@
-#ifndef COMMAND_HPP
-#define COMMAND_HPP
+#ifndef COMMANDS_HPP
+#define COMMANDS_HPP
 
 #include <cstdint>
 #include <cstddef>
+#include <vector>
 
+// Forward declaration of Payload class
+class Payload;
+
+
+// Command IDs
 
 enum class CommandID : uint8_t {
     START = 0x10,
@@ -22,6 +28,19 @@ constexpr CommandID ALL_COMMAND_IDS[] =
 constexpr size_t COMMAND_NUMBER = sizeof(ALL_COMMAND_IDS) / sizeof(ALL_COMMAND_IDS[0]);
 
 
+// Command functions declarations
+void start(Payload* payload, std::vector<uint8_t> data);
+void shutdown(Payload* payload, std::vector<uint8_t> data);
+void request_state(Payload* payload, std::vector<uint8_t> data);
 
 
-#endif // COMMAND_HPP
+
+
+
+
+
+
+
+
+
+#endif // COMMANDS_HPP

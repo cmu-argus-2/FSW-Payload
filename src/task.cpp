@@ -12,6 +12,8 @@ func(func),
 attempts(0)
 {
     created_at = std::chrono::system_clock::now();
+
+    // TODO check task_id mapping again
 }
 
 void Task::Execute() {

@@ -2,6 +2,11 @@
 
 In progress
 
+## Requirements
+
+- [spdlog](https://github.com/gabime/spdlog)
+
+
 ## Build instructions
 
 To compile using CMake, follow these steps: 

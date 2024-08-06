@@ -74,6 +74,7 @@ void Payload::AddCommandToQueue(CommandID command_id, const std::vector<uint8_t>
     else 
     {
         // TODO: Handle invalid command ID case
+        // Will transmit error message through comms
         std::cout << "Invalid command ID" << std::endl;
     }
 

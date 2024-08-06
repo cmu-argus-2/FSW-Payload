@@ -1,4 +1,4 @@
-cmake_minimum_required(VERSION 3.10)
+cmake_minimum_required(VERSION 3.11)
 set(CMAKE_CXX_STANDARD 20)
 
 project(
@@ -7,9 +7,22 @@ project(
     LANGUAGES CXX
 )
 
+
+# Stand-alone build
+find_package(spdlog REQUIRED)
+
+
+# Include the directories for header files
 include_directories(${PROJECT_SOURCE_DIR}/include)
+
+# Add the subdirectory containing source files
 add_subdirectory(src)
 
-add_executable("${PROJECT_NAME}" main.cpp) 
+# Add the executable
+add_executable(${PROJECT_NAME} main.cpp) 
 
-target_link_libraries("${PROJECT_NAME}" PAYLOAD_LIB)
+# Link libraries to the executable
+target_link_libraries(${PROJECT_NAME} 
+    PRIVATE spdlog::spdlog 
+    PAYLOAD_LIB
+)

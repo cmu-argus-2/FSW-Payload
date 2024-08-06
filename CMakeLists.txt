@@ -8,9 +8,10 @@ project(
 )
 
 
-# Stand-alone build
+# Find the required packages
 find_package(spdlog REQUIRED)
-
+find_package(Eigen3 3.3 REQUIRED NO_MODULE)
+find_package(OpenCV REQUIRED)
 
 # Include the directories for header files
 include_directories(${PROJECT_SOURCE_DIR}/include)

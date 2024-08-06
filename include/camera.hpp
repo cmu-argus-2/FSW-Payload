@@ -13,9 +13,10 @@ public:
 
 
     void TurnOn();
-
-
     void TurnOff();
+
+
+    bool LoadIntrinsics(const cv::Mat& intrinsics, const cv::Mat& distortion_parameters);
 
 
 private:

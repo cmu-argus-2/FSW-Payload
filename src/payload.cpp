@@ -35,8 +35,7 @@ void Payload::Initialize()
     // Retrieve internal states
     RetrieveInternalStates();
 
-    // Switch to nominal state
-    SwitchToState(PayloadState::NOMINAL);
+
 }
 
 void Payload::RunStartupHealthProcedures()
@@ -52,9 +51,13 @@ void Payload::RetrieveInternalStates()
     // Retrieve internal states
     SPDLOG_INFO("Retrieving internal states");
     // TODO
+
+    // For now - to nominal
+    SwitchToState(PayloadState::NOMINAL);
+    SPDLOG_INFO("Payload state is: {}", ToString(state));
 }
 
-void Payload::AddCommandToQueue(CommandID command_id, const std::vector<uint8_t>& data)
+void Payload::AddCommand(int command_id, std::vector<uint8_t>& data)
 {
     size_t cmd_id = static_cast<size_t>(command_id);
 
@@ -63,8 +66,12 @@ void Payload::AddCommandToQueue(CommandID command_id, const std::vector<uint8_t>
     {
         CommandFunction cmd_function = COMMAND_FUNCTIONS[cmd_id];
 
+        SPDLOG_INFO("Command ID: {}", cmd_id);
+        SPDLOG_INFO("Command function: {}", cmd_function.target_type().name());
+        SPDLOG_INFO("Command name: {}", COMMAND_NAMES[cmd_id]);
+
         // Create task object 
-        Task task(int(cmd_id), cmd_function, data, this, 0);
+        Task task(command_id, cmd_function, data, this, 0, COMMAND_NAMES[cmd_id]);
 
         // Add task to the RX queue
         rx_queue.AddTask(task);
@@ -74,23 +81,44 @@ void Payload::AddCommandToQueue(CommandID command_id, const std::vector<uint8_t>
     {
         // TODO: Handle invalid command ID case
         // Will transmit error message through comms
-        SPDLOG_INFO("Invalid command ID");
+        SPDLOG_WARN("Invalid command ID");
     }
-
-
-
-
-
 
 }
 
 void Payload::Run()
 {   
 
-    Initialize();
+    SPDLOG_INFO("Starting Payload Task Manager");
 
-    // Run the payload
-    SPDLOG_INFO("Payload is running");
+    // Launch camera system
+    // TODO
+
+    // Launch communication system
+    // TODO 
+
+    // Running execution loop 
+
+    while (true) 
+    {
+        // Check for incoming commands
+        if (!rx_queue.IsEmpty()) 
+        {
+            Task task = rx_queue.GetNextTask();
+            task.Execute();
+        }
+
+        // Check for outgoing commands
+        /*if (!tx_queue.IsEmpty()) 
+        {
+            Task task = tx_queue.GetNextTask();
+            task.Execute();
+        }*/
+
+        // Sleep for a while
+        // std::this_thread::sleep_for(std::chrono::milliseconds(100));
+    }
+    
 }
 
 

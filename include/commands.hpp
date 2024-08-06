@@ -9,7 +9,7 @@
 class Payload;
 
 // Command function type
-typedef std::function<void(Payload*, std::vector<uint8_t>)> CommandFunction;
+typedef std::function<void(Payload*, std::vector<uint8_t>&)> CommandFunction;
 
 // Command IDs
 enum class CommandID : uint8_t {
@@ -30,15 +30,16 @@ constexpr uint8_t COMMAND_NUMBER = sizeof(ALL_COMMAND_IDS) / sizeof(ALL_COMMAND_
 
 
 // Command functions declarations
-void start(Payload* payload, std::vector<uint8_t> data);
-void shutdown(Payload* payload, std::vector<uint8_t> data);
-void request_state(Payload* payload, std::vector<uint8_t> data);
+void start(Payload* payload, std::vector<uint8_t>& data);
+void shutdown(Payload* payload, std::vector<uint8_t>& data);
+void request_state(Payload* payload, std::vector<uint8_t>& data);
 
 
 // Array mapping CommandID to corresponding functions
 std::array<CommandFunction, COMMAND_NUMBER> COMMAND_FUNCTIONS;
 
-
+// Array mapping CommandID to corresponding names (for easier debugging)
+std::array<std::string, COMMAND_NUMBER> COMMAND_NAMES;
 
 
 

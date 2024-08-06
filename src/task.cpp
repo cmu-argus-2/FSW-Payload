@@ -1,39 +1,43 @@
+#include "spdlog/spdlog.h"
+
 #include <stdexcept>
 #include "task.hpp"
 
 
-Task::Task(int task_id, CommandFunction func, std::vector<uint8_t> data, Payload* payload, int priority)
+Task::Task(int task_id, CommandFunction func, std::vector<uint8_t>& data, Payload* payload, int priority, std::string name)
 : 
 task_id(task_id),
-priority(0),
+priority(priority),
 data(data),
 payload(payload),
 func(func),
-attempts(0)
+name(name)
 {
     created_at = std::chrono::system_clock::now();
 
     // TODO check task_id mapping again
 }
 
-void Task::Execute() {
-    attempts++;
-    try {
-        func(payload, data); // Try to execute the task
-    } catch (const std::exception& e) {
-        if (attempts < MAX_ATTEMPTS) {
-            Execute();  // Retry logic
-        } else {
-            // Task exceeded retry limit
-            // TODO: Log error or handle the exceeded retry case
+void Task::Execute()
+{
+    SPDLOG_INFO("Executing task [{}][{}]", task_id, name);
+
+    for (int attempts = 0; attempts < MAX_ATTEMPTS; attempts++)
+    {
+        try
+        {
+            func(payload, data);
+            break;
+        }
+        catch (const std::exception& e)
+        {
+            
+            SPDLOG_ERROR("Task execution failed (attempts {}): {}", attempts, e.what());
         }
     }
+
 }
 
-int Task::GetAttempts() const 
-{ 
-    return attempts; 
-}
 
 int Task::GetPriority() const {
     return priority;

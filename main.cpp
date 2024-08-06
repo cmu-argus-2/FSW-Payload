@@ -34,13 +34,24 @@ int main(int argc, char** argv)
     
     
     Payload payload;
-    payload.Run();
+    payload.Initialize();
 
 
     // For testing purpsoes 
-    int cmd_id = 5;
+    int cmd_id = 0;
     std::vector<uint8_t> data = {0x01, 0x02, 0x03};
-    payload.AddCommandToQueue(static_cast<CommandID>(cmd_id), data);
+    payload.AddCommand(cmd_id, data);
+
+
+    payload.GetRxQueue().PrintAllTasks();
+
+
+
+
+    payload.Run();
+
+
+
 
     return 0;
 }

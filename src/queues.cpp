@@ -14,13 +14,27 @@ RX_Queue::RX_Queue()
 }
 
 
-void RX_Queue::AddTask(const Task& task) {
+void RX_Queue::AddTask(const Task& task) 
+{
     if (!paused) {
         task_queue.push(task);
     } else
     {
         SPDLOG_INFO("INFO: Queue is paused. Task not added.");
     }
+}
+
+Task RX_Queue::GetNextTask() 
+{
+    if (task_queue.empty()) {
+        SPDLOG_WARN("Queue is empty");
+        throw std::runtime_error("Queue is empty");
+    }
+
+    const Task& task = std::move(task_queue.top());
+    task_queue.pop();
+    
+    return task;
 }
 
 

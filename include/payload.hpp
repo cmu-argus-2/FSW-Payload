@@ -29,7 +29,7 @@ public:
     void Run();
 
 
-    void AddCommandToQueue(CommandID command_id, const std::vector<uint8_t>& data);
+    void AddCommand(int command_id, std::vector<uint8_t>& data);
 
 
 

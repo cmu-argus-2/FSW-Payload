@@ -12,6 +12,9 @@ public:
 
 
     void AddTask(const Task& task);
+    Task GetNextTask();
+
+
     void Pause();
     void Resume();
     bool IsEmpty() const;

@@ -57,15 +57,31 @@ void Payload::RetrieveInternalStates()
 
 void Payload::AddCommandToQueue(CommandID command_id, const std::vector<uint8_t>& data)
 {
-    // Task look-up table
+    size_t cmd_id = static_cast<size_t>(command_id);
+
+    // Look up the corresponding function with the command ID
+    if (cmd_id < COMMAND_NUMBER) 
+    {
+        CommandFunction cmd_function = COMMAND_FUNCTIONS[cmd_id];
+
+        // Create task object 
+        Task task(int(cmd_id), cmd_function, data, this, 0);
+
+        // Add task to the RX queue
+        rx_queue.AddTask(task);
+        std::cout << "Command added to RX queue" << std::endl; // TODO Logging
+    } 
+    else 
+    {
+        // TODO: Handle invalid command ID case
+        std::cout << "Invalid command ID" << std::endl;
+    }
 
 
 
-    // Create task object 
 
-    // Add task to the RX queue
-    // rx_queue.AddTask();
-    std::cout << "Command added to RX queue" << std::endl; // TODO Logging
+
+
 }
 
 void Payload::Run()

@@ -2,7 +2,7 @@
 #include "task.hpp"
 
 
-Task::Task(int task_id, std::function<void(Payload*, std::vector<uint8_t>)> func, std::vector<uint8_t> data, Payload* payload, int priority)
+Task::Task(int task_id, CommandFunction func, std::vector<uint8_t> data, Payload* payload, int priority)
 : 
 task_id(task_id),
 priority(0),

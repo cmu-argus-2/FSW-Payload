@@ -13,5 +13,11 @@ int main(int argc, char** argv)
     Payload payload;
     payload.Run();
 
+
+    // For testing purpsoes 
+    int cmd_id = 5;
+    std::vector<uint8_t> data = {0x01, 0x02, 0x03};
+    payload.AddCommandToQueue(static_cast<CommandID>(cmd_id), data);
+
     return 0;
 }

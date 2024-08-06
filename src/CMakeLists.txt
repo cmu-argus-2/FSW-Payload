@@ -4,4 +4,5 @@ add_library(PAYLOAD_LIB SHARED
     task.cpp
     queues.cpp
     commands.cpp
+    camera.cpp
 )

@@ -47,6 +47,11 @@ int Task::GetID() const {
     return task_id;
 }
 
+size_t Task::GetDataSize() const {
+    return data.size();
+}
+
+
 std::chrono::system_clock::time_point Task::GetCreationTime() const {
     return created_at;
 }

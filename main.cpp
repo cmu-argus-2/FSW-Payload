@@ -8,6 +8,7 @@ Author: Ibrahima Sory Sow
 
 #include "spdlog/spdlog.h"
 #include "payload.hpp"
+#include <vector>
 
 
 void SetupLogger()
@@ -40,17 +41,14 @@ int main(int argc, char** argv)
     // For testing purpsoes 
     int cmd_id = 0;
     std::vector<uint8_t> data = {0x01, 0x02, 0x03};
-    payload.AddCommand(cmd_id, data);
-
+    std::vector<uint8_t> no_data = {};
+    payload.AddCommand(0, data);
+    payload.AddCommand(1, data);
+    payload.AddCommand(2, no_data);
 
     payload.GetRxQueue().PrintAllTasks();
 
-
-
-
     payload.Run();
-
-
 
 
     return 0;

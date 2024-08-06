@@ -28,15 +28,10 @@ public:
 
     void Run();
 
-
-    void AddCommand(int command_id, std::vector<uint8_t>& data);
-
-
+    void AddCommand(int command_id, std::vector<uint8_t>& data, int priority = 0);
 
     const RX_Queue& GetRxQueue() const;
     const TX_Queue& GetTxQueue() const;
-
-    
 
 
 private:
@@ -47,7 +42,6 @@ private:
 
 
     void SwitchToState(PayloadState new_state);
-
 
     void RunStartupHealthProcedures();
     void RetrieveInternalStates();

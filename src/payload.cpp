@@ -54,28 +54,24 @@ void Payload::RetrieveInternalStates()
 
     // For now - to nominal
     SwitchToState(PayloadState::NOMINAL);
-    SPDLOG_INFO("Payload state is: {}", ToString(state));
+    // SPDLOG_INFO("Payload state is: {}", ToString(state));
 }
 
-void Payload::AddCommand(int command_id, std::vector<uint8_t>& data)
+void Payload::AddCommand(int command_id, std::vector<uint8_t>& data, int priority)
 {
     size_t cmd_id = static_cast<size_t>(command_id);
+
 
     // Look up the corresponding function with the command ID
     if (cmd_id < COMMAND_NUMBER) 
     {
         CommandFunction cmd_function = COMMAND_FUNCTIONS[cmd_id];
 
-        SPDLOG_INFO("Command ID: {}", cmd_id);
-        SPDLOG_INFO("Command function: {}", cmd_function.target_type().name());
-        SPDLOG_INFO("Command name: {}", COMMAND_NAMES[cmd_id]);
-
         // Create task object 
-        Task task(command_id, cmd_function, data, this, 0, COMMAND_NAMES[cmd_id]);
+        Task task(command_id, cmd_function, data, this, priority, COMMAND_NAMES[cmd_id]);
 
         // Add task to the RX queue
         rx_queue.AddTask(task);
-        SPDLOG_INFO("Command added to RX queue"); 
     } 
     else 
     {
@@ -104,7 +100,7 @@ void Payload::Run()
         // Check for incoming commands
         if (!rx_queue.IsEmpty()) 
         {
-            Task task = rx_queue.GetNextTask();
+            Task task = std::move(rx_queue.GetNextTask());
             task.Execute();
         }
 
@@ -117,6 +113,8 @@ void Payload::Run()
 
         // Sleep for a while
         // std::this_thread::sleep_for(std::chrono::milliseconds(100));
+
+        // rx_queue.PrintAllTasks();
     }
     
 }
@@ -129,4 +127,8 @@ const RX_Queue& Payload::GetRxQueue() const {
 
 const TX_Queue& Payload::GetTxQueue() const {
     return tx_queue;
+}
+
+const PayloadState& Payload::GetState() const {
+    return state;
 }

@@ -18,6 +18,7 @@ void RX_Queue::AddTask(const Task& task)
 {
     if (!paused) {
         task_queue.push(task);
+        SPDLOG_INFO("Adding command with ID: {}",task.GetID());
     } else
     {
         SPDLOG_INFO("INFO: Queue is paused. Task not added.");
@@ -31,8 +32,10 @@ Task RX_Queue::GetNextTask()
         throw std::runtime_error("Queue is empty");
     }
 
-    const Task& task = std::move(task_queue.top());
+    Task task = task_queue.top();
+    SPDLOG_INFO("Getting command with ID: {}",task.GetID());
     task_queue.pop();
+    // SPDLOG_INFO("Getting command with ID (after pop): {}",task.GetID());
     
     return task;
 }
@@ -65,10 +68,10 @@ void RX_Queue::PrintAllTasks() const {
     auto copy = task_queue;
     while (!copy.empty()) {
         const Task& task = copy.top();
-        copy.pop();
         std::cout << "Task ID: " << task.GetID()
                   << ", Priority: " << task.GetPriority()
-                  << ", Argument Present(s): " << (false ? "Yes" : "No") << std::endl; // TODO: Implement this
+                  << ", Argument Present(s): " << ((task.GetDataSize() > 0) ? "Yes" : "No") << std::endl; // TODO: Implement this
+        copy.pop();
     }
 }
 

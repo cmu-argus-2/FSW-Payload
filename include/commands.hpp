@@ -4,6 +4,9 @@
 #include <cstdint>
 #include <cstddef>
 #include <vector>
+#include <array>
+#include <string>
+#include <functional>
 
 // Forward declaration of Payload class
 class Payload;
@@ -36,10 +39,10 @@ void request_state(Payload* payload, std::vector<uint8_t>& data);
 
 
 // Array mapping CommandID to corresponding functions
-std::array<CommandFunction, COMMAND_NUMBER> COMMAND_FUNCTIONS;
+extern std::array<CommandFunction, COMMAND_NUMBER> COMMAND_FUNCTIONS;
 
 // Array mapping CommandID to corresponding names (for easier debugging)
-std::array<std::string, COMMAND_NUMBER> COMMAND_NAMES;
+extern std::array<std::string, COMMAND_NUMBER> COMMAND_NAMES;
 
 
 

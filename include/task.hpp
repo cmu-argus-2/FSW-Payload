@@ -28,6 +28,7 @@ public:
     int GetAttempts() const;
     int GetPriority() const;
     int GetID() const;
+    size_t GetDataSize() const;
     std::chrono::system_clock::time_point GetCreationTime() const;
 
 private:

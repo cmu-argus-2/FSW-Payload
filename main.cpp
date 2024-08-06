@@ -11,7 +11,7 @@ Author: Ibrahima Sory Sow
 int main(int argc, char** argv)
 {
     Payload payload;
-    payload.run();
+    payload.Run();
 
     return 0;
 }

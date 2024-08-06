@@ -44,6 +44,7 @@ void Payload::RunStartupHealthProcedures()
 {
     // Run startup health procedures
     std::cout << "Running startup health procedures" << std::endl;
+    // TODO 
 }
 
 
@@ -51,10 +52,23 @@ void Payload::RetrieveInternalStates()
 {
     // Retrieve internal states
     std::cout << "Retrieving internal states" << std::endl;
+    // TODO
 }
 
+void Payload::AddCommandToQueue(CommandID command_id, const std::vector<uint8_t>& data)
+{
+    // Task look-up table
 
-void Payload::run()
+
+
+    // Create task object 
+
+    // Add task to the RX queue
+    // rx_queue.AddTask();
+    std::cout << "Command added to RX queue" << std::endl; // TODO Logging
+}
+
+void Payload::Run()
 {   
 
     Initialize();

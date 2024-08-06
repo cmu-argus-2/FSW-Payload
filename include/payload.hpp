@@ -2,6 +2,7 @@
 #define PAYLOAD_HPP
 
 #include "queues.hpp"
+#include "commands.hpp"
 
 enum class PayloadState : uint8_t {
     STARTUP = 0x00,
@@ -22,8 +23,12 @@ public:
 
     void Initialize();
 
+    void Run();
 
-    void run();
+
+    void AddCommandToQueue(CommandID command_id, const std::vector<uint8_t>& data);
+
+
 
     const RX_Queue& GetRxQueue() const;
     const TX_Queue& GetTxQueue() const;

@@ -2,10 +2,11 @@
 #include "task.hpp"
 
 
-Task::Task(int task_id, std::function<void(Payload*)> func, Payload* payload, int priority)
+Task::Task(int task_id, std::function<void(Payload*, std::vector<uint8_t>)> func, std::vector<uint8_t> data, Payload* payload, int priority)
 : 
 task_id(task_id),
 priority(0),
+data(data),
 payload(payload),
 func(func),
 attempts(0)
@@ -16,7 +17,7 @@ attempts(0)
 void Task::Execute() {
     attempts++;
     try {
-        func(payload); // Try to execute the task
+        func(payload, data); // Try to execute the task
     } catch (const std::exception& e) {
         if (attempts < MAX_ATTEMPTS) {
             Execute();  // Retry logic

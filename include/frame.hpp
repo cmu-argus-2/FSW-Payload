@@ -2,9 +2,8 @@
 #define FRAME_HPP
 
 #include "spdlog/spdlog.h"
+#include <cstdint>
 #include <opencv2/opencv.hpp>
-
-#include <string>
 
 
 class Frame 
@@ -12,12 +11,12 @@ class Frame
 
 public:
 
-    Frame(int cam_id, const cv::Mat& img, const std::string& timestamp);
+    Frame(int cam_id, const cv::Mat& img, std::int64_t timestamp);
 
 
     int GetCamId() const;
     const cv::Mat& GetImg() const;
-    const std::string& GetTimestamp() const;
+    const std::int64_t& GetTimestamp() const;
 
 
 
@@ -25,7 +24,7 @@ private:
 
     int cam_id;
     cv::Mat img;
-    std::string timestamp;
+    std::int64_t timestamp;
 
 };;
 

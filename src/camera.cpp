@@ -1,12 +1,14 @@
 #include "spdlog/spdlog.h"
-
+#include <cstdint>
+#include <chrono>
 #include "camera.hpp"
 
 
 Camera::Camera(int cam_id)
 : 
 cam_id(cam_id),
-is_camera_on(false)
+is_camera_on(false),
+buffer_frame(cam_id, cv::Mat(), 0)
 {}
 
 
@@ -42,18 +44,30 @@ void Camera::TurnOff()
 
 void Camera::CaptureFrame()
 {
+    
+    cv::Mat captured_frame;
     try {
-        if (is_camera_on) {
-            cap >> buffer_frame;
+        if (is_camera_on) 
+        {   
+            std::int64_t timestamp = std::chrono::duration_cast<std::chrono::milliseconds>(std::chrono::system_clock::now().time_since_epoch()).count();
+            cap >> captured_frame;
+
+            if (captured_frame.empty()) {
+                SPDLOG_ERROR("Unable to capture frame");
+                throw std::runtime_error("Unable to capture frame");
+            }
+            
+            buffer_frame = Frame(cam_id, captured_frame, timestamp);
+            SPDLOG_INFO("CAM{}: Frame captured successfully at {}", cam_id, timestamp);
+
         }
     } catch (const std::exception& e) {
         SPDLOG_ERROR("Exception occurred: ", e.what());
     }
 }
 
-bool Camera::LoadIntrinsics(const cv::Mat& intrinsics, const cv::Mat& distortion_parameters)
+void Camera::LoadIntrinsics(const cv::Mat& intrinsics, const cv::Mat& distortion_parameters)
 {
     this->intrinsics = intrinsics.clone();
     this->distortion_parameters = distortion_parameters.clone();
-    return true;
 }

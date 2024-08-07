@@ -2,6 +2,7 @@
 #define CAMERA_HPP
 
 #include <opencv2/opencv.hpp>
+#include "frame.hpp"
 
 
 class Camera
@@ -16,9 +17,10 @@ public:
     void TurnOff();
 
     void CaptureFrame();
+    void ShowFrame();
 
 
-    bool LoadIntrinsics(const cv::Mat& intrinsics, const cv::Mat& distortion_parameters);
+    void LoadIntrinsics(const cv::Mat& intrinsics, const cv::Mat& distortion_parameters);
 
 
 private:
@@ -27,7 +29,7 @@ private:
     cv::VideoCapture cap;
     bool is_camera_on;
 
-    cv::Mat buffer_frame;
+    Frame buffer_frame;
 
     cv::Mat intrinsics;
     cv::Mat distortion_parameters; 

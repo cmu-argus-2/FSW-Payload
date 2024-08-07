@@ -2,7 +2,7 @@
 #include "frame.hpp"
 
 
-Frame::Frame(int cam_id, const cv::Mat& img, const std::string& timestamp)
+Frame::Frame(int cam_id, const cv::Mat& img, std::int64_t timestamp)
 :
 cam_id(cam_id),
 img(img),
@@ -22,7 +22,7 @@ const cv::Mat& Frame::GetImg() const
 }
 
 
-const std::string& Frame::GetTimestamp() const
+const std::int64_t& Frame::GetTimestamp() const
 {
     return timestamp;
 }

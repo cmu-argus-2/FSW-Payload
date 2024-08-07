@@ -5,6 +5,7 @@ add_library(PAYLOAD_LIB SHARED
     queues.cpp
     commands.cpp
     camera.cpp
+    frame.cpp
 )
 
 # Link libraries to PAYLOAD_LIB

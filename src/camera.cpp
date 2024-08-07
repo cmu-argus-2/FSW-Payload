@@ -3,8 +3,9 @@
 #include "camera.hpp"
 
 
-Camera::Camera()
+Camera::Camera(int cam_id)
 : 
+cam_id(cam_id),
 is_camera_on(false)
 {}
 
@@ -39,6 +40,16 @@ void Camera::TurnOff()
     }
 }
 
+void Camera::CaptureFrame()
+{
+    try {
+        if (is_camera_on) {
+            cap >> buffer_frame;
+        }
+    } catch (const std::exception& e) {
+        SPDLOG_ERROR("Exception occurred: ", e.what());
+    }
+}
 
 bool Camera::LoadIntrinsics(const cv::Mat& intrinsics, const cv::Mat& distortion_parameters)
 {

@@ -6,3 +6,8 @@ add_library(PAYLOAD_LIB SHARED
     commands.cpp
     camera.cpp
 )
+
+# Link libraries to PAYLOAD_LIB
+target_link_libraries(PAYLOAD_LIB
+    PRIVATE ${OpenCV_LIBS}
+)

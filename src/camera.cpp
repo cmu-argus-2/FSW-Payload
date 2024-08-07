@@ -8,8 +8,11 @@ Camera::Camera(int cam_id)
 : 
 cam_id(cam_id),
 is_camera_on(false),
-buffer_frame(cam_id, cv::Mat(), 0)
-{}
+buffer_frame(cam_id, cv::Mat(), 0),
+display_flag(false),
+loop_flag(false)
+{
+}
 
 
 void Camera::TurnOn()
@@ -70,4 +73,46 @@ void Camera::LoadIntrinsics(const cv::Mat& intrinsics, const cv::Mat& distortion
 {
     this->intrinsics = intrinsics.clone();
     this->distortion_parameters = distortion_parameters.clone();
+}
+
+
+const Frame& Camera::GetBufferFrame() const
+{
+    return buffer_frame;
+}
+
+void Camera::RunLoop()
+{
+    
+    // Should avoid while loop
+    while (loop_flag)
+    {
+
+        if (is_camera_on) 
+        {
+            CaptureFrame();
+        }
+
+        if (display_flag && !buffer_frame.GetImg().empty()) 
+        {
+            cv::imshow("CAM" + std::to_string(cam_id), buffer_frame.GetImg());
+            cv::waitKey(1);
+        }
+
+    }
+
+
+}
+
+
+void Camera::StopLoop()
+{
+    this->loop_flag = false;
+}
+
+
+void Camera::DisplayLoop(bool display_flag)
+{
+    // std::lock_guard<std::mutex> lock(display_mutex); // disappears when out of scope
+    this->display_flag = display_flag;
 }

@@ -1,10 +1,12 @@
 #ifndef PAYLOAD_HPP
 #define PAYLOAD_HPP
 
+#include <thread>
 #include "spdlog/spdlog.h"
 
 #include "queues.hpp"
 #include "commands.hpp"
+#include "camera.hpp"
 
 enum class PayloadState : uint8_t {
     STARTUP = 0x00,
@@ -34,6 +36,10 @@ public:
     const TX_Queue& GetTxQueue() const;
 
 
+    void StartCameraThread();
+    void StopCameraThread();
+
+
 private:
 
     PayloadState state;
@@ -45,6 +51,10 @@ private:
 
     void RunStartupHealthProcedures();
     void RetrieveInternalStates();
+
+
+    Camera camera;
+    std::thread camera_thread;
     
     
 };

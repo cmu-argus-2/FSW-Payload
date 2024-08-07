@@ -1,8 +1,12 @@
 #ifndef CAMERA_HPP
 #define CAMERA_HPP
 
-#include <opencv2/opencv.hpp>
+
+#include <mutex>
+#include <atomic>
 #include "frame.hpp"
+#include <opencv2/opencv.hpp>
+
 
 
 class Camera
@@ -17,7 +21,14 @@ public:
     void TurnOff();
 
     void CaptureFrame();
-    void ShowFrame();
+    const Frame& GetBufferFrame() const;
+
+    
+
+
+    void RunLoop();
+    void StopLoop();
+    void DisplayLoop(bool display_flag);
 
 
     void LoadIntrinsics(const cv::Mat& intrinsics, const cv::Mat& distortion_parameters);
@@ -33,6 +44,9 @@ private:
 
     cv::Mat intrinsics;
     cv::Mat distortion_parameters; 
+
+    std::atomic<bool> display_flag;
+    std::atomic<bool> loop_flag;
 
 
 };

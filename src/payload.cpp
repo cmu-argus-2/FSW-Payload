@@ -14,7 +14,8 @@ const char* ToString(PayloadState state) {
 
 Payload::Payload()
 :
-state(PayloadState::STARTUP)
+state(PayloadState::STARTUP),
+camera(Camera(0))
 {
     // Constructor
     SPDLOG_INFO("Payload state initialized to: {}", ToString(state)); 
@@ -131,4 +132,22 @@ const TX_Queue& Payload::GetTxQueue() const {
 
 const PayloadState& Payload::GetState() const {
     return state;
+}
+
+void Payload::StartCameraThread()
+{
+    
+    camera.TurnOn();
+
+    // Launch camera thread
+    camera_thread = std::thread(&Camera::RunLoop, &camera);
+}
+
+
+void Payload::StopCameraThread()
+{
+    camera.StopLoop();
+    camera_thread.join();
+
+    camera.TurnOff();
 }

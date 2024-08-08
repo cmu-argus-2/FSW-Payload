@@ -81,6 +81,8 @@ void Payload::AddCommand(uint8_t command_id, std::vector<uint8_t>& data, int pri
         SPDLOG_WARN("Invalid command ID");
     }
 
+    cv_queue.notify_one();
+
 }
 
 void Payload::Run()
@@ -99,6 +101,10 @@ void Payload::Run()
 
     while (_running_instance) 
     {
+        std::unique_lock<std::mutex> lock(mtx);
+        cv_queue.wait(lock, [this] { return !rx_queue.IsEmpty(); });
+        
+        
         // Check for incoming commands
         if (!rx_queue.IsEmpty()) 
         {
@@ -106,11 +112,10 @@ void Payload::Run()
             task.Execute();
         }
 
-        // Check for outgoing commands
+        // Check for outgoing messages
         /*if (!tx_queue.IsEmpty()) 
         {
-            Task task = tx_queue.GetNextTask();
-            task.Execute();
+            // TODO
         }*/
 
         // Sleep for a while

@@ -6,9 +6,9 @@ Author: Ibrahima Sory Sow
 
 */
 #include <thread>
+#include <vector>
 #include "spdlog/spdlog.h"
 #include "payload.hpp"
-#include <vector>
 
 
 void SetupLogger()

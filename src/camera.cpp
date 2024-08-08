@@ -20,7 +20,7 @@ void Camera::TurnOn()
 {
     try {
 
-        cap.open(cam_id);
+        cap.open(cam_id, cv::CAP_V4L2);
         // Check if the camera is opened successfully
         if (!cap.isOpened()) {
             SPDLOG_ERROR("Unable to open the camera");
@@ -49,12 +49,15 @@ void Camera::TurnOff()
 
 void Camera::CaptureFrame()
 {
-    
+
+
+
     cv::Mat captured_frame;
     try {
         if (is_camera_on) 
         {   
             std::int64_t timestamp = std::chrono::duration_cast<std::chrono::milliseconds>(std::chrono::system_clock::now().time_since_epoch()).count();
+
             cap >> captured_frame;
 
             if (captured_frame.empty()) {
@@ -69,6 +72,8 @@ void Camera::CaptureFrame()
     } catch (const std::exception& e) {
         SPDLOG_ERROR("Exception occurred: ", e.what());
     }
+
+
 }
 
 void Camera::LoadIntrinsics(const cv::Mat& intrinsics, const cv::Mat& distortion_parameters)
@@ -87,6 +92,7 @@ void Camera::RunLoop()
 {
     loop_flag = true;
 
+
     // Should avoid while loop
     while (loop_flag)
     {
@@ -104,7 +110,6 @@ void Camera::RunLoop()
 
     }
 
-
 }
 
 
@@ -118,9 +123,4 @@ void Camera::DisplayLoop(bool display_flag)
 {
     // std::lock_guard<std::mutex> lock(display_mutex); // disappears when out of scope
     this->display_flag = display_flag;
-    /*if (display_flag) {
-        cv::namedWindow("CAM" + std::to_string(cam_id), cv::WINDOW_AUTOSIZE);
-    } else {
-        cv::destroyWindow("CAM" + std::to_string(cam_id));
-    }*/
 }

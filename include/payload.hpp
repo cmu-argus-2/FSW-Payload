@@ -3,6 +3,7 @@
 
 #include <thread>
 #include <atomic>
+#include <condition_variable>
 #include "spdlog/spdlog.h"
 
 #include "queues.hpp"
@@ -55,6 +56,9 @@ private:
     PayloadState state;
     RX_Queue rx_queue;
     TX_Queue tx_queue;
+
+    std::mutex mtx;
+    std::condition_variable cv_queue;
 
 
     void SwitchToState(PayloadState new_state);

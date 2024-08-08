@@ -36,7 +36,6 @@ void Payload::Initialize()
     // Retrieve internal states
     RetrieveInternalStates();
 
-
 }
 
 void Payload::RunStartupHealthProcedures()
@@ -89,7 +88,7 @@ void Payload::Run()
     SPDLOG_INFO("Starting Payload Task Manager");
 
     // Launch camera system
-    // TODO
+    StartCameraThread();
 
     // Launch communication system
     // TODO 
@@ -120,8 +119,11 @@ void Payload::Run()
     
 }
 
-
 const RX_Queue& Payload::GetRxQueue() const {
+    return rx_queue;
+}
+
+RX_Queue& Payload::GetRxQueue() {
     return rx_queue;
 }
 
@@ -130,15 +132,29 @@ const TX_Queue& Payload::GetTxQueue() const {
     return tx_queue;
 }
 
+
+TX_Queue& Payload::GetTxQueue() {
+    return tx_queue;
+}
+
+
+const Camera& Payload::GetCamera() const {
+    return camera;
+}
+
+Camera& Payload::GetCamera() {
+    return camera;
+}
+
+
+
+
 const PayloadState& Payload::GetState() const {
     return state;
 }
 
 void Payload::StartCameraThread()
 {
-    
-    camera.TurnOn();
-
     // Launch camera thread
     camera_thread = std::thread(&Camera::RunLoop, &camera);
 }
@@ -148,6 +164,4 @@ void Payload::StopCameraThread()
 {
     camera.StopLoop();
     camera_thread.join();
-
-    camera.TurnOff();
 }

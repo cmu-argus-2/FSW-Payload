@@ -33,7 +33,13 @@ public:
     void AddCommand(int command_id, std::vector<uint8_t>& data, int priority = 0);
 
     const RX_Queue& GetRxQueue() const;
-    const TX_Queue& GetTxQueue() const;
+    RX_Queue& GetRxQueue(); 
+    const TX_Queue& GetTxQueue() const; 
+    TX_Queue& GetTxQueue(); 
+
+    const Camera& GetCamera() const; 
+    Camera& GetCamera(); 
+
 
 
     void StartCameraThread();

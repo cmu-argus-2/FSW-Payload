@@ -18,7 +18,8 @@ typedef std::function<void(Payload*, std::vector<uint8_t>&)> CommandFunction;
 enum class CommandID : uint8_t {
     START = 0x00,
     SHUTDOWN = 0x01,
-    REQUEST_STATE = 0x02
+    REQUEST_STATE = 0x02,
+    DISPLAY_CAMERA = 0x03
 };
 
 // Array of all Command IDs
@@ -26,7 +27,8 @@ constexpr CommandID ALL_COMMAND_IDS[] =
 {
     CommandID::START,
     CommandID::SHUTDOWN,
-    CommandID::REQUEST_STATE
+    CommandID::REQUEST_STATE,
+    CommandID::DISPLAY_CAMERA
 };
 
 constexpr uint8_t COMMAND_NUMBER = sizeof(ALL_COMMAND_IDS) / sizeof(ALL_COMMAND_IDS[0]);
@@ -36,6 +38,7 @@ constexpr uint8_t COMMAND_NUMBER = sizeof(ALL_COMMAND_IDS) / sizeof(ALL_COMMAND_
 void start(Payload* payload, std::vector<uint8_t>& data);
 void shutdown(Payload* payload, std::vector<uint8_t>& data);
 void request_state(Payload* payload, std::vector<uint8_t>& data);
+void display_camera(Payload* payload, std::vector<uint8_t>& data);
 
 
 // Array mapping CommandID to corresponding functions

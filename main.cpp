@@ -45,6 +45,7 @@ int main(int argc, char** argv)
     payload.AddCommand(0, data);
     payload.AddCommand(1, data);
     payload.AddCommand(2, no_data);
+    payload.AddCommand(3, no_data);
 
     payload.GetRxQueue().PrintAllTasks();
 

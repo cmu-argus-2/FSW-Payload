@@ -1,6 +1,6 @@
-#include "spdlog/spdlog.h"
 #include <cstdint>
 #include <chrono>
+#include "spdlog/spdlog.h"
 #include "camera.hpp"
 
 
@@ -12,6 +12,7 @@ buffer_frame(cam_id, cv::Mat(), 0),
 display_flag(false),
 loop_flag(false)
 {
+    this->TurnOn();
 }
 
 
@@ -26,6 +27,7 @@ void Camera::TurnOn()
             throw std::runtime_error("Unable to open the camera");
         }
         is_camera_on = true;
+        SPDLOG_INFO("CAM{}: Camera turned on", cam_id);
 
     } catch (const std::exception& e) {
         SPDLOG_ERROR("Exception occurred: ", e.what());
@@ -83,7 +85,8 @@ const Frame& Camera::GetBufferFrame() const
 
 void Camera::RunLoop()
 {
-    
+    loop_flag = true;
+
     // Should avoid while loop
     while (loop_flag)
     {
@@ -115,4 +118,9 @@ void Camera::DisplayLoop(bool display_flag)
 {
     // std::lock_guard<std::mutex> lock(display_mutex); // disappears when out of scope
     this->display_flag = display_flag;
+    /*if (display_flag) {
+        cv::namedWindow("CAM" + std::to_string(cam_id), cv::WINDOW_AUTOSIZE);
+    } else {
+        cv::destroyWindow("CAM" + std::to_string(cam_id));
+    }*/
 }

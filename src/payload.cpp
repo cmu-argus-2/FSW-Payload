@@ -15,7 +15,8 @@ const char* ToString(PayloadState state) {
 Payload::Payload()
 :
 state(PayloadState::STARTUP),
-camera(Camera(0))
+camera(Camera(0)),
+_running_instance(false)
 {
     // Constructor
     SPDLOG_INFO("Payload state initialized to: {}", ToString(state)); 
@@ -57,7 +58,7 @@ void Payload::RetrieveInternalStates()
     // SPDLOG_INFO("Payload state is: {}", ToString(state));
 }
 
-void Payload::AddCommand(int command_id, std::vector<uint8_t>& data, int priority)
+void Payload::AddCommand(uint8_t command_id, std::vector<uint8_t>& data, int priority)
 {
     size_t cmd_id = static_cast<size_t>(command_id);
 
@@ -94,8 +95,9 @@ void Payload::Run()
     // TODO 
 
     // Running execution loop 
+    _running_instance = true;
 
-    while (true) 
+    while (_running_instance) 
     {
         // Check for incoming commands
         if (!rx_queue.IsEmpty()) 
@@ -117,6 +119,18 @@ void Payload::Run()
         // rx_queue.PrintAllTasks();
     }
     
+}
+
+void Payload::Stop()
+{
+    // Stop camera system
+    StopCameraThread();
+
+    // Stop communication system
+    // TODO
+
+    // Stop execution loop
+    _running_instance = false;
 }
 
 const RX_Queue& Payload::GetRxQueue() const {

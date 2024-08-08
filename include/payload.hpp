@@ -2,6 +2,7 @@
 #define PAYLOAD_HPP
 
 #include <thread>
+#include <atomic>
 #include "spdlog/spdlog.h"
 
 #include "queues.hpp"
@@ -29,8 +30,9 @@ public:
     const PayloadState& GetState() const;
 
     void Run();
+    void Stop();
 
-    void AddCommand(int command_id, std::vector<uint8_t>& data, int priority = 0);
+    void AddCommand(uint8_t command_id, std::vector<uint8_t>& data, int priority = 0);
 
     const RX_Queue& GetRxQueue() const;
     RX_Queue& GetRxQueue(); 
@@ -48,6 +50,8 @@ public:
 
 private:
 
+    std::atomic<bool> _running_instance;
+    
     PayloadState state;
     RX_Queue rx_queue;
     TX_Queue tx_queue;

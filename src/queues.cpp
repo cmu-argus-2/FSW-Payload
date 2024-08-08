@@ -14,8 +14,10 @@ RX_Queue::RX_Queue()
 }
 
 
+
 void RX_Queue::AddTask(const Task& task) 
 {
+    std::lock_guard<std::mutex> lock(queue_mutex);
     if (!paused) {
         task_queue.push(task);
         SPDLOG_INFO("Adding command with ID: {}",task.GetID());
@@ -27,6 +29,7 @@ void RX_Queue::AddTask(const Task& task)
 
 Task RX_Queue::GetNextTask() 
 {
+    std::lock_guard<std::mutex> lock(queue_mutex);
     if (task_queue.empty()) {
         SPDLOG_WARN("Queue is empty");
         throw std::runtime_error("Queue is empty");

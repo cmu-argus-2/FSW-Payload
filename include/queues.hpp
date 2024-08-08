@@ -2,6 +2,8 @@
 #define QUEUES_HPP
 
 #include <queue>
+#include <mutex>
+#include <atomic>
 #include "task.hpp"
 
 class RX_Queue
@@ -37,8 +39,9 @@ private:
         }
     };
 
-    bool paused;
+    std::atomic<bool> paused;
     std::priority_queue<Task, std::vector<Task>, TaskComparator> task_queue;
+    std::mutex queue_mutex;
 
 };
 

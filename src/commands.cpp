@@ -32,8 +32,8 @@ void start(Payload* payload, std::vector<uint8_t>& data)
 
 void shutdown(Payload* payload, std::vector<uint8_t>& data)
 {
-    SPDLOG_INFO("Payload shutdown");
-    // TODO
+    SPDLOG_INFO("Initiating Payload shutdown..");
+    payload->Stop();
 }
 
 

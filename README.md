@@ -19,3 +19,10 @@ cd build
 cmake .. && make
 ./PAYLOAD
 ```
+
+or 
+
+```bash
+./build.sh
+./build/PAYLOAD
+```

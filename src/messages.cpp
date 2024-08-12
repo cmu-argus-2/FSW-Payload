@@ -5,6 +5,10 @@ Message::Message(uint8_t id, uint8_t data_length, uint16_t seq_count)
     : id(id), seq_count(seq_count), data_length(data_length) 
 {
     created_at = std::chrono::system_clock::now();
+
+    if (seq_count > 1) {
+        priority = TX_PRIORITY_2;
+    }
 }
 
 

@@ -6,6 +6,11 @@
 #include <chrono>
 #include "commands.hpp"
 
+// If seq_count > 1, priority is automatically set to 2
+#define TX_PRIORITY_1 1
+#define TX_PRIORITY_2 2
+
+
 // Base message structure
 struct Message {
     uint8_t id;               // ID field (1 byte)
@@ -14,7 +19,7 @@ struct Message {
 
     std::vector<uint8_t> packet = {}; // Serialized packet buffer
     
-    uint8_t priority = 1;         // For the TX priority queue
+    uint8_t priority = TX_PRIORITY_1;         // For the TX priority queue
     std::chrono::system_clock::time_point created_at; // Timestamp for when the task was created.
     
     Message(uint8_t id, uint8_t data_length, uint16_t seq_count = 1);

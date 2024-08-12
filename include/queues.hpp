@@ -11,9 +11,6 @@
 #define RX_PRIORITY_2 2
 #define RX_PRIORITY_3 3
 
-#define TX_PRIORITY_1 1
-#define TX_PRIORITY_2 2
-
 class RX_Queue
 {   
 

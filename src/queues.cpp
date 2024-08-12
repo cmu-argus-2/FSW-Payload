@@ -82,13 +82,12 @@ TX_Queue::TX_Queue()
 }
 
 void TX_Queue::AddMsg(std::shared_ptr<Message> msg) 
-{
+{   
     std::lock_guard<std::mutex> lock(queue_mutex);
     if (!paused) {
-        msg_queue.push(std::move(msg));
-        SPDLOG_INFO("Adding message with ID: {}", msg->id);
-    } else
-    {
+        msg_queue.push(msg);
+        SPDLOG_INFO("Added TX message with ID: {}", msg->id);
+    } else {
         SPDLOG_INFO("INFO: Queue is paused. Message not added.");
     }
 }

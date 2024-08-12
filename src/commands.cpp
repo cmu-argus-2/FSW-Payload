@@ -1,4 +1,5 @@
 #include "commands.hpp"
+#include "messages.hpp"
 #include "payload.hpp"
 
 
@@ -40,6 +41,13 @@ void request_state(Payload* payload, std::vector<uint8_t>& data)
 {
     payload->GetState();
     SPDLOG_INFO("State is: {} ", ToString(payload->GetState()));
+
+    auto msg = std::make_shared<MSG_RequestState>();
+    msg->state = static_cast<uint8_t>(payload->GetState());
+    msg->serialize();
+
+    payload->TransmitMessage(msg);
+
 }
 
 

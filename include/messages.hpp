@@ -13,6 +13,7 @@ struct Message {
     uint8_t data_length;      // Data length field (1 byte)
 
     std::vector<uint8_t> packet = {}; // Serialized packet buffer
+    
     uint8_t priority = 1;         // For the TX priority queue
     std::chrono::system_clock::time_point created_at; // Timestamp for when the task was created.
     
@@ -23,11 +24,9 @@ struct Message {
 };
 
 struct MSG_RequestState : public Message {
-    uint8_t id = CommandID::REQUEST_STATE;
-    uint8_t data_length = 1;
     uint8_t state;
 
-    MSG_RequestState(); 
+    MSG_RequestState();
     void serialize() override; 
 };
 

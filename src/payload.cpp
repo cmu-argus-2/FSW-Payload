@@ -82,6 +82,21 @@ void Payload::AddCommand(uint8_t cmd_id, std::vector<uint8_t>& data, int priorit
 
 }
 
+void Payload::TransmitMessage(std::shared_ptr<Message> msg)
+{
+    // TODO check if the message id is valid
+    
+    // Add message to the TX queue
+    tx_queue.AddMsg(msg);
+}
+
+
+
+
+
+
+
+
 void Payload::Run()
 {   
 
@@ -109,10 +124,10 @@ void Payload::Run()
             task.Execute();
         }
 
-        // Check for outgoing messages
+        // Check for outgoing messages - Comms thread responsible for this
         /*if (!tx_queue.IsEmpty()) 
         {
-            // TODO
+            std::shared_ptr<Message> msg = tx_queue.GetNextMsg();
         }*/
 
         // Sleep for a while

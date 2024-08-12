@@ -129,11 +129,6 @@ void Payload::Run()
         {
             std::shared_ptr<Message> msg = tx_queue.GetNextMsg();
         }*/
-
-        // Sleep for a while
-        // std::this_thread::sleep_for(std::chrono::milliseconds(100));
-
-        // rx_queue.PrintAllTasks();
     }
     
 }

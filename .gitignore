@@ -33,3 +33,7 @@
 
 .vscode
 build/
+
+NN-models/
+models/*
+!models/placeholder.txt

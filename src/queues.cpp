@@ -11,8 +11,6 @@ RX_Queue::RX_Queue()
 {
 }
 
-
-
 void RX_Queue::AddTask(const Task& task) 
 {
     std::lock_guard<std::mutex> lock(queue_mutex);
@@ -78,5 +76,57 @@ void RX_Queue::PrintAllTasks() const {
 
 // TX_Queue 
 
-TX_Queue::TX_Queue() 
-{}
+TX_Queue::TX_Queue()
+: paused(false)
+{
+}
+
+void TX_Queue::AddMsg(std::shared_ptr<Message> msg) 
+{
+    std::lock_guard<std::mutex> lock(queue_mutex);
+    if (!paused) {
+        msg_queue.push(std::move(msg));
+        SPDLOG_INFO("Adding message with ID: {}", msg->id);
+    } else
+    {
+        SPDLOG_INFO("INFO: Queue is paused. Message not added.");
+    }
+}
+
+std::shared_ptr<Message> TX_Queue::GetNextMsg() 
+{
+    std::lock_guard<std::mutex> lock(queue_mutex);
+    if (msg_queue.empty()) {
+        SPDLOG_WARN("Queue is empty");
+        throw std::runtime_error("Queue is empty");
+    }
+
+    std::shared_ptr<Message> msg = msg_queue.top();
+    msg_queue.pop();
+    SPDLOG_INFO("Getting message with ID: {}", msg->id);
+    
+    return msg;
+}
+
+void TX_Queue::Pause() {
+    paused = true;
+}
+
+void TX_Queue::Resume() {
+    paused  = false;
+}
+
+bool TX_Queue::IsEmpty() const {
+    return msg_queue.empty();
+}
+
+size_t TX_Queue::Size() const {
+    return msg_queue.size();
+}
+
+void TX_Queue::Clear() {
+    std::priority_queue<std::shared_ptr<Message>, std::vector<std::shared_ptr<Message>>, MsgComparator> empty;
+    std::swap(msg_queue, empty);
+}
+
+

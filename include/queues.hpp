@@ -5,6 +5,14 @@
 #include <mutex>
 #include <atomic>
 #include "task.hpp"
+#include "messages.hpp"
+
+#define RX_PRIORITY_1 1
+#define RX_PRIORITY_2 2
+#define RX_PRIORITY_3 3
+
+#define TX_PRIORITY_1 1
+#define TX_PRIORITY_2 2
 
 class RX_Queue
 {   
@@ -16,15 +24,12 @@ public:
     void AddTask(const Task& task);
     Task GetNextTask();
 
-
     void Pause();
     void Resume();
     bool IsEmpty() const;
     size_t Size() const;
     void Clear();
     void PrintAllTasks() const;
-
-
 
 private:
 
@@ -33,9 +38,9 @@ private:
         {
             // Higher priority first then earlier creation time as a tiebreaker
             if (lhs.GetPriority() == rhs.GetPriority()) {
-                return lhs.GetCreationTime() > rhs.GetCreationTime(); // Earlier tasks have higher priority
+                return lhs.GetCreationTime() > rhs.GetCreationTime();
             }
-            return lhs.GetPriority() < rhs.GetPriority(); // Higher priority value means higher priority
+            return lhs.GetPriority() < rhs.GetPriority(); 
         }
     };
 
@@ -50,12 +55,34 @@ class TX_Queue
 public:
     TX_Queue();
 
-    // void AddMsg();
+    void AddMsg(std::shared_ptr<Message> msg);
+    std::shared_ptr<Message> GetNextMsg();
+
     void Pause();
     void Resume();
     bool IsEmpty() const;
     size_t Size() const;
     void Clear();
+
+
+private:
+
+    struct MsgComparator {
+        bool operator()(const std::shared_ptr<Message>& lhs, const std::shared_ptr<Message>& rhs) const 
+        {
+            // Higher priority first, then earlier creation time as a tiebreaker
+            if (lhs->priority == rhs->priority) {
+                return lhs->created_at > rhs->created_at; 
+            }
+            return lhs->priority < rhs->priority; 
+        }
+    };
+
+
+
+    std::atomic<bool> paused;
+    std::priority_queue<std::shared_ptr<Message>, std::vector<std::shared_ptr<Message>>, MsgComparator> msg_queue;
+    std::mutex queue_mutex;
 
 };
 

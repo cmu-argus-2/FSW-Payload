@@ -28,11 +28,8 @@ void SetupLogger()
 int main(int argc, char** argv)
 {
     
-    
     SetupLogger();
-
     // spdlog::set_level(spdlog::level::warn);
-    
     
     
     Payload payload;
@@ -50,14 +47,8 @@ int main(int argc, char** argv)
 
     // payload.GetRxQueue().PrintAllTasks();
     
-    // For debugging purposes
     std::thread run_thread(&Payload::Run, &payload);
-
-    // wait 20 seconds
     std::this_thread::sleep_for(std::chrono::seconds(5));
-
-    payload.AddCommand(CommandID::REQUEST_STATE, no_data);
-
 
     // Send shutdown command
     payload.AddCommand(CommandID::SHUTDOWN, no_data);

@@ -34,6 +34,7 @@ public:
     void Stop();
 
     void AddCommand(uint8_t command_id, std::vector<uint8_t>& data, int priority = 0);
+    void TransmitMessage(const Message& msg);
 
     const RX_Queue& GetRxQueue() const;
     RX_Queue& GetRxQueue(); 

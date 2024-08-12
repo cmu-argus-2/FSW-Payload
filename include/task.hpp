@@ -6,9 +6,6 @@
 #include <vector>
 
 #define MAX_ATTEMPTS 3
-#define PRIORITY_LEVEL_1 1
-#define PRIORITY_LEVEL_2 2
-#define PRIORITY_LEVEL_3 3
 
 // Forward declaration of Payload class
 class Payload;

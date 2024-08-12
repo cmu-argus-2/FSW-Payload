@@ -136,6 +136,7 @@ void Payload::Stop()
 
     // Stop execution loop
     _running_instance = false;
+    SPDLOG_WARN("Payload Shutdown");
 }
 
 const RX_Queue& Payload::GetRxQueue() const {

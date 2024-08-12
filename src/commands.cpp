@@ -11,7 +11,6 @@ std::array<CommandFunction, COMMAND_NUMBER> COMMAND_FUNCTIONS =
     display_camera
 };
 
-
 // Define the array of strings mapping CommandID to command names
 std::array<std::string, COMMAND_NUMBER> COMMAND_NAMES = {
     "START",

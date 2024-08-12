@@ -3,11 +3,12 @@
 
 #include <vector>
 #include <cstdint>
+#include "commands.hpp"
 
 // Base message structure
 struct BaseMessage {
     uint8_t id;               // ID field (1 byte)
-    uint16_t seq_count;       // Sequence count (2 bytes), default to 1
+    uint16_t seq_count = 1;       // Sequence count (2 bytes), default to 1
     uint8_t data_length;      // Data length field (1 byte)
     
     BaseMessage(uint8_t id, uint8_t data_length, uint16_t seq_count = 1) 
@@ -18,10 +19,12 @@ struct BaseMessage {
 };
 
 
-struct RequestStateMessage : public BaseMessage {
+struct MSG_RequestState : public BaseMessage {
+    uint8_t id = CommandID::REQUEST_STATE;
+    uint8_t data_length = 1;
     uint8_t state;
 
-    RequestStateMessage(); 
+    MSG_RequestState(); 
     void serialize(std::vector<uint8_t>& buffer) const override; 
 };
 

@@ -6,6 +6,7 @@ add_library(PAYLOAD_LIB SHARED
     commands.cpp
     camera.cpp
     frame.cpp
+    messages.cpp
 )
 
 # Link libraries to PAYLOAD_LIB

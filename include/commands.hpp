@@ -31,7 +31,7 @@ constexpr CommandID ALL_COMMAND_IDS[] =
     CommandID::DISPLAY_CAMERA
 };
 
-constexpr uint8_t COMMAND_NUMBER = sizeof(ALL_COMMAND_IDS) / sizeof(ALL_COMMAND_IDS[0]);
+constexpr uint8_t COMMAND_NUMBER = static_cast<uint8_t>(sizeof(ALL_COMMAND_IDS) / sizeof(ALL_COMMAND_IDS[0]));
 
 
 // Command functions declarations

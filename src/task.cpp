@@ -4,7 +4,7 @@
 #include "task.hpp"
 
 
-Task::Task(int task_id, CommandFunction func, std::vector<uint8_t>& data, Payload* payload, int priority, std::string name)
+Task::Task(uint8_t task_id, CommandFunction func, std::vector<uint8_t>& data, Payload* payload, uint8_t priority, std::string name)
 : 
 task_id(task_id),
 priority(priority),
@@ -39,11 +39,11 @@ void Task::Execute()
 }
 
 
-int Task::GetPriority() const {
+uint8_t Task::GetPriority() const {
     return priority;
 }
 
-int Task::GetID() const {
+uint8_t Task::GetID() const {
     return task_id;
 }
 

@@ -58,18 +58,15 @@ void Payload::RetrieveInternalStates()
     // SPDLOG_INFO("Payload state is: {}", ToString(state));
 }
 
-void Payload::AddCommand(uint8_t command_id, std::vector<uint8_t>& data, int priority)
+void Payload::AddCommand(uint8_t cmd_id, std::vector<uint8_t>& data, int priority)
 {
-    size_t cmd_id = static_cast<size_t>(command_id);
-
-
     // Look up the corresponding function with the command ID
     if (cmd_id < COMMAND_NUMBER) 
     {
         CommandFunction cmd_function = COMMAND_FUNCTIONS[cmd_id];
 
         // Create task object 
-        Task task(command_id, cmd_function, data, this, priority, COMMAND_NAMES[cmd_id]);
+        Task task(cmd_id, cmd_function, data, this, priority, COMMAND_NAMES[cmd_id]);
 
         // Add task to the RX queue
         rx_queue.AddTask(task);

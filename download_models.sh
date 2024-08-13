@@ -1,7 +1,7 @@
 #!/bin/bash
 
 # Clone the repository
-git clone https://github.com/cmu-spacecraft-design-build-fly-2023/NN-models
+git clone https://github.com/cmu-argus-1/NN-models
 
 # Move the 'rc' and 'ld' folders into the 'models/' folder
 mkdir -p models

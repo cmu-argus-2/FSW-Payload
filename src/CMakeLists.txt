@@ -7,6 +7,7 @@ add_library(PAYLOAD_LIB SHARED
     camera.cpp
     frame.cpp
     messages.cpp
+    monitoring.cpp
 )
 
 # Link libraries to PAYLOAD_LIB

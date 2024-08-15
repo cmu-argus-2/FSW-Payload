@@ -183,6 +183,7 @@ const PayloadState& Payload::GetState() const {
 void Payload::StartCameraThread()
 {
     // Launch camera thread
+    camera.TurnOn();
     camera_thread = std::thread(&Camera::RunLoop, &camera);
 }
 

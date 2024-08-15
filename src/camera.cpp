@@ -12,7 +12,7 @@ buffer_frame(cam_id, cv::Mat(), 0),
 display_flag(false),
 loop_flag(false)
 {
-    this->TurnOn();
+    // this->TurnOn();
 }
 
 

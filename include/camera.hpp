@@ -6,7 +6,7 @@
 #include <atomic>
 #include "frame.hpp"
 #include <opencv2/opencv.hpp>
-
+#include "configuration.hpp"
 
 
 class Camera
@@ -14,7 +14,8 @@ class Camera
 
 
 public:
-    Camera(int cam_id);
+    Camera(int id, std::string path, bool enabled = false);
+    Camera(const CameraConfig& config);
 
 
     void TurnOn();
@@ -23,7 +24,7 @@ public:
     void CaptureFrame();
     const Frame& GetBufferFrame() const;
 
-    
+    bool IsEnabled() const;
 
 
     void RunLoop();
@@ -36,17 +37,24 @@ public:
 
 private:
 
+    
+    bool enabled;
+    
+    std::string cam_path;
     int cam_id;
     cv::VideoCapture cap;
-    bool is_camera_on;
+    bool is_camera_on = false;
 
     Frame buffer_frame;
 
     cv::Mat intrinsics;
     cv::Mat distortion_parameters; 
 
-    std::atomic<bool> display_flag;
-    std::atomic<bool> loop_flag;
+
+
+
+    std::atomic<bool> display_flag = false;
+    std::atomic<bool> loop_flag = false;
 
 
 };

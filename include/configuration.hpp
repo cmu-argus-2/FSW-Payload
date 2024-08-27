@@ -3,9 +3,12 @@
 
 #include "toml.hpp"
 
+#define NUM_CAMERAS 4
+
 
 struct CameraConfig {
     bool enable;
+    int64_t id;
     std::string path;
     int64_t width;
     int64_t height;
@@ -15,25 +18,17 @@ struct CameraConfig {
 
 class Configuration
 {
-
 public:
-
-
     Configuration();
-
     void LoadConfiguration(std::string config_path);
-    std::vector<CameraConfig> GetCameraConfigs() const;
+    const std::array<CameraConfig, NUM_CAMERAS>& GetCameraConfigs() const;
 
 private:
-
     toml::table config;
     toml::table camera_devices_config;
-    std::vector<CameraConfig> camera_configs;
-    
+    std::array<CameraConfig, NUM_CAMERAS> camera_configs;
     void ParseCameraDevicesConfig();
-
-
-};
+};;
 
 
 

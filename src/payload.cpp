@@ -12,15 +12,32 @@ const char* ToString(PayloadState state) {
 
 
 
-Payload::Payload()
+Payload::Payload(Configuration& config)
 :
+config(config),
+camera_manager(config.GetCameraConfigs()),
 state(PayloadState::STARTUP),
-camera(Camera(0)),
 _running_instance(false)
 {
-    // Constructor
+        
+    SPDLOG_INFO("Configuration read successfully");
+
+    // camera_manager = CameraManager(config.GetCameraConfigs());
+    
     SPDLOG_INFO("Payload state initialized to: {}", ToString(state)); 
 }
+
+
+void Payload::ReadNewConfiguration(Configuration& config)
+{
+    // Read New Configuration
+    this->config = config;
+    SPDLOG_INFO("New reconfiguration read successfully");
+    // TODO
+
+}
+
+
 
 void Payload::SwitchToState(PayloadState new_state) 
 {
@@ -165,12 +182,12 @@ TX_Queue& Payload::GetTxQueue() {
 }
 
 
-const Camera& Payload::GetCamera() const {
-    return camera;
+const CameraManager& Payload::GetCameraManager() const {
+    return camera_manager;
 }
 
-Camera& Payload::GetCamera() {
-    return camera;
+CameraManager& Payload::GetCameraManager() {
+    return camera_manager;
 }
 
 
@@ -183,13 +200,13 @@ const PayloadState& Payload::GetState() const {
 void Payload::StartCameraThread()
 {
     // Launch camera thread
-    camera.TurnOn();
-    camera_thread = std::thread(&Camera::RunLoop, &camera);
+    camera_manager.TurnOn();
+    camera_thread = std::thread(&CameraManager::RunLoop, &camera_manager);
 }
 
 
 void Payload::StopCameraThread()
 {
-    camera.StopLoop();
+    camera_manager.StopLoop();
     camera_thread.join();
 }

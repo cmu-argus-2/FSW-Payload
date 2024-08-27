@@ -6,9 +6,11 @@
 #include <condition_variable>
 #include "spdlog/spdlog.h"
 
+#include "configuration.hpp"
 #include "queues.hpp"
 #include "commands.hpp"
-#include "camera.hpp"
+#include "camera_manager.hpp"
+
 
 enum class PayloadState : uint8_t {
     STARTUP = 0x00,
@@ -23,9 +25,8 @@ const char* ToString(PayloadState state);
 class Payload
 {
 public:
-    Payload();
+    Payload(Configuration& config);
     // ~Payload();
-
 
     void Initialize();
     const PayloadState& GetState() const;
@@ -41,8 +42,8 @@ public:
     const TX_Queue& GetTxQueue() const; 
     TX_Queue& GetTxQueue(); 
 
-    const Camera& GetCamera() const; 
-    Camera& GetCamera(); 
+    const CameraManager& GetCameraManager() const; 
+    CameraManager& GetCameraManager(); 
 
 
 
@@ -50,7 +51,13 @@ public:
     void StopCameraThread();
 
 
+    void ReadNewConfiguration(Configuration& config);
+
+
 private:
+
+
+    Configuration config;
 
     std::atomic<bool> _running_instance;
     
@@ -67,8 +74,7 @@ private:
     void RunStartupHealthProcedures();
     void RetrieveInternalStates();
 
-
-    Camera camera;
+    CameraManager camera_manager;
     std::thread camera_thread;
     
     

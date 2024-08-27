@@ -4,6 +4,7 @@
 #include <array>
 #include "spdlog/spdlog.h"
 #include "camera.hpp"
+#include "configuration.hpp"
 
 #define NUM_CAMERAS 4
 
@@ -15,12 +16,26 @@ class CameraManager
 
 public:
 
-    CameraManager(const std::array<int, 4>& camera_ids);
+    CameraManager(const std::array<CameraConfig, NUM_CAMERAS>& camera_configs);
+
+
+    void TurnOn();
+    void TurnOff();
+
+
+    void RunLoop();
+    void StopLoop();
+    void DisplayLoop(bool display_flag);
+
+    
 
 private:
 
 
     std::array<Camera, NUM_CAMERAS> cameras;
+
+    std::atomic<bool> display_flag = false;
+    std::atomic<bool> loop_flag = false;
 
 };
 

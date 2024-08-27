@@ -4,23 +4,30 @@
 #include "camera.hpp"
 
 
-Camera::Camera(int cam_id)
+Camera::Camera(int cam_id, std::string path, bool enabled)
 : 
+enabled(enabled),
 cam_id(cam_id),
-is_camera_on(false),
-buffer_frame(cam_id, cv::Mat(), 0),
-display_flag(false),
-loop_flag(false)
+cam_path(path),
+buffer_frame(cam_id, cv::Mat(), 0)
 {
-    // this->TurnOn();
 }
 
+Camera::Camera(const CameraConfig& config)
+:
+enabled(config.enable),
+cam_id(config.id),
+cam_path(config.path),
+buffer_frame(cam_id, cv::Mat(), 0)
+{
+}
 
 void Camera::TurnOn()
 {
     try {
 
-        cap.open(cam_id, cv::CAP_V4L2);
+        // cap.open(cam_id, cv::CAP_V4L2);
+        cap.open(cam_path, cv::CAP_V4L2);
         // Check if the camera is opened successfully
         if (!cap.isOpened()) {
             SPDLOG_ERROR("Unable to open the camera");
@@ -49,8 +56,6 @@ void Camera::TurnOff()
 
 void Camera::CaptureFrame()
 {
-
-
 
     cv::Mat captured_frame;
     try {
@@ -86,6 +91,11 @@ void Camera::LoadIntrinsics(const cv::Mat& intrinsics, const cv::Mat& distortion
 const Frame& Camera::GetBufferFrame() const
 {
     return buffer_frame;
+}
+
+bool Camera::IsEnabled() const
+{
+    return enabled;
 }
 
 void Camera::RunLoop()

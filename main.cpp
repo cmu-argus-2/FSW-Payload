@@ -45,10 +45,8 @@ int main(int argc, char** argv)
     Configuration config;
     config.LoadConfiguration(config_path);
 
-
     
-    
-    Payload payload;
+    Payload payload(config);
     payload.Initialize();
 
     

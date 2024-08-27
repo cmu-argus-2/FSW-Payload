@@ -2,30 +2,34 @@
 
 # Camera configuration
 
-[camera-devices]
+[camera-system]
 start_on_boot = false
 
 # Individual camera settings
-[camera-devices.cam1]
+[camera-device.cam1]
 enable = true
+id = 1
 path = "/dev/video0"
 resolution.width = 640
 resolution.height = 480
 
-[camera-devices.cam2]
+[camera-device.cam2]
 enable = true
+id = 2
 path = "/dev/video2"
 resolution.width = 640
 resolution.height = 480
 
-[camera-devices.cam3]
+[camera-device.cam3]
 enable = false
+id = 3
 path = "/dev/video3"
 resolution.width = 640
 resolution.height = 480
 
-[camera-devices.cam4]
+[camera-device.cam4]
 enable = false
+id = 4
 path = "/dev/video4"
 resolution.width = 640
 resolution.height = 480

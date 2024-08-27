@@ -185,5 +185,5 @@ void run_od(Payload* payload, std::vector<uint8_t>& data)
 void debug_display_camera(Payload* payload, std::vector<uint8_t>& data)
 {
     SPDLOG_INFO("Activating the display of the camera");
-    payload->GetCamera().DisplayLoop(true);
+    payload->GetCameraManager().DisplayLoop(true);
 }

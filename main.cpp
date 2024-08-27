@@ -11,6 +11,7 @@ Author: Ibrahima Sory Sow
 #include <unistd.h>
 #include "payload.hpp"
 //#include <torch/torch.h>
+#include "configuration.hpp"
 
 
 void SetupLogger()
@@ -32,6 +33,19 @@ int main(int argc, char** argv)
     
     SetupLogger();
     // spdlog::set_level(spdlog::level::warn);
+
+    std::string config_path;
+    if (argc > 1) {
+        config_path = argv[1];
+    } else {
+        config_path = "configuration/configuration.toml";
+    }
+    SPDLOG_INFO("Using configuration file at {}", config_path);
+    
+    Configuration config;
+    config.LoadConfiguration(config_path);
+
+
     
     
     Payload payload;

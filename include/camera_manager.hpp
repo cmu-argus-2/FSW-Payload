@@ -22,18 +22,24 @@ public:
     void TurnOn();
     void TurnOff();
 
-
     void RunLoop();
     void StopLoop();
     void DisplayLoop(bool display_flag);
 
 
+    CameraConfig* GetCameraConfig(int cam_id);
+
+
+
     
 
 private:
-
-
+        
     std::array<Camera, NUM_CAMERAS> cameras;
+    std::array<CameraConfig, NUM_CAMERAS> camera_configs;
+
+    
+    bool config_changed = false;
 
     std::atomic<bool> display_flag = false;
     std::atomic<bool> loop_flag = false;

@@ -4,6 +4,7 @@
 
 CameraManager::CameraManager(const std::array<CameraConfig, NUM_CAMERAS>& camera_configs) 
 :
+camera_configs(camera_configs),
 cameras({Camera(camera_configs[0]), Camera(camera_configs[1]), Camera(camera_configs[2]), Camera(camera_configs[3])})
 {
     SPDLOG_INFO("Camera Manager initialized");
@@ -38,40 +39,68 @@ void CameraManager::RunLoop()
     loop_flag = true;
     std::vector<int> active_camera_ids; 
 
-    // TODO need to check status of each camera and modify config accordingly 
 
     while (loop_flag) 
     {
+        
         for (auto& camera : cameras) 
         {
             bool captured = false;
             
-            if (camera.IsEnabled())
+            if (camera.GetCamStatus() == CAM_STATUS::TURNED_ON)
             {
                 captured = camera.CaptureFrame();
             }
 
-            if (display_flag)
+            if (display_flag && captured)
             {
-                if (camera.IsEnabled() && captured)
-                {
-                    cv::imshow("Camera " + std::to_string(camera.GetBufferFrame().GetCamId()), camera.GetBufferFrame().GetImg());
-                }
+                cv::imshow("Camera " + std::to_string(camera.GetBufferFrame().GetCamId()), camera.GetBufferFrame().GetImg());
             }
 
-            
-            if (camera.IsEnabled())
+            // Separated since the status might change after the capture attempt
+            if (camera.GetCamStatus() == CAM_STATUS::TURNED_ON)
             {
                 active_camera_ids.push_back(camera.GetCamId());
             }
 
+
+
+
+            // Check status of each camera and modify configuration accordingly
+            auto config = GetCameraConfig(camera.GetCamId());
+            if (camera.IsEnabled() != config->enable) {
+                config_changed = true;
+                config->enable = camera.IsEnabled();
+            }
+
+
+        }
+
+        if (config_changed) {
+            SPDLOG_WARNING("Camera configuration modified");
+            // TODO 
+            config_changed = false;
         }
 
         cv::waitKey(1);
+
         SPDLOG_INFO("IDs of active cameras: {}", fmt::format("{}", fmt::join(active_camera_ids, ", ")));
         active_camera_ids.clear();
     }
 
+}
+
+CameraConfig* CameraManager::GetCameraConfig(int cam_id) 
+{
+    for (auto& config : camera_configs)
+    {
+        if (config.id == cam_id)
+        {
+            return &config; // Return a pointer to the found config
+        }
+    }
+
+    return nullptr; // Return nullptr if the ID is not found
 }
 
 void CameraManager::StopLoop()

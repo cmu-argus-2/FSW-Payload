@@ -6,7 +6,8 @@
 
 Camera::Camera(int cam_id, std::string path, bool enabled)
 : 
-enabled(enabled),
+cam_status((enabled == false) ? CAM_STATUS::DISABLED : CAM_STATUS::TURNED_OFF),
+last_error(CAM_ERROR::NO_ERROR),
 cam_id(cam_id),
 cam_path(path),
 buffer_frame(cam_id, cv::Mat(), 0)
@@ -15,7 +16,8 @@ buffer_frame(cam_id, cv::Mat(), 0)
 
 Camera::Camera(const CameraConfig& config)
 :
-enabled(config.enable),
+cam_status((config.enable == false) ? CAM_STATUS::DISABLED : CAM_STATUS::TURNED_OFF),
+last_error(CAM_ERROR::NO_ERROR),
 cam_id(config.id),
 cam_path(config.path),
 buffer_frame(cam_id, cv::Mat(), 0)
@@ -26,40 +28,70 @@ void Camera::TurnOn()
 {
     try {
 
-        // cap.open(cam_id, cv::CAP_V4L2);
+        if (cam_status == CAM_STATUS::DISABLED) {
+            SPDLOG_ERROR("CAM{}: Camera is disabled", cam_id);
+            return;
+        }
+
         cap.open(cam_path, cv::CAP_V4L2);
+
         // Check if the camera is opened successfully
         if (!cap.isOpened()) {
             SPDLOG_ERROR("Unable to open the camera");
             throw std::runtime_error("Unable to open the camera");
         }
-        is_camera_on = true;
-        SPDLOG_INFO("CAM{}: Camera turned on", cam_id);
+
+        // Set the camera resolution
+        cap.set(cv::CAP_PROP_FRAME_WIDTH, DEFAULT_CAMERA_WIDTH);
+        cap.set(cv::CAP_PROP_FRAME_HEIGHT, DEFAULT_CAMERA_HEIGHT);
+
+        cam_status = CAM_STATUS::TURNED_ON;
+        SPDLOG_INFO("CAM{}: Camera successfully turned on", cam_id);
+
 
     } catch (const std::exception& e) {
-        SPDLOG_ERROR("Exception occurred: ", e.what());
+        SPDLOG_ERROR("Exception occurred: {}", e.what());
+
+
+        HandleErrors(CAM_ERROR::INITIALIZATION_FAILED);
+
+        // only be necessary if the camera was opened but failed afterwards
+        if (cap.isOpened()) {
+            cap.release();
+        }
+
     }
 
 }
 
 void Camera::TurnOff()
 {
-    try {
-        if (is_camera_on) {
-            cap.release();
-            is_camera_on = false;
-        }
-    } catch (const std::exception& e) {
-        SPDLOG_ERROR("Exception occurred: ", e.what());
+    if (cam_status == CAM_STATUS::DISABLED) {
+        SPDLOG_ERROR("CAM{}: Camera is disabled", cam_id);
+        return;
     }
+
+    if (cam_status == CAM_STATUS::TURNED_OFF) {
+        SPDLOG_ERROR("CAM{}: Camera is already turned off", cam_id);
+        return;
+    }
+    
+
+    if (cam_status == CAM_STATUS::TURNED_ON) {
+        cap.release();
+        cam_status = CAM_STATUS::TURNED_OFF;
+    }
+    
+
 }
 
-void Camera::CaptureFrame()
+bool Camera::CaptureFrame()
 {
 
     cv::Mat captured_frame;
     try {
-        if (is_camera_on) 
+        
+        if (cam_status == CAM_STATUS::TURNED_ON) 
         {   
             std::int64_t timestamp = std::chrono::duration_cast<std::chrono::milliseconds>(std::chrono::system_clock::now().time_since_epoch()).count();
 
@@ -72,14 +104,46 @@ void Camera::CaptureFrame()
             
             buffer_frame = Frame(cam_id, captured_frame, timestamp);
             SPDLOG_INFO("CAM{}: Frame captured successfully at {}", cam_id, timestamp);
-
+            return true;
         }
+
+  
+
     } catch (const std::exception& e) {
         SPDLOG_ERROR("Exception occurred: ", e.what());
+        HandleErrors(CAM_ERROR::CAPTURE_FAILED);
     }
 
+    return false;    
+}
+
+
+void Camera::HandleErrors(CAM_ERROR error)
+{
+    last_error = error;
+
+    if (last_error == CAM_ERROR::NO_ERROR) {
+        consecutive_error_count = 0;
+        return;
+    }
+
+    consecutive_error_count++;
+    SPDLOG_ERROR("CAM{}: Error occurred: {}", cam_id, last_error);
+
+    if (consecutive_error_count >= MAX_CONSECUTIVE_ERROR_COUNT) {
+        cam_status = CAM_STATUS::DISABLED;
+        SPDLOG_ERROR("CAM{}: Camera disabled", cam_id);
+        return;
+    }
+
+    if (last_error == CAM_ERROR::INITIALIZATION_FAILED) {
+        cam_status = CAM_STATUS::DISABLED;
+        SPDLOG_ERROR("CAM{}: Initialization failed. Still disabled.", cam_id);
+        return;
+    }
 
 }
+
 
 void Camera::LoadIntrinsics(const cv::Mat& intrinsics, const cv::Mat& distortion_parameters)
 {
@@ -95,42 +159,18 @@ const Frame& Camera::GetBufferFrame() const
 
 bool Camera::IsEnabled() const
 {
-    return enabled;
+    return (cam_status == CAM_STATUS::DISABLED) ? false : true;
 }
 
-void Camera::RunLoop()
+const int Camera::GetCamId() const
 {
-    loop_flag = true;
-
-
-    // Should avoid while loop
-    while (loop_flag)
-    {
-
-        if (is_camera_on) 
-        {
-            CaptureFrame();
-        }
-
-        if (display_flag && !buffer_frame.GetImg().empty()) 
-        {
-            cv::imshow("CAM" + std::to_string(cam_id), buffer_frame.GetImg());
-            cv::waitKey(1);
-        }
-
-    }
-
+    return cam_id;
 }
 
-
-void Camera::StopLoop()
+CAM_STATUS Camera::GetCamStatus() const
 {
-    this->loop_flag = false;
+    return cam_status;
 }
 
 
-void Camera::DisplayLoop(bool display_flag)
-{
-    // std::lock_guard<std::mutex> lock(display_mutex); // disappears when out of scope
-    this->display_flag = display_flag;
-}
+

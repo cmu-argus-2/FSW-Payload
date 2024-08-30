@@ -62,7 +62,7 @@ int main(int argc, char** argv)
     // payload.GetRxQueue().PrintAllTasks();
     
     std::thread run_thread(&Payload::Run, &payload);
-    std::this_thread::sleep_for(std::chrono::seconds(3));
+    std::this_thread::sleep_for(std::chrono::seconds(5));
 
     // Send shutdown command
     payload.AddCommand(CommandID::SHUTDOWN, no_data);

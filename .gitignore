@@ -37,3 +37,7 @@ build/
 NN-models/
 models/*
 !models/placeholder.txt
+
+
+# Ignore python test script
+ignore.py

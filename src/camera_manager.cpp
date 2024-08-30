@@ -36,30 +36,40 @@ void CameraManager::TurnOff()
 void CameraManager::RunLoop()
 {
     loop_flag = true;
+    std::vector<int> active_camera_ids; 
+
+    // TODO need to check status of each camera and modify config accordingly 
 
     while (loop_flag) 
     {
         for (auto& camera : cameras) 
         {
+            bool captured = false;
+            
             if (camera.IsEnabled())
             {
-                camera.CaptureFrame();
+                captured = camera.CaptureFrame();
             }
-        }
 
-        if (display_flag) 
-        {
-            for (auto& camera : cameras) 
-            { 
-                if (camera.IsEnabled() && !camera.GetBufferFrame().GetImg().empty()) 
+            if (display_flag)
+            {
+                if (camera.IsEnabled() && captured)
                 {
                     cv::imshow("Camera " + std::to_string(camera.GetBufferFrame().GetCamId()), camera.GetBufferFrame().GetImg());
                 }
             }
+
+            
+            if (camera.IsEnabled())
+            {
+                active_camera_ids.push_back(camera.GetCamId());
+            }
+
         }
 
         cv::waitKey(1);
-            
+        SPDLOG_INFO("IDs of active cameras: {}", fmt::format("{}", fmt::join(active_camera_ids, ", ")));
+        active_camera_ids.clear();
     }
 
 }

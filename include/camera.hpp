@@ -9,6 +9,25 @@
 #include "configuration.hpp"
 
 
+#define DEFAULT_CAMERA_WIDTH 640
+#define DEFAULT_CAMERA_HEIGHT 480
+
+#define MAX_CONSECUTIVE_ERROR_COUNT 3 // before disabling 
+
+
+
+enum class CAM_STATUS : uint8_t {
+    DISABLED = 0x00,
+    TURNED_ON = 0x01,
+    TURNED_OFF = 0x02
+};
+
+enum class CAM_ERROR : uint8_t {
+    NO_ERROR = 0x00,
+    CAPTURE_FAILED = 0x01,
+    INITIALIZATION_FAILED = 0x02
+};
+
 class Camera
 {
 
@@ -20,16 +39,14 @@ public:
 
     void TurnOn();
     void TurnOff();
+    // void Restart(); // Restart after failure, but need to avoid loops
 
-    void CaptureFrame();
+    bool CaptureFrame();
     const Frame& GetBufferFrame() const;
 
     bool IsEnabled() const;
-
-
-    void RunLoop();
-    void StopLoop();
-    void DisplayLoop(bool display_flag);
+    const int GetCamId() const;
+    CAM_STATUS GetCamStatus() const;
 
 
     void LoadIntrinsics(const cv::Mat& intrinsics, const cv::Mat& distortion_parameters);
@@ -37,13 +54,13 @@ public:
 
 private:
 
-    
-    bool enabled;
+    CAM_STATUS cam_status;
+    CAM_ERROR last_error;
     
     std::string cam_path;
     int cam_id;
     cv::VideoCapture cap;
-    bool is_camera_on = false;
+
 
     Frame buffer_frame;
 
@@ -52,9 +69,8 @@ private:
 
 
 
-
-    std::atomic<bool> display_flag = false;
-    std::atomic<bool> loop_flag = false;
+    int consecutive_error_count = 0;
+    void HandleErrors(CAM_ERROR error);
 
 
 };

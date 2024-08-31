@@ -108,9 +108,10 @@ void Payload::TransmitMessage(std::shared_ptr<Message> msg)
 }
 
 
-
-
-
+Configuration& Payload::GetConfiguration()
+{
+    return config;
+}
 
 
 
@@ -201,7 +202,7 @@ void Payload::StartCameraThread()
 {
     // Launch camera thread
     camera_manager.TurnOn();
-    camera_thread = std::thread(&CameraManager::RunLoop, &camera_manager);
+    camera_thread = std::thread(&CameraManager::RunLoop, &camera_manager, this);
 }
 
 

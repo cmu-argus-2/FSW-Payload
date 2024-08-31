@@ -45,6 +45,7 @@ public:
     const CameraManager& GetCameraManager() const; 
     CameraManager& GetCameraManager(); 
 
+    Configuration& GetConfiguration();
 
 
     void StartCameraThread();

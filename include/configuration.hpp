@@ -22,10 +22,13 @@ public:
     Configuration();
     void LoadConfiguration(std::string config_path);
     const std::array<CameraConfig, NUM_CAMERAS>& GetCameraConfigs() const;
+    bool UpdateCameraConfigs(const std::array<CameraConfig, NUM_CAMERAS>& new_configs);
 
 private:
+    std::string config_path;
+    bool configured;
     toml::table config;
-    toml::table camera_devices_config;
+    toml::table* camera_devices_config;
     std::array<CameraConfig, NUM_CAMERAS> camera_configs;
     void ParseCameraDevicesConfig();
 };;

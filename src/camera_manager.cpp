@@ -1,4 +1,5 @@
 #include "camera_manager.hpp"
+#include "payload.hpp"
 
 
 
@@ -34,7 +35,7 @@ void CameraManager::TurnOff()
 }
 
 
-void CameraManager::RunLoop()
+void CameraManager::RunLoop(Payload* payload)
 {
     loop_flag = true;
     std::vector<int> active_camera_ids; 
@@ -77,8 +78,9 @@ void CameraManager::RunLoop()
         }
 
         if (config_changed) {
-            SPDLOG_WARNING("Camera configuration modified");
-            // TODO 
+            SPDLOG_WARN("Camera configuration modified");
+            assert(payload != nullptr); // TODO
+            payload->GetConfiguration().UpdateCameraConfigs(camera_configs);
             config_changed = false;
         }
 

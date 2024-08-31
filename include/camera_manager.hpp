@@ -8,6 +8,10 @@
 
 #define NUM_CAMERAS 4
 
+// Forward declaration of Payload class
+class Payload;
+
+
 // Main interface to manage the cameras 
 
 class CameraManager
@@ -22,7 +26,7 @@ public:
     void TurnOn();
     void TurnOff();
 
-    void RunLoop();
+    void RunLoop(Payload* payload);
     void StopLoop();
     void DisplayLoop(bool display_flag);
 

@@ -2,7 +2,8 @@ cmake_minimum_required(VERSION 3.11)
 set(CMAKE_CXX_STANDARD 17)
 
 project(PAYLOAD VERSION 1.0 LANGUAGES CXX)
-
+add_definitions(-DROOT_DIR=\"${CMAKE_SOURCE_DIR}\")
+add_definitions(-DMODELS_DIR=\"${CMAKE_SOURCE_DIR}/models\")
 
 # Check if LIBTORCH_PATH is set in the environment
 if(NOT DEFINED ENV{LIBTORCH_PATH})
@@ -18,6 +19,7 @@ find_package(spdlog REQUIRED)
 find_package(Eigen3 3.3 REQUIRED NO_MODULE)
 find_package(OpenCV REQUIRED)
 find_package(Torch REQUIRED)
+find_package(GTest REQUIRED)
 
 # Include OpenCV directories
 include_directories(${OpenCV_INCLUDE_DIRS} ${TORCH_INCLUDE_DIRS})
@@ -40,3 +42,12 @@ target_link_libraries(${PROJECT_NAME}
     ${OpenCV_LIBS}
     ${TORCH_LIBRARIES}
 )
+
+
+option(BUILD_TESTS "Build tests" ON)
+
+if(BUILD_TESTS)
+    enable_testing()    
+    find_package(GTest REQUIRED)
+    add_subdirectory(tests)
+endif()

@@ -14,5 +14,5 @@ add_library(PAYLOAD_LIB SHARED
 
 # Link libraries to PAYLOAD_LIB
 target_link_libraries(PAYLOAD_LIB
-    PRIVATE core gnc vision
+    PUBLIC core gnc vision
 )

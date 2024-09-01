@@ -44,7 +44,7 @@ target_link_libraries(${PROJECT_NAME}
 )
 
 
-option(BUILD_TESTS "Build tests" ON)
+option(BUILD_TESTS "Build tests" OFF)
 
 if(BUILD_TESTS)
     enable_testing()    

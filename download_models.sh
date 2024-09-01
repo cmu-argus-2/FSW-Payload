@@ -5,8 +5,8 @@ git clone https://github.com/cmu-argus-1/NN-models
 
 # Move the 'rc' and 'ld' folders into the 'models/' folder
 mkdir -p models
-mv NN-models/rc models/
-mv NN-models/ld models/
+mv NN-models/* models/
+
 
 # Remove the cloned repository
 rm -rf NN-models

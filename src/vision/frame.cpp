@@ -1,5 +1,5 @@
 #include "spdlog/spdlog.h"
-#include "frame.hpp"
+#include "vision/frame.hpp"
 
 
 Frame::Frame(int cam_id, const cv::Mat& img, std::int64_t timestamp)

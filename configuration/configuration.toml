@@ -6,7 +6,7 @@ resolution_height = 480
 resolution_width = 640
 
 [camera-device.cam2]
-enable = true
+enable = false
 id = 2
 path = '/dev/video2'
 resolution_height = 480

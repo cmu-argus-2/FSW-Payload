@@ -26,6 +26,7 @@ include_directories(${OpenCV_INCLUDE_DIRS} ${TORCH_INCLUDE_DIRS})
 include_directories(${PROJECT_SOURCE_DIR}/include)
 
 # Add the subdirectory containing source files
+set(CMAKE_POSITION_INDEPENDENT_CODE ON)
 add_subdirectory(src)
 
 # Add the executable

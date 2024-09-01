@@ -9,7 +9,7 @@
 #include "configuration.hpp"
 #include "queues.hpp"
 #include "commands.hpp"
-#include "camera_manager.hpp"
+#include "vision/camera_manager.hpp"
 
 
 enum class PayloadState : uint8_t {

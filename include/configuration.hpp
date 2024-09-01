@@ -1,7 +1,7 @@
 #ifndef CONFIGURATION_HPP
 #define CONFIGURATION_HPP
 
-#include "toml.hpp"
+#include "core/toml.hpp"
 
 #define NUM_CAMERAS 4
 

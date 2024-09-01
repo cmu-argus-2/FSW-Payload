@@ -1,7 +1,7 @@
 #include <cstdint>
 #include <chrono>
 #include "spdlog/spdlog.h"
-#include "camera.hpp"
+#include "vision/camera.hpp"
 
 
 Camera::Camera(int cam_id, std::string path, bool enabled)

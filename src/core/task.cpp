@@ -1,7 +1,7 @@
 #include "spdlog/spdlog.h"
 
 #include <stdexcept>
-#include "task.hpp"
+#include "core/task.hpp"
 
 
 Task::Task(uint8_t task_id, CommandFunction func, std::vector<uint8_t>& data, Payload* payload, uint8_t priority, std::string name)

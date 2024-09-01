@@ -1,5 +1,4 @@
 #include "spdlog/spdlog.h"
-
 #include "queues.hpp"
 #include <iostream>
 

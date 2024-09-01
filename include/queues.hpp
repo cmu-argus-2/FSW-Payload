@@ -4,7 +4,7 @@
 #include <queue>
 #include <mutex>
 #include <atomic>
-#include "task.hpp"
+#include "core/task.hpp"
 #include "messages.hpp"
 
 #define RX_PRIORITY_1 1

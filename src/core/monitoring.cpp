@@ -3,7 +3,7 @@
 #include <filesystem>
 #include <sys/stat.h>
 
-#include "monitoring.hpp"
+#include "core/monitoring.hpp"
 
 void StartTegrastats(const std::string& log_file, int interval) 
 {

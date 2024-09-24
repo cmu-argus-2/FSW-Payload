@@ -5,9 +5,9 @@
 
 #include "core/monitoring.hpp"
 
-void StartTegrastats(const std::string& log_file, int interval) 
+void StartTegrastats(std::string_view log_file, int interval) 
 {
-    std::string command = "tegrastats --interval " + std::to_string(interval) + " --logfile " + log_file + " &";
+    std::string command = "tegrastats --interval " + std::to_string(interval) + " --logfile " + std::string(log_file) + " &";
     int result = std::system(command.c_str());
     if (result != 0) {
         std::cerr << "Failed to start tegrastats." << std::endl;
@@ -23,15 +23,15 @@ void StopTegrastats()
     }
 }
 
-size_t GetFileSize(const std::string& file_path) 
+size_t GetFileSize(std::string_view file_path) 
 {
     struct stat stat_buf;
-    int rc = stat(file_path.c_str(), &stat_buf);
+    int rc = stat(std::string(file_path).c_str(), &stat_buf);
     return rc == 0 ? stat_buf.st_size : -1;
 }
 
 
-size_t GetDirectorySize(const std::string& directory_path) 
+size_t GetDirectorySize(std::string_view directory_path) 
 {
     size_t total_size = 0;
     struct stat stat_buf;

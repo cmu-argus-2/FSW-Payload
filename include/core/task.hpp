@@ -4,6 +4,7 @@
 #include <functional>
 #include <chrono>
 #include <vector>
+#include <string_view>
 
 #define MAX_ATTEMPTS 3
 
@@ -18,7 +19,7 @@ class Task
 {
 
 public:
-    Task(uint8_t task_id, CommandFunction func, std::vector<uint8_t>& data, Payload* payload, uint8_t priority=0, std::string name="");
+    Task(uint8_t task_id, CommandFunction func, std::vector<uint8_t>& data, Payload* payload, uint8_t priority=0, std::string_view name="");
     // ~Task() = default; // TODO
 
     void Execute();

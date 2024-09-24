@@ -1,16 +1,17 @@
 #ifndef MONITORING_HPP
 #define MONITORING_HPP
 
-#include <string>
+#include <string_view>
+
 
 // leveraging tegrastats to monitor the system
-void StartTegrastats(const std::string& log_file, int interval = 1000);
+void StartTegrastats(std::string_view log_file, int interval = 1000);
 void StopTegrastats();
 
 
 
-size_t GetFileSize(const std::string& file_path);
-size_t GetDirectorySize(const std::string& directory_path);
+size_t GetFileSize(std::string_view file_path);
+size_t GetDirectorySize(std::string_view directory_path);
 
 
 

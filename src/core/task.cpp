@@ -4,7 +4,7 @@
 #include "core/task.hpp"
 
 
-Task::Task(uint8_t task_id, CommandFunction func, std::vector<uint8_t>& data, Payload* payload, uint8_t priority, std::string name)
+Task::Task(uint8_t task_id, CommandFunction func, std::vector<uint8_t>& data, Payload* payload, uint8_t priority, std::string_view name)
 : 
 task_id(task_id),
 priority(priority),

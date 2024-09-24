@@ -1,7 +1,7 @@
 #ifndef CONFIGURATION_HPP
 #define CONFIGURATION_HPP
 
-#include "core/toml.hpp"
+#include "toml.hpp"
 
 #define NUM_CAMERAS 4
 
@@ -25,8 +25,8 @@ public:
     bool UpdateCameraConfigs(const std::array<CameraConfig, NUM_CAMERAS>& new_configs);
 
 private:
-    std::string config_path;
     bool configured;
+    std::string config_path;
     toml::table config;
     toml::table* camera_devices_config;
     std::array<CameraConfig, NUM_CAMERAS> camera_configs;

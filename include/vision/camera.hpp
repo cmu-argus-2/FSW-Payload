@@ -45,7 +45,7 @@ public:
     const Frame& GetBufferFrame() const;
 
     bool IsEnabled() const;
-    const int GetCamId() const;
+    int GetCamId() const;
     CAM_STATUS GetCamStatus() const;
 
 
@@ -57,8 +57,9 @@ private:
     CAM_STATUS cam_status;
     CAM_ERROR last_error;
     
-    std::string cam_path;
+    
     int cam_id;
+    std::string cam_path;
     cv::VideoCapture cap;
 
 

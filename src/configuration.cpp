@@ -4,7 +4,7 @@
 #include "iostream"
 
 Configuration::Configuration()
-: config(), camera_devices_config(nullptr), configured(false)
+: configured(false), config(), camera_devices_config(nullptr)
 {
 }
 
@@ -34,7 +34,7 @@ void Configuration::ParseCameraDevicesConfig()
     
     
     // Iterate over each camera entry in camera-devices
-    int idx = 0;
+    std::size_t idx = 0;
     for (const auto& [key, value] : *camera_devices_config) 
     {
         auto cam_table = value.as_table();

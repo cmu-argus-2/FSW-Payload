@@ -39,8 +39,9 @@ public:
 
 private:
         
-    std::array<Camera, NUM_CAMERAS> cameras;
     std::array<CameraConfig, NUM_CAMERAS> camera_configs;
+    std::array<Camera, NUM_CAMERAS> cameras;
+    
 
     
     bool config_changed = false;

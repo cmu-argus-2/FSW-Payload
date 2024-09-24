@@ -14,10 +14,10 @@ const char* ToString(PayloadState state) {
 
 Payload::Payload(Configuration& config)
 :
+_running_instance(false),
 config(config),
 camera_manager(config.GetCameraConfigs()),
-state(PayloadState::STARTUP),
-_running_instance(false)
+state(PayloadState::STARTUP)
 {
         
     SPDLOG_INFO("Configuration read successfully");
@@ -75,7 +75,7 @@ void Payload::RetrieveInternalStates()
     // SPDLOG_INFO("Payload state is: {}", ToString(state));
 }
 
-void Payload::AddCommand(uint8_t cmd_id, std::vector<uint8_t>& data, int priority)
+void Payload::AddCommand(uint8_t cmd_id, std::vector<uint8_t>& data, uint8_t priority)
 {
     // Look up the corresponding function with the command ID
     if (cmd_id < COMMAND_NUMBER) 

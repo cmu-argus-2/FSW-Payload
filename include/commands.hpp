@@ -99,6 +99,6 @@ void debug_display_camera(Payload* payload, std::vector<uint8_t>& data);
 extern std::array<CommandFunction, COMMAND_NUMBER> COMMAND_FUNCTIONS;
 
 // Array mapping CommandID to corresponding names (for easier debugging)
-extern std::array<std::string, COMMAND_NUMBER> COMMAND_NAMES;
+extern std::array<std::string_view, COMMAND_NUMBER> COMMAND_NAMES;
 
 #endif // COMMANDS_HPP

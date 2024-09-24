@@ -18,7 +18,7 @@ Camera::Camera(const CameraConfig& config)
 :
 cam_status((config.enable == false) ? CAM_STATUS::DISABLED : CAM_STATUS::TURNED_OFF),
 last_error(CAM_ERROR::NO_ERROR),
-cam_id(config.id),
+cam_id(static_cast<int>(config.id)),
 cam_path(config.path),
 buffer_frame(cam_id, cv::Mat(), 0)
 {
@@ -162,7 +162,7 @@ bool Camera::IsEnabled() const
     return (cam_status == CAM_STATUS::DISABLED) ? false : true;
 }
 
-const int Camera::GetCamId() const
+int Camera::GetCamId() const
 {
     return cam_id;
 }

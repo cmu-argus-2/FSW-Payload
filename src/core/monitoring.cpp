@@ -23,17 +23,17 @@ void StopTegrastats()
     }
 }
 
-size_t GetFileSize(std::string_view file_path) 
+long GetFileSize(std::string_view file_path) 
 {
     struct stat stat_buf;
     int rc = stat(std::string(file_path).c_str(), &stat_buf);
-    return rc == 0 ? stat_buf.st_size : -1;
+    return rc == 0LL ? stat_buf.st_size : -1LL;
 }
 
 
-size_t GetDirectorySize(std::string_view directory_path) 
+long GetDirectorySize(std::string_view directory_path) 
 {
-    size_t total_size = 0;
+    long total_size = 0;
     struct stat stat_buf;
     for (const auto& entry : std::filesystem::recursive_directory_iterator(directory_path)) {
         if (entry.is_regular_file()) {

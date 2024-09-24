@@ -51,7 +51,6 @@ int main(int argc, char** argv)
 
     
     // For testing purpsoes 
-    int cmd_id = 0;
     std::vector<uint8_t> data = {0x01, 0x02, 0x03};
     std::vector<uint8_t> no_data = {};
 

@@ -21,7 +21,7 @@ mkdir -p build
 cd build/
 
 # Run CMake with the specified build type
-cmake -DCMAKE_BUILD_TYPE=${BUILD_TYPE} -DBUILD_TESTS=ON ..
+cmake -DCMAKE_BUILD_TYPE=${BUILD_TYPE} -DBUILD_TESTS=ON .. #-DCMAKE_CXX_FLAGS="-Werror -Wall -Wextra -Wconversion -Wsign-conversion"
 #cmake -DCMAKE_BUILD_TYPE=${BUILD_TYPE} -DCMAKE_PREFIX_PATH=`python3 -c 'import torch;print(torch.utils.cmake_prefix_path)'` ..
 #cmake -DCMAKE_BUILD_TYPE=${BUILD_TYPE} -DCMAKE_PREFIX_PATH="${LIBTORCH_PATH}/share/cmake/Torch/" ..
 

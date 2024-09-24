@@ -22,10 +22,11 @@ find_package(Torch REQUIRED)
 find_package(GTest REQUIRED)
 
 # Include OpenCV directories
-include_directories(${OpenCV_INCLUDE_DIRS} ${TORCH_INCLUDE_DIRS})
+include_directories(SYSTEM ${OpenCV_INCLUDE_DIRS} ${TORCH_INCLUDE_DIRS})
 
 # Include the directories for header files
 include_directories(${PROJECT_SOURCE_DIR}/include)
+include_directories(SYSTEM ${PROJECT_SOURCE_DIR}/external) # ignore warnings from external libraries
 
 # Add the subdirectory containing source files
 set(CMAKE_POSITION_INDEPENDENT_CODE ON)
@@ -41,6 +42,15 @@ target_link_libraries(${PROJECT_NAME}
     PAYLOAD_LIB
     ${OpenCV_LIBS}
     ${TORCH_LIBRARIES}
+)
+
+# Add compiler warnings (as errors) and other warning flags
+target_compile_options(${PROJECT_NAME} PRIVATE
+    -Werror
+    -Wall
+    -Wextra
+    -Wconversion
+    -Wsign-conversion
 )
 
 

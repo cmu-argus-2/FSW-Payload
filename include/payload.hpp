@@ -34,7 +34,7 @@ public:
     void Run();
     void Stop();
 
-    void AddCommand(uint8_t command_id, std::vector<uint8_t>& data, int priority = 0);
+    void AddCommand(uint8_t command_id, std::vector<uint8_t>& data, uint8_t priority = 0);
     void TransmitMessage(std::shared_ptr<Message> msg);
 
     const RX_Queue& GetRxQueue() const;
@@ -57,10 +57,12 @@ public:
 
 private:
 
+    std::atomic<bool> _running_instance;
 
     Configuration config;
 
-    std::atomic<bool> _running_instance;
+    CameraManager camera_manager;
+    std::thread camera_thread;
     
     PayloadState state;
     RX_Queue rx_queue;
@@ -69,14 +71,16 @@ private:
     std::mutex mtx;
     std::condition_variable cv_queue;
 
+    
+
 
     void SwitchToState(PayloadState new_state);
 
     void RunStartupHealthProcedures();
     void RetrieveInternalStates();
 
-    CameraManager camera_manager;
-    std::thread camera_thread;
+    
+    
     
     
 };

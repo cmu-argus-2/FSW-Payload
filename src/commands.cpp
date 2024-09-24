@@ -30,7 +30,7 @@ std::array<CommandFunction, COMMAND_NUMBER> COMMAND_FUNCTIONS =
 };
 
 // Define the array of strings mapping CommandID to command names
-std::array<std::string, COMMAND_NUMBER> COMMAND_NAMES = {
+std::array<std::string_view, COMMAND_NUMBER> COMMAND_NAMES = {
     "NEUTRAL_ACK",
     "REQUEST_STATE",
     "SHUTDOWN",
@@ -58,6 +58,9 @@ void neutral_ack(Payload* payload, std::vector<uint8_t>& data)
 {
     SPDLOG_INFO("Received Neutral Acknowledgement");
     // Do nothing
+    (void)payload;
+    (void)data;
+    // TODO
 }
 
 void request_state(Payload* payload, std::vector<uint8_t>& data)
@@ -71,113 +74,148 @@ void request_state(Payload* payload, std::vector<uint8_t>& data)
 
     payload->TransmitMessage(msg);
 
+    (void)data;
 }
 
 void shutdown(Payload* payload, std::vector<uint8_t>& data)
 {
     SPDLOG_INFO("Initiating Payload shutdown..");
     payload->Stop();
+    (void)data; // TODO
 }
 
 void synchronize_time(Payload* payload, std::vector<uint8_t>& data)
 {
     SPDLOG_INFO("Synchronizing time..");
+    (void)payload;
+    (void)data;
     // TODO
 }
 
 void run_self_diagnostics(Payload* payload, std::vector<uint8_t>& data)
 {
     SPDLOG_INFO("Running self diagnostics..");
+    (void)payload;
+    (void)data;
     // TODO
 }
 
 void request_last_telemetry(Payload* payload, std::vector<uint8_t>& data)
 {
     SPDLOG_INFO("Requesting last telemetry..");
+    (void)payload;
+    (void)data;
     // TODO
 }
 
 void set_telemetry_frequency(Payload* payload, std::vector<uint8_t>& data)
 {
     SPDLOG_INFO("Setting telemetry frequency..");
+    (void)payload;
+    (void)data;
     // TODO
 }
 
 void turn_on_cameras(Payload* payload, std::vector<uint8_t>& data)
 {
     SPDLOG_INFO("Turning on cameras..");
+    (void)payload;
+    (void)data;
     // TODO
 }
 
 void turn_off_cameras(Payload* payload, std::vector<uint8_t>& data)
 {
     SPDLOG_INFO("Turning off cameras..");
+    (void)payload;
+    (void)data;
     // TODO
 }
 
 void enable_camera_x(Payload* payload, std::vector<uint8_t>& data)
 {
     SPDLOG_INFO("Enabling camera X..");
+    (void)payload;
+    (void)data;
     // TODO
 }
 
 void disable_camera_x(Payload* payload, std::vector<uint8_t>& data)
 {
     SPDLOG_INFO("Disabling camera X..");
+    (void)payload;
+    (void)data;
     // TODO
 }
 
 void start_capture_images_every_x_seconds(Payload* payload, std::vector<uint8_t>& data)
 {
     SPDLOG_INFO("Starting capture images every X seconds..");
+    (void)payload;
+    (void)data;
     // TODO
 }
 
 void stop_capture_images(Payload* payload, std::vector<uint8_t>& data)
 {
     SPDLOG_INFO("Stopping capture images..");
+    (void)payload;
+    (void)data;
     // TODO
 }
-
 void stored_images(Payload* payload, std::vector<uint8_t>& data)
 {
     SPDLOG_INFO("Getting stored images..");
+    (void)payload;
+    (void)data;
     // TODO
 }
 
 void request_last_image(Payload* payload, std::vector<uint8_t>& data)
 {
     SPDLOG_INFO("Requesting last image..");
+    (void)payload;
+    (void)data;
     // TODO
 }
 
 void img_transfer_complete_ack(Payload* payload, std::vector<uint8_t>& data)
 {
     SPDLOG_INFO("Received Image Transfer Complete Acknowledgement");
+    (void)payload;
+    (void)data;
     // TODO
 }
 
 void delete_all_stored_images(Payload* payload, std::vector<uint8_t>& data)
 {
     SPDLOG_INFO("Deleting all stored images..");
+    (void)payload;
+    (void)data;
     // TODO
 }
 
 void enable_region_x(Payload* payload, std::vector<uint8_t>& data)
 {
     SPDLOG_INFO("Enabling region X..");
+    (void)payload;
+    (void)data;
     // TODO
 }
 
 void disable_region_x(Payload* payload, std::vector<uint8_t>& data)
 {
     SPDLOG_INFO("Disabling region X..");
+    (void)payload;
+    (void)data;
     // TODO
 }
 
 void run_od(Payload* payload, std::vector<uint8_t>& data)
 {
     SPDLOG_INFO("Running orbit determination..");
+    (void)payload;
+    (void)data;
     // TODO
 }
 
@@ -186,4 +224,5 @@ void debug_display_camera(Payload* payload, std::vector<uint8_t>& data)
 {
     SPDLOG_INFO("Activating the display of the camera");
     payload->GetCameraManager().DisplayLoop(true);
+    (void)data; // TODO
 }

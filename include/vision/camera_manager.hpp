@@ -34,15 +34,10 @@ public:
     CameraConfig* GetCameraConfig(int cam_id);
 
 
-
-    
-
 private:
         
     std::array<CameraConfig, NUM_CAMERAS> camera_configs;
     std::array<Camera, NUM_CAMERAS> cameras;
-    
-
     
     bool config_changed = false;
 

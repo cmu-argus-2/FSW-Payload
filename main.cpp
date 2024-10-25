@@ -59,9 +59,12 @@ int main(int argc, char** argv)
     payload.AddCommand(CommandID::DEBUG_DISPLAY_CAMERA, no_data);
 
     // payload.GetRxQueue().PrintAllTasks();
+    payload.AddCommand(CommandID::TURN_OFF_CAMERAS, no_data);
+
+    
     
     std::thread run_thread(&Payload::Run, &payload);
-    std::this_thread::sleep_for(std::chrono::seconds(2));
+    std::this_thread::sleep_for(std::chrono::seconds(3));
 
     // Send shutdown command
     payload.AddCommand(CommandID::SHUTDOWN, no_data);

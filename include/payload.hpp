@@ -47,10 +47,8 @@ public:
 
     Configuration& GetConfiguration();
 
-
     void StartCameraThread();
     void StopCameraThread();
-
 
     void ReadNewConfiguration(Configuration& config);
 
@@ -71,17 +69,12 @@ private:
     std::mutex mtx;
     std::condition_variable cv_queue;
 
-    
-
 
     void SwitchToState(PayloadState new_state);
 
     void RunStartupHealthProcedures();
     void RetrieveInternalStates();
 
-    
-    
-    
     
 };
 

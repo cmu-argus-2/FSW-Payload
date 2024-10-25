@@ -53,6 +53,7 @@ void CameraManager::RunLoop(Payload* payload)
                 captured = camera.CaptureFrame();
             }
 
+            // For the debugging display
             if (display_flag && captured)
             {
                 cv::imshow("Camera " + std::to_string(camera.GetBufferFrame().GetCamId()), camera.GetBufferFrame().GetImg());
@@ -64,17 +65,12 @@ void CameraManager::RunLoop(Payload* payload)
                 active_camera_ids.push_back(camera.GetCamId());
             }
 
-
-
-
             // Check status of each camera and modify configuration accordingly
             auto config = GetCameraConfig(camera.GetCamId());
             if (camera.IsEnabled() != config->enable) {
                 config_changed = true;
                 config->enable = camera.IsEnabled();
             }
-
-
         }
 
         if (config_changed) {

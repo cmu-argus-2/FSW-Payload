@@ -2,6 +2,7 @@
 #include "messages.hpp"
 #include "payload.hpp"
 
+// (void)data does nothing special, it is just used to avoid compiler warnings about a variable that is not used 
 
 // Command functions array definition 
 std::array<CommandFunction, COMMAND_NUMBER> COMMAND_FUNCTIONS = 

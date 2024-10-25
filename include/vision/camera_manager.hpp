@@ -11,12 +11,9 @@
 // Forward declaration of Payload class
 class Payload;
 
-
 // Main interface to manage the cameras 
-
 class CameraManager
 {
-
 
 public:
 
@@ -30,8 +27,9 @@ public:
     void StopLoop();
     void DisplayLoop(bool display_flag);
 
-
     CameraConfig* GetCameraConfig(int cam_id);
+
+    void GetStatus();
 
 
 private:
@@ -44,6 +42,9 @@ private:
     std::atomic<bool> display_flag = false;
     std::atomic<bool> loop_flag = false;
 
+
+    std::array<CAM_STATUS, NUM_CAMERAS> cam_status;
+    void UpdateCamStatus();
 };
 
 

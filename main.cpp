@@ -59,7 +59,7 @@ int main(int argc, char** argv)
     payload.AddCommand(CommandID::DEBUG_DISPLAY_CAMERA, no_data);
 
     // payload.GetRxQueue().PrintAllTasks();
-    payload.AddCommand(CommandID::TURN_OFF_CAMERAS, no_data);
+    //payload.AddCommand(CommandID::TURN_OFF_CAMERAS, no_data);
 
     
     

@@ -128,9 +128,11 @@ void turn_on_cameras(Payload& payload, std::vector<uint8_t>& data)
 void turn_off_cameras(Payload& payload, std::vector<uint8_t>& data)
 {
     SPDLOG_INFO("Turning off cameras..");
-    (void)payload;
+
+    payload.GetCameraManager().TurnOff();
+
     (void)data;
-    // TODO
+
 }
 
 void enable_camera_x(Payload& payload, std::vector<uint8_t>& data)

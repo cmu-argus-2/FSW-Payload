@@ -1,25 +1,22 @@
 #ifndef CAMERA_HPP
 #define CAMERA_HPP
 
-
 #include <mutex>
 #include <atomic>
 #include "frame.hpp"
 #include <opencv2/opencv.hpp>
 #include "configuration.hpp"
 
-
 #define DEFAULT_CAMERA_WIDTH 640
 #define DEFAULT_CAMERA_HEIGHT 480
 
 #define MAX_CONSECUTIVE_ERROR_COUNT 3 // before disabling 
 
-
-
 enum class CAM_STATUS : uint8_t {
-    DISABLED = 0x00,
-    TURNED_ON = 0x01,
-    TURNED_OFF = 0x02
+    UNDEFINED = 0,
+    DISABLED = 1,
+    TURNED_ON = 2,
+    TURNED_OFF = 3
 };
 
 enum class CAM_ERROR : uint8_t {

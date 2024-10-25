@@ -8,7 +8,20 @@ CameraManager::CameraManager(const std::array<CameraConfig, NUM_CAMERAS>& camera
 camera_configs(camera_configs),
 cameras({Camera(camera_configs[0]), Camera(camera_configs[1]), Camera(camera_configs[2]), Camera(camera_configs[3])})
 {
+    
+    UpdateCamStatus();
+    
+    
     SPDLOG_INFO("Camera Manager initialized");
+}
+
+void CameraManager::UpdateCamStatus()
+{
+    // Initialize cam_status based on the status of each camera
+    for (size_t i = 0; i < NUM_CAMERAS; ++i) {
+        cam_status[i] = cameras[i].GetCamStatus();
+    }
+
 }
 
 
@@ -21,6 +34,8 @@ void CameraManager::TurnOn()
             camera.TurnOn();
         }
     }
+
+    UpdateCamStatus();
 }
 
 void CameraManager::TurnOff()
@@ -32,6 +47,8 @@ void CameraManager::TurnOff()
             camera.TurnOff();
         }
     }
+
+    UpdateCamStatus();
 }
 
 
@@ -53,7 +70,7 @@ void CameraManager::RunLoop(Payload* payload)
                 captured = camera.CaptureFrame();
             }
 
-            // For the debugging display
+            // For the debugging./ display
             if (display_flag && captured)
             {
                 cv::imshow("Camera " + std::to_string(camera.GetBufferFrame().GetCamId()), camera.GetBufferFrame().GetImg());
@@ -72,6 +89,8 @@ void CameraManager::RunLoop(Payload* payload)
                 config->enable = camera.IsEnabled();
             }
         }
+
+        UpdateCamStatus();
 
         if (config_changed) {
             SPDLOG_WARN("Camera configuration modified");

@@ -11,7 +11,6 @@ const char* ToString(PayloadState state) {
 }
 
 
-
 Payload::Payload(Configuration& config)
 :
 _running_instance(false),
@@ -177,7 +176,6 @@ const TX_Queue& Payload::GetTxQueue() const {
     return tx_queue;
 }
 
-
 TX_Queue& Payload::GetTxQueue() {
     return tx_queue;
 }
@@ -190,9 +188,6 @@ const CameraManager& Payload::GetCameraManager() const {
 CameraManager& Payload::GetCameraManager() {
     return camera_manager;
 }
-
-
-
 
 const PayloadState& Payload::GetState() const {
     return state;

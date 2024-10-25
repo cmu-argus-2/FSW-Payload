@@ -43,3 +43,5 @@ models/*
 ignore.py
 
 Testing/
+
+data/

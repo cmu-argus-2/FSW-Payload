@@ -120,7 +120,9 @@ void set_telemetry_frequency(Payload& payload, std::vector<uint8_t>& data)
 void turn_on_cameras(Payload& payload, std::vector<uint8_t>& data)
 {
     SPDLOG_INFO("Turning on cameras..");
-    (void)payload;
+
+    payload.GetCameraManager().TurnOn();
+
     (void)data;
     // TODO
 }

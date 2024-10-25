@@ -1,6 +1,6 @@
 #include "vision/camera_manager.hpp"
 #include "payload.hpp"
-
+#include <filesystem>
 
 
 CameraManager::CameraManager(const std::array<CameraConfig, NUM_CAMERAS>& camera_configs) 
@@ -10,7 +10,7 @@ cameras({Camera(camera_configs[0]), Camera(camera_configs[1]), Camera(camera_con
 {
     
     UpdateCamStatus();
-    
+
     
     SPDLOG_INFO("Camera Manager initialized");
 }

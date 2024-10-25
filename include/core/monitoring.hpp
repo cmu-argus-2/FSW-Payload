@@ -10,10 +10,6 @@ void StopTegrastats();
 
 
 
-long GetFileSize(std::string_view file_path);
-long GetDirectorySize(std::string_view directory_path);
-
-
 
 
 

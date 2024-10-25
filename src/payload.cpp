@@ -1,4 +1,6 @@
+#include <filesystem>
 #include "payload.hpp"
+#include "core/data_handling.hpp"
 
 const char* ToString(PayloadState state) {
     switch (state) {
@@ -17,13 +19,15 @@ _running_instance(false),
 config(config),
 camera_manager(config.GetCameraConfigs()),
 state(PayloadState::STARTUP)
-{
-        
-    SPDLOG_INFO("Configuration read successfully");
+{   
 
-    // camera_manager = CameraManager(config.GetCameraConfigs());
-    
+    SPDLOG_INFO("Configuration read successfully");
     SPDLOG_INFO("Payload state initialized to: {}", ToString(state)); 
+
+    // Create the data folder 
+    const std::string data_folder = "data/";
+    make_directory(data_folder);
+    
 }
 
 

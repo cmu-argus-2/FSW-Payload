@@ -45,23 +45,18 @@ int main(int argc, char** argv)
     Configuration config;
     config.LoadConfiguration(config_path);
 
-    
     Payload payload(config);
     payload.Initialize();
 
-    
     // For testing purpsoes 
     std::vector<uint8_t> data = {0x01, 0x02, 0x03};
     std::vector<uint8_t> no_data = {};
-
 
     payload.AddCommand(CommandID::REQUEST_STATE, no_data);
     payload.AddCommand(CommandID::DEBUG_DISPLAY_CAMERA, no_data);
 
     // payload.GetRxQueue().PrintAllTasks();
-    //payload.AddCommand(CommandID::TURN_OFF_CAMERAS, no_data);
-
-    
+    // payload.AddCommand(CommandID::TURN_OFF_CAMERAS, no_data);
     
     std::thread run_thread(&Payload::Run, &payload);
     std::this_thread::sleep_for(std::chrono::seconds(3));

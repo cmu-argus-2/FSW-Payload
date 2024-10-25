@@ -17,6 +17,39 @@ long GetFileSize(std::string_view file_path);
 long GetDirectorySize(std::string_view directory_path);
 
 
+class DataHandler
+{
+
+private:
+    bool init_data_folder_tree = false;
+    const std::string f_root = "data/";
+    const std::string f_images = f_root + "images/";
+    const std::string f_telemetry = f_root + "telemetry/";
+    const std::string f_experiments = f_root + "experiments/";
+    const std::string f_logging = f_root + "logging/";
+
+
+public:
+
+    DataHandler();
+    // ~DataHandler() = default;
+
+    /*
+        Initialize the folder structure for all data storage activities.
+        The structure is as follows:
+        data/
+        ├── images/
+        ├── telemetry/
+        ├── experiments/ (orbit determination results)
+        ├── logging/
+
+        @return true if successful, false otherwise
+    */
+    bool InitializeDataStorage();
+
+};
+
+
 
 
 

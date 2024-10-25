@@ -1,7 +1,5 @@
 #include "vision/camera_manager.hpp"
 #include "payload.hpp"
-#include <filesystem>
-
 
 CameraManager::CameraManager(const std::array<CameraConfig, NUM_CAMERAS>& camera_configs) 
 :

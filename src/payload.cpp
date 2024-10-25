@@ -25,8 +25,7 @@ state(PayloadState::STARTUP)
     SPDLOG_INFO("Payload state initialized to: {}", ToString(state)); 
 
     // Create the data folder 
-    const std::string data_folder = "data/";
-    make_directory(data_folder);
+    
     
 }
 
@@ -54,6 +53,12 @@ void Payload::Initialize()
 {
     // Run startup health procedures
     RunStartupHealthProcedures();
+
+
+    // Initialize data storage
+    data_handler.InitializeDataStorage();
+
+
     // Retrieve internal states
     RetrieveInternalStates();
 

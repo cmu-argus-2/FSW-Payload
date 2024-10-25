@@ -1,8 +1,6 @@
 #include <gtest/gtest.h>
-#include <filesystem>
 #include "vision/region_classifier.hpp"
 
-namespace fs = std::filesystem;
 
 TEST(RegionClassifierTest, RCModelIntegrity) {
     std::string model_directory = std::string(MODELS_DIR) + "/rc";

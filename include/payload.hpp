@@ -9,6 +9,7 @@
 #include "configuration.hpp"
 #include "queues.hpp"
 #include "commands.hpp"
+#include "core/data_handling.hpp"
 #include "vision/camera_manager.hpp"
 
 
@@ -61,6 +62,8 @@ private:
 
     CameraManager camera_manager;
     std::thread camera_thread;
+
+    DataHandler data_handler;
     
     PayloadState state;
     RX_Queue rx_queue;

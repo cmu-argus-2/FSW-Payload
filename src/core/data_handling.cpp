@@ -40,3 +40,43 @@ long GetDirectorySize(std::string_view directory_path)
     }
     return total_size;
 }
+
+
+DataHandler::DataHandler()
+: init_data_folder_tree(false)
+{
+}
+
+
+bool DataHandler::InitializeDataStorage()
+{
+    if (init_data_folder_tree) {
+        SPDLOG_INFO("Data folder tree already initialized.");
+        return true;
+    }
+
+    // Construct the full paths using the root and subdirectory names
+    std::vector<std::string> directories = {
+        f_root,
+        f_images,
+        f_telemetry,
+        f_experiments,
+        f_logging
+    };
+
+    bool success = true;
+    for (const auto& dir : directories) {
+        if (!make_directory(dir)) {
+            SPDLOG_CRITICAL("Failed to create directory: {}", dir);
+            success = false;
+        }
+    }
+
+    init_data_folder_tree = success;
+
+    if (success) {
+        SPDLOG_INFO("Data folder tree initialized successfully.");
+    }
+
+    return success;
+}

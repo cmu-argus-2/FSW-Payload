@@ -22,11 +22,11 @@ void Task::Execute()
 {
     SPDLOG_INFO("Executing task [{}][{}]", task_id, name);
 
-    for (int attempts = 0; attempts < MAX_ATTEMPTS; attempts++)
+    for (int attempts = 0; attempts < MAX_ATTEMPTS; ++attempts)
     {
         try
         {
-            func(payload, data);
+            func(std::ref(*payload), data);
             break;
         }
         catch (const std::exception& e)

@@ -14,7 +14,7 @@ bool VerifySingleRcModel(const std::string& directory) {
 
     for (const auto& entry : fs::directory_iterator(directory)) {
         if (entry.is_regular_file()) {
-            count++;
+            ++count;
         }
     }
     // Return true if there is exactly one file in the directory

@@ -55,7 +55,7 @@ std::array<std::string_view, COMMAND_NUMBER> COMMAND_NAMES = {
     "DEBUG_DISPLAY_CAMERA"
 };
 
-void neutral_ack(Payload* payload, std::vector<uint8_t>& data)
+void neutral_ack(Payload& payload, std::vector<uint8_t>& data)
 {
     SPDLOG_INFO("Received Neutral Acknowledgement");
     // Do nothing
@@ -64,28 +64,28 @@ void neutral_ack(Payload* payload, std::vector<uint8_t>& data)
     // TODO
 }
 
-void request_state(Payload* payload, std::vector<uint8_t>& data)
+void request_state(Payload& payload, std::vector<uint8_t>& data)
 {
-    payload->GetState();
-    SPDLOG_INFO("State is: {} ", ToString(payload->GetState()));
+    payload.GetState();
+    SPDLOG_INFO("State is: {} ", ToString(payload.GetState()));
 
     auto msg = std::make_shared<MSG_RequestState>();
-    msg->state = static_cast<uint8_t>(payload->GetState());
+    msg->state = static_cast<uint8_t>(payload.GetState());
     msg->serialize();
 
-    payload->TransmitMessage(msg);
+    payload.TransmitMessage(msg);
 
     (void)data;
 }
 
-void shutdown(Payload* payload, std::vector<uint8_t>& data)
+void shutdown(Payload& payload, std::vector<uint8_t>& data)
 {
     SPDLOG_INFO("Initiating Payload shutdown..");
-    payload->Stop();
+    payload.Stop();
     (void)data; // TODO
 }
 
-void synchronize_time(Payload* payload, std::vector<uint8_t>& data)
+void synchronize_time(Payload& payload, std::vector<uint8_t>& data)
 {
     SPDLOG_INFO("Synchronizing time..");
     (void)payload;
@@ -93,7 +93,7 @@ void synchronize_time(Payload* payload, std::vector<uint8_t>& data)
     // TODO
 }
 
-void run_self_diagnostics(Payload* payload, std::vector<uint8_t>& data)
+void run_self_diagnostics(Payload& payload, std::vector<uint8_t>& data)
 {
     SPDLOG_INFO("Running self diagnostics..");
     (void)payload;
@@ -101,7 +101,7 @@ void run_self_diagnostics(Payload* payload, std::vector<uint8_t>& data)
     // TODO
 }
 
-void request_last_telemetry(Payload* payload, std::vector<uint8_t>& data)
+void request_last_telemetry(Payload& payload, std::vector<uint8_t>& data)
 {
     SPDLOG_INFO("Requesting last telemetry..");
     (void)payload;
@@ -109,7 +109,7 @@ void request_last_telemetry(Payload* payload, std::vector<uint8_t>& data)
     // TODO
 }
 
-void set_telemetry_frequency(Payload* payload, std::vector<uint8_t>& data)
+void set_telemetry_frequency(Payload& payload, std::vector<uint8_t>& data)
 {
     SPDLOG_INFO("Setting telemetry frequency..");
     (void)payload;
@@ -117,7 +117,7 @@ void set_telemetry_frequency(Payload* payload, std::vector<uint8_t>& data)
     // TODO
 }
 
-void turn_on_cameras(Payload* payload, std::vector<uint8_t>& data)
+void turn_on_cameras(Payload& payload, std::vector<uint8_t>& data)
 {
     SPDLOG_INFO("Turning on cameras..");
     (void)payload;
@@ -125,7 +125,7 @@ void turn_on_cameras(Payload* payload, std::vector<uint8_t>& data)
     // TODO
 }
 
-void turn_off_cameras(Payload* payload, std::vector<uint8_t>& data)
+void turn_off_cameras(Payload& payload, std::vector<uint8_t>& data)
 {
     SPDLOG_INFO("Turning off cameras..");
     (void)payload;
@@ -133,7 +133,7 @@ void turn_off_cameras(Payload* payload, std::vector<uint8_t>& data)
     // TODO
 }
 
-void enable_camera_x(Payload* payload, std::vector<uint8_t>& data)
+void enable_camera_x(Payload& payload, std::vector<uint8_t>& data)
 {
     SPDLOG_INFO("Enabling camera X..");
     (void)payload;
@@ -141,7 +141,7 @@ void enable_camera_x(Payload* payload, std::vector<uint8_t>& data)
     // TODO
 }
 
-void disable_camera_x(Payload* payload, std::vector<uint8_t>& data)
+void disable_camera_x(Payload& payload, std::vector<uint8_t>& data)
 {
     SPDLOG_INFO("Disabling camera X..");
     (void)payload;
@@ -149,7 +149,7 @@ void disable_camera_x(Payload* payload, std::vector<uint8_t>& data)
     // TODO
 }
 
-void start_capture_images_every_x_seconds(Payload* payload, std::vector<uint8_t>& data)
+void start_capture_images_every_x_seconds(Payload& payload, std::vector<uint8_t>& data)
 {
     SPDLOG_INFO("Starting capture images every X seconds..");
     (void)payload;
@@ -157,14 +157,14 @@ void start_capture_images_every_x_seconds(Payload* payload, std::vector<uint8_t>
     // TODO
 }
 
-void stop_capture_images(Payload* payload, std::vector<uint8_t>& data)
+void stop_capture_images(Payload& payload, std::vector<uint8_t>& data)
 {
     SPDLOG_INFO("Stopping capture images..");
     (void)payload;
     (void)data;
     // TODO
 }
-void stored_images(Payload* payload, std::vector<uint8_t>& data)
+void stored_images(Payload& payload, std::vector<uint8_t>& data)
 {
     SPDLOG_INFO("Getting stored images..");
     (void)payload;
@@ -172,7 +172,7 @@ void stored_images(Payload* payload, std::vector<uint8_t>& data)
     // TODO
 }
 
-void request_last_image(Payload* payload, std::vector<uint8_t>& data)
+void request_last_image(Payload& payload, std::vector<uint8_t>& data)
 {
     SPDLOG_INFO("Requesting last image..");
     (void)payload;
@@ -180,7 +180,7 @@ void request_last_image(Payload* payload, std::vector<uint8_t>& data)
     // TODO
 }
 
-void img_transfer_complete_ack(Payload* payload, std::vector<uint8_t>& data)
+void img_transfer_complete_ack(Payload& payload, std::vector<uint8_t>& data)
 {
     SPDLOG_INFO("Received Image Transfer Complete Acknowledgement");
     (void)payload;
@@ -188,7 +188,7 @@ void img_transfer_complete_ack(Payload* payload, std::vector<uint8_t>& data)
     // TODO
 }
 
-void delete_all_stored_images(Payload* payload, std::vector<uint8_t>& data)
+void delete_all_stored_images(Payload& payload, std::vector<uint8_t>& data)
 {
     SPDLOG_INFO("Deleting all stored images..");
     (void)payload;
@@ -196,7 +196,7 @@ void delete_all_stored_images(Payload* payload, std::vector<uint8_t>& data)
     // TODO
 }
 
-void enable_region_x(Payload* payload, std::vector<uint8_t>& data)
+void enable_region_x(Payload& payload, std::vector<uint8_t>& data)
 {
     SPDLOG_INFO("Enabling region X..");
     (void)payload;
@@ -204,7 +204,7 @@ void enable_region_x(Payload* payload, std::vector<uint8_t>& data)
     // TODO
 }
 
-void disable_region_x(Payload* payload, std::vector<uint8_t>& data)
+void disable_region_x(Payload& payload, std::vector<uint8_t>& data)
 {
     SPDLOG_INFO("Disabling region X..");
     (void)payload;
@@ -212,7 +212,7 @@ void disable_region_x(Payload* payload, std::vector<uint8_t>& data)
     // TODO
 }
 
-void run_od(Payload* payload, std::vector<uint8_t>& data)
+void run_od(Payload& payload, std::vector<uint8_t>& data)
 {
     SPDLOG_INFO("Running orbit determination..");
     (void)payload;
@@ -221,9 +221,9 @@ void run_od(Payload* payload, std::vector<uint8_t>& data)
 }
 
 
-void debug_display_camera(Payload* payload, std::vector<uint8_t>& data)
+void debug_display_camera(Payload& payload, std::vector<uint8_t>& data)
 {
     SPDLOG_INFO("Activating the display of the camera");
-    payload->GetCameraManager().DisplayLoop(true);
+    payload.GetCameraManager().DisplayLoop(true);
     (void)data; // TODO
 }

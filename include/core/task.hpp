@@ -12,7 +12,7 @@
 class Payload;
 
 
-typedef std::function<void(Payload*, std::vector<uint8_t>&)> CommandFunction;
+typedef std::function<void(Payload&, std::vector<uint8_t>&)> CommandFunction;
 
 
 class Task

@@ -56,7 +56,7 @@ void Configuration::ParseCameraDevicesConfig()
 
 
             camera_configs[idx] = cam_config;
-            idx++;
+            ++idx;
         }
     }
 }

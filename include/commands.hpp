@@ -12,7 +12,7 @@
 class Payload;
 
 // Command function type
-typedef std::function<void(Payload*, std::vector<uint8_t>&)> CommandFunction;
+typedef std::function<void(Payload&, std::vector<uint8_t>&)> CommandFunction;
 
 // Command IDs within a namespace
 // Chose this instead of enum class so command IDs can be accessed without casting
@@ -71,27 +71,27 @@ constexpr CommandID::Type ALL_COMMAND_IDS[] =
 constexpr uint8_t COMMAND_NUMBER = sizeof(ALL_COMMAND_IDS) / sizeof(ALL_COMMAND_IDS[0]);
 
 // Command functions declarations
-void neutral_ack(Payload* payload, std::vector<uint8_t>& data);
-void request_state(Payload* payload, std::vector<uint8_t>& data);
-void shutdown(Payload* payload, std::vector<uint8_t>& data);
-void synchronize_time(Payload* payload, std::vector<uint8_t>& data);
-void run_self_diagnostics(Payload* payload, std::vector<uint8_t>& data);
-void request_last_telemetry(Payload* payload, std::vector<uint8_t>& data);
-void set_telemetry_frequency(Payload* payload, std::vector<uint8_t>& data);
-void turn_on_cameras(Payload* payload, std::vector<uint8_t>& data);
-void turn_off_cameras(Payload* payload, std::vector<uint8_t>& data);
-void enable_camera_x(Payload* payload, std::vector<uint8_t>& data);
-void disable_camera_x(Payload* payload, std::vector<uint8_t>& data);
-void start_capture_images_every_x_seconds(Payload* payload, std::vector<uint8_t>& data);
-void stop_capture_images(Payload* payload, std::vector<uint8_t>& data);
-void stored_images(Payload* payload, std::vector<uint8_t>& data);
-void request_last_image(Payload* payload, std::vector<uint8_t>& data);
-void img_transfer_complete_ack(Payload* payload, std::vector<uint8_t>& data);
-void delete_all_stored_images(Payload* payload, std::vector<uint8_t>& data);
-void enable_region_x(Payload* payload, std::vector<uint8_t>& data);
-void disable_region_x(Payload* payload, std::vector<uint8_t>& data);
-void run_od(Payload* payload, std::vector<uint8_t>& data);
-void debug_display_camera(Payload* payload, std::vector<uint8_t>& data);
+void neutral_ack(Payload& payload, std::vector<uint8_t>& data);
+void request_state(Payload& payload, std::vector<uint8_t>& data);
+void shutdown(Payload& payload, std::vector<uint8_t>& data);
+void synchronize_time(Payload& payload, std::vector<uint8_t>& data);
+void run_self_diagnostics(Payload& payload, std::vector<uint8_t>& data);
+void request_last_telemetry(Payload& payload, std::vector<uint8_t>& data);
+void set_telemetry_frequency(Payload& payload, std::vector<uint8_t>& data);
+void turn_on_cameras(Payload& payload, std::vector<uint8_t>& data);
+void turn_off_cameras(Payload& payload, std::vector<uint8_t>& data);
+void enable_camera_x(Payload& payload, std::vector<uint8_t>& data);
+void disable_camera_x(Payload& payload, std::vector<uint8_t>& data);
+void start_capture_images_every_x_seconds(Payload& payload, std::vector<uint8_t>& data);
+void stop_capture_images(Payload& payload, std::vector<uint8_t>& data);
+void stored_images(Payload& payload, std::vector<uint8_t>& data);
+void request_last_image(Payload& payload, std::vector<uint8_t>& data);
+void img_transfer_complete_ack(Payload& payload, std::vector<uint8_t>& data);
+void delete_all_stored_images(Payload& payload, std::vector<uint8_t>& data);
+void enable_region_x(Payload& payload, std::vector<uint8_t>& data);
+void disable_region_x(Payload& payload, std::vector<uint8_t>& data);
+void run_od(Payload& payload, std::vector<uint8_t>& data);
+void debug_display_camera(Payload& payload, std::vector<uint8_t>& data);
 
 
 

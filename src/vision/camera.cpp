@@ -172,5 +172,8 @@ CAM_STATUS Camera::GetCamStatus() const
     return cam_status;
 }
 
-
-
+void Camera::DisplayLastFrame()
+{
+    cv::imshow("Camera " + std::to_string(cam_id), buffer_frame.GetImg());
+    cv::waitKey(1);
+}

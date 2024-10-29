@@ -2,6 +2,7 @@
 #define QUEUES_HPP
 
 #include <queue>
+#include <deque>
 #include <mutex>
 #include <atomic>
 #include "core/task.hpp"
@@ -42,7 +43,7 @@ private:
     };
 
     std::atomic<bool> paused;
-    std::priority_queue<Task, std::vector<Task>, TaskComparator> task_queue;
+    std::priority_queue<Task, std::deque<Task>, TaskComparator> task_queue;
     std::mutex queue_mutex;
 
 };
@@ -78,7 +79,7 @@ private:
 
 
     std::atomic<bool> paused;
-    std::priority_queue<std::shared_ptr<Message>, std::vector<std::shared_ptr<Message>>, MsgComparator> msg_queue;
+    std::priority_queue<std::shared_ptr<Message>, std::deque<std::shared_ptr<Message>>, MsgComparator> msg_queue;
     std::mutex queue_mutex;
 
 };

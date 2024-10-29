@@ -18,6 +18,7 @@ std::array<CommandFunction, COMMAND_NUMBER> COMMAND_FUNCTIONS =
     turn_off_cameras,
     enable_camera_x,
     disable_camera_x,
+    capture_images,
     start_capture_images_every_x_seconds,
     stop_capture_images,
     stored_images,
@@ -43,6 +44,7 @@ std::array<std::string_view, COMMAND_NUMBER> COMMAND_NAMES = {
     "TURN_OFF_CAMERAS",
     "ENABLE_CAMERA_X",
     "DISABLE_CAMERA_X",
+    "CAPTURE_IMAGES",
     "START_CAPTURE_IMAGES_EVERY_X_SECONDS",
     "STOP_CAPTURE_IMAGES",
     "STORED_IMAGES",
@@ -149,6 +151,18 @@ void disable_camera_x(Payload& payload, std::vector<uint8_t>& data)
 {
     SPDLOG_INFO("Disabling camera X..");
     (void)payload;
+    (void)data;
+    // TODO
+}
+
+void capture_images(Payload& payload, std::vector<uint8_t>& data)
+{
+    SPDLOG_INFO("Capturing image now..");
+
+    payload.GetCameraManager().SendCaptureRequest();
+
+    // Need to return true or false based on the success of the operations
+    // Basically should wait until the camera has captured the image or wait later to send the ocnfirmation and just exit the task? 
     (void)data;
     // TODO
 }

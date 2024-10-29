@@ -11,6 +11,16 @@
 // Forward declaration of Payload class
 class Payload;
 
+// Capture modes for the camera system
+enum class CAPTURE_MODE : uint8_t {
+    IDLE = 0,            // Camera system is not capturing frames and waiting for a command
+    CAPTURE_SINGLE = 1,  // Camera system captures a single frame from each available cameras
+    PERIODIC = 2,        // Camera system captures and stores all frames at a fixed rate
+    PERIODIC_EARTH = 3,  // Camera system captures frames at a fixed rate, but applies a filter to store only frames with a visible Earth
+    VIDEO_STREAM = 4     // Camera system captures frames at a fixed rate and streams them to a video file
+};
+
+
 // Main interface to manage the cameras 
 class CameraManager
 {
@@ -29,11 +39,21 @@ public:
 
     CameraConfig* GetCameraConfig(int cam_id);
 
+
+
+    // Set the capture mode of the camera system
+    void SetCaptureMode(CAPTURE_MODE mode);
+    // Send a capture request to the cameras. Wrapper around SetCaptureMode for CAPTURE_SINGLE 
+    void SendCaptureRequest();
+
+
     void GetStatus();
 
 
 private:
         
+    std::atomic<CAPTURE_MODE> capture_mode;
+
     std::array<CameraConfig, NUM_CAMERAS> camera_configs;
     std::array<Camera, NUM_CAMERAS> cameras;
     
@@ -45,6 +65,7 @@ private:
 
     std::array<CAM_STATUS, NUM_CAMERAS> cam_status;
     void UpdateCamStatus();
+
 };
 
 

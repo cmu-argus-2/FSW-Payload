@@ -29,16 +29,17 @@ namespace CommandID {
         TURN_OFF_CAMERAS = 0x08,
         ENABLE_CAMERA_X = 0x09,
         DISABLE_CAMERA_X = 0x0A,
-        START_CAPTURE_IMAGES_EVERY_X_SECONDS = 0x0B,
-        STOP_CAPTURE_IMAGES = 0x0C,
-        STORED_IMAGES = 0x0D,
-        REQUEST_LAST_IMAGE = 0x0E,
-        IMG_TRANSFER_COMPLETE_ACK = 0x0F,
-        DELETE_ALL_STORED_IMAGES = 0x10,
-        ENABLE_REGION_X = 0x11,
-        DISABLE_REGION_X = 0x12,
-        RUN_OD = 0x13,
-        DEBUG_DISPLAY_CAMERA = 0x14
+        CAPTURE_IMAGES = 0x0B,
+        START_CAPTURE_IMAGES_EVERY_X_SECONDS = 0x0C,
+        STOP_CAPTURE_IMAGES = 0x0D,
+        STORED_IMAGES = 0x0E,
+        REQUEST_LAST_IMAGE = 0x0F,
+        IMG_TRANSFER_COMPLETE_ACK = 0x10,
+        DELETE_ALL_STORED_IMAGES = 0x11,
+        ENABLE_REGION_X = 0x12,
+        DISABLE_REGION_X = 0x13,
+        RUN_OD = 0x14,
+        DEBUG_DISPLAY_CAMERA = 0x15
     };
 }
 
@@ -56,6 +57,7 @@ constexpr CommandID::Type ALL_COMMAND_IDS[] =
     CommandID::TURN_OFF_CAMERAS,
     CommandID::ENABLE_CAMERA_X,
     CommandID::DISABLE_CAMERA_X,
+    CommandID::CAPTURE_IMAGES,
     CommandID::START_CAPTURE_IMAGES_EVERY_X_SECONDS,
     CommandID::STOP_CAPTURE_IMAGES,
     CommandID::STORED_IMAGES,
@@ -82,6 +84,7 @@ void turn_on_cameras(Payload& payload, std::vector<uint8_t>& data);
 void turn_off_cameras(Payload& payload, std::vector<uint8_t>& data);
 void enable_camera_x(Payload& payload, std::vector<uint8_t>& data);
 void disable_camera_x(Payload& payload, std::vector<uint8_t>& data);
+void capture_images(Payload& payload, std::vector<uint8_t>& data);
 void start_capture_images_every_x_seconds(Payload& payload, std::vector<uint8_t>& data);
 void stop_capture_images(Payload& payload, std::vector<uint8_t>& data);
 void stored_images(Payload& payload, std::vector<uint8_t>& data);

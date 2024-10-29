@@ -57,7 +57,7 @@ size_t RX_Queue::Size() const {
 
 void RX_Queue::Clear() {
     // Clear the queue by swapping with an empty queue (goes out of scope and calls destructor)
-    std::priority_queue<Task, std::vector<Task>, TaskComparator> empty;
+    std::priority_queue<Task, std::deque<Task>, TaskComparator> empty;
     std::swap(task_queue, empty);
 }
 
@@ -123,7 +123,7 @@ size_t TX_Queue::Size() const {
 }
 
 void TX_Queue::Clear() {
-    std::priority_queue<std::shared_ptr<Message>, std::vector<std::shared_ptr<Message>>, MsgComparator> empty;
+    std::priority_queue<std::shared_ptr<Message>, std::deque<std::shared_ptr<Message>>, MsgComparator> empty;
     std::swap(msg_queue, empty);
 }
 

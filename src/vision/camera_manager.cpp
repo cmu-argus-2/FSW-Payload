@@ -3,13 +3,12 @@
 
 CameraManager::CameraManager(const std::array<CameraConfig, NUM_CAMERAS>& camera_configs) 
 :
+capture_mode(CAPTURE_MODE::IDLE),
 camera_configs(camera_configs),
 cameras({Camera(camera_configs[0]), Camera(camera_configs[1]), Camera(camera_configs[2]), Camera(camera_configs[3])})
 {
     
     UpdateCamStatus();
-
-    
     SPDLOG_INFO("Camera Manager initialized");
 }
 
@@ -58,22 +57,57 @@ void CameraManager::RunLoop(Payload* payload)
 
     while (loop_flag) 
     {
-        
+        // TODO: temporary
+        SetCaptureMode(CAPTURE_MODE::CAPTURE_SINGLE);
+        switch (capture_mode)
+        {
+            case CAPTURE_MODE::IDLE:
+                break;
+
+
+            case CAPTURE_MODE::CAPTURE_SINGLE: // Response to a command
+
+                for (auto& camera : cameras) 
+                {
+                    bool captured = false;
+                    if (camera.GetCamStatus() == CAM_STATUS::TURNED_ON)
+                    {
+                        captured = camera.CaptureFrame();
+
+                        // For the debugging - display
+                        if (display_flag && captured)
+                        {
+                            camera.DisplayLastFrame();
+                        }
+                    }
+                }
+
+
+                // should be a way to ACK the command here 
+
+
+
+                break;
+
+
+            case CAPTURE_MODE::PERIODIC:
+                break;
+
+
+            case CAPTURE_MODE::PERIODIC_EARTH:
+                break;
+
+
+            case CAPTURE_MODE::VIDEO_STREAM:
+                break;
+
+
+        }
+
+
+        // Check if the configuration of the cameras has changed
         for (auto& camera : cameras) 
         {
-            bool captured = false;
-            
-            if (camera.GetCamStatus() == CAM_STATUS::TURNED_ON)
-            {
-                captured = camera.CaptureFrame();
-            }
-
-            // For the debugging./ display
-            if (display_flag && captured)
-            {
-                cv::imshow("Camera " + std::to_string(camera.GetBufferFrame().GetCamId()), camera.GetBufferFrame().GetImg());
-            }
-
             // Separated since the status might change after the capture attempt
             if (camera.GetCamStatus() == CAM_STATUS::TURNED_ON)
             {
@@ -88,6 +122,7 @@ void CameraManager::RunLoop(Payload* payload)
             }
         }
 
+
         UpdateCamStatus();
 
         if (config_changed) {
@@ -97,10 +132,10 @@ void CameraManager::RunLoop(Payload* payload)
             config_changed = false;
         }
 
-        cv::waitKey(1);
-
+        //cv::waitKey(1);
         SPDLOG_INFO("IDs of active cameras: {}", fmt::format("{}", fmt::join(active_camera_ids, ", ")));
         active_camera_ids.clear();
+
     }
 
 }
@@ -127,4 +162,12 @@ void CameraManager::DisplayLoop(bool display_flag)
 {
     this->display_flag = display_flag;
 }
+void CameraManager::SetCaptureMode(CAPTURE_MODE mode)
+{
+    capture_mode = mode;
+}
 
+void CameraManager::SendCaptureRequest()
+{
+    SetCaptureMode(CAPTURE_MODE::CAPTURE_SINGLE);
+}

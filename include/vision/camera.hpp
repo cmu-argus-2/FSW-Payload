@@ -46,12 +46,14 @@ public:
     CAM_STATUS GetCamStatus() const;
 
 
+    void DisplayLastFrame();
+
     void LoadIntrinsics(const cv::Mat& intrinsics, const cv::Mat& distortion_parameters);
 
 
 private:
 
-    CAM_STATUS cam_status;
+    std::atomic<CAM_STATUS> cam_status;
     CAM_ERROR last_error;
     
     
@@ -69,8 +71,6 @@ private:
 
     int consecutive_error_count = 0;
     void HandleErrors(CAM_ERROR error);
-
-
 
 };
 

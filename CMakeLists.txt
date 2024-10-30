@@ -54,7 +54,7 @@ target_compile_options(${PROJECT_NAME} PRIVATE
 )
 
 
-option(BUILD_TESTS "Build tests" OFF)
+option(BUILD_TESTS "Build tests" ON)
 
 if(BUILD_TESTS)
     enable_testing()    

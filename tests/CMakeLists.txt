@@ -1,8 +1,11 @@
 # Create an executable for the region classifier test
-add_executable(test_region_classifier vision/test_region_classifier.cpp)
+add_executable(PAYLOAD_TESTS main.cpp
+    test_thread_pool.cpp
+    vision/test_region_classifier.cpp
+    )
 
 # Link the test executable with Google Test and the PAYLOAD library
-target_link_libraries(test_region_classifier 
+target_link_libraries(PAYLOAD_TESTS
     PRIVATE 
         GTest::gtest 
         GTest::gtest_main 
@@ -10,8 +13,6 @@ target_link_libraries(test_region_classifier
         ${TORCH_LIBRARIES}
 )
 
-# Register the region classifier test with CTest
-add_test(
-    NAME RegionClassifierTest
-    COMMAND test_region_classifier
-)
+
+
+add_test(NAME PAYLOAD_TESTS COMMAND PAYLOAD_TESTS)

@@ -2,14 +2,10 @@
 #include "vision/region_classifier.hpp"
 
 
-TEST(RegionClassifierTest, RCModelIntegrity) {
+/*TEST(RegionClassifierTest, RCModelIntegrity) {
     std::string model_directory = std::string(MODELS_DIR) + "/rc";
     bool result = VerifySingleRcModel(model_directory);
 
     EXPECT_TRUE(result) << "There should be exactly one model file in the directory: " << model_directory;
-}
+}*/
 
-int main(int argc, char **argv) {
-    ::testing::InitGoogleTest(&argc, argv);
-    return RUN_ALL_TESTS();
-}

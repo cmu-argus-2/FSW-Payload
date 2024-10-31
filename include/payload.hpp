@@ -4,12 +4,14 @@
 #include <thread>
 #include <atomic>
 #include <condition_variable>
+#include <memory>
 #include "spdlog/spdlog.h"
 
 #include "configuration.hpp"
 #include "queues.hpp"
 #include "commands.hpp"
 #include "core/data_handling.hpp"
+#include "core/thread_pool.hpp"
 #include "vision/camera_manager.hpp"
 
 
@@ -72,11 +74,16 @@ private:
     std::mutex mtx;
     std::condition_variable cv_queue;
 
+    // Thread Pool
+    std::unique_ptr<ThreadPool> thread_pool;
+
 
     void SwitchToState(PayloadState new_state);
 
     void RunStartupHealthProcedures();
     void RetrieveInternalStates();
+
+    void StopThreadPool();
 
     
 };

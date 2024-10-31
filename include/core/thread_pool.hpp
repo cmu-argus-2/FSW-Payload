@@ -18,6 +18,8 @@ public:
     explicit ThreadPool(size_t num_threads); // prevents implicit argument conversion 
     ~ThreadPool();
 
+    void shutdown();
+
     template<class F, class... Args>
     auto enqueue(F&& f, Args&&... args) -> std::future<typename std::result_of<F(Args...)>::type> 
     {

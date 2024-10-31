@@ -85,8 +85,6 @@ void CameraManager::RunLoop(Payload* payload)
 
                 // should be a way to ACK the command here 
 
-
-
                 break;
 
 

@@ -53,13 +53,22 @@ int main(int argc, char** argv)
     std::vector<uint8_t> no_data = {};
 
     payload.AddCommand(CommandID::REQUEST_STATE, no_data);
+    payload.AddCommand(CommandID::REQUEST_STATE, no_data);
     payload.AddCommand(CommandID::DEBUG_DISPLAY_CAMERA, no_data);
 
     // payload.GetRxQueue().PrintAllTasks();
     // payload.AddCommand(CommandID::TURN_OFF_CAMERAS, no_data);
     
     std::thread run_thread(&Payload::Run, &payload);
-    std::this_thread::sleep_for(std::chrono::seconds(3));
+    std::this_thread::sleep_for(std::chrono::seconds(2));
+
+    payload.AddCommand(CommandID::REQUEST_STATE, no_data);
+    payload.AddCommand(CommandID::REQUEST_STATE, no_data);
+    payload.AddCommand(CommandID::REQUEST_STATE, no_data);
+    payload.AddCommand(CommandID::REQUEST_STATE, no_data);
+    payload.AddCommand(CommandID::REQUEST_STATE, no_data);
+
+    std::this_thread::sleep_for(std::chrono::seconds(2));
 
     // Send shutdown command
     payload.AddCommand(CommandID::SHUTDOWN, no_data);

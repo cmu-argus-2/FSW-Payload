@@ -18,7 +18,8 @@ Payload::Payload(Configuration& config)
 _running_instance(false),
 config(config),
 camera_manager(config.GetCameraConfigs()),
-state(PayloadState::STARTUP)
+state(PayloadState::STARTUP),
+thread_pool(std::make_unique<ThreadPool>(std::thread::hardware_concurrency()))
 {   
 
     SPDLOG_INFO("Configuration read successfully");
@@ -139,15 +140,27 @@ void Payload::Run()
 
     while (_running_instance) 
     {
+        
+
         std::unique_lock<std::mutex> lock(mtx);
-        cv_queue.wait(lock, [this] { return !rx_queue.IsEmpty(); });
-        
-        
+        cv_queue.wait(lock, [this] { return !_running_instance || !rx_queue.IsEmpty(); });
+
+        if (!_running_instance) {
+            break;
+        }
+            
         // Check for incoming commands
-        if (!rx_queue.IsEmpty()) 
-        {
+        if (!rx_queue.IsEmpty() && thread_pool) {
             Task task = std::move(rx_queue.GetNextTask());
-            task.Execute();
+
+
+            if (task.GetID() == CommandID::SHUTDOWN) 
+            {
+                task.Execute(); // Execute the shutdown task
+                break;
+            }
+
+            thread_pool->enqueue([task]() mutable { task.Execute(); }); // Capturing `task` by value
         }
 
         // Check for outgoing messages - Comms thread responsible for this
@@ -161,14 +174,20 @@ void Payload::Run()
 
 void Payload::Stop()
 {
+    // Stop execution loop
+    _running_instance = false;
+
+
+    // Stop thread pool
+    StopThreadPool();
+    
     // Stop camera system
     StopCameraThread();
 
     // Stop communication system
     // TODO
 
-    // Stop execution loop
-    _running_instance = false;
+    
     SPDLOG_WARN("Payload Shutdown");
 }
 
@@ -214,4 +233,12 @@ void Payload::StopCameraThread()
 {
     camera_manager.StopLoop();
     camera_thread.join();
+}
+
+void Payload::StopThreadPool()
+{
+
+    thread_pool->shutdown();
+    thread_pool.reset(nullptr);
+
 }

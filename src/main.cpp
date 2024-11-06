@@ -7,8 +7,11 @@ Author: Ibrahima Sory Sow
 */
 #include <thread>
 #include <vector>
-#include "spdlog/spdlog.h"
+#include <sstream>
+#include <iostream>
+#include <string>
 #include <unistd.h>
+#include "spdlog/spdlog.h"
 #include "payload.hpp"
 #include "configuration.hpp"
 
@@ -26,15 +29,75 @@ void SetupLogger()
     spdlog::set_pattern("[%Y-%m-%d %H:%M:%S.%e][%^%l%$][thread:%t][%s:%#] %v");
 }
 
-
-
-void ParseCommand(const std::string& command)
+bool is_fifo(const char *path)
 {
-    // Parse the command
-    // TODO
-    (void)command;
+    std::error_code ec;
+    if (!std::filesystem::is_fifo(path, ec)) {
+        if (ec) std::cerr << ec.message() << std::endl;
+        return false;
+    }
+    return true;
 }
 
+void ParseCommand(Payload& payload, const std::string& command)
+{
+    uint8_t cmd_id;
+    std::vector<uint8_t> data;
+    
+    std::istringstream stream(command);
+    std::string token;
+
+    // Extract the command ID (first token)
+    int cmd_int;
+    if (stream >> cmd_int) {
+        if (cmd_int < 0 || cmd_int > 255) {
+            SPDLOG_ERROR("Command ID out of uint8_t range: {}", cmd_int);
+            return;
+        }
+        cmd_id = static_cast<uint8_t>(cmd_int);
+    } else {
+        SPDLOG_ERROR("Invalid command format. Could not parse command ID.");
+        return;
+    }
+
+    // Parse remaining tokens as uint8_t arguments for data
+    while (stream >> token) {
+        int arg;
+        bool is_numeric = true;
+
+        // Check if token is numeric
+        for (char c : token) {
+            if (!isdigit(c) && !(c == '-' && &c == &token[0])) { // Allow leading negative sign
+                is_numeric = false;
+                break;
+            }
+        }
+
+        if (!is_numeric) {
+            SPDLOG_ERROR("Invalid argument: '{}'. Not a numeric value.", token);
+            return;
+        }
+
+        // Convert to integer and check range
+        arg = std::stoi(token);
+        if (arg < 0 || arg > 255) {
+            SPDLOG_ERROR("Argument '{}' out of uint8_t range", token);
+            return;
+        }
+
+        data.push_back(static_cast<uint8_t>(arg));
+    }
+
+    // Logging the parsed command ID and data for verification
+    SPDLOG_INFO("Command ID: {}", static_cast<int>(cmd_id));
+    SPDLOG_INFO("Arguments:");
+    for (uint8_t byte : data) {
+        SPDLOG_INFO(" {}", static_cast<int>(byte));
+    }
+
+    // Send the command to the payload
+    payload.AddCommand(cmd_id, data);
+}
 
 int main(int argc, char** argv)
 {
@@ -46,7 +109,7 @@ int main(int argc, char** argv)
     if (argc > 1) {
         config_path = argv[1];
     } else {
-        config_path = "configuration/configuration.toml";
+        config_path = "config/config.toml";
     }
     SPDLOG_INFO("Using configuration file at {}", config_path);
     
@@ -56,11 +119,59 @@ int main(int argc, char** argv)
     Payload& payload = Payload::GetInstance(config);
     payload.Initialize();
 
-    // For testing purpsoes 
-    std::vector<uint8_t> data = {0x01, 0x02, 0x03};
-    std::vector<uint8_t> no_data = {};
 
-    payload.AddCommand(CommandID::REQUEST_STATE, no_data);
+    // Initialize pipe for command line interface
+    bool read_from_pipe = false;
+    std::ifstream pipe;
+
+    if (argc > 2) {
+        
+        if (!is_fifo(argv[2]))
+        {
+            SPDLOG_WARN("Error: {} is not a FIFO / named pipe. Disabling pipe reading.", argv[2]);
+        }
+
+        pipe.open(argv[2]);
+        if (!pipe.is_open())
+        {
+            SPDLOG_WARN("Error: Could not open FIFO {}. Disabling pipe reading.", argv[2]);
+        } 
+        else 
+        {
+            read_from_pipe = true;
+        }
+    }
+
+
+
+
+    std::thread run_thread(&Payload::Run, &payload);
+
+    if (read_from_pipe) 
+    {
+        std::string command;
+        while (std::getline(pipe, command) && payload.IsRunning()) 
+        {
+            ParseCommand(payload, command);
+            SPDLOG_INFO("IS RUNNING: {}", payload.IsRunning());
+        }
+    }
+    SPDLOG_INFO("Exited pipe loop");
+    SPDLOG_INFO("IS RUNNING: {}", payload.IsRunning());
+
+    if (payload.IsRunning()) 
+    {
+        SPDLOG_INFO("Sending shutdown command since payload still running...");
+        // Send shutdown command
+        std::vector<uint8_t> no_data = {};
+        // Send shutdown command
+        payload.AddCommand(CommandID::SHUTDOWN, no_data);
+    }
+
+
+    // For testing purpsoes 
+    /*std::vector<uint8_t> data = {0x01, 0x02, 0x03};
+    std::vector<uint8_t> no_data = {};
     payload.AddCommand(CommandID::REQUEST_STATE, no_data);
     payload.AddCommand(CommandID::DEBUG_DISPLAY_CAMERA, no_data);
 
@@ -69,17 +180,12 @@ int main(int argc, char** argv)
     
     std::thread run_thread(&Payload::Run, &payload);
     std::this_thread::sleep_for(std::chrono::seconds(2));
-
     payload.AddCommand(CommandID::REQUEST_STATE, no_data);
     payload.AddCommand(CommandID::REQUEST_STATE, no_data);
-    payload.AddCommand(CommandID::REQUEST_STATE, no_data);
-    payload.AddCommand(CommandID::REQUEST_STATE, no_data);
-    payload.AddCommand(CommandID::REQUEST_STATE, no_data);
-
     std::this_thread::sleep_for(std::chrono::seconds(2));
-
     // Send shutdown command
-    payload.AddCommand(CommandID::SHUTDOWN, no_data);
+    payload.AddCommand(CommandID::SHUTDOWN, no_data);*/
+
 
     // Wait for the thread to finish
     run_thread.join();

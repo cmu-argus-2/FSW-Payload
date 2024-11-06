@@ -30,7 +30,7 @@ Build the project
 
 ```bash
 ./build.sh
-./build/PAYLOAD
+./build/PAYLOAD [optional: /path/to/config/file]
 ```
 
 or 
@@ -39,15 +39,17 @@ or
 mkdir build
 cd build
 cmake .. && make
-./PAYLOAD
+./PAYLOAD [optional: <config path>] // default at config/config.toml
 ```
+
+
 ## Local interaction with the FSW
 
 As a functional debugging tool, the Payload can be run and controlled locally through a named pipe (FIFO) given to the Payload and the command line interface.
 
 ```bash
 mkfifo <pipe name>
-./PAYLOAD <pipe name>
+./PAYLOAD <config path> <pipe name>
 ./CLI_CMD <pipe name>
 ```
 

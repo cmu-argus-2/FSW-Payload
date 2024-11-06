@@ -103,7 +103,7 @@ bool Camera::CaptureFrame()
             }
             
             buffer_frame = Frame(cam_id, captured_frame, timestamp);
-            SPDLOG_INFO("CAM{}: Frame captured successfully at {}", cam_id, timestamp);
+            // SPDLOG_INFO("CAM{}: Frame captured successfully at {}", cam_id, timestamp);
             return true;
         }
 

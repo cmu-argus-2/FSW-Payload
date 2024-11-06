@@ -50,7 +50,7 @@ ThreadPool::~ThreadPool()
 
 
 void ThreadPool::worker_thread() {
-    while (true) {
+    while (!stop) {
 
         std::function<void()> task;
 
@@ -77,6 +77,8 @@ void ThreadPool::worker_thread() {
         }  
 
     }
+
+    SPDLOG_INFO("Exiting ThreadPool worker thread");
 
 }
 

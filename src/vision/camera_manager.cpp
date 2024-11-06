@@ -58,7 +58,7 @@ void CameraManager::RunLoop(Payload* payload)
     while (loop_flag) 
     {
         // TODO: temporary
-        SetCaptureMode(CAPTURE_MODE::CAPTURE_SINGLE);
+        // SetCaptureMode(CAPTURE_MODE::CAPTURE_SINGLE);
         switch (capture_mode)
         {
             case CAPTURE_MODE::IDLE:
@@ -83,8 +83,8 @@ void CameraManager::RunLoop(Payload* payload)
                 }
 
 
-                // should be a way to ACK the command here 
-
+                // TODO should be a way to ACK the command here 
+                SetCaptureMode(CAPTURE_MODE::IDLE);
                 break;
 
 
@@ -130,11 +130,16 @@ void CameraManager::RunLoop(Payload* payload)
             config_changed = false;
         }
 
-        //cv::waitKey(1);
-        SPDLOG_INFO("IDs of active cameras: {}", fmt::format("{}", fmt::join(active_camera_ids, ", ")));
+        if (display_flag)
+        {
+            cv::waitKey(1);
+        }
+        // SPDLOG_INFO("IDs of active cameras: {}", fmt::format("{}", fmt::join(active_camera_ids, ", ")));
         active_camera_ids.clear();
 
     }
+
+    SPDLOG_INFO("Exiting Camera Manager Run Loop");
 
 }
 

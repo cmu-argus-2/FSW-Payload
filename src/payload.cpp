@@ -176,6 +176,7 @@ void Payload::Run()
         }*/
     }
     
+    SPDLOG_INFO("Exiting Payload Run Loop");
 }
 
 void Payload::Stop()
@@ -195,6 +196,11 @@ void Payload::Stop()
 
     
     SPDLOG_WARN("Payload Shutdown");
+}
+
+bool Payload::IsRunning() const
+{
+    return _running_instance;
 }
 
 const RX_Queue& Payload::GetRxQueue() const {

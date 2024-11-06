@@ -38,6 +38,7 @@ public:
 
     void Run();
     void Stop();
+    bool IsRunning() const;
 
     void AddCommand(uint8_t command_id, std::vector<uint8_t>& data, uint8_t priority = 0);
     void TransmitMessage(std::shared_ptr<Message> msg);

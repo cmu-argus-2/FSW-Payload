@@ -40,7 +40,7 @@ int main(int argc, char* argv[])
         return 1;
     }
 
-    while ((input = readline("FSW> ")) != nullptr) 
+    while ((input = readline("PAYLOAD> ")) != nullptr) 
     {
         if (*input) { add_history(input);  }
             

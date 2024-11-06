@@ -10,7 +10,6 @@ Author: Ibrahima Sory Sow
 #include "spdlog/spdlog.h"
 #include <unistd.h>
 #include "payload.hpp"
-//#include <torch/torch.h>
 #include "configuration.hpp"
 
 
@@ -25,6 +24,15 @@ void SetupLogger()
     // %#: source line number
     // %v: the actual text to log
     spdlog::set_pattern("[%Y-%m-%d %H:%M:%S.%e][%^%l%$][thread:%t][%s:%#] %v");
+}
+
+
+
+void ParseCommand(const std::string& command)
+{
+    // Parse the command
+    // TODO
+    (void)command;
 }
 
 

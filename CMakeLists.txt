@@ -33,7 +33,7 @@ set(CMAKE_POSITION_INDEPENDENT_CODE ON)
 add_subdirectory(src)
 
 # Add the executable
-add_executable(${PROJECT_NAME} main.cpp)
+add_executable(${PROJECT_NAME} src/main.cpp)
 
 # Link libraries to the executable
 target_link_libraries(${PROJECT_NAME}
@@ -43,6 +43,20 @@ target_link_libraries(${PROJECT_NAME}
     ${OpenCV_LIBS}
     ${TORCH_LIBRARIES}
 )
+
+### Command Line Interface ###
+
+find_library(READLINE_LIBRARY readline)
+
+# Add the Command Line interface executable
+add_executable(CLI_CMD src/cli_cmd.cpp)
+
+if (READLINE_LIBRARY)
+    target_link_libraries(CLI_CMD PRIVATE ${READLINE_LIBRARY})
+else()
+    message(FATAL_ERROR "Readline library not found. Please install libreadline-dev.")
+endif()
+
 
 # Add compiler warnings (as errors) and other warning flags
 target_compile_options(${PROJECT_NAME} PRIVATE

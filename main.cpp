@@ -45,7 +45,7 @@ int main(int argc, char** argv)
     Configuration config;
     config.LoadConfiguration(config_path);
 
-    Payload payload(config);
+    Payload& payload = Payload::GetInstance(config);
     payload.Initialize();
 
     // For testing purpsoes 

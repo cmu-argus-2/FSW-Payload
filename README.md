@@ -1,6 +1,7 @@
 # Payload Flight Software for Argus-1
 
-In progress
+The repository contains the Flight Software targeted for the Jetson Orin Nano 8Gb and its custom carrier board. Argus is a technology demonstration mission for vision-based orbit determination.
+
 
 ## Requirements
 
@@ -40,3 +41,12 @@ cd build
 cmake .. && make
 ./PAYLOAD
 ```
+
+## Command-based paradigm 
+
+The Payload communicates through its host machine via SPI (slave)/UART (transition in progress) with a set of predefined commands available at TODO (internal README).
+
+
+## General Architecture 
+
+TODO

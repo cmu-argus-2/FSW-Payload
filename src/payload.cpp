@@ -12,6 +12,12 @@ const char* ToString(PayloadState state) {
     }
 }
 
+Payload& Payload::GetInstance(Configuration& config)
+{
+    static Payload instance(config);
+    return instance;
+}
+
 
 Payload::Payload(Configuration& config)
 :

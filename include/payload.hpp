@@ -28,8 +28,10 @@ const char* ToString(PayloadState state);
 class Payload
 {
 public:
-    Payload(Configuration& config);
-    // ~Payload();
+
+
+    // Make Payload a Singleton 
+    static Payload& GetInstance(Configuration& config);
 
     void Initialize();
     const PayloadState& GetState() const;
@@ -57,6 +59,11 @@ public:
 
 
 private:
+
+    Payload(Configuration& config);
+    // ~Payload();
+    Payload(const Payload&) = delete;
+    void operator=(const Payload&) = delete;
 
     std::atomic<bool> _running_instance;
 

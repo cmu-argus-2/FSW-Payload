@@ -89,8 +89,8 @@ void ParseCommand(Payload& payload, const std::string& command)
     }
 
     // Logging the parsed command ID and data for verification
-    SPDLOG_INFO("Command ID: {}", static_cast<int>(cmd_id));
-    SPDLOG_INFO("Arguments:");
+    // SPDLOG_INFO("Command ID: {}", static_cast<int>(cmd_id));
+    // SPDLOG_INFO("Arguments:");
     for (uint8_t byte : data) {
         SPDLOG_INFO(" {}", static_cast<int>(byte));
     }
@@ -157,7 +157,6 @@ int main(int argc, char** argv)
         }
     }
     SPDLOG_INFO("Exited pipe loop");
-    SPDLOG_INFO("IS RUNNING: {}", payload.IsRunning());
 
     if (payload.IsRunning()) 
     {

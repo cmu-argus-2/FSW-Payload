@@ -87,29 +87,25 @@ void Camera::TurnOff()
 
 bool Camera::CaptureFrame()
 {
+    // Single responsibility principle. Status must be checked externally
+    try 
+    {
+        cv::Mat captured_frame;
+        std::int64_t timestamp = std::chrono::duration_cast<std::chrono::milliseconds>(std::chrono::system_clock::now().time_since_epoch()).count();
 
-    cv::Mat captured_frame;
-    try {
-        
-        if (cam_status == CAM_STATUS::TURNED_ON) 
-        {   
-            std::int64_t timestamp = std::chrono::duration_cast<std::chrono::milliseconds>(std::chrono::system_clock::now().time_since_epoch()).count();
+        cap >> captured_frame;
 
-            cap >> captured_frame;
-
-            if (captured_frame.empty()) {
-                SPDLOG_ERROR("Unable to capture frame");
-                throw std::runtime_error("Unable to capture frame");
-            }
-            
-            buffer_frame = Frame(cam_id, captured_frame, timestamp);
-            // SPDLOG_INFO("CAM{}: Frame captured successfully at {}", cam_id, timestamp);
-            return true;
+        if (captured_frame.empty()) {
+            SPDLOG_ERROR("Unable to capture frame");
+            throw std::runtime_error("Unable to capture frame");
         }
+        
+        buffer_frame = Frame(cam_id, captured_frame, timestamp);
+        // SPDLOG_INFO("CAM{}: Frame captured successfully at {}", cam_id, timestamp);
+        return true;
 
-  
-
-    } catch (const std::exception& e) {
+    } 
+    catch (const std::exception& e) {
         SPDLOG_ERROR("Exception occurred: ", e.what());
         HandleErrors(CAM_ERROR::CAPTURE_FAILED);
     }
@@ -174,6 +170,11 @@ CAM_STATUS Camera::GetCamStatus() const
 
 void Camera::DisplayLastFrame()
 {
+    if (buffer_frame.GetImg().empty()) 
+    {
+        SPDLOG_WARN("CAM{}: No frame to display", cam_id);
+        return;
+    }
     cv::imshow("Camera " + std::to_string(cam_id), buffer_frame.GetImg());
     cv::waitKey(1);
 }

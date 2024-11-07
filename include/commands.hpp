@@ -39,7 +39,8 @@ namespace CommandID {
         ENABLE_REGION_X = 18,
         DISABLE_REGION_X = 19,
         RUN_OD = 20,
-        DEBUG_DISPLAY_CAMERA = 21
+        DEBUG_DISPLAY_CAMERA = 21,
+        DEBUG_STOP_DISPLAY = 22
     };
 }
 
@@ -67,7 +68,8 @@ constexpr CommandID::Type ALL_COMMAND_IDS[] =
     CommandID::ENABLE_REGION_X,
     CommandID::DISABLE_REGION_X,
     CommandID::RUN_OD,
-    CommandID::DEBUG_DISPLAY_CAMERA
+    CommandID::DEBUG_DISPLAY_CAMERA,
+    CommandID::DEBUG_STOP_DISPLAY
 };
 
 constexpr uint8_t COMMAND_NUMBER = sizeof(ALL_COMMAND_IDS) / sizeof(ALL_COMMAND_IDS[0]);
@@ -95,7 +97,7 @@ void enable_region_x(Payload& payload, std::vector<uint8_t>& data);
 void disable_region_x(Payload& payload, std::vector<uint8_t>& data);
 void run_od(Payload& payload, std::vector<uint8_t>& data);
 void debug_display_camera(Payload& payload, std::vector<uint8_t>& data);
-
+void debug_stop_display(Payload& payload, std::vector<uint8_t>& data);
 
 
 // Array mapping CommandID to corresponding functions

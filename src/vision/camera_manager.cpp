@@ -54,54 +54,102 @@ void CameraManager::RunLoop(Payload* payload)
     loop_flag = true;
     std::vector<int> active_camera_ids; 
 
+    auto current_capture_time = std::chrono::high_resolution_clock::now();
+    auto last_capture_time = std::chrono::high_resolution_clock::now();
+
+    std::vector<bool> captured_flags(NUM_CAMERAS, false);
 
     while (loop_flag) 
     {
-        // TODO: temporary
-        // SetCaptureMode(CAPTURE_MODE::CAPTURE_SINGLE);
+
+        // TODO remove busy waiting
+
+        // reset captured flag to all false
+        std::fill(captured_flags.begin(), captured_flags.end(), false);
+
+        // Capture frames for each turned on camera - TODO thread protection
+        for (std::size_t i = 0; i < NUM_CAMERAS; ++i) 
+        {
+            if (cameras[i].GetCamStatus() == CAM_STATUS::TURNED_ON)
+            {
+                captured_flags[i] = cameras[i].CaptureFrame();
+            }
+        }
+
+
         switch (capture_mode)
         {
+            
             case CAPTURE_MODE::IDLE:
+            {
                 break;
-
+            }
+            
 
             case CAPTURE_MODE::CAPTURE_SINGLE: // Response to a command
-
-                for (auto& camera : cameras) 
+            {
+                
+                SPDLOG_INFO("Single capture request completed");
+                for (std::size_t i = 0; i < NUM_CAMERAS; ++i) 
                 {
-                    bool captured = false;
-                    if (camera.GetCamStatus() == CAM_STATUS::TURNED_ON)
+                    if (captured_flags[i])
                     {
-                        captured = camera.CaptureFrame();
-
-                        // For the debugging - display
-                        if (display_flag && captured)
-                        {
-                            camera.DisplayLastFrame();
-                        }
+                        // TODO Save to disk
                     }
                 }
-
-
+                
                 // TODO should be a way to ACK the command here 
                 SetCaptureMode(CAPTURE_MODE::IDLE);
                 break;
-
+            }
 
             case CAPTURE_MODE::PERIODIC:
+            {
+                current_capture_time = std::chrono::high_resolution_clock::now();
+                auto elapsed_seconds = std::chrono::duration_cast<std::chrono::seconds>(current_capture_time - last_capture_time).count();
+                if (elapsed_seconds >= periodic_capture_rate) 
+                {
+                    for (std::size_t i = 0; i < NUM_CAMERAS; ++i) 
+                    {
+                        if (captured_flags[i])
+                        {
+                            // TODO Save to disk
+                        }
+                    }
+                    last_capture_time = current_capture_time; // Update last capture time
+                }
                 break;
-
+            }
 
             case CAPTURE_MODE::PERIODIC_EARTH:
-                break;
-
+                {
+                    break;
+                }
 
             case CAPTURE_MODE::VIDEO_STREAM:
+                {
+                    break;
+                }
+
+            default:
+                SPDLOG_WARN("Unknown capture mode: {}", capture_mode.load());
                 break;
-
-
         }
 
+
+        // Display
+        if (display_flag)
+        {
+            for (std::size_t i = 0; i < NUM_CAMERAS; ++i) 
+            {
+                if (captured_flags[i])
+                {
+                    cameras[i].DisplayLastFrame();
+                }
+            }
+            
+            
+        }
 
         // Check if the configuration of the cameras has changed
         for (auto& camera : cameras) 
@@ -130,10 +178,7 @@ void CameraManager::RunLoop(Payload* payload)
             config_changed = false;
         }
 
-        if (display_flag)
-        {
-            cv::waitKey(1);
-        }
+
         // SPDLOG_INFO("IDs of active cameras: {}", fmt::format("{}", fmt::join(active_camera_ids, ", ")));
         active_camera_ids.clear();
 
@@ -173,4 +218,10 @@ void CameraManager::SetCaptureMode(CAPTURE_MODE mode)
 void CameraManager::SendCaptureRequest()
 {
     SetCaptureMode(CAPTURE_MODE::CAPTURE_SINGLE);
+}
+
+void CameraManager::SetPeriodicCaptureRate(int period)
+{
+    periodic_capture_rate = period;
+    SPDLOG_INFO("Periodic capture rate set to: {} seconds", period);
 }

@@ -153,7 +153,6 @@ int main(int argc, char** argv)
         while (std::getline(pipe, command) && payload.IsRunning()) 
         {
             ParseCommand(payload, command);
-            SPDLOG_INFO("IS RUNNING: {}", payload.IsRunning());
         }
     }
     SPDLOG_INFO("Exited pipe loop");
@@ -161,7 +160,6 @@ int main(int argc, char** argv)
     if (payload.IsRunning()) 
     {
         SPDLOG_INFO("Sending shutdown command since payload still running...");
-        // Send shutdown command
         std::vector<uint8_t> no_data = {};
         // Send shutdown command
         payload.AddCommand(CommandID::SHUTDOWN, no_data);

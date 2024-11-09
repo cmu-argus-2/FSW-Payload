@@ -6,7 +6,7 @@ resolution_height = 480
 resolution_width = 640
 
 [camera-device.cam2]
-enable = false
+enable = true
 id = 2
 path = '/dev/video2'
 resolution_height = 480
@@ -26,42 +26,56 @@ path = '/dev/video4'
 resolution_height = 480
 resolution_width = 640
 
-[region-classifier]
-resolution=224
-model_path='models/rc/rc_net_script.pt'
-num_classes=16
-region_ids = ['10S', '10T', '11R', '12R', '16T', '17R', '17T', '18S', '32S', '32T', '33S', '33T', '53S', '52S', '54S', '54T']
-
-
 [ld_net.10S]
 enable = true
+
 [ld_net.10T]
 enable = true
+
 [ld_net.11R]
 enable = true
+
 [ld_net.12R]
 enable = true
+
 [ld_net.16T]
 enable = true
+
 [ld_net.17R]
 enable = true
+
 [ld_net.17T]
 enable = true
+
 [ld_net.18S]
 enable = true
+
 [ld_net.32S]
 enable = true
+
 [ld_net.32T]
 enable = true
+
 [ld_net.33S]
 enable = true
+
 [ld_net.33T]
 enable = true
-[ld_net.53S]
-enable = true
+
 [ld_net.52S]
 enable = true
+
+[ld_net.53S]
+enable = true
+
 [ld_net.54S]
 enable = true
+
 [ld_net.54T]
 enable = true
+
+[region-classifier]
+model_path = 'models/rc/rc_net_script.pt'
+num_classes = 16
+region_ids = [ '10S', '10T', '11R', '12R', '16T', '17R', '17T', '18S', '32S', '32T', '33S', '33T', '53S', '52S', '54S', '54T' ]
+resolution = 224

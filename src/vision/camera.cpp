@@ -88,29 +88,22 @@ void Camera::TurnOff()
 bool Camera::CaptureFrame()
 {
     // Single responsibility principle. Status must be checked externally
-    try 
-    {
-        cv::Mat captured_frame;
-        std::int64_t timestamp = std::chrono::duration_cast<std::chrono::milliseconds>(std::chrono::system_clock::now().time_since_epoch()).count();
 
-        cap >> captured_frame;
+    cv::Mat captured_frame;
+    std::int64_t timestamp = std::chrono::duration_cast<std::chrono::milliseconds>(
+        std::chrono::system_clock::now().time_since_epoch()).count();
 
-        if (captured_frame.empty()) {
-            SPDLOG_ERROR("Unable to capture frame");
-            throw std::runtime_error("Unable to capture frame");
-        }
-        
-        buffer_frame = Frame(cam_id, captured_frame, timestamp);
-        // SPDLOG_INFO("CAM{}: Frame captured successfully at {}", cam_id, timestamp);
-        return true;
+    cap >> captured_frame;
 
-    } 
-    catch (const std::exception& e) {
-        SPDLOG_ERROR("Exception occurred: ", e.what());
+    if (captured_frame.empty()) {
+        SPDLOG_ERROR("Unable to capture frame");
         HandleErrors(CAM_ERROR::CAPTURE_FAILED);
+        return false;
     }
-
-    return false;    
+    
+    buffer_frame = Frame(cam_id, captured_frame, timestamp);
+    // SPDLOG_INFO("CAM{}: Frame captured successfully at {}", cam_id, timestamp);
+    return true;
 }
 
 

@@ -28,7 +28,8 @@ std::array<CommandFunction, COMMAND_NUMBER> COMMAND_FUNCTIONS =
     enable_region_x,
     disable_region_x,
     run_od,
-    debug_display_camera
+    debug_display_camera,
+    debug_stop_display
 };
 
 // Define the array of strings mapping CommandID to command names
@@ -54,7 +55,8 @@ std::array<std::string_view, COMMAND_NUMBER> COMMAND_NAMES = {
     "ENABLE_REGION_X",
     "DISABLE_REGION_X",
     "RUN_OD",
-    "DEBUG_DISPLAY_CAMERA"
+    "DEBUG_DISPLAY_CAMERA",
+    "DEBUG_STOP_DISPLAY"
 };
 
 void neutral_ack(Payload& payload, std::vector<uint8_t>& data)

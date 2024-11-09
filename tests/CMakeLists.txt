@@ -2,6 +2,7 @@
 add_executable(PAYLOAD_TESTS main.cpp
     test_thread_pool.cpp
     vision/test_region_classifier.cpp
+    navigation/test_quaternion.cpp
     )
 
 # Link the test executable with Google Test and the PAYLOAD library

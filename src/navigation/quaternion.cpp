@@ -29,28 +29,40 @@ Matrix4x4 R(const Quaternion& q) {
     return R;
 }
 
-// Returns the conjugate of a quaternion.
+// Returns the conjugate of a quaternion. Does not normalize.
 Quaternion Conj(const Quaternion& q) {
     return Quaternion(q[0], -q[1], -q[2], -q[3]);
 }
 
 // Converts quaternion to MRP vector.
 Vector MRPFromQuat(const Quaternion& q) {
+    // Ensure the quaternion is not zero to prevent division by zero
+    assert(q.norm() > 1e-8 && "Input quaternion has zero norm.");
+
     Quaternion q_normalized = q / q.norm();
-    Vector mrp = q_normalized.segment(1, 3) / (1 + q_normalized[0]);
+
+    // Prevent division by zero when q_normalized[0] is -1
+    double denominator = 1 + q_normalized[0];
+    assert(std::abs(denominator) > 1e-8 && "Denominator is zero in MRP computation.");
+    Vector mrp = q_normalized.segment(1, 3) / denominator;
 
     // Check if MRP norm exceeds unit; if so, adjust.
+    // Shadow set switching 
+    // Karlgaard, C. D., & Schaub, H. (2009). 
+    // Nonsingular attitude filtering using modified Rodrigues parameters. 
     double mrp_norm = mrp.norm();
-    if (mrp_norm >= 1) {
-        mrp /= -(mrp_norm * mrp_norm);
+    if (mrp_norm >= 1.0) {
+        mrp = -mrp / (mrp_norm * mrp_norm);
     }
     return mrp;
 }
+
 
 // Quaternion product using left-multiplication matrix.
 Quaternion QuatProduct(const Quaternion& q1, const Quaternion& q2) {
     return L(q1) * q2;
 }
+
 
 // Spherical Linear Interpolation (SLERP) between two quaternions.
 Quaternion Slerp(const Quaternion& q1, const Quaternion& q2, double t) {

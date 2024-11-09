@@ -1,7 +1,7 @@
 
 
 add_subdirectory(core)
-add_subdirectory(gnc)
+add_subdirectory(navigation)
 add_subdirectory(vision)
 
 add_library(PAYLOAD_LIB SHARED
@@ -14,5 +14,5 @@ add_library(PAYLOAD_LIB SHARED
 
 # Link libraries to PAYLOAD_LIB
 target_link_libraries(PAYLOAD_LIB
-    PUBLIC core gnc vision
+    PUBLIC core navigation vision
 )

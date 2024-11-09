@@ -176,6 +176,12 @@ void start_capture_images_every_x_seconds(Payload& payload, std::vector<uint8_t>
     if (!data.empty()) {
         int period = data[0]; // Period in seconds - positive integer
         payload.GetCameraManager().SetPeriodicCaptureRate(period);
+
+        // if data[1] exists
+        if (data.size() > 1) {
+            int frames = data[1]; // Number of frames to capture - positive integer
+            payload.GetCameraManager().SetPeriodicFramesToCapture(frames);
+        }
     }
 
     payload.GetCameraManager().SetCaptureMode(CAPTURE_MODE::PERIODIC);

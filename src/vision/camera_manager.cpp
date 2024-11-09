@@ -114,6 +114,17 @@ void CameraManager::RunLoop(Payload* payload)
                         if (captured_flags[i])
                         {
                             // TODO Save to disk
+                            periodic_frames_captured++; // for each camera
+                            SPDLOG_INFO("Periodic capture request: {}/{} frames captured", periodic_frames_captured, periodic_frames_to_capture);
+
+                            if (periodic_frames_captured >= periodic_frames_to_capture)
+                            {
+                                SPDLOG_INFO("Periodic capture request completed");
+                                SetCaptureMode(CAPTURE_MODE::IDLE);
+                                periodic_frames_captured = 0;
+                                periodic_frames_to_capture = DEFAULT_PERIODIC_FRAMES_TO_CAPTURE; // Reset to default
+                                break;
+                            }
                         }
                     }
                     last_capture_time = current_capture_time; // Update last capture time
@@ -122,14 +133,14 @@ void CameraManager::RunLoop(Payload* payload)
             }
 
             case CAPTURE_MODE::PERIODIC_EARTH:
-                {
-                    break;
-                }
+            {
+                break;
+            }
 
             case CAPTURE_MODE::VIDEO_STREAM:
-                {
-                    break;
-                }
+            {
+                break;
+            }
 
             default:
                 SPDLOG_WARN("Unknown capture mode: {}", capture_mode.load());
@@ -224,4 +235,10 @@ void CameraManager::SetPeriodicCaptureRate(int period)
 {
     periodic_capture_rate = period;
     SPDLOG_INFO("Periodic capture rate set to: {} seconds", period);
+}
+
+void CameraManager::SetPeriodicFramesToCapture(int frames)
+{
+    periodic_frames_to_capture = frames;
+    SPDLOG_INFO("Periodic frames to capture set to: {}", frames);
 }

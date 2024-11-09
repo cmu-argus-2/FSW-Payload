@@ -7,6 +7,8 @@
 #include "configuration.hpp"
 
 #define NUM_CAMERAS 4
+#define MAX_PERIODIC_FRAMES_TO_CAPTURE 400
+#define DEFAULT_PERIODIC_FRAMES_TO_CAPTURE 100
 
 // Forward declaration of Payload class
 class Payload;
@@ -47,6 +49,8 @@ public:
     void SendCaptureRequest();
     // Set the rate at which the camera system captures frames in PERIODIC mode
     void SetPeriodicCaptureRate(int rate);
+    // Set the number of frames to capture in PERIODIC mode
+    void SetPeriodicFramesToCapture(int frames);
 
 
     void GetStatus();
@@ -65,6 +69,9 @@ private:
     std::atomic<bool> loop_flag = false;
     
     std::atomic<int> periodic_capture_rate = 5; // Default rate of 5 seconds
+    std::atomic<int> periodic_frames_to_capture = DEFAULT_PERIODIC_FRAMES_TO_CAPTURE; // After the request is serviced, it gets back to the default value
+    std::atomic<int> periodic_frames_captured = 0;
+
 
 
     std::array<CAM_STATUS, NUM_CAMERAS> cam_status;

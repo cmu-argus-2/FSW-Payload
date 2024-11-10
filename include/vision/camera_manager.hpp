@@ -2,12 +2,14 @@
 #define CAMERA_MANAGER_HPP
 
 #include <array>
+#include <atomic>
+#include <condition_variable>
 #include "spdlog/spdlog.h"
 #include "camera.hpp"
 #include "configuration.hpp"
 
 #define NUM_CAMERAS 4
-#define MAX_PERIODIC_FRAMES_TO_CAPTURE 400
+#define MAX_PERIODIC_FRAMES_TO_CAPTURE 255
 #define DEFAULT_PERIODIC_FRAMES_TO_CAPTURE 100
 
 // Forward declaration of Payload class
@@ -36,11 +38,18 @@ public:
     void TurnOff();
 
     void RunLoop(Payload* payload);
-    void StopLoop();
-    void DisplayLoop(bool display_flag);
+    void StopLoops();
+    void SetDisplayFlag(bool display_flag);
+    bool GetDisplayFlag() const;
+    void RunDisplayLoop(); // This will block the calling thread until the display flag is set to false or all cameras are turned off
 
     CameraConfig* GetCameraConfig(int cam_id);
 
+    void CaptureFrames(std::vector<bool>& captured_flags);
+    void CaptureFrames();
+
+    uint8_t SaveLatestFrames(std::vector<bool>& captured_flags);
+    uint8_t SaveLatestFrames();
 
 
     // Set the capture mode of the camera system
@@ -48,13 +57,13 @@ public:
     // Send a capture request to the cameras. Wrapper around SetCaptureMode for CAPTURE_SINGLE 
     void SendCaptureRequest();
     // Set the rate at which the camera system captures frames in PERIODIC mode
-    void SetPeriodicCaptureRate(int rate);
+    void SetPeriodicCaptureRate(uint8_t rate);
     // Set the number of frames to capture in PERIODIC mode
-    void SetPeriodicFramesToCapture(int frames);
+    void SetPeriodicFramesToCapture(uint8_t frames);
 
 
-    void GetStatus();
-
+    bool EnableCamera(int cam_id);
+    bool DisableCamera(int cam_id);
 
 private:
         
@@ -68,14 +77,20 @@ private:
     std::atomic<bool> display_flag = false;
     std::atomic<bool> loop_flag = false;
     
-    std::atomic<int> periodic_capture_rate = 5; // Default rate of 5 seconds
-    std::atomic<int> periodic_frames_to_capture = DEFAULT_PERIODIC_FRAMES_TO_CAPTURE; // After the request is serviced, it gets back to the default value
-    std::atomic<int> periodic_frames_captured = 0;
-
+    std::atomic<uint8_t> periodic_capture_rate = 5; // Default rate of 5 seconds
+    std::atomic<uint8_t> periodic_frames_to_capture = DEFAULT_PERIODIC_FRAMES_TO_CAPTURE; // After the request is serviced, it gets back to the default value
+    std::atomic<uint8_t> periodic_frames_captured = 0;
 
 
     std::array<CAM_STATUS, NUM_CAMERAS> cam_status;
-    void UpdateCamStatus();
+
+    void _UpdateCamStatus();
+
+    // returns True if the camera configurations have been updated, False otherwise
+    bool _UpdateCameraConfigs(Payload* payload);
+
+
+
 
 };
 

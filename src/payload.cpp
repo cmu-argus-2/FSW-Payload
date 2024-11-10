@@ -184,12 +184,11 @@ void Payload::Stop()
     // Stop execution loop
     _running_instance = false;
 
+    // Stop camera system
+    StopCameraThread();
 
     // Stop thread pool
     StopThreadPool();
-    
-    // Stop camera system
-    StopCameraThread();
 
     // Stop communication system
     // TODO
@@ -243,7 +242,7 @@ void Payload::StartCameraThread()
 
 void Payload::StopCameraThread()
 {
-    camera_manager.StopLoop();
+    camera_manager.StopLoops();
     camera_thread.join();
 }
 

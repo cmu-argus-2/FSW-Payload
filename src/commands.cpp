@@ -143,16 +143,36 @@ void turn_off_cameras(Payload& payload, std::vector<uint8_t>& data)
 
 void enable_camera_x(Payload& payload, std::vector<uint8_t>& data)
 {
-    SPDLOG_INFO("Enabling camera X..");
-    (void)payload;
+    
+    if (!data.empty()) {
+        uint8_t cam_id = data[0];
+        SPDLOG_INFO("Enabling camera {}..", cam_id);
+        payload.GetCameraManager().EnableCamera(cam_id);
+    }
+    else {
+        SPDLOG_ERROR("No camera ID provided");
+        // TODO
+        return;
+    }
+    
     (void)data;
     // TODO
 }
 
 void disable_camera_x(Payload& payload, std::vector<uint8_t>& data)
 {
-    SPDLOG_INFO("Disabling camera X..");
-    (void)payload;
+    SPDLOG_INFO("Disabling camera {}..");
+
+    if (!data.empty()) {
+        uint8_t cam_id = data[0];
+        SPDLOG_INFO("Disabling camera {}..", cam_id);
+        payload.GetCameraManager().DisableCamera(cam_id);
+    }
+    else {
+        SPDLOG_ERROR("No camera ID provided");
+        // TODO
+        return;
+    }
     (void)data;
     // TODO
 }
@@ -174,18 +194,18 @@ void start_capture_images_every_x_seconds(Payload& payload, std::vector<uint8_t>
     SPDLOG_INFO("Starting capture images every X seconds..");
 
     if (!data.empty()) {
-        int period = data[0]; // Period in seconds - positive integer
+        uint8_t period = data[0]; // Period in seconds
         payload.GetCameraManager().SetPeriodicCaptureRate(period);
 
-        // if data[1] exists
         if (data.size() > 1) {
-            int frames = data[1]; // Number of frames to capture - positive integer
+            uint8_t frames = data[1]; // Number of frames to capture
             payload.GetCameraManager().SetPeriodicFramesToCapture(frames);
         }
     }
 
     payload.GetCameraManager().SetCaptureMode(CAPTURE_MODE::PERIODIC);
-    // TODO return true or false based on the success of the operations
+
+    // TODO: Implement a return type to indicate success or failure, if needed.
 }
 
 void stop_capture_images(Payload& payload, std::vector<uint8_t>& data)
@@ -197,6 +217,9 @@ void stop_capture_images(Payload& payload, std::vector<uint8_t>& data)
     payload.GetCameraManager().SetCaptureMode(CAPTURE_MODE::IDLE);
     // TODO return true or false based on the success of the operations
 }
+
+
+
 void stored_images(Payload& payload, std::vector<uint8_t>& data)
 {
     SPDLOG_INFO("Getting stored images..");
@@ -257,13 +280,26 @@ void run_od(Payload& payload, std::vector<uint8_t>& data)
 void debug_display_camera(Payload& payload, std::vector<uint8_t>& data)
 {
     SPDLOG_INFO("Activating the display of the camera");
-    payload.GetCameraManager().DisplayLoop(true);
+
+    if (payload.GetCameraManager().GetDisplayFlag() == true) 
+    {
+        SPDLOG_WARN("Display already active");
+        // TODO: return success
+        return;
+    }
+
+    payload.GetCameraManager().SetDisplayFlag(true);
+    // the command is already by a thread of the ThreadPool so no need to spawn a new thread here
+    // This will block the thread until the display flag is set to false or all cameras are turned off
+    payload.GetCameraManager().RunDisplayLoop(); 
+
     (void)data; // TODO
 }
 
 void debug_stop_display(Payload& payload, std::vector<uint8_t>& data)
 {
     SPDLOG_INFO("Stopping the display of the camera");
-    payload.GetCameraManager().DisplayLoop(false);
+    payload.GetCameraManager().SetDisplayFlag(false);
     (void)data; // TODO
+    // return ACK
 }

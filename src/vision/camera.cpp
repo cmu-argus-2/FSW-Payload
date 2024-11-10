@@ -24,6 +24,77 @@ buffer_frame(cam_id, cv::Mat(), 0)
 {
 }
 
+bool Camera::Enable()
+{
+
+    if (cam_status == CAM_STATUS::TURNED_ON) 
+    {
+        SPDLOG_WARN("CAM{}: Camera is already enabled", cam_id);
+        return true;
+    } 
+    else if (cam_status == CAM_STATUS::DISABLED) 
+    {
+        cam_status = CAM_STATUS::TURNED_OFF;
+       
+    }
+
+    // attempt to turn on the camera
+    TurnOn();
+
+    if (cam_status == CAM_STATUS::TURNED_ON) 
+    {
+        SPDLOG_INFO("CAM{}: Camera enabled", cam_id);
+        return true;
+    } 
+    else 
+    {
+        SPDLOG_ERROR("CAM{}: Camera failed to enable", cam_id);
+        return false;
+    }
+}
+
+bool Camera::Disable()
+{
+    if (cam_status == CAM_STATUS::DISABLED) 
+    {
+        SPDLOG_WARN("CAM{}: Camera is already disabled", cam_id);
+        return true;
+    } 
+    else if (cam_status == CAM_STATUS::TURNED_OFF) 
+    {
+        cam_status = CAM_STATUS::DISABLED;
+        SPDLOG_INFO("CAM{}: Camera disabled", cam_id);
+        return true;
+    }
+
+    // attempt to turn off the camera
+    TurnOff();
+
+    if (cam_status == CAM_STATUS::DISABLED) 
+    {
+        SPDLOG_INFO("CAM{}: Camera disabled", cam_id);
+        return true;
+    } 
+    else 
+    {
+        SPDLOG_ERROR("CAM{}: Camera failed to disable", cam_id);
+        return false;
+    }
+}
+
+
+
+
+
+
+
+
+
+
+
+
+
+
 void Camera::TurnOn()
 {
     try {
@@ -121,7 +192,8 @@ void Camera::HandleErrors(CAM_ERROR error)
 
     if (consecutive_error_count >= MAX_CONSECUTIVE_ERROR_COUNT) {
         cam_status = CAM_STATUS::DISABLED;
-        SPDLOG_ERROR("CAM{}: Camera disabled", cam_id);
+        SPDLOG_ERROR("CAM{}: Camera disabled after {} errors", cam_id, consecutive_error_count);
+        // consecutive_error_count = 0; // Reset the count for next retry? // Could be stuck in a loop
         return;
     }
 

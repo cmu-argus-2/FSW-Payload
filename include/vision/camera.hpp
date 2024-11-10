@@ -33,6 +33,11 @@ public:
     Camera(int id, std::string path, bool enabled = false);
     Camera(const CameraConfig& config);
 
+    // Attempt to enable the camera. Returns true if successful
+    bool Enable();
+    // Disable the camera. Returns true if successful
+    bool Disable();
+    bool IsEnabled() const;
 
     void TurnOn();
     void TurnOff();
@@ -41,7 +46,7 @@ public:
     bool CaptureFrame();
     const Frame& GetBufferFrame() const;
 
-    bool IsEnabled() const;
+
     int GetCamId() const;
     CAM_STATUS GetCamStatus() const;
 

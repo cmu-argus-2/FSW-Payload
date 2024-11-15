@@ -12,6 +12,8 @@ else()
     set(CMAKE_PREFIX_PATH $ENV{LIBTORCH_PATH})
 endif()
 
+# Set up a preprocessor definition for the path of the inter-process fifo for the command-line interface
+add_compile_definitions(IPC_FIFO="/tmp/payload_ipc_fifo")
 
 # Find the required packages
 set(SPDLOG_FMT_EXTERNAL OFF)

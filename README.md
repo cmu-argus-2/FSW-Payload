@@ -45,12 +45,11 @@ cmake .. && make
 
 ## Local interaction with the FSW
 
-As a functional debugging tool, the Payload can be run and controlled locally through a named pipe (FIFO) given to the Payload and the command line interface.
+As a functional debugging tool, the Payload can be run and controlled locally through a named pipe (FIFO) given to the Payload and the command line interface. For this control mode, the command line interface must be run first:
 
 ```bash
-mkfifo <pipe name>
-./PAYLOAD <config path> <pipe name>
-./CLI_CMD <pipe name>
+./CLI_CMD
+./PAYLOAD <config path> 
 ```
 
 ## Command-based paradigm 

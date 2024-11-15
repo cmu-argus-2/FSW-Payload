@@ -101,7 +101,7 @@ void ParseCommand(Payload& payload, const std::string& command)
 
 int main(int argc, char** argv)
 {
-    
+
     SetupLogger();
     // spdlog::set_level(spdlog::level::warn);
 
@@ -124,24 +124,24 @@ int main(int argc, char** argv)
     bool read_from_pipe = false;
     std::ifstream pipe;
 
-    if (argc > 2) {
-        
-        if (!is_fifo(argv[2]))
+    const char* fifo_path = IPC_FIFO; // Use predefined FIFO path
+    // Check if IPC_FIFO is a FIFO and open it directly
+    if (is_fifo(fifo_path)) 
+    {
+        pipe.open(fifo_path);
+        if (pipe.is_open()) 
         {
-            SPDLOG_WARN("Error: {} is not a FIFO / named pipe. Disabling pipe reading.", argv[2]);
-        }
-
-        pipe.open(argv[2]);
-        if (!pipe.is_open())
-        {
-            SPDLOG_WARN("Error: Could not open FIFO {}. Disabling pipe reading.", argv[2]);
+            read_from_pipe = true;
         } 
         else 
         {
-            read_from_pipe = true;
+            SPDLOG_WARN("Error: Could not open FIFO {}. Disabling pipe reading.", fifo_path);
         }
+    } 
+    else 
+    {
+        SPDLOG_WARN("Error: {} is not a FIFO / named pipe. Disabling pipe reading.", fifo_path);
     }
-
 
 
 

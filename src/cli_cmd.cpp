@@ -4,6 +4,10 @@
 #include <filesystem>
 #include <readline/readline.h>
 #include <readline/history.h>
+#include <sys/types.h>
+#include <sys/stat.h>
+#include <fcntl.h>
+
 
 
 bool is_fifo(const char *path)
@@ -19,26 +23,37 @@ bool is_fifo(const char *path)
 
 int main(int argc, char* argv[])
 {
+    (void)argc;
+    (void)argv;
+
+    const char* fifo_path = IPC_FIFO; // Use predefined FIFO path
+
+
+    // Create the FIFO if it doesn't exist
+    if (mkfifo(fifo_path, 0666) == -1) {
+        if (errno != EEXIST) 
+        { // Ignore error if FIFO already exists
+            std::cerr << "Error creating FIFO: " << strerror(errno) << std::endl;
+            return 1;
+        }
+    }
+
+
+
+    // Check if IPC_FIFO is a FIFO
+    if (!is_fifo(fifo_path)) {
+        std::cerr << "Error: " << fifo_path << " is not a FIFO / named pipe." << std::endl;
+        return 1;
+    }
+
+    std::ofstream pipe(fifo_path);
+    if (!pipe.is_open()) 
+    {
+        std::cerr << "Error: Could not open FIFO " << fifo_path << std::endl;
+        return 1;
+    }
+
     char* input;
-
-    if (argc < 2)
-    {
-        std::cerr << "Usage: " << argv[0] << " <pipe_name>" << std::endl;
-        return 1;
-    }
-
-    if (!is_fifo(argv[1]))
-    {
-        std::cerr << "Error: " << argv[1] << " is not a FIFO / named pipe." << std::endl;
-        return 1;
-    }
-
-    std::ofstream pipe(argv[1]);
-    if (!pipe.is_open())
-    {
-        std::cerr << "Error: Could not open FIFO " << argv[1] << std::endl;
-        return 1;
-    }
 
     while ((input = readline("PAYLOAD> ")) != nullptr) 
     {

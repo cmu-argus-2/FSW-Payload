@@ -12,27 +12,15 @@ This file contains classes and functions providing file services and data handli
 #include "spdlog/spdlog.h"
 
 
-bool make_directory(std::string_view directory_path);
-long GetFileSize(std::string_view file_path);
-long GetDirectorySize(std::string_view directory_path);
+#define ROOT_DATA_FOLDER "data/"
+#define IMAGES_FOLDER "data/images/"
+#define TELEMETRY_FOLDER "data/telemetry/"
+#define EXPERIMENTS_FOLDER "data/experiments/"
+#define LOGGING_FOLDER "data/logging/"
 
 
-class DataHandler
+namespace DH // Data Handling
 {
-
-private:
-    bool init_data_folder_tree = false;
-    const std::string f_root = "data/";
-    const std::string f_images = f_root + "images/";
-    const std::string f_telemetry = f_root + "telemetry/";
-    const std::string f_experiments = f_root + "experiments/";
-    const std::string f_logging = f_root + "logging/";
-
-
-public:
-
-    DataHandler();
-    // ~DataHandler() = default;
 
     /*
         Initialize the folder structure for all data storage activities.
@@ -47,7 +35,16 @@ public:
     */
     bool InitializeDataStorage();
 
-};
+
+
+    bool make_directory(std::string_view directory_path);
+    long GetFileSize(std::string_view file_path);
+    long GetDirectorySize(std::string_view directory_path);
+
+
+}
+
+
 
 
 

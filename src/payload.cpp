@@ -63,7 +63,7 @@ void Payload::Initialize()
 
 
     // Initialize data storage
-    data_handler.InitializeDataStorage();
+    DH::InitializeDataStorage();
 
 
     // Retrieve internal states

@@ -1,7 +1,12 @@
 #include "core/data_handling.hpp"
 
 
-bool make_directory(std::string_view directory_path)
+namespace DH // Data Handling
+{
+
+bool INIT_DATA_FOLDER_TREE = false;
+
+bool make_new_directory(std::string_view directory_path)
 {
     bool success = false;
     if (std::filesystem::exists(directory_path)) {
@@ -42,41 +47,38 @@ long GetDirectorySize(std::string_view directory_path)
 }
 
 
-DataHandler::DataHandler()
-: init_data_folder_tree(false)
-{
-}
 
-
-bool DataHandler::InitializeDataStorage()
+bool InitializeDataStorage()
 {
-    if (init_data_folder_tree) {
+    if (INIT_DATA_FOLDER_TREE) {
         SPDLOG_INFO("Data folder tree already initialized.");
         return true;
     }
 
     // Construct the full paths using the root and subdirectory names
     std::vector<std::string> directories = {
-        f_root,
-        f_images,
-        f_telemetry,
-        f_experiments,
-        f_logging
+        ROOT_DATA_FOLDER,
+        IMAGES_FOLDER,
+        TELEMETRY_FOLDER,
+        EXPERIMENTS_FOLDER,
+        LOGGING_FOLDER
     };
 
     bool success = true;
     for (const auto& dir : directories) {
-        if (!make_directory(dir)) {
+        if (!make_new_directory(dir)) {
             SPDLOG_CRITICAL("Failed to create directory: {}", dir);
             success = false;
         }
     }
 
-    init_data_folder_tree = success;
+    INIT_DATA_FOLDER_TREE = success;
 
     if (success) {
         SPDLOG_INFO("Data folder tree initialized successfully.");
     }
 
     return success;
+}
+
 }

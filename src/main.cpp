@@ -9,6 +9,7 @@ Author: Ibrahima Sory Sow
 #include <vector>
 #include <sstream>
 #include <iostream>
+#include <filesystem>
 #include <string>
 #include <unistd.h>
 #include "spdlog/spdlog.h"

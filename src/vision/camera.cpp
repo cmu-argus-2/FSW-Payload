@@ -95,8 +95,6 @@ void Camera::TurnOn()
         }
 
         cap.open(cam_path, cv::CAP_V4L2);
-        cap.set(cv::CAP_PROP_FPS, DEFAULT_CAMERA_FPS);
-        cap.set(cv::CAP_PROP_BUFFERSIZE, 4);
 
         // Check if the camera is opened successfully
         if (!cap.isOpened()) {
@@ -107,6 +105,10 @@ void Camera::TurnOn()
         // Set the camera resolution - remove by reading confif file
         cap.set(cv::CAP_PROP_FRAME_WIDTH, width);
         cap.set(cv::CAP_PROP_FRAME_HEIGHT, height);
+        cap.set(cv::CAP_PROP_FPS, DEFAULT_CAMERA_FPS);
+        cap.set(cv::CAP_PROP_BUFFERSIZE, 3);
+        cap.set(cv::CAP_PROP_GAIN, 10000); // Set gain to maximum - OpenCV will clamp it to the maximum value
+        SPDLOG_INFO("CAM{}: Camera gain set to {}", cam_id, cap.get(cv::CAP_PROP_GAIN));
 
         cam_status = CAM_STATUS::TURNED_ON;
         SPDLOG_INFO("CAM{}: Camera successfully turned on", cam_id);

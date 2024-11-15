@@ -8,8 +8,8 @@
 #include "configuration.hpp"
 
 // 4608×2592
-#define DEFAULT_CAMERA_WIDTH 640 // 4608
-#define DEFAULT_CAMERA_HEIGHT 480 // 2592
+#define DEFAULT_CAMERA_WIDTH 1280 // 4608
+#define DEFAULT_CAMERA_HEIGHT 720 // 2592
 #define DEFAULT_CAMERA_FPS 30 // 10
 
 #define MAX_CONSECUTIVE_ERROR_COUNT 3 // before disabling 

@@ -20,7 +20,7 @@ cam_status((config.enable == false) ? CAM_STATUS::DISABLED : CAM_STATUS::TURNED_
 last_error(CAM_ERROR::NO_ERROR),
 cam_id(static_cast<int>(config.id)),
 cam_path(config.path),
-buffer_frame(cam_id, cv::Mat(), 0)
+buffer_frame(cam_id, cv::Mat(height, width, CV_8UC3), 0)
 {
 }
 
@@ -85,16 +85,6 @@ bool Camera::Disable()
 
 
 
-
-
-
-
-
-
-
-
-
-
 void Camera::TurnOn()
 {
     try {
@@ -105,6 +95,8 @@ void Camera::TurnOn()
         }
 
         cap.open(cam_path, cv::CAP_V4L2);
+        cap.set(cv::CAP_PROP_FPS, DEFAULT_CAMERA_FPS);
+        cap.set(cv::CAP_PROP_BUFFERSIZE, 4);
 
         // Check if the camera is opened successfully
         if (!cap.isOpened()) {
@@ -112,9 +104,9 @@ void Camera::TurnOn()
             throw std::runtime_error("Unable to open the camera");
         }
 
-        // Set the camera resolution
-        cap.set(cv::CAP_PROP_FRAME_WIDTH, DEFAULT_CAMERA_WIDTH);
-        cap.set(cv::CAP_PROP_FRAME_HEIGHT, DEFAULT_CAMERA_HEIGHT);
+        // Set the camera resolution - remove by reading confif file
+        cap.set(cv::CAP_PROP_FRAME_WIDTH, width);
+        cap.set(cv::CAP_PROP_FRAME_HEIGHT, height);
 
         cam_status = CAM_STATUS::TURNED_ON;
         SPDLOG_INFO("CAM{}: Camera successfully turned on", cam_id);
@@ -160,9 +152,7 @@ bool Camera::CaptureFrame()
 {
     // Single responsibility principle. Status must be checked externally
 
-    cv::Mat captured_frame;
-    std::int64_t timestamp = std::chrono::duration_cast<std::chrono::milliseconds>(
-        std::chrono::system_clock::now().time_since_epoch()).count();
+    static cv::Mat captured_frame(height, width, CV_8UC3); // Preallocated buffer
 
     cap >> captured_frame;
 
@@ -172,8 +162,15 @@ bool Camera::CaptureFrame()
         return false;
     }
     
-    buffer_frame = Frame(cam_id, captured_frame, timestamp);
-    // SPDLOG_INFO("CAM{}: Frame captured successfully at {}", cam_id, timestamp);
+    // Capture current timestamp - TODO access the reference from the hardware API
+    buffer_frame._timestamp = std::chrono::duration_cast<std::chrono::milliseconds>(
+        std::chrono::system_clock::now().time_since_epoch()).count();
+
+
+   // Update buffer_frame attributes in place
+    buffer_frame._img = captured_frame.clone(); // Deep copy, but pretty bad in terms of memory usage given our resolutions.. TODO: Optimize
+    buffer_frame._cam_id = cam_id;
+
     return true;
 }
 

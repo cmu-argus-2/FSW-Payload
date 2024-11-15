@@ -77,15 +77,13 @@ void CameraManager::TurnOff()
 
 void CameraManager::CaptureFrames(std::vector<bool>& captured_flags)
 {
-
     for (std::size_t i = 0; i < NUM_CAMERAS; ++i) 
     {
         if (cameras[i].GetCamStatus() == CAM_STATUS::TURNED_ON)
-        {
+        {   
             captured_flags[i] = cameras[i].CaptureFrame();
         }
     }
-
 }
 
 void CameraManager::CaptureFrames()

@@ -7,9 +7,7 @@
 #include <opencv2/opencv.hpp>
 #include "configuration.hpp"
 
-// 4608×2592
-#define DEFAULT_CAMERA_WIDTH 1280 // 4608
-#define DEFAULT_CAMERA_HEIGHT 720 // 2592
+
 #define DEFAULT_CAMERA_FPS 30 // 10
 
 #define MAX_CONSECUTIVE_ERROR_COUNT 3 // before disabling 
@@ -71,8 +69,8 @@ private:
 
     Frame buffer_frame;
 
-    int width = DEFAULT_CAMERA_WIDTH;
-    int height = DEFAULT_CAMERA_HEIGHT;
+    int width = DEFAULT_FRAME_WIDTH;
+    int height = DEFAULT_FRAME_HEIGHT;
 
     cv::Mat intrinsics;
     cv::Mat distortion_parameters; 

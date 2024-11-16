@@ -1,4 +1,5 @@
 #include "vision/camera_manager.hpp"
+#include "core/data_handling.hpp"
 #include "payload.hpp"
 
 CameraManager::CameraManager(const std::array<CameraConfig, NUM_CAMERAS>& camera_configs) 
@@ -100,7 +101,11 @@ uint8_t CameraManager::SaveLatestFrames(std::vector<bool>& captured_flags)
     {
         if (captured_flags[i])
         {
-            // TODO Save to disk
+            DH::StoreRawImgToDisk(
+                cameras[i].GetBufferFrame()._timestamp,
+                cameras[i].GetBufferFrame()._cam_id,
+                cameras[i].GetBufferFrame()._img
+            );
             save_count++;
         }
     }

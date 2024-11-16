@@ -46,6 +46,16 @@ long GetDirectorySize(std::string_view directory_path)
     return total_size;
 }
 
+int CountFilesInDirectory(std::string_view directory_path) 
+{
+    int file_count = 0;
+    for (const auto& entry : std::filesystem::directory_iterator(directory_path)) {
+        if (entry.is_regular_file()) {
+            ++file_count;
+        }
+    }
+    return file_count;
+}
 
 
 bool InitializeDataStorage()
@@ -81,4 +91,38 @@ bool InitializeDataStorage()
     return success;
 }
 
+
+
+void StoreRawImgToDisk(std::int64_t timestamp, int cam_id, const cv::Mat& img)
+{
+    std::ostringstream oss;
+    oss << IMAGES_FOLDER << "raw_" << timestamp << "_" << cam_id << ".png";
+    const std::string& file_path = oss.str();
+    cv::imwrite(file_path, img);
+    SPDLOG_INFO("Saved img to disk: {}", file_path);
+    SPDLOG_INFO("File size: {} bytes", GetFileSize(file_path));
+    SPDLOG_INFO("Total size of images folder: {} bytes", GetDirectorySize(IMAGES_FOLDER));
+    SPDLOG_INFO("Number of images in images folder: {}", CountFilesInDirectory(IMAGES_FOLDER));
 }
+
+
+
+int CountRawImgNumberOnDisk()
+{
+    return CountFilesInDirectory(IMAGES_FOLDER);
+}
+
+
+void ReadLatestRawImgFromDisk(cv::Mat& img, std::int64_t& timestamp, int& cam_id)
+{
+    // TODO
+    (void) img;
+    (void) timestamp;
+    (void) cam_id;
+}
+
+
+
+
+
+} // namespace DH

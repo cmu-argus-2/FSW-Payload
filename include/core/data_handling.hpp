@@ -9,6 +9,7 @@ This file contains classes and functions providing file services and data handli
 
 #include <filesystem>
 #include <string_view>
+#include <opencv2/opencv.hpp>
 #include "spdlog/spdlog.h"
 
 
@@ -39,7 +40,22 @@ namespace DH // Data Handling
 
     bool make_directory(std::string_view directory_path);
     long GetFileSize(std::string_view file_path);
-    long GetDirectorySize(std::string_view directory_path);
+    long GetDirectorySize(std::string_view directory_path); 
+    int CountFilesInDirectory(std::string_view directory_path);
+
+    // raw_timestamp_camid.png - timestamp should be more accurate 
+    void StoreRawImgToDisk(std::int64_t timestamp, int cam_id, const cv::Mat& img);
+
+    void ReadLatestRawImgFromDisk(cv::Mat& img, std::int64_t& timestamp, int& cam_id);
+
+    // count the number of images in the images folder
+    int CountRawImgNumberOnDisk();
+
+
+
+    // need to read from disk (transfre img from disk to RAM) - reinitialize the frame buffer
+    // need to be able to select the latest img from the disk
+    // need to save telemetry data on disk
 
 
 }

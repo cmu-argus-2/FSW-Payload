@@ -164,7 +164,7 @@ bool Camera::CaptureFrame()
         return false;
     }
     
-    // Capture current timestamp - TODO access the reference from the hardware API
+    // Capture current timestamp - TODO access the reference from the hardware API (OpenCV is garbage)
     buffer_frame._timestamp = std::chrono::duration_cast<std::chrono::milliseconds>(
         std::chrono::system_clock::now().time_since_epoch()).count();
 

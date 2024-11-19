@@ -3,13 +3,12 @@
 
 #include <mutex>
 #include <atomic>
+#include <thread>
 #include "frame.hpp"
 #include <opencv2/opencv.hpp>
 #include "configuration.hpp"
 
-
 #define DEFAULT_CAMERA_FPS 30 // 10
-
 #define MAX_CONSECUTIVE_ERROR_COUNT 3 // before disabling 
 
 enum class CAM_STATUS : uint8_t {
@@ -45,6 +44,12 @@ public:
 
     bool CaptureFrame();
     const Frame& GetBufferFrame() const;
+    void SetOffNewFrameFlag();
+    bool IsNewFrameAvailable() const;
+
+    void RunCaptureLoop();
+    void StopCaptureLoop();
+    
 
 
     int GetCamId() const;
@@ -60,6 +65,8 @@ private:
 
     std::atomic<CAM_STATUS> cam_status;
     CAM_ERROR last_error;
+    int consecutive_error_count;
+    void HandleErrors(CAM_ERROR error);
     
     
     int cam_id;
@@ -68,6 +75,8 @@ private:
 
 
     Frame buffer_frame;
+    std::atomic<bool> _capture_loop;
+    std::atomic<bool> _new_frame_flag;
 
     int width = DEFAULT_FRAME_WIDTH;
     int height = DEFAULT_FRAME_HEIGHT;
@@ -76,9 +85,8 @@ private:
     cv::Mat distortion_parameters; 
 
 
-
-    int consecutive_error_count = 0;
-    void HandleErrors(CAM_ERROR error);
+    
+    
 
 };
 

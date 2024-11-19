@@ -76,46 +76,35 @@ void CameraManager::TurnOff()
 }
 
 
-void CameraManager::CaptureFrames(std::vector<bool>& captured_flags)
+void CameraManager::CaptureFrames()
 {
     for (std::size_t i = 0; i < NUM_CAMERAS; ++i) 
     {
         if (cameras[i].GetCamStatus() == CAM_STATUS::TURNED_ON)
         {   
-            captured_flags[i] = cameras[i].CaptureFrame();
+            cameras[i].CaptureFrame();
         }
     }
 }
 
-void CameraManager::CaptureFrames()
-{
-    std::vector<bool> captured_flags(NUM_CAMERAS, false);
-    CaptureFrames(captured_flags);
-}
 
-
-uint8_t CameraManager::SaveLatestFrames(std::vector<bool>& captured_flags)
+uint8_t CameraManager::SaveLatestFrames()
 {
     uint8_t save_count = 0;
     for (std::size_t i = 0; i < NUM_CAMERAS; ++i) 
     {
-        if (captured_flags[i])
+        if (cameras[i].GetCamStatus() == CAM_STATUS::TURNED_ON && cameras[i].IsNewFrameAvailable())
         {
             DH::StoreRawImgToDisk(
                 cameras[i].GetBufferFrame()._timestamp,
                 cameras[i].GetBufferFrame()._cam_id,
                 cameras[i].GetBufferFrame()._img
             );
+            cameras[i].SetOffNewFrameFlag();
             save_count++;
-        }
+        }  
     }
     return save_count;
-}
-
-uint8_t CameraManager::SaveLatestFrames()
-{
-    std::vector<bool> captured_flags(NUM_CAMERAS, false);
-    return SaveLatestFrames(captured_flags);
 }
 
 
@@ -128,17 +117,24 @@ void CameraManager::RunLoop(Payload* payload)
     auto last_capture_time = std::chrono::high_resolution_clock::now();
 
     std::vector<bool> captured_flags(NUM_CAMERAS, false);
+    // Camera threads should be started 
+
+
+    auto t1 = std::chrono::high_resolution_clock::now();
+    auto t2 = std::chrono::high_resolution_clock::now();
 
     while (loop_flag) 
     {
 
         // TODO remove busy waiting
 
-        // reset captured flag to all false
-        std::fill(captured_flags.begin(), captured_flags.end(), false);
 
         // Capture frames for each turned on camera - TODO thread protection
-        CaptureFrames(captured_flags);
+        t1 = std::chrono::high_resolution_clock::now();
+        CaptureFrames();
+        t2 = std::chrono::high_resolution_clock::now();
+        auto elapsed = std::chrono::duration_cast<std::chrono::milliseconds>(t2 - t1).count();
+        SPDLOG_INFO("Capture time: {} ms", elapsed);
 
 
         switch (capture_mode)
@@ -153,7 +149,7 @@ void CameraManager::RunLoop(Payload* payload)
             case CAPTURE_MODE::CAPTURE_SINGLE: // Response to a command
             {
                 
-                SaveLatestFrames(captured_flags);
+                SaveLatestFrames();
                 SPDLOG_INFO("Single capture request completed");
                 // TODO should be a way to ACK the command here 
                 SetCaptureMode(CAPTURE_MODE::IDLE);
@@ -167,7 +163,7 @@ void CameraManager::RunLoop(Payload* payload)
                 if (elapsed_seconds >= periodic_capture_rate) 
                 {
                     // not an issue if we exceed a bit
-                    periodic_frames_captured += SaveLatestFrames(captured_flags);
+                    periodic_frames_captured += SaveLatestFrames();
                     SPDLOG_INFO("Periodic capture request: {}/{} frames captured", periodic_frames_captured, periodic_frames_to_capture);
 
                     if (periodic_frames_captured >= periodic_frames_to_capture)

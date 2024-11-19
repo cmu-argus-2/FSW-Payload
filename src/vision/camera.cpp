@@ -8,9 +8,12 @@ Camera::Camera(int cam_id, std::string path, bool enabled)
 : 
 cam_status((enabled == false) ? CAM_STATUS::DISABLED : CAM_STATUS::TURNED_OFF),
 last_error(CAM_ERROR::NO_ERROR),
+consecutive_error_count(0),
 cam_id(cam_id),
 cam_path(path),
-buffer_frame(cam_id, cv::Mat(), 0)
+buffer_frame(cam_id, cv::Mat(), 0),
+_capture_loop(false),
+_new_frame_flag(false)
 {
 }
 
@@ -18,9 +21,12 @@ Camera::Camera(const CameraConfig& config)
 :
 cam_status((config.enable == false) ? CAM_STATUS::DISABLED : CAM_STATUS::TURNED_OFF),
 last_error(CAM_ERROR::NO_ERROR),
+consecutive_error_count(0),
 cam_id(static_cast<int>(config.id)),
 cam_path(config.path),
-buffer_frame(cam_id, cv::Mat(height, width, CV_8UC3), 0)
+buffer_frame(cam_id, cv::Mat(height, width, CV_8UC3), 0),
+_capture_loop(false),
+_new_frame_flag(false)
 {
 }
 
@@ -173,9 +179,22 @@ bool Camera::CaptureFrame()
     buffer_frame._img = captured_frame.clone(); // Deep copy, but pretty bad in terms of memory usage given our resolutions.. TODO: Optimize
     buffer_frame._cam_id = cam_id;
 
-    return true;
+    _new_frame_flag = true;
+
+
+    return _new_frame_flag;
 }
 
+
+void Camera::SetOffNewFrameFlag()
+{
+    _new_frame_flag = false;
+}
+
+bool Camera::IsNewFrameAvailable() const
+{
+    return _new_frame_flag;
+}
 
 void Camera::HandleErrors(CAM_ERROR error)
 {
@@ -241,4 +260,19 @@ void Camera::DisplayLastFrame()
     }
     cv::imshow("Camera " + std::to_string(cam_id), buffer_frame.GetImg());
     cv::waitKey(1);
+}
+
+
+void Camera::RunCaptureLoop()
+{
+
+
+
+
+
+}
+
+void Camera::StopCaptureLoop()
+{
+
 }

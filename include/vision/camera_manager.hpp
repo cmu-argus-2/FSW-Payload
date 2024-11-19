@@ -45,10 +45,8 @@ public:
 
     CameraConfig* GetCameraConfig(int cam_id);
 
-    void CaptureFrames(std::vector<bool>& captured_flags);
     void CaptureFrames();
 
-    uint8_t SaveLatestFrames(std::vector<bool>& captured_flags);
     uint8_t SaveLatestFrames();
 
 

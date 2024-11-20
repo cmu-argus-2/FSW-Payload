@@ -116,26 +116,10 @@ void CameraManager::RunLoop(Payload* payload)
     auto current_capture_time = std::chrono::high_resolution_clock::now();
     auto last_capture_time = std::chrono::high_resolution_clock::now();
 
-    std::vector<bool> captured_flags(NUM_CAMERAS, false);
-    // Camera threads should be started 
-
-
-    auto t1 = std::chrono::high_resolution_clock::now();
-    auto t2 = std::chrono::high_resolution_clock::now();
-
     while (loop_flag) 
     {
 
-        // TODO remove busy waiting
-
-
-        // Capture frames for each turned on camera - TODO thread protection
-        t1 = std::chrono::high_resolution_clock::now();
-        CaptureFrames();
-        t2 = std::chrono::high_resolution_clock::now();
-        auto elapsed = std::chrono::duration_cast<std::chrono::milliseconds>(t2 - t1).count();
-        SPDLOG_INFO("Capture time: {} ms", elapsed);
-
+        // TODO remove busy waiting ~ add condition variable
 
         switch (capture_mode)
         {
@@ -148,10 +132,12 @@ void CameraManager::RunLoop(Payload* payload)
 
             case CAPTURE_MODE::CAPTURE_SINGLE: // Response to a command
             {
-                
-                SaveLatestFrames();
-                SPDLOG_INFO("Single capture request completed");
-                // TODO should be a way to ACK the command here 
+                int single_frames_captured = SaveLatestFrames();
+                if (single_frames_captured > 0)
+                {
+                    SPDLOG_INFO("Single capture request completed: {} frame(s) captured", single_frames_captured);
+                }
+                // TODO should be a way to ACK the command here, whether this is a success or failure
                 SetCaptureMode(CAPTURE_MODE::IDLE);
                 break;
             }
@@ -202,8 +188,9 @@ void CameraManager::RunLoop(Payload* payload)
 
     SPDLOG_INFO("Exiting Camera Manager Run Loop");
     SetDisplayFlag(false);
-
 }
+
+
 
 void CameraManager::RunDisplayLoop()
 {
@@ -267,7 +254,13 @@ void CameraManager::StopLoops()
 {
     display_flag = false;
     loop_flag = false;
-    std::cout << "DISPLAY LOOP STOPPED " << display_flag << std::endl; 
+
+    for (auto& camera : cameras) 
+    {
+        camera.StopCaptureLoop();
+    }
+
+    SPDLOG_INFO("Stopped camera loops...");
 }
 
 void CameraManager::SetDisplayFlag(bool display_flag)

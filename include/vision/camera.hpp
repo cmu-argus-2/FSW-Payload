@@ -75,8 +75,9 @@ private:
 
 
     Frame buffer_frame;
-    std::atomic<bool> _capture_loop;
     std::atomic<bool> _new_frame_flag;
+
+    std::thread capture_thread;
 
     int width = DEFAULT_FRAME_WIDTH;
     int height = DEFAULT_FRAME_HEIGHT;

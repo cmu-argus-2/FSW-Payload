@@ -12,7 +12,6 @@ consecutive_error_count(0),
 cam_id(cam_id),
 cam_path(path),
 buffer_frame(cam_id, cv::Mat(height, width, CV_8UC3), 0),
-_capture_loop(false),
 _new_frame_flag(false)
 {
 }
@@ -25,69 +24,86 @@ consecutive_error_count(0),
 cam_id(static_cast<int>(config.id)),
 cam_path(config.path),
 buffer_frame(cam_id, cv::Mat(height, width, CV_8UC3), 0),
-_capture_loop(false),
 _new_frame_flag(false)
 {
 }
 
 bool Camera::Enable()
 {
+    switch (cam_status)
+    {
+        case CAM_STATUS::TURNED_ON:
+        {
+            SPDLOG_WARN("CAM{}: Camera is already enabled", cam_id);
+            return true;
+        }
+        case CAM_STATUS::DISABLED:
+        {
+            cam_status = CAM_STATUS::TURNED_OFF;
+            [[fallthrough]]; // Explicitly marks intentional fall-through (avoid compiler warning)
+        }
+        case CAM_STATUS::TURNED_OFF:
+        {
+            TurnOn();
+            if (cam_status == CAM_STATUS::TURNED_ON)
+            {
+                SPDLOG_INFO("CAM{}: Camera already enabled", cam_id);
+                return true;
+            }
+            else
+            {
+                SPDLOG_ERROR("CAM{}: Camera failed to enable", cam_id);
+                return false;
+            }
+        }
 
-    if (cam_status == CAM_STATUS::TURNED_ON) 
-    {
-        SPDLOG_WARN("CAM{}: Camera is already enabled", cam_id);
-        return true;
-    } 
-    else if (cam_status == CAM_STATUS::DISABLED) 
-    {
-        cam_status = CAM_STATUS::TURNED_OFF;
-       
-    }
-
-    // attempt to turn on the camera
-    TurnOn();
-
-    if (cam_status == CAM_STATUS::TURNED_ON) 
-    {
-        SPDLOG_INFO("CAM{}: Camera enabled", cam_id);
-        return true;
-    } 
-    else 
-    {
-        SPDLOG_ERROR("CAM{}: Camera failed to enable", cam_id);
-        return false;
+        default:
+        {
+            SPDLOG_ERROR("CAM{}: Unknown camera status", cam_id);
+            return false;
+        }
     }
 }
+
 
 bool Camera::Disable()
 {
-    if (cam_status == CAM_STATUS::DISABLED) 
+    switch (cam_status)
     {
-        SPDLOG_WARN("CAM{}: Camera is already disabled", cam_id);
-        return true;
-    } 
-    else if (cam_status == CAM_STATUS::TURNED_OFF) 
-    {
-        cam_status = CAM_STATUS::DISABLED;
-        SPDLOG_INFO("CAM{}: Camera disabled", cam_id);
-        return true;
-    }
+        case CAM_STATUS::DISABLED:
+        {
+            SPDLOG_WARN("CAM{}: Camera is already disabled", cam_id);
+            return true;
+        }
+        case CAM_STATUS::TURNED_OFF:
+        {
+            cam_status = CAM_STATUS::DISABLED;
+            SPDLOG_INFO("CAM{}: Camera disabled", cam_id);
+            return true;
+        }
+        case CAM_STATUS::TURNED_ON:
+        {
+            TurnOff();
+            if (cam_status == CAM_STATUS::TURNED_OFF) 
+            {
+                cam_status = CAM_STATUS::DISABLED;
+                SPDLOG_INFO("CAM{}: Camera disabled", cam_id);
+                return true;
+            } 
+            else 
+            {
+                SPDLOG_ERROR("CAM{}: Failed to turn off the camera", cam_id);
+                return false;
+            }
+        }
 
-    // attempt to turn off the camera
-    TurnOff();
-
-    if (cam_status == CAM_STATUS::DISABLED) 
-    {
-        SPDLOG_INFO("CAM{}: Camera disabled", cam_id);
-        return true;
-    } 
-    else 
-    {
-        SPDLOG_ERROR("CAM{}: Camera failed to disable", cam_id);
-        return false;
+        default:
+        {
+            SPDLOG_ERROR("CAM{}: Unknown camera status", cam_id);
+            return false;
+        }
     }
 }
-
 
 
 
@@ -116,11 +132,15 @@ void Camera::TurnOn()
         cap.set(cv::CAP_PROP_GAIN, 10000); // Set gain to maximum - OpenCV will clamp it to the maximum value
         SPDLOG_INFO("CAM{}: Camera gain set to {}", cam_id, cap.get(cv::CAP_PROP_GAIN));
 
+        // Start capture loop
         cam_status = CAM_STATUS::TURNED_ON;
+        capture_thread = std::thread(&Camera::RunCaptureLoop, this);
         SPDLOG_INFO("CAM{}: Camera successfully turned on", cam_id);
 
 
-    } catch (const std::exception& e) {
+    } 
+    catch (const std::exception& e) 
+    {
         SPDLOG_ERROR("Exception occurred: {}", e.what());
 
 
@@ -137,22 +157,36 @@ void Camera::TurnOn()
 
 void Camera::TurnOff()
 {
-    if (cam_status == CAM_STATUS::DISABLED) {
-        SPDLOG_ERROR("CAM{}: Camera is disabled", cam_id);
-        return;
-    }
+    StopCaptureLoop();
+    switch (cam_status)
+    {
+        case CAM_STATUS::DISABLED:
+        {
+            SPDLOG_ERROR("CAM{}: Camera is disabled", cam_id);
+            return;
+        }
 
-    if (cam_status == CAM_STATUS::TURNED_OFF) {
-        SPDLOG_ERROR("CAM{}: Camera is already turned off", cam_id);
-        return;
-    }
-    
+        case CAM_STATUS::TURNED_OFF:
+        {
+            SPDLOG_ERROR("CAM{}: Camera is already turned off", cam_id);
+            return;
+        }
 
-    if (cam_status == CAM_STATUS::TURNED_ON) {
-        cap.release();
-        cam_status = CAM_STATUS::TURNED_OFF;
+        case CAM_STATUS::TURNED_ON:
+        {
+            StopCaptureLoop();
+            cap.release();
+            SPDLOG_INFO("CAM{}: Camera successfully turned off", cam_id);
+            return;
+        }
+
+        default:
+        {
+            SPDLOG_ERROR("CAM{}: Unknown camera status", cam_id);
+            return;
+        }
+
     }
-    
 
 }
 
@@ -259,17 +293,23 @@ void Camera::DisplayLastFrame()
 
 void Camera::RunCaptureLoop()
 {
+    
+    auto t1 = std::chrono::high_resolution_clock::now();
+    auto t2 = std::chrono::high_resolution_clock::now();
 
-    while (_capture_loop && cam_status == CAM_STATUS::TURNED_ON) 
+    while (cam_status == CAM_STATUS::TURNED_ON) 
     {
+        t1 = std::chrono::high_resolution_clock::now();
         CaptureFrame();
+        t2 = std::chrono::high_resolution_clock::now();
+        SPDLOG_DEBUG("Capture time: {} ms", std::chrono::duration_cast<std::chrono::milliseconds>(t2 - t1).count(););
     }
-
-
-
 }
 
 void Camera::StopCaptureLoop()
 {
-
+    cam_status = CAM_STATUS::TURNED_OFF;
+    if (capture_thread.joinable()) {
+        capture_thread.join();
+    }
 }

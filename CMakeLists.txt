@@ -13,7 +13,7 @@ else()
 endif()
 
 # Set up a preprocessor definition for the path of the inter-process fifo for the command-line interface
-add_compile_definitions(IPC_FIFO="/tmp/payload_ipc_fifo")
+add_compile_definitions(IPC_FIFO_PATH="/tmp/payload_fifo")
 
 # Find the required packages
 set(SPDLOG_FMT_EXTERNAL OFF)

@@ -1,7 +1,7 @@
 
 
 add_library(communication
-    ipc.cpp
+    named_pipe.cpp
     uart.cpp
 )
 

@@ -12,17 +12,18 @@ const char* ToString(PayloadState state) {
     }
 }
 
-Payload& Payload::GetInstance(Configuration& config)
+Payload& Payload::GetInstance(Configuration& config, std::unique_ptr<Communication> comms_interface)
 {
-    static Payload instance(config);
+    static Payload instance(config, std::move(comms_interface));
     return instance;
 }
 
 
-Payload::Payload(Configuration& config)
+Payload::Payload(Configuration& config, std::unique_ptr<Communication> comms_interface)
 :
 _running_instance(false),
 config(config),
+communication(std::move(comms_interface)),
 camera_manager(config.GetCameraConfigs()),
 state(PayloadState::STARTUP),
 thread_pool(std::make_unique<ThreadPool>(std::thread::hardware_concurrency()))
@@ -30,9 +31,6 @@ thread_pool(std::make_unique<ThreadPool>(std::thread::hardware_concurrency()))
 
     SPDLOG_INFO("Configuration read successfully");
     SPDLOG_INFO("Payload state initialized to: {}", ToString(state)); 
-
-    // Create the data folder 
-    
     
 }
 
@@ -139,7 +137,7 @@ void Payload::Run()
     StartCameraThread();
 
     // Launch communication system
-    // TODO 
+    _StartCommunicationThread();
 
     // Running execution loop 
     _running_instance = true;
@@ -191,7 +189,7 @@ void Payload::Stop()
     StopThreadPool();
 
     // Stop communication system
-    // TODO
+    _StopCommunicationThread();
 
     
     SPDLOG_WARN("Payload Shutdown");
@@ -252,4 +250,20 @@ void Payload::StopThreadPool()
     thread_pool->shutdown();
     thread_pool.reset(nullptr);
 
+}
+
+void Payload::_StartCommunicationThread()
+{
+    
+    communication->Connect();
+    communication_thread = std::thread(&Communication::RunLoop, communication.get(), this);
+    SPDLOG_INFO("Communication thread started");
+}
+
+void Payload::_StopCommunicationThread()
+{
+    communication->StopLoop();
+    communication_thread.join();
+    SPDLOG_INFO("Communication thread stopped");
+    communication->Disconnect();
 }

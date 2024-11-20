@@ -4,6 +4,7 @@
 #include <vector>
 #include <cstdint>
 #include <chrono>
+#include <atomic>
 #include "commands.hpp"
 
 // If seq_count > 1, priority is automatically set to 2
@@ -17,6 +18,8 @@ struct Message {
     uint16_t seq_count = 1;       // Sequence count (2 bytes), default to 1
     uint8_t data_length;      // Data length field (1 byte)
 
+    std::atomic<bool> _serialized = false; // Atomic flag for serialization status  
+
     std::vector<uint8_t> packet = {}; // Serialized packet buffer
     
     uint8_t priority = TX_PRIORITY_1;         // For the TX priority queue
@@ -26,6 +29,7 @@ struct Message {
 
     virtual ~Message() = default; // Virtual destructor
     virtual void serialize() = 0; // Pure virtual method for serialization
+    virtual bool Serialized() const { return _serialized; } // Check if the message has been serialized
 };
 
 struct MSG_RequestState : public Message {

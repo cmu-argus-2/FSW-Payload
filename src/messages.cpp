@@ -16,6 +16,7 @@ MSG_RequestState::MSG_RequestState()
     : Message(CommandID::REQUEST_STATE, 1) {}
 
 void MSG_RequestState::serialize(){
+    packet.clear();
     packet.push_back(id); 
     packet.push_back(static_cast<uint8_t>(seq_count >> 8));
     packet.push_back(static_cast<uint8_t>(seq_count & 0xFF));

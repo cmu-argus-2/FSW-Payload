@@ -5,6 +5,7 @@
 #include <deque>
 #include <mutex>
 #include <atomic>
+#include <memory>
 #include "core/task.hpp"
 #include "messages.hpp"
 

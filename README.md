@@ -1,17 +1,19 @@
 # Payload Flight Software for Argus-1
 
-The repository contains the Flight Software targeted for the Jetson Orin Nano 8Gb and its custom carrier board. Argus is a technology demonstration mission for vision-based orbit determination.
+This repository contains the Flight Software (FSW) written for the Jetson Orin Nano (8GB) and its custom carrier board. Argus-1 is a technology demonstration mission focused on vision-based orbit determination.
 
 
 ## Requirements
 
-- [spdlog](https://github.com/gabime/spdlog)
-- [OpenCV](https://docs.opencv.org/4.x/d7/d9f/tutorial_linux_install.html?ref=wasyresearch.com)
-- [Eigen3](http://eigen.tuxfamily.org/index.php?title=Main_Page#Download)
-- [Torch](https://pytorch.org/get-started/locally/)
-- [GTest](https://github.com/google/googletest)
+- [spdlog](https://github.com/gabime/spdlog) - Logging library
+- [OpenCV](https://docs.opencv.org/4.x/d7/d9f/tutorial_linux_install.html?ref=wasyresearch.com) - Computer vision library
+- [Eigen3](http://eigen.tuxfamily.org/index.php?title=Main_Page#Download) - Linear algebra Library
+- [Torch](https://pytorch.org/get-started/locally/) - Deep learning 
+- [GTest](https://github.com/google/googletest) - testing framework
 
 ## Build instructions
+
+### Setting up the Environment
 
 To compile using CMake, follow these steps: 
 
@@ -30,7 +32,7 @@ Build the project
 
 ```bash
 ./build.sh
-./build/PAYLOAD [optional: /path/to/config/file]
+./build/PAYLOAD [optional: <communication-interface: [UART, CLI]>]
 ```
 
 or 
@@ -39,9 +41,11 @@ or
 mkdir build
 cd build
 cmake .. && make
-./PAYLOAD [optional: <config path>] // default at config/config.toml
+./PAYLOAD [optional: <communication-interface: [UART, CLI]>] // default to UART 
 ```
+## Configuration
 
+The configuration file is located at config/config.toml. Update this file to modify system parameters.
 
 ## Local interaction with the FSW
 
@@ -49,12 +53,12 @@ As a functional debugging tool, the Payload can be run and controlled locally th
 
 ```bash
 ./CLI_CMD
-./PAYLOAD <config path> 
+./PAYLOAD [optional: <communication-interface: [UART, CLI]>] // default to UART 
 ```
 
 ## Command-based paradigm 
 
-The Payload communicates through its host machine via SPI (slave)/UART (transition in progress) with a set of predefined commands available at TODO (internal README).
+The Payload communicates through its host machine via UART (transition from SPI in progress) with a set of predefined commands available at TODO (internal README).
 
 
 ## General Architecture 

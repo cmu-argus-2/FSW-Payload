@@ -3,8 +3,10 @@
 
 #include <vector>
 #include <cstdint>
-#include <core/task.hpp>
-#include <queues.hpp>
+#include <atomic>
+
+// Forward declaration
+class Payload;
 
 // Abstract class for communication interfaces
 class Communication
@@ -12,23 +14,25 @@ class Communication
 
 public:
 
-    Communication(RX_Queue* rx_queue, TX_Queue* tx_queue)
-        : rx_queue(rx_queue), tx_queue(tx_queue), connected(false) {}
+    Communication()
+        : _connected(false), _running_loop(false) {}
     
     virtual ~Communication() = default; // Ensure proper cleanup for derived classes
 
 
-    virtual void Connect() = 0;
+    virtual bool Connect() = 0;
     virtual void Disconnect() = 0;
-    virtual void Receive(std::vector<uint8_t>& data) = 0;
-    virtual void Send(const std::vector<uint8_t>& data) = 0;
+    virtual bool Receive(uint8_t& cmd_id, std::vector<uint8_t>& data) = 0;
+    virtual bool Send(const std::vector<uint8_t>& data) = 0;
+    virtual void RunLoop(Payload* payload) = 0;
+    virtual void StopLoop() = 0;
+    virtual bool IsConnected() const { return _connected; }
+    
 
+protected:
 
-private:
-
-    RX_Queue* rx_queue;
-    TX_Queue* tx_queue;
-    bool connected;
+    bool _connected;
+    std::atomic<bool> _running_loop;
 
 };
 

@@ -26,7 +26,7 @@ int main(int argc, char* argv[])
     (void)argc;
     (void)argv;
 
-    const char* fifo_path = IPC_FIFO; // Use predefined FIFO path
+    const char* fifo_path = IPC_FIFO_PATH; // Use predefined FIFO path
 
 
     // Create the FIFO if it doesn't exist

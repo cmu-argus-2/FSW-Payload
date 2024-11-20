@@ -12,7 +12,8 @@
 #include "commands.hpp"
 #include "core/thread_pool.hpp"
 #include "vision/camera_manager.hpp"
-
+#include "communication/named_pipe.hpp"
+#include "communication/uart.hpp"
 
 enum class PayloadState : uint8_t {
     STARTUP = 0x00,
@@ -30,7 +31,7 @@ public:
 
 
     // Make Payload a Singleton 
-    static Payload& GetInstance(Configuration& config);
+    static Payload& GetInstance(Configuration& config, std::unique_ptr<Communication> comms_interface);
 
     void Initialize();
     const PayloadState& GetState() const;
@@ -60,7 +61,7 @@ public:
 
 private:
 
-    Payload(Configuration& config);
+    Payload(Configuration& config, std::unique_ptr<Communication> comms_interface);
     // ~Payload();
     Payload(const Payload&) = delete;
     void operator=(const Payload&) = delete;
@@ -68,6 +69,10 @@ private:
     std::atomic<bool> _running_instance;
 
     Configuration config;
+
+    // Communication interface
+    std::unique_ptr<Communication> communication;
+    std::thread communication_thread;
 
     CameraManager camera_manager;
     std::thread camera_thread;
@@ -82,13 +87,16 @@ private:
     // Thread Pool
     std::unique_ptr<ThreadPool> thread_pool;
 
-
     void SwitchToState(PayloadState new_state);
 
     void RunStartupHealthProcedures();
     void RetrieveInternalStates();
 
     void StopThreadPool();
+
+
+    void _StartCommunicationThread();
+    void _StopCommunicationThread();
 
     
 };

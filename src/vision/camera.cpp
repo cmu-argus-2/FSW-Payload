@@ -11,7 +11,7 @@ last_error(CAM_ERROR::NO_ERROR),
 consecutive_error_count(0),
 cam_id(cam_id),
 cam_path(path),
-buffer_frame(cam_id, cv::Mat(), 0),
+buffer_frame(cam_id, cv::Mat(height, width, CV_8UC3), 0),
 _capture_loop(false),
 _new_frame_flag(false)
 {
@@ -156,33 +156,27 @@ void Camera::TurnOff()
 
 }
 
-bool Camera::CaptureFrame()
+void Camera::CaptureFrame()
 {
     // Single responsibility principle. Status must be checked externally
 
-    static cv::Mat captured_frame(height, width, CV_8UC3); // Preallocated buffer
-
-    cap >> captured_frame;
-
-    if (captured_frame.empty()) {
-        SPDLOG_ERROR("Unable to capture frame");
-        HandleErrors(CAM_ERROR::CAPTURE_FAILED);
-        return false;
-    }
-    
-    // Capture current timestamp - TODO access the reference from the hardware API (OpenCV is garbage)
+    // Capture current timestamp - TODO access the reference from the hardware API 
     buffer_frame._timestamp = std::chrono::duration_cast<std::chrono::milliseconds>(
         std::chrono::system_clock::now().time_since_epoch()).count();
 
+    cap >> buffer_frame._img;
 
-   // Update buffer_frame attributes in place
-    buffer_frame._img = captured_frame.clone(); // Deep copy, but pretty bad in terms of memory usage given our resolutions.. TODO: Optimize
-    buffer_frame._cam_id = cam_id;
-
-    _new_frame_flag = true;
-
-
-    return _new_frame_flag;
+    if (buffer_frame._img.empty()) 
+    {
+        _new_frame_flag = false;
+        SPDLOG_ERROR("Unable to capture frame");
+        HandleErrors(CAM_ERROR::CAPTURE_FAILED);
+        
+    }
+    else
+    {
+        _new_frame_flag = true;
+    }
 }
 
 
@@ -266,7 +260,10 @@ void Camera::DisplayLastFrame()
 void Camera::RunCaptureLoop()
 {
 
-
+    while (_capture_loop && cam_status == CAM_STATUS::TURNED_ON) 
+    {
+        CaptureFrame();
+    }
 
 
 

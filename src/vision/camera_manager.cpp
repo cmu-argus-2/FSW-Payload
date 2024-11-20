@@ -217,7 +217,7 @@ void CameraManager::RunDisplayLoop()
         active_cams = 0;
         for (std::size_t i = 0; i < NUM_CAMERAS; ++i) 
         {
-            if (cameras[i].GetCamStatus() == CAM_STATUS::TURNED_ON)
+            if (cameras[i].GetCamStatus() == CAM_STATUS::TURNED_ON && cameras[i].IsNewFrameAvailable())
             {
                 cameras[i].DisplayLastFrame();
                 active_cams++;

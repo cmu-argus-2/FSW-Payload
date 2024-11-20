@@ -42,7 +42,7 @@ public:
     void TurnOff();
     // void Restart(); // Restart after failure, but need to avoid loops
 
-    bool CaptureFrame();
+    void CaptureFrame();
     const Frame& GetBufferFrame() const;
     void SetOffNewFrameFlag();
     bool IsNewFrameAvailable() const;

@@ -3,7 +3,6 @@
 
 #include <array>
 #include <atomic>
-#include <condition_variable>
 #include "spdlog/spdlog.h"
 #include "camera.hpp"
 #include "configuration.hpp"

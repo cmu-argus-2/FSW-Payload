@@ -8,7 +8,6 @@ capture_mode(CAPTURE_MODE::IDLE),
 camera_configs(camera_configs),
 cameras({Camera(camera_configs[0]), Camera(camera_configs[1]), Camera(camera_configs[2]), Camera(camera_configs[3])})
 {
-    
     _UpdateCamStatus();
     SPDLOG_INFO("Camera Manager initialized");
 }
@@ -19,7 +18,6 @@ void CameraManager::_UpdateCamStatus()
     for (size_t i = 0; i < NUM_CAMERAS; ++i) {
         cam_status[i] = cameras[i].GetCamStatus();
     }
-
 }
 
 bool CameraManager::_UpdateCameraConfigs(Payload* payload)
@@ -58,7 +56,6 @@ void CameraManager::TurnOn()
             camera.TurnOn();
         }
     }
-
     _UpdateCamStatus();
 }
 
@@ -71,7 +68,6 @@ void CameraManager::TurnOff()
             camera.TurnOff();
         }
     }
-
     _UpdateCamStatus();
 }
 
@@ -118,17 +114,13 @@ void CameraManager::RunLoop(Payload* payload)
 
     while (loop_flag) 
     {
-
         // TODO remove busy waiting ~ add condition variable
-
         switch (capture_mode)
         {
-            
             case CAPTURE_MODE::IDLE:
             {
                 break;
             }
-            
 
             case CAPTURE_MODE::CAPTURE_SINGLE: // Response to a command
             {
@@ -160,8 +152,8 @@ void CameraManager::RunLoop(Payload* payload)
                         periodic_frames_to_capture = DEFAULT_PERIODIC_FRAMES_TO_CAPTURE; // Reset to default
                         break;
                     }
-
                     last_capture_time = current_capture_time; // Update last capture time
+
                 }
                 break;
             }
@@ -183,7 +175,6 @@ void CameraManager::RunLoop(Payload* payload)
 
         _UpdateCamStatus();
         _UpdateCameraConfigs(payload);
-
     }
 
     SPDLOG_INFO("Exiting Camera Manager Run Loop");
@@ -200,14 +191,20 @@ void CameraManager::RunDisplayLoop()
     while (display_flag && loop_flag) 
     {
         
-
         active_cams = 0;
+        
         for (std::size_t i = 0; i < NUM_CAMERAS; ++i) 
         {
-            if (cameras[i].GetCamStatus() == CAM_STATUS::TURNED_ON && cameras[i].IsNewFrameAvailable())
+            auto& cam = cameras[i]; // Alias for readability
+
+            if (cam.GetCamStatus() == CAM_STATUS::TURNED_ON) 
             {
-                cameras[i].DisplayLastFrame();
-                active_cams++;
+                ++active_cams;
+            }
+
+            if (cam.IsNewFrameAvailable())
+            {
+                cam.DisplayLastFrame();
             }
         }
 
@@ -224,14 +221,12 @@ void CameraManager::RunDisplayLoop()
         }
 
         std::this_thread::sleep_for(std::chrono::milliseconds(10)); 
-        // SPDLOG_WARN("Address of display flag: {}", static_cast<const void*>(&display_flag));
     }
 
     display_flag = false;
     cv::destroyAllWindows();
 
     SPDLOG_INFO("Exiting Camera Manager Display Loop");
-
 }
 
 
@@ -246,7 +241,6 @@ CameraConfig* CameraManager::GetCameraConfig(int cam_id)
             return &config; // Return a pointer to the found config
         }
     }
-
     return nullptr; // Return nullptr if the ID is not found
 }
 
@@ -308,7 +302,6 @@ bool CameraManager::EnableCamera(int cam_id)
             return camera.Enable();
         }
     }
-
     return false;
 }
 
@@ -322,6 +315,5 @@ bool CameraManager::DisableCamera(int cam_id)
             return camera.Disable();
         }
     }
-
     return false;
 }

@@ -1,9 +1,9 @@
 #ifndef CAMERA_HPP
 #define CAMERA_HPP
 
-#include <mutex>
 #include <atomic>
 #include <thread>
+#include <shared_mutex>
 #include "frame.hpp"
 #include <opencv2/opencv.hpp>
 #include "configuration.hpp"
@@ -78,6 +78,7 @@ private:
     std::atomic<bool> _new_frame_flag;
 
     std::thread capture_thread;
+    mutable std::shared_mutex frame_mutex;
 
     int width = DEFAULT_FRAME_WIDTH;
     int height = DEFAULT_FRAME_HEIGHT;

@@ -194,23 +194,35 @@ void Camera::CaptureFrame()
 {
     // Single responsibility principle. Status must be checked externally
 
-    // Capture current timestamp - TODO access the reference from the hardware API 
-    buffer_frame._timestamp = std::chrono::duration_cast<std::chrono::milliseconds>(
+    static cv::Mat local_buffer_img(height, width, CV_8UC3); // pre-allocate memory
+    
+    // Capture frame without holding the mutex - TODO access the reference from the hardware API 
+    auto timestamp = std::chrono::duration_cast<std::chrono::milliseconds>(
         std::chrono::system_clock::now().time_since_epoch()).count();
 
-    cap >> buffer_frame._img;
+    cap >> local_buffer_img;
+    
 
-    if (buffer_frame._img.empty()) 
+    if (local_buffer_img.empty()) 
     {
+        std::lock_guard<std::shared_mutex> lock(frame_mutex);
         _new_frame_flag = false;
         SPDLOG_ERROR("Unable to capture frame");
         HandleErrors(CAM_ERROR::CAPTURE_FAILED);
+        return;
         
     }
-    else
+
+
+    // Lock only for modifying shared resources
     {
+        std::lock_guard<std::shared_mutex> lock(frame_mutex); // Exclusive lock
+        buffer_frame._timestamp = timestamp;
+        buffer_frame._img = local_buffer_img.clone(); 
         _new_frame_flag = true;
     }
+
+
 }
 
 
@@ -261,6 +273,8 @@ void Camera::LoadIntrinsics(const cv::Mat& intrinsics, const cv::Mat& distortion
 
 const Frame& Camera::GetBufferFrame() const
 {
+    // Shared lock for reading shared resources
+    std::shared_lock<std::shared_mutex> lock(frame_mutex);
     return buffer_frame;
 }
 
@@ -281,12 +295,15 @@ CAM_STATUS Camera::GetCamStatus() const
 
 void Camera::DisplayLastFrame()
 {
-    if (buffer_frame.GetImg().empty()) 
     {
-        SPDLOG_WARN("CAM{}: No frame to display", cam_id);
-        return;
+        std::shared_lock<std::shared_mutex> lock(frame_mutex);
+        if (buffer_frame.GetImg().empty()) 
+        {
+            SPDLOG_WARN("CAM{}: No frame to display", cam_id);
+            return;
+        }
+        cv::imshow("Camera " + std::to_string(cam_id), buffer_frame.GetImg());
     }
-    cv::imshow("Camera " + std::to_string(cam_id), buffer_frame.GetImg());
     cv::waitKey(1);
 }
 

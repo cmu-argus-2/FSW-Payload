@@ -162,14 +162,15 @@ void Camera::TurnOff()
     {
         case CAM_STATUS::DISABLED:
         {
-            SPDLOG_ERROR("CAM{}: Camera is disabled", cam_id);
-            return;
+            SPDLOG_WARN("CAM{}: Camera is disabled", cam_id);
+            break;
         }
 
         case CAM_STATUS::TURNED_OFF:
         {
-            SPDLOG_ERROR("CAM{}: Camera is already turned off", cam_id);
-            return;
+            SPDLOG_WARN("CAM{}: Camera is already turned off", cam_id);
+            cap.release();
+            break;
         }
 
         case CAM_STATUS::TURNED_ON:
@@ -177,13 +178,13 @@ void Camera::TurnOff()
             StopCaptureLoop();
             cap.release();
             SPDLOG_INFO("CAM{}: Camera successfully turned off", cam_id);
-            return;
+            break;
         }
 
         default:
         {
             SPDLOG_ERROR("CAM{}: Unknown camera status", cam_id);
-            return;
+            break;
         }
 
     }
@@ -283,12 +284,12 @@ bool Camera::IsEnabled() const
     return (cam_status == CAM_STATUS::DISABLED) ? false : true;
 }
 
-int Camera::GetCamId() const
+int Camera::GetID() const
 {
     return cam_id;
 }
 
-CAM_STATUS Camera::GetCamStatus() const
+CAM_STATUS Camera::GetStatus() const
 {
     return cam_status;
 }

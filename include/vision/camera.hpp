@@ -52,8 +52,8 @@ public:
     
 
 
-    int GetCamId() const;
-    CAM_STATUS GetCamStatus() const;
+    int GetID() const;
+    CAM_STATUS GetStatus() const;
 
 
     void DisplayLastFrame();

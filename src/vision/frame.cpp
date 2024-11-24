@@ -25,7 +25,7 @@ void Frame::Update(int cam_id, const cv::Mat& img, std::int64_t timestamp)
 }
 
 
-int Frame::GetCamId() const
+int Frame::GetID() const
 {
     return _cam_id;
 }

@@ -141,40 +141,73 @@ void turn_off_cameras(Payload& payload, std::vector<uint8_t>& data)
 
 }
 
+
+// If a series of IDs is not given, it tries to activate all cameras by default 
 void enable_camera_x(Payload& payload, std::vector<uint8_t>& data)
 {
-    
-    if (!data.empty()) {
-        uint8_t cam_id = data[0];
-        SPDLOG_INFO("Enabling camera {}..", cam_id);
-        payload.GetCameraManager().EnableCamera(cam_id);
+    if (data.empty())
+    {
+        SPDLOG_INFO("Trying to enable all cameras...");
+        std::vector<int> ids;
+        ids.reserve(4);
+        payload.GetCameraManager().EnableCameras(ids);
+        for (auto cam_id : ids)
+        {
+            SPDLOG_INFO("Enabled camera {}.", cam_id);
+        }
     }
-    else {
-        SPDLOG_ERROR("No camera ID provided");
-        // TODO
-        return;
+    else
+    {
+        for (uint8_t cam_id : data)
+        {
+            bool res = payload.GetCameraManager().EnableCamera(cam_id);
+            if (res)
+            {
+                SPDLOG_INFO("Enabled camera {}.", cam_id);
+                // Return a success msg 
+            }
+            else 
+            {
+                // transmit a failure msg 
+            }
+        }
+
     }
-    
-    (void)data;
-    // TODO
+
 }
 
 void disable_camera_x(Payload& payload, std::vector<uint8_t>& data)
 {
-    SPDLOG_INFO("Disabling camera {}..");
+ 
+    if (data.empty())
+    {
+        SPDLOG_INFO("Trying to disable all cameras...");
+        std::vector<int> ids;
+        ids.reserve(4);
+        payload.GetCameraManager().DisableCameras(ids);
+        for (auto cam_id : ids)
+        {
+            SPDLOG_INFO("Disabled camera {}.", cam_id);
+        }
+    }
+    else
+    {
+        for (uint8_t cam_id : data)
+        {
+            bool res = payload.GetCameraManager().DisableCamera(cam_id);
+            if (res)
+            {
+                SPDLOG_INFO("Disabled camera {}.", cam_id);
+                // Return a success msg 
+            }
+            else 
+            {
+                // transmit a failure msg 
+            }
+        }
 
-    if (!data.empty()) {
-        uint8_t cam_id = data[0];
-        SPDLOG_INFO("Disabling camera {}..", cam_id);
-        payload.GetCameraManager().DisableCamera(cam_id);
-    }
-    else {
-        SPDLOG_ERROR("No camera ID provided");
-        // TODO
-        return;
-    }
-    (void)data;
-    // TODO
+    } 
+ 
 }
 
 void capture_images(Payload& payload, std::vector<uint8_t>& data)

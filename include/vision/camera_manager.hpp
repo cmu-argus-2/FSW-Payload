@@ -16,11 +16,11 @@ class Payload;
 
 // Capture modes for the camera system
 enum class CAPTURE_MODE : uint8_t {
-    IDLE = 0,            // Camera system is not capturing frames and waiting for a command
-    CAPTURE_SINGLE = 1,  // Camera system captures and stores the latest frame from each available cameras
-    PERIODIC = 2,        // Camera system captures and stores all frames at a fixed rate
-    PERIODIC_EARTH = 3,  // Camera system captures frames at a fixed rate, but applies a filter to store only frames with a visible Earth
-    VIDEO_STREAM = 4     // Camera system captures frames at a fixed rate and streams them to a video file
+    IDLE = 0,            // Camera system is not saving frames and waiting for a command
+    CAPTURE_SINGLE = 1,  // Camera system stores the latest frame from each available cameras
+    PERIODIC = 2,        // Camera system stores all frames at a fixed rate
+    PERIODIC_EARTH = 3,  // Camera system store frames at a fixed rate, but applies a filter to store only frames with a visible Earth
+    VIDEO_STREAM = 4     // Camera system store frames at a fixed rate and streams them to a video file
 };
 
 
@@ -57,6 +57,10 @@ public:
     void SetPeriodicCaptureRate(uint8_t rate);
     // Set the number of frames to capture in PERIODIC mode
     void SetPeriodicFramesToCapture(uint8_t frames);
+
+
+    void EnableCameras(std::vector<int>& id_activated_cams);
+    void DisableCameras(std::vector<int>& id_disabled_cams);
 
 
     bool EnableCamera(int cam_id);

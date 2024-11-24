@@ -16,7 +16,7 @@ void CameraManager::_UpdateCamStatus()
 {
     // Initialize cam_status based on the status of each camera
     for (size_t i = 0; i < NUM_CAMERAS; ++i) {
-        cam_status[i] = cameras[i].GetCamStatus();
+        cam_status[i] = cameras[i].GetStatus();
     }
 }
 
@@ -29,7 +29,7 @@ bool CameraManager::_UpdateCameraConfigs(Payload* payload)
     {
 
         // Check status of each camera and modify configuration accordingly
-        auto config = GetCameraConfig(camera.GetCamId());
+        auto config = GetCameraConfig(camera.GetID());
         if (camera.IsEnabled() != config->enable) {
             config_changed = true;
             config->enable = camera.IsEnabled();
@@ -76,7 +76,7 @@ void CameraManager::CaptureFrames()
 {
     for (std::size_t i = 0; i < NUM_CAMERAS; ++i) 
     {
-        if (cameras[i].GetCamStatus() == CAM_STATUS::TURNED_ON)
+        if (cameras[i].GetStatus() == CAM_STATUS::TURNED_ON)
         {   
             cameras[i].CaptureFrame();
         }
@@ -89,7 +89,7 @@ uint8_t CameraManager::SaveLatestFrames()
     uint8_t save_count = 0;
     for (std::size_t i = 0; i < NUM_CAMERAS; ++i) 
     {
-        if (cameras[i].GetCamStatus() == CAM_STATUS::TURNED_ON && cameras[i].IsNewFrameAvailable())
+        if (cameras[i].GetStatus() == CAM_STATUS::TURNED_ON && cameras[i].IsNewFrameAvailable())
         {
             DH::StoreRawImgToDisk(
                 cameras[i].GetBufferFrame()._timestamp,
@@ -197,7 +197,7 @@ void CameraManager::RunDisplayLoop()
         {
             auto& cam = cameras[i]; // Alias for readability
 
-            if (cam.GetCamStatus() == CAM_STATUS::TURNED_ON) 
+            if (cam.GetStatus() == CAM_STATUS::TURNED_ON) 
             {
                 ++active_cams;
             }
@@ -297,7 +297,7 @@ bool CameraManager::EnableCamera(int cam_id)
 {
     for (auto& camera : cameras) 
     {
-        if (camera.GetCamId() == cam_id)
+        if (camera.GetID() == cam_id)
         {
             return camera.Enable();
         }
@@ -310,10 +310,38 @@ bool CameraManager::DisableCamera(int cam_id)
 {
     for (auto& camera : cameras) 
     {
-        if (camera.GetCamId() == cam_id)
+        if (camera.GetID() == cam_id)
         {
             return camera.Disable();
         }
     }
     return false;
+}
+
+
+void CameraManager::EnableCameras(std::vector<int>& id_activated_cams)
+{
+    for (auto& camera : cameras) 
+    {
+        camera.Enable();
+
+        if (camera.GetStatus() == CAM_STATUS::TURNED_ON)
+        {
+            id_activated_cams.push_back(camera.GetID());
+        }
+    }
+}
+
+
+void CameraManager::DisableCameras(std::vector<int>& id_disabled_cams)
+{
+    for (auto& camera : cameras) 
+    {
+        camera.Disable();
+
+        if (camera.GetStatus() == CAM_STATUS::DISABLED)
+        {
+            id_disabled_cams.push_back(camera.GetID());
+        }
+    }
 }

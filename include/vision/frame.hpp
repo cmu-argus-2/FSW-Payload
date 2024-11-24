@@ -18,7 +18,7 @@ struct Frame
     Frame();
     Frame(int cam_id, const cv::Mat& img, std::int64_t timestamp);
     void Update(int cam_id, const cv::Mat& img, std::int64_t timestamp);
-    int GetCamId() const;
+    int GetID() const;
     const cv::Mat& GetImg() const;
     const std::int64_t& GetTimestamp() const;
     // Locking? 

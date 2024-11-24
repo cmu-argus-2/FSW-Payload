@@ -218,7 +218,7 @@ void Camera::CaptureFrame()
     // Lock only for modifying shared resources
     {
         std::lock_guard<std::shared_mutex> lock(frame_mutex); // Exclusive lock
-        buffer_frame._timestamp = timestamp;
+        buffer_frame._timestamp = static_cast<uint64_t>(timestamp);
         buffer_frame._img = local_buffer_img.clone(); 
         _new_frame_flag = true;
     }

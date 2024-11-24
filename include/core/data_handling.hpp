@@ -9,8 +9,10 @@ This file contains classes and functions providing file services and data handli
 
 #include <filesystem>
 #include <string_view>
+#include <vector>
 #include <opencv2/opencv.hpp>
 #include "spdlog/spdlog.h"
+
 
 
 #define ROOT_DATA_FOLDER "data/"
@@ -19,6 +21,7 @@ This file contains classes and functions providing file services and data handli
 #define EXPERIMENTS_FOLDER "data/experiments/"
 #define LOGGING_FOLDER "data/logging/"
 
+#define DELIMITER "_"
 
 namespace DH // Data Handling
 {
@@ -44,9 +47,10 @@ namespace DH // Data Handling
     int CountFilesInDirectory(std::string_view directory_path);
 
     // raw_timestamp_camid.png - timestamp should be more accurate 
-    void StoreRawImgToDisk(std::int64_t timestamp, int cam_id, const cv::Mat& img);
+    void StoreRawImgToDisk(std::uint64_t timestamp, int cam_id, const cv::Mat& img);
 
-    void ReadLatestRawImgFromDisk(cv::Mat& img, std::int64_t& timestamp, int& cam_id);
+    // Load in memory the latest img
+    bool ReadLatestStoredRawImg(cv::Mat& img, std::uint64_t& timestamp, int& cam_id);
 
     // count the number of images in the images folder
     int CountRawImgNumberOnDisk();

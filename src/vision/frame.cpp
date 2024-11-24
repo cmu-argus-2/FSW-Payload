@@ -1,7 +1,7 @@
 #include "spdlog/spdlog.h"
 #include "vision/frame.hpp"
 
-Frame::Frame(int cam_id, const cv::Mat& img, std::int64_t timestamp)
+Frame::Frame(int cam_id, const cv::Mat& img, std::uint64_t timestamp)
 :
 _cam_id(cam_id),
 _img(img),
@@ -17,7 +17,7 @@ _timestamp(0)
 {}
 
 
-void Frame::Update(int cam_id, const cv::Mat& img, std::int64_t timestamp) 
+void Frame::Update(int cam_id, const cv::Mat& img, std::uint64_t timestamp) 
 {
     _cam_id = cam_id;
     _img.copyTo(img); // Copy into preallocated buffer
@@ -37,7 +37,7 @@ const cv::Mat& Frame::GetImg() const
 }
 
 
-const std::int64_t& Frame::GetTimestamp() const
+const std::uint64_t& Frame::GetTimestamp() const
 {
     return _timestamp;
 }

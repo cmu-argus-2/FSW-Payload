@@ -13,14 +13,14 @@ struct Frame
 {
     int _cam_id;
     cv::Mat _img;
-    std::int64_t _timestamp;
+    std::uint64_t _timestamp;
 
     Frame();
-    Frame(int cam_id, const cv::Mat& img, std::int64_t timestamp);
-    void Update(int cam_id, const cv::Mat& img, std::int64_t timestamp);
+    Frame(int cam_id, const cv::Mat& img, std::uint64_t timestamp);
+    void Update(int cam_id, const cv::Mat& img, std::uint64_t timestamp);
     int GetID() const;
     const cv::Mat& GetImg() const;
-    const std::int64_t& GetTimestamp() const;
+    const std::uint64_t& GetTimestamp() const;
     // Locking? 
 };
 

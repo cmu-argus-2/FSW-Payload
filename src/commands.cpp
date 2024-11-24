@@ -1,6 +1,7 @@
 #include "commands.hpp"
 #include "messages.hpp"
 #include "payload.hpp"
+#include "core/data_handling.hpp"
 
 // (void)data does nothing special, it is just used to avoid compiler warnings about a variable that is not used 
 
@@ -266,7 +267,13 @@ void request_last_image(Payload& payload, std::vector<uint8_t>& data)
     SPDLOG_INFO("Requesting last image..");
     (void)payload;
     (void)data;
-    // TODO
+    
+    // Read the latest image from disk
+    Frame frame;
+    DH::ReadLatestStoredRawImg(frame._img, frame._timestamp, frame._cam_id);
+
+    // TODO: Transmit the image
+    // Need to be flagged for deletion
 }
 
 void img_transfer_complete_ack(Payload& payload, std::vector<uint8_t>& data)

@@ -1,5 +1,5 @@
 [camera-device.cam1]
-enable = false
+enable = true
 id = 1
 path = '/dev/video0'
 resolution_height = 480

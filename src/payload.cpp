@@ -26,7 +26,7 @@ config(config),
 communication(std::move(comms_interface)),
 camera_manager(config.GetCameraConfigs()),
 state(PayloadState::STARTUP),
-thread_pool(std::make_unique<ThreadPool>(std::thread::hardware_concurrency()))
+thread_pool(std::make_unique<ThreadPool>(4))
 {   
 
     SPDLOG_INFO("Configuration read successfully");

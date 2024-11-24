@@ -66,6 +66,15 @@ bool NamedPipe::Connect()
 {
     const char* fifo_path = IPC_FIFO_PATH; // Use predefined FIFO path
 
+    // Create the FIFO if it doesn't exist
+    if (mkfifo(fifo_path, 0666) == -1) {
+        if (errno != EEXIST) 
+        { // Ignore error if FIFO already exists
+            std::cerr << "Error creating FIFO: " << strerror(errno) << std::endl;
+            return 1;
+        }
+    }
+
     // Check if the path is a FIFO and open it directly
     if (IsFifo(fifo_path)) 
     {

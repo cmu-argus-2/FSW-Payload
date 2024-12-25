@@ -1,7 +1,6 @@
 
 
 add_library(core
-    monitoring.cpp
     task.cpp
     data_handling.cpp
     thread_pool.cpp

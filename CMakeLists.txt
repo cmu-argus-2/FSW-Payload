@@ -12,10 +12,14 @@ else()
     set(CMAKE_PREFIX_PATH $ENV{LIBTORCH_PATH})
 endif()
 
-# Set up a preprocessor definition for the path of the inter-process fifo for the command-line interface
+# Set a global output directory for all executable
+set(CMAKE_RUNTIME_OUTPUT_DIRECTORY ${CMAKE_BINARY_DIR}/bin)
+
+# Preprocessor definition for the path of the inter-process fifo (command-line interface)
 add_compile_definitions(IPC_FIFO_PATH="/tmp/payload_fifo")
 
-# Find the required packages
+##### FIND THE REQUIRED PACKAGES
+
 set(SPDLOG_FMT_EXTERNAL OFF)
 find_package(spdlog REQUIRED)
 find_package(Eigen3 3.3 REQUIRED NO_MODULE)
@@ -23,21 +27,21 @@ find_package(OpenCV REQUIRED)
 find_package(Torch REQUIRED)
 find_package(GTest REQUIRED)
 
+
 # Include OpenCV directories
 include_directories(SYSTEM ${OpenCV_INCLUDE_DIRS} ${TORCH_INCLUDE_DIRS})
-
 # Include the directories for header files
 include_directories(${PROJECT_SOURCE_DIR}/include)
 include_directories(SYSTEM ${PROJECT_SOURCE_DIR}/external) # ignore warnings from external libraries
-
-# Add the subdirectory containing source files
+# Add the source files subdirectory
 set(CMAKE_POSITION_INDEPENDENT_CODE ON)
 add_subdirectory(src)
 
-# Add the executable
-add_executable(${PROJECT_NAME} src/main.cpp)
 
-# Link libraries to the executable
+
+##### MAIN FLIGHT SOFTWARE PROCESS
+
+add_executable(${PROJECT_NAME} src/main.cpp)
 target_link_libraries(${PROJECT_NAME}
     PRIVATE
     spdlog::spdlog
@@ -46,13 +50,13 @@ target_link_libraries(${PROJECT_NAME}
     ${TORCH_LIBRARIES}
 )
 
-### Command Line Interface ###
+
+
+
+##### COMMAND-LINE INTERFACE
 
 find_library(READLINE_LIBRARY readline)
-
-# Add the Command Line interface executable
 add_executable(CLI_CMD src/cli_cmd.cpp)
-
 if (READLINE_LIBRARY)
     target_link_libraries(CLI_CMD PRIVATE ${READLINE_LIBRARY})
 else()
@@ -60,15 +64,7 @@ else()
 endif()
 
 
-# Add compiler warnings (as errors) and other warning flags
-target_compile_options(${PROJECT_NAME} PRIVATE
-    -Werror
-    -Wall
-    -Wextra
-    -Wconversion
-    -Wsign-conversion
-)
-
+##### TESTS
 
 option(BUILD_TESTS "Build tests" ON)
 
@@ -77,3 +73,14 @@ if(BUILD_TESTS)
     find_package(GTest REQUIRED)
     add_subdirectory(tests)
 endif()
+
+
+###### GLOBAL COMPILE OPTIONS 
+
+add_compile_options(
+    -Werror
+    -Wall
+    -Wextra
+    -Wconversion
+    -Wsign-conversion
+)

@@ -24,5 +24,5 @@ cd build/
 cmake -DCMAKE_BUILD_TYPE=${BUILD_TYPE} -DBUILD_TESTS=ON .. #-DCMAKE_CXX_FLAGS="-Werror -Wall -Wextra -Wconversion -Wsign-conversion"
 
 # Build the project with multiple cores
-# make -j$(nproc)
-make -j4
+make -j$(nproc)
+# make -j4

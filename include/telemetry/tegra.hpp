@@ -12,11 +12,14 @@ Author: Ibrahima S. Sow
 #include <iostream>
 #include <filesystem>
 #include <sys/stat.h>
-
+#include <semaphore.h>
 #include <iostream>
 #include <string>
 #include <regex>
 
+// Constants for the shared memory and semaphore paths
+#define TEGRASTATS_SHARED_MEM "/tm_tegrastats_shared_mem"
+#define TEGRASTATS_SEM "/tm_tegrastats_sem"
 
 
 #define TEGRASTATS_INTERVAL 200
@@ -24,6 +27,7 @@ Author: Ibrahima S. Sow
 
 struct TegraTM
 {
+    uint8_t change_flag; // Flag to indicate if the data has changed
     int ram_used; // Used RAM in MB
     int ram_total; // Total RAM in MB
     int swap_used; // Used swap memory in MB
@@ -38,7 +42,7 @@ struct TegraTM
     int vdd_soc; // VDD_SOC in mW
 };
 
-
+constexpr size_t SHARED_MEM_SIZE = sizeof(TegraTM);
 
 // Extremely expensive to construct regex objects every time
 struct RegexContainer 
@@ -66,6 +70,14 @@ void PrintTegraTM(TegraTM& frame);
 void ParseTegrastatsLine(const std::string& line, RegexContainer& regexes, TegraTM& frame);
 
 void CaptureTegrastats();
+
+void StopTegrastats();
+
+// Allocate the shared memory and map it to the argument struct pointer
+bool ConfigureSharedMemory(TegraTM* shared_mem);
+
+bool CreateSemaphore(sem_t* sem);
+
 
 
 #endif // TEGRA_HPP

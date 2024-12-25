@@ -1,4 +1,7 @@
 #include "telemetry/tegra.hpp"
+#include "spdlog/spdlog.h"
+#include <sys/stat.h>        /* For mode constants */
+#include <fcntl.h>
 
 RegexContainer::RegexContainer()
         : ram_regex(R"(RAM (\d+)/(\d+)MB)"),
@@ -163,4 +166,48 @@ void CaptureTegrastats()
     }
 
     pclose(pipe);
+}
+
+
+void StopTegrastats() 
+{
+    std::string command = "tegrastats --stop"; // Global command, stops any running tegrastats
+    int result = std::system(command.c_str());
+    if (result != 0) {
+        std::cerr << "Failed to stop tegrastats." << std::endl;
+    }
+}
+
+bool ConfigureSharedMemory(TegraTM* shared_mem)
+{
+
+    int shm_fd = shm_open(TEGRASTATS_SHARED_MEM, O_CREAT | O_RDWR, 0666);
+    if (shm_fd == -1)
+    {
+        spdlog::error("Failed to open shared memory");
+        return false;
+    }
+
+    // Set the size of the shared memory
+    ftruncate(shm_fd, SHARED_MEM_SIZE);
+    // map the shared memory in the address space of the calling process
+    shared_mem = static_cast<TegraTM*>(mmap(NULL, SHARED_MEM_SIZE, PROT_READ | PROT_WRITE, MAP_SHARED, shm_fd, 0));
+    if (shared_mem == MAP_FAILED)
+    {
+        spdlog::error("Failed to map shared memory");
+        return false;
+    }
+
+    return true;
+}
+
+bool CreateSemaphore(sem_t* sem)
+{
+    sem_unlink(TEGRASTATS_SEM); // Remove any existing semaphore before creating a new one
+    sem_t* semaphore = sem_open(TEGRASTATS_SEM, O_CREAT, 0666, 1);
+    if (semaphore == SEM_FAILED)
+    {
+        spdlog::error("Failed to create semaphore");
+        return 1;
+    }
 }

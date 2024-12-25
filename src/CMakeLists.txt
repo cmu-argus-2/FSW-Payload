@@ -1,6 +1,7 @@
 
 
 add_subdirectory(core)
+add_subdirectory(telemetry)
 add_subdirectory(navigation)
 add_subdirectory(vision)
 add_subdirectory(communication)

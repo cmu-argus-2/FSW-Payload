@@ -345,3 +345,31 @@ void CameraManager::DisableCameras(std::vector<int>& id_disabled_cams)
         }
     }
 }
+
+int CameraManager::CountActiveCameras() const
+{
+    int active_count = 0;
+    for (auto& camera : cameras) 
+    {
+        // access atomic variable
+        if (camera.GetStatus() == CAM_STATUS::TURNED_ON)
+        {
+            active_count++;
+        }
+    }
+    return active_count;
+}
+
+const CAPTURE_MODE& CameraManager::GetCaptureMode() const
+{
+    return capture_mode; // atomic
+}   
+
+void CameraManager::FillCameraStatus(uint8_t* status) 
+{
+    for (size_t i = 0; i < NUM_CAMERAS; ++i) {
+
+        status[i] = static_cast<uint8_t>(this->cam_status[i]);
+
+    }
+}

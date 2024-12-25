@@ -62,9 +62,12 @@ public:
     void EnableCameras(std::vector<int>& id_activated_cams);
     void DisableCameras(std::vector<int>& id_disabled_cams);
 
-
     bool EnableCamera(int cam_id);
     bool DisableCamera(int cam_id);
+
+    const CAPTURE_MODE& GetCaptureMode() const;
+    int CountActiveCameras() const;
+    void FillCameraStatus(uint8_t* status);
 
 private:
         
@@ -84,6 +87,7 @@ private:
 
 
     std::array<CAM_STATUS, NUM_CAMERAS> cam_status;
+
 
     void _UpdateCamStatus();
 

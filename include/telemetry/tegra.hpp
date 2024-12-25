@@ -22,7 +22,7 @@ Author: Ibrahima S. Sow
 // Interval between log outputs to stdout of the tegrastats statistics
 #define TEGRASTATS_INTERVAL 250 // Also determines the update rate of the shared memory
 
-#define SEMAPHORE_TIMEOUT_NS 500000000 // 500 milliseconds
+
 
 struct TegraTM
 {

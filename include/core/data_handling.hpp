@@ -13,7 +13,7 @@ This file contains classes and functions providing file services and data handli
 #include <opencv2/opencv.hpp>
 #include "spdlog/spdlog.h"
 
-
+#define ROOT_DISK "/"
 
 #define ROOT_DATA_FOLDER "data/"
 #define IMAGES_FOLDER "data/images/"
@@ -25,6 +25,7 @@ This file contains classes and functions providing file services and data handli
 
 namespace DH // Data Handling
 {
+    namespace fs = std::filesystem;
 
     /*
         Initialize the folder structure for all data storage activities.
@@ -60,6 +61,16 @@ namespace DH // Data Handling
     // need to read from disk (transfre img from disk to RAM) - reinitialize the frame buffer
     // need to be able to select the latest img from the disk
     // need to save telemetry data on disk
+
+
+
+
+
+    /*
+    Assumes the primary system disk is an NVMe drive as the main root partition (/)
+    Returns the disk usage as a positive percentage. -1 in case of errors.
+    */
+    int GetTotalDiskUsage();
 
 
 }

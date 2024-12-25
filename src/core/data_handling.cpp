@@ -1,10 +1,11 @@
 #include "core/data_handling.hpp"
 #include <algorithm>
+#include <cmath>
 #include <cstdlib>  
-
 
 namespace DH // Data Handling
 {
+
 
 bool INIT_DATA_FOLDER_TREE = false;
 
@@ -205,8 +206,23 @@ int CountRawImgNumberOnDisk()
 }
 
 
+int GetTotalDiskUsage() 
+{
+    // "df -h | grep '/dev/nvme' | awk '{print $5}' | head -n 1"
 
+    std::error_code ec; // capture errors instead of throwing exceptions
+    std::filesystem::space_info info = std::filesystem::space(ROOT_DISK, ec);
 
+    if (ec)
+    {
+        SPDLOG_ERROR("Error accessing disk space for path '{}': {}", ROOT_DISK, ec.message());
+        return -1; // Return -1 to indicate an error
+    }
+
+    double usage_percentage = (1.0 - static_cast<double>(info.free) / info.capacity) * 100.0;
+    return static_cast<int>(std::round(usage_percentage)); // round to nearest integer
+
+}
 
 
 } // namespace DH

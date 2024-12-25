@@ -1,8 +1,12 @@
 #ifndef TELEMETRY_HPP
 #define TELEMETRY_HPP
 
+#define SEMAPHORE_TIMEOUT_NS 100000000 // 100 milliseconds
+
 #include <mutex>
+#include <semaphore.h>
 #include "telemetry/tegra.hpp"
+
 
 // Forward declaration
 class Payload;
@@ -18,7 +22,7 @@ bool StartTegrastatsProcessor();
 struct TelemetryFrame
 {
 
-    long TIME;
+    long SYSTEM_TIME;
     long UPTIME;
     uint8_t PAYLOAD_STATE;
     uint8_t ACTIVE_CAMERAS;
@@ -55,7 +59,7 @@ public:
     Telemetry();
 
 
-    void RunService();
+    void RunService(Payload* payload);
 
     // Returns a copy of the current telemetry frame 
     TelemetryFrame GetTmFrame() const;
@@ -66,15 +70,20 @@ public:
 
 private:
 
+    uint8_t read_flag = 0; // reader set the flag to 0
     TegraTM* shared_mem;
+    sem_t* sem_shared_mem;
     TelemetryFrame tm_frame;
     mutable std::mutex frame_mtx;
-
-
     
-    bool LinkToTegrastatsProcess();
+    // Link the shared memory and semaphore to those of the TM_TEGRASTASTS 
+    bool LinkToTegraTmProcess();
 
     void UpdateFrame(Payload* payload);
+
+    void _UpdateTmSystemPart(Payload* payload);
+    // Returns True if successfully updated, False otherwise (semaphore failure, no tegra update, etc)
+    bool _UpdateTmTegraPart();
 
 };
 

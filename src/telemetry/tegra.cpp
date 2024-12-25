@@ -114,7 +114,7 @@ void ParseTegrastatsLine(const std::string& line, RegexContainer& regexes, Tegra
         // Handle inactive cores (e.g., "off")
         while (i < 6) 
         {
-            frame.cpu_load[i] = -1; // Use -1 to indicate "inactive"
+            frame.cpu_load[i] = 0; // Use 0 to indicate "inactive"
             ++i;
         }
     }

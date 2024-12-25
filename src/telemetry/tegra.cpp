@@ -143,31 +143,6 @@ void ParseTegrastatsLine(const std::string& line, RegexContainer& regexes, Tegra
 }
 
 
-void CaptureTegrastats() 
-{
-    // Set tegrastats interval
-    FILE* pipe = popen(("tegrastats --interval " + std::to_string(TEGRASTATS_INTERVAL)).c_str(), "r");
-
-
-    TegraTM frame; 
-    RegexContainer regexes;
-
-    if (!pipe) 
-    {
-        std::cerr << "Failed to open tegrastats pipe." << std::endl;
-        return;
-    }
-
-    char line[256];
-    while (fgets(line, sizeof(line), pipe)) // efficient blocking
-    {
-        ParseTegrastatsLine(line, regexes, frame);
-        // PrintTegraTM(frame);
-    }
-
-    pclose(pipe);
-}
-
 
 void StopTegrastats() 
 {
@@ -201,7 +176,7 @@ bool ConfigureSharedMemory(TegraTM* shared_mem)
     return true;
 }
 
-bool CreateSemaphore(sem_t* sem)
+bool InitializeSemaphore(sem_t* sem)
 {
     sem_unlink(TEGRASTATS_SEM); // Remove any existing semaphore before creating a new one
     sem_t* semaphore = sem_open(TEGRASTATS_SEM, O_CREAT, 0666, 1);
@@ -210,4 +185,43 @@ bool CreateSemaphore(sem_t* sem)
         spdlog::error("Failed to create semaphore");
         return 1;
     }
+}
+
+
+
+void RunTegrastatsProcessor(TegraTM* shared_frame, RegexContainer& regexes, sem_t* semaphore)
+{
+
+    // Set tegrastats interval
+    FILE* pipe = popen(("tegrastats --interval " + std::to_string(TEGRASTATS_INTERVAL)).c_str(), "r");
+    if (!pipe) 
+    {
+        spdlog::error("Failed to open tegrastats pipe");
+        return 1;
+    }
+
+    TegraTM frame; // Buffer for the parsed data
+    frame.change_flag = 1; // writer set that flag to 1 by default
+
+    char line[256];
+
+    while (fgets(line, sizeof(line), pipe)) // efficient blocking
+    {
+        
+        // Parsing takes ~0.1ms on Jetson Orin Nano, more than ok for our purposes
+        ParseTegrastatsLine(line, regexes, frame);
+        // PrintTegraTM(frame);
+
+        sem_wait(semaphore);   // locking access
+        // spdlog::info("Writer has access to shared memory");
+        memcpy(shared_frame, &frame, SHARED_MEM_SIZE); // copy the data to shared memory
+
+        sem_post(semaphore); // Unlock access
+        // spdlog::info("Writer has released access to shared memory");
+
+        spdlog::info("Data written to shared memory. (e.g {} RAM used, CPU Core 1 load: {}%, ...)", frame->ram_used, frame->cpu_load[0]);
+
+    }
+
+    pclose(pipe);
 }

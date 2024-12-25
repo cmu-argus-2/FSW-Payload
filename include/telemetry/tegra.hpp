@@ -21,13 +21,15 @@ Author: Ibrahima S. Sow
 #define TEGRASTATS_SHARED_MEM "/tm_tegrastats_shared_mem"
 #define TEGRASTATS_SEM "/tm_tegrastats_sem"
 
+// Interval between log outputs to stdout of the tegrastats statistics
+#define TEGRASTATS_INTERVAL 500 // Also determines the update rate of the shared memory
 
-#define TEGRASTATS_INTERVAL 200
 
 
 struct TegraTM
 {
-    uint8_t change_flag; // Flag to indicate if the data has changed
+    // Letting the main process converting to percentage
+
     int ram_used; // Used RAM in MB
     int ram_total; // Total RAM in MB
     int swap_used; // Used swap memory in MB
@@ -35,11 +37,14 @@ struct TegraTM
     int active_cores; // Number of active CPU cores
     int cpu_load[6]; // CPU cores load in %
     int gpu_freq; // GPU frequency in %
-    float cpu_temp; // CPU temperature in Celsius
-    float gpu_temp; // GPU temperature in Celsius
     int vdd_in; // VDD_IN in mW
     int vdd_cpu_gpu_cv; // VDD_CPU_GPU_CV in mW 
     int vdd_soc; // VDD_SOC in mW
+
+    float cpu_temp; // CPU temperature in Celsius
+    float gpu_temp; // GPU temperature in Celsius
+
+    uint8_t change_flag; // Flag to indicate if the data has changed
 };
 
 constexpr size_t SHARED_MEM_SIZE = sizeof(TegraTM);
@@ -69,15 +74,18 @@ void PrintTegraTM(TegraTM& frame);
 
 void ParseTegrastatsLine(const std::string& line, RegexContainer& regexes, TegraTM& frame);
 
-void CaptureTegrastats();
-
 void StopTegrastats();
 
 // Allocate the shared memory and map it to the argument struct pointer
 bool ConfigureSharedMemory(TegraTM* shared_mem);
 
-bool CreateSemaphore(sem_t* sem);
+// Create a semaphore for synchronization
+bool InitializeSemaphore(sem_t* sem);
 
+void UpdateTegraTM(TegraTM* frame, RegexContainer& regexes, sem_t* sem);
+
+
+void RunTegrastatsProcessor(TegraTM* frame, RegexContainer& regexes, sem_t* sem);
 
 
 #endif // TEGRA_HPP

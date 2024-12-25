@@ -68,6 +68,7 @@ int main(int argc, char* argv[])
         }
     }
 
+    spdlog::info("Running tegrastats process on target hardware.");
     RunTegrastatsProcessor(&shared_frame, regexes, sem);
 
     return 0;

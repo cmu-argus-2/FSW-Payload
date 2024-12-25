@@ -1,5 +1,12 @@
 
+add_library(telemetry
+    telemetry.cpp
+)
 
+
+
+
+##### Tegrastats Processor 
 
 add_executable(TM_TEGRASTATS_PROCESS tegra_processor.cpp tegra.cpp)
 

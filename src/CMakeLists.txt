@@ -16,5 +16,5 @@ add_library(PAYLOAD_LIB SHARED
 
 # Link libraries to PAYLOAD_LIB
 target_link_libraries(PAYLOAD_LIB
-    PUBLIC core navigation vision communication
+    PUBLIC core navigation vision communication telemetry
 )

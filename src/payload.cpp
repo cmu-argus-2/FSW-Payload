@@ -126,8 +126,6 @@ Configuration& Payload::GetConfiguration()
     return config;
 }
 
-
-
 void Payload::Run()
 {   
 
@@ -142,10 +140,10 @@ void Payload::Run()
     // Running execution loop 
     _running_instance = true;
 
+
+
     while (_running_instance) 
     {
-        
-
         std::unique_lock<std::mutex> lock(mtx);
         cv_queue.wait(lock, [this] { return !_running_instance || !rx_queue.IsEmpty(); });
 

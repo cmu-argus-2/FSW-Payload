@@ -14,6 +14,7 @@
 #include "vision/camera_manager.hpp"
 #include "communication/named_pipe.hpp"
 #include "communication/uart.hpp"
+#include "telemetry/telemetry.hpp"
 
 enum class PayloadState : uint8_t {
     STARTUP = 0x00,
@@ -95,8 +96,15 @@ private:
     void StopThreadPool();
 
 
-    void _StartCommunicationThread();
-    void _StopCommunicationThread();
+    void StartCommunicationThread();
+    void StopCommunicationThread();
+
+
+    // Telemetry
+    std::thread telemetry_thread;
+    
+    void StartTelemetryThread();
+    void StopTelemetryThread();
 
     
 };

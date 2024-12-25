@@ -160,7 +160,6 @@ void ParseTegrastatsLine(const std::string& line, RegexContainer& regexes, Tegra
 }
 
 
-
 void StopTegrastats() 
 {
     std::string command = "tegrastats --stop"; // Global command, stops any running tegrastats

@@ -22,7 +22,7 @@ Author: Ibrahima S. Sow
 // Interval between log outputs to stdout of the tegrastats statistics
 #define TEGRASTATS_INTERVAL 250 // Also determines the update rate of the shared memory
 
-
+#define SEMAPHORE_TIMEOUT_NS 500000000 // 500 milliseconds
 
 struct TegraTM
 {
@@ -74,6 +74,7 @@ void PrintTegraTM(TegraTM& frame);
 
 void ParseTegrastatsLine(const std::string& line, RegexContainer& regexes, TegraTM& frame);
 
+
 void StopTegrastats();
 
 /* Writer side */
@@ -94,6 +95,16 @@ bool LinkToSharedMemory(TegraTM* shared_mem);
 
 // Link to synchronization semaphore
 sem_t* LinkToSemaphore();
+
+/* 
+Read the shared memory space and copy the contents to the argument struct pointer. After reading, the function
+sets the change_flag to 0 and returns true.
+
+If the change_flag is still 0 for a subsequent read, no copy is performed and the function returns false.
+
+Note: a copy could be avoided by directly using the shared memory struct.
+*/
+
 
 
 #endif // TEGRA_HPP

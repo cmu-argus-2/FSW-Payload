@@ -135,7 +135,7 @@ void Payload::Run()
     StartCameraThread();
 
     // Launch communication system
-    _StartCommunicationThread();
+    StartCommunicationThread();
 
     // Running execution loop 
     _running_instance = true;
@@ -187,7 +187,7 @@ void Payload::Stop()
     StopThreadPool();
 
     // Stop communication system
-    _StopCommunicationThread();
+    StopCommunicationThread();
 
     
     SPDLOG_WARN("Payload Shutdown");
@@ -250,7 +250,7 @@ void Payload::StopThreadPool()
 
 }
 
-void Payload::_StartCommunicationThread()
+void Payload::StartCommunicationThread()
 {
     
     communication->Connect();
@@ -258,10 +258,21 @@ void Payload::_StartCommunicationThread()
     SPDLOG_INFO("Communication thread started");
 }
 
-void Payload::_StopCommunicationThread()
+void Payload::StopCommunicationThread()
 {
     communication->StopLoop();
     communication_thread.join();
     SPDLOG_INFO("Communication thread stopped");
     communication->Disconnect();
+}
+
+void Payload::StartTelemetryThread()
+{
+
+}
+
+
+void Payload::StopTelemetryThread()
+{
+    
 }

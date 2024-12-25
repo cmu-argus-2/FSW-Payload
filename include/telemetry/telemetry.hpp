@@ -1,12 +1,19 @@
-#ifndef MONITORING_HPP
-#define MONITORING_HPP
+#ifndef TELEMETRY_HPP
+#define TELEMETRY_HPP
 
-
-#define SEMAPHORE_TIMEOUT_NS 500000000 // 500 milliseconds
-
-
+#include <mutex>
 #include "telemetry/tegra.hpp"
 
+// Forward declaration
+class Payload;
+
+
+// Execute the pgrep command and check its return value
+bool CheckTegraTmProcessRunning();
+// Kill the process
+bool KillTegraTmProcess();
+// Start the TM_TEGRASTSTS executable that updates the shared memory
+bool StartTegrastatsProcessor();
 
 struct TelemetryFrame
 {
@@ -16,10 +23,7 @@ struct TelemetryFrame
     uint8_t PAYLOAD_STATE;
     uint8_t ACTIVE_CAMERAS;
     uint8_t CAPTURE_MODE;
-    uint8_t CAM1_STATUS;
-    uint8_t CAM2_STATUS;
-    uint8_t CAM3_STATUS;
-    uint8_t CAM4_STATUS;
+    uint8_t CAM_STATUS[4];
     uint8_t TASKS_IN_EXECUTION;
     uint8_t DISK_USAGE;
     uint8_t LATEST_ERROR;
@@ -29,25 +33,53 @@ struct TelemetryFrame
     uint8_t RAM_USAGE;
     uint8_t SWAP_USAGE;
     uint8_t ACTIVE_CORES;
-    uint8_t CPU_LOAD_1;
-    uint8_t CPU_LOAD_2;
-    uint8_t CPU_LOAD_3;
-    uint8_t CPU_LOAD_4;
-    uint8_t CPU_LOAD_5;
-    uint8_t CPU_LOAD_6;
+    uint8_t CPU_LOAD[6];
     uint8_t GPU_FREQ;
     uint8_t CPU_TEMP;
     uint8_t GPU_TEMP;
     int VDD_IN;
     int VDD_CPU_GPU_CV;
     int VDD_SOC;
-        
+    
+    TelemetryFrame();
+
+};
+
+
+class Telemetry
+{
+
+public:
+
+
+    Telemetry();
+
+
+    void RunService();
+
+    // Returns a copy of the current telemetry frame 
+    TelemetryFrame GetTmFrame() const;
+
+
+    
+
+
+private:
+
+    TegraTM* shared_mem;
+    TelemetryFrame tm_frame;
+    mutable std::mutex frame_mtx;
+
+
+    
+    bool LinkToTegrastatsProcess();
+
+    void UpdateFrame(Payload* payload);
 
 };
 
 
 
-// int CountActiveThreads();
+int CountActiveThreads();
 
-
-#endif // MONITORING_HPP
+#endif // TELEMETRY_HPP

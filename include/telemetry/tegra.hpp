@@ -8,12 +8,10 @@ Author: Ibrahima S. Sow
 #ifndef TEGRA_HPP
 #define TEGRA_HPP
 
-#include <cstdlib>
+#include <unistd.h>
 #include <iostream>
-#include <filesystem>
-#include <sys/stat.h>
+#include <sys/stat.h>        /* For mode constants */
 #include <semaphore.h>
-#include <iostream>
 #include <string>
 #include <regex>
 
@@ -22,7 +20,7 @@ Author: Ibrahima S. Sow
 #define TEGRASTATS_SEM "/tm_tegrastats_sem"
 
 // Interval between log outputs to stdout of the tegrastats statistics
-#define TEGRASTATS_INTERVAL 500 // Also determines the update rate of the shared memory
+#define TEGRASTATS_INTERVAL 250 // Also determines the update rate of the shared memory
 
 
 
@@ -45,6 +43,8 @@ struct TegraTM
     float gpu_temp; // GPU temperature in Celsius
 
     uint8_t change_flag; // Flag to indicate if the data has changed
+
+    TegraTM();
 };
 
 constexpr size_t SHARED_MEM_SIZE = sizeof(TegraTM);
@@ -80,7 +80,7 @@ void StopTegrastats();
 bool ConfigureSharedMemory(TegraTM* shared_mem);
 
 // Create a semaphore for synchronization
-bool InitializeSemaphore(sem_t* sem);
+sem_t* InitializeSemaphore();
 
 void UpdateTegraTM(TegraTM* frame, RegexContainer& regexes, sem_t* sem);
 

@@ -2,19 +2,20 @@
 
 
 
-int main(int argc, char* argv[])
+int main()
 {
 
     TegraTM shared_frame; // Shared memory frame
     RegexContainer regexes; // Regular expression container
-    sem_t* sem; // Semaphore for synchronization
+
 
     if (!ConfigureSharedMemory(&shared_frame))
     {
         return 1;
     }
 
-    if (!InitializeSemaphore(sem))
+    sem_t* sem = InitializeSemaphore(); // Initialize semaphore for shared memory access
+    if (!sem)
     {
         return 1;
     }

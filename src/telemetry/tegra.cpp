@@ -1,7 +1,24 @@
 #include "telemetry/tegra.hpp"
 #include "spdlog/spdlog.h"
-#include <sys/stat.h>        /* For mode constants */
+#include <iostream>
+#include <sys/mman.h>
 #include <fcntl.h>
+
+TegraTM::TegraTM()
+        : ram_used(0),
+            ram_total(0),
+            swap_used(0),
+            swap_total(0),
+            active_cores(0),
+            cpu_load{0, 0, 0, 0, 0, 0},
+            gpu_freq(0),
+            vdd_in(0),
+            vdd_cpu_gpu_cv(0),
+            vdd_soc(0),
+            cpu_temp(0),
+            gpu_temp(0),
+            change_flag(1)
+    {}
 
 RegexContainer::RegexContainer()
         : ram_regex(R"(RAM (\d+)/(\d+)MB)"),
@@ -176,20 +193,20 @@ bool ConfigureSharedMemory(TegraTM* shared_mem)
     return true;
 }
 
-bool InitializeSemaphore(sem_t* sem)
+sem_t* InitializeSemaphore()
 {
     sem_unlink(TEGRASTATS_SEM); // Remove any existing semaphore before creating a new one
-    sem_t* semaphore = sem_open(TEGRASTATS_SEM, O_CREAT, 0666, 1);
-    if (semaphore == SEM_FAILED)
+    sem_t* sem = sem_open(TEGRASTATS_SEM, O_CREAT, 0666, 1);
+    if (sem == SEM_FAILED)
     {
         spdlog::error("Failed to create semaphore");
-        return 1;
     }
+    return sem;
 }
 
 
 
-void RunTegrastatsProcessor(TegraTM* shared_frame, RegexContainer& regexes, sem_t* semaphore)
+void RunTegrastatsProcessor(TegraTM* shared_frame, RegexContainer& regexes, sem_t* sem)
 {
 
     // Set tegrastats interval
@@ -197,7 +214,7 @@ void RunTegrastatsProcessor(TegraTM* shared_frame, RegexContainer& regexes, sem_
     if (!pipe) 
     {
         spdlog::error("Failed to open tegrastats pipe");
-        return 1;
+        return;
     }
 
     TegraTM frame; // Buffer for the parsed data
@@ -212,14 +229,14 @@ void RunTegrastatsProcessor(TegraTM* shared_frame, RegexContainer& regexes, sem_
         ParseTegrastatsLine(line, regexes, frame);
         // PrintTegraTM(frame);
 
-        sem_wait(semaphore);   // locking access
+        sem_wait(sem);   // locking access
         // spdlog::info("Writer has access to shared memory");
-        memcpy(shared_frame, &frame, SHARED_MEM_SIZE); // copy the data to shared memory
+        memcpy(shared_frame, &frame, sizeof(frame)); // copy the data to shared memory
 
-        sem_post(semaphore); // Unlock access
+        sem_post(sem); // Unlock access
         // spdlog::info("Writer has released access to shared memory");
 
-        spdlog::info("Data written to shared memory. (e.g {} RAM used, CPU Core 1 load: {}%, ...)", frame->ram_used, frame->cpu_load[0]);
+        spdlog::info("Data written to shared memory. (e.g {} RAM used, CPU Core 1 load: {}%, ...)", frame.ram_used, frame.cpu_load[0]);
 
     }
 

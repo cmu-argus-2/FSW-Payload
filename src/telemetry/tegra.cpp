@@ -242,3 +242,37 @@ void RunTegrastatsProcessor(TegraTM* shared_frame, RegexContainer& regexes, sem_
 
     pclose(pipe);
 }
+
+
+bool LinkToSharedMemory(TegraTM* shared_mem)
+{
+ 
+    int shm_fd = shm_open(TEGRASTATS_SHARED_MEM, O_RDWR, 0666);
+    if (shm_fd == -1)
+    {
+        spdlog::error("Failed to open shared memory");
+        return false;
+    }
+
+    // map the shared memory in the address space of the calling process
+    shared_mem = static_cast<TegraTM*>(mmap(NULL, SHARED_MEM_SIZE, PROT_READ | PROT_WRITE, MAP_SHARED, shm_fd, 0));
+    if (shared_mem == MAP_FAILED)
+    {
+        spdlog::error("Failed to map shared memory");
+        return false;
+    }
+
+    return true;   
+
+}
+
+
+sem_t* LinkToSemaphore()
+{
+    sem_t* sem = sem_open(TEGRASTATS_SEM, O_RDONLY);
+    if (sem == SEM_FAILED)
+    {
+        spdlog::error("Failed to link to semaphore (read-only).");
+    }
+    return sem;
+}

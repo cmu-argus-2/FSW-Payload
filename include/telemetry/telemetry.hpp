@@ -5,6 +5,9 @@
 #define SEMAPHORE_TIMEOUT_NS 500000000 // 500 milliseconds
 
 
+#include "telemetry/tegra.hpp"
+
+
 struct TelemetryFrame
 {
 
@@ -19,7 +22,6 @@ struct TelemetryFrame
     uint8_t CAM4_STATUS;
     uint8_t TASKS_IN_EXECUTION;
     uint8_t DISK_USAGE;
-    uint16_t SESSION_ERROR_COUNT;
     uint8_t LATEST_ERROR;
     uint8_t LAST_EXECUTED_CMD_ID;
     long LAST_EXECUTED_CMD_TIME;

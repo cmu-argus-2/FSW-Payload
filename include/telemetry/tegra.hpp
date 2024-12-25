@@ -76,16 +76,24 @@ void ParseTegrastatsLine(const std::string& line, RegexContainer& regexes, Tegra
 
 void StopTegrastats();
 
-// Allocate the shared memory and map it to the argument struct pointer
+/* Writer side */
+
+// Allocate the sized shared memory and map it to the argument struct pointer
 bool ConfigureSharedMemory(TegraTM* shared_mem);
 
 // Create a semaphore for synchronization
 sem_t* InitializeSemaphore();
 
-void UpdateTegraTM(TegraTM* frame, RegexContainer& regexes, sem_t* sem);
-
-
+// Run continuously the tegrastats process
 void RunTegrastatsProcessor(TegraTM* frame, RegexContainer& regexes, sem_t* sem);
+
+/* Reading side */
+
+// Link the argument struct pointer to the shared memory. Requires the memory to be already configured.
+bool LinkToSharedMemory(TegraTM* shared_mem);
+
+// Link to synchronization semaphore
+sem_t* LinkToSemaphore();
 
 
 #endif // TEGRA_HPP

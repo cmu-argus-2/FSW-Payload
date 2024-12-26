@@ -5,7 +5,6 @@
 
 #include "payload.hpp"
 
-
 #include "core/data_handling.hpp"
 #include "telemetry/telemetry.hpp"
 
@@ -79,6 +78,11 @@ shared_mem(nullptr),
 sem_shared_mem(nullptr),
 tm_frame()
 { 
+    // Start the tegrastats processor if not started 
+    if (!CheckTegraTmProcessRunning())
+    {
+        StartTegrastatsProcessor();
+    }
 }
 
 TelemetryFrame Telemetry::GetTmFrame() const
@@ -103,8 +107,16 @@ void Telemetry::UpdateFrame(Payload* payload)
     // Tegrastats part
     _UpdateTmTegraPart();
 
+}
+
+void Telemetry::RunService(Payload* payload)
+{
+
+
+
 
     (void)payload;
+
 }
 
 

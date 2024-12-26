@@ -13,6 +13,12 @@ This repository contains the Flight Software (FSW) written for the Jetson Orin N
 
 ## Build instructions
 
+Give permissions to both scripts 
+```bash
+sudo chmod +x build.sh run.sh 
+```
+
+
 ### Setting up the Environment
 
 To compile using CMake, follow these steps: 

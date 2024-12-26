@@ -7,7 +7,8 @@ This file contains a series of utility functions used throughout the flight soft
 
 */
 
-
+// Returns True if the process is running on a Jetson Platform
+bool DetectJetsonPlatform();
 
 
 

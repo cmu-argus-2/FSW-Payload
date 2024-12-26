@@ -2,6 +2,7 @@
 #define TELEMETRY_HPP
 
 #define SEMAPHORE_TIMEOUT_NS 100000000 // 100 milliseconds
+#define DEFAULT_TM_FREQUENCY_HZ 1  
 
 #include <mutex>
 #include <semaphore.h>
@@ -58,7 +59,7 @@ public:
 
     Telemetry();
 
-
+    // Runs the continuous update of the frame and the live management of the associated tegrastats process
     void RunService(Payload* payload);
 
     // Returns a copy of the current telemetry frame 
@@ -69,6 +70,8 @@ public:
 
 
 private:
+
+    int frequency_hz = DEFAULT_TM_FREQUENCY_HZ;
 
     uint8_t read_flag = 0; // reader set the flag to 0
     TegraTM* shared_mem;

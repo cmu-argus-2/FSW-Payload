@@ -183,6 +183,7 @@ bool ConfigureSharedMemory(TegraTM* shared_mem)
     ftruncate(shm_fd, SHARED_MEM_SIZE);
     // map the shared memory in the address space of the calling process
     shared_mem = static_cast<TegraTM*>(mmap(NULL, SHARED_MEM_SIZE, PROT_READ | PROT_WRITE, MAP_SHARED, shm_fd, 0));
+    //close(shm_fd);
     if (shared_mem == MAP_FAILED)
     {
         spdlog::error("Failed to map shared memory");
@@ -231,11 +232,12 @@ void RunTegrastatsProcessor(TegraTM* shared_frame, RegexContainer& regexes, sem_
         sem_wait(sem);   // locking access
         // spdlog::info("Writer has access to shared memory");
         memcpy(shared_frame, &frame, sizeof(frame)); // copy the data to shared memory
+        SPDLOG_INFO("Set the reading flag? {}", shared_frame->change_flag);
 
         sem_post(sem); // Unlock access
         // spdlog::info("Writer has released access to shared memory");
 
-        spdlog::info("Data written to shared memory. (e.g {} RAM used, CPU Core 1 load: {}%, ...)", frame.ram_used, frame.cpu_load[0]);
+        SPDLOG_INFO("Data written to shared memory. (e.g {} RAM used, CPU Core 1 load: {}%, ...)", frame.ram_used, frame.cpu_load[0]);
 
     }
 
@@ -243,21 +245,30 @@ void RunTegrastatsProcessor(TegraTM* shared_frame, RegexContainer& regexes, sem_
 }
 
 
-bool LinkToSharedMemory(TegraTM* shared_mem)
+bool LinkToSharedMemory(TegraTM*& shared_mem)
 {
  
-    int shm_fd = shm_open(TEGRASTATS_SHARED_MEM, O_RDWR, 0666);
+     // Check if already mapped and unmap previous mapping
+    if (shared_mem != nullptr) {
+        munmap(shared_mem, SHARED_MEM_SIZE);
+        shared_mem = nullptr;
+    }
+
+
+    int shm_fd = shm_open(TEGRASTATS_SHARED_MEM, O_CREAT | O_RDWR, 0666);
     if (shm_fd == -1)
     {
-        spdlog::error("Failed to open shared memory");
+        SPDLOG_ERROR("Failed to open shared memory");
         return false;
     }
 
     // map the shared memory in the address space of the calling process
     shared_mem = static_cast<TegraTM*>(mmap(NULL, SHARED_MEM_SIZE, PROT_READ | PROT_WRITE, MAP_SHARED, shm_fd, 0));
+    // close(shm_fd); // Close file descriptor after mapping
     if (shared_mem == MAP_FAILED)
     {
-        spdlog::error("Failed to map shared memory");
+        SPDLOG_ERROR("Failed to map shared memory");
+        shared_mem = nullptr;
         return false;
     }
 
@@ -267,11 +278,11 @@ bool LinkToSharedMemory(TegraTM* shared_mem)
 
 
 sem_t* LinkToSemaphore()
-{
+{   
     sem_t* sem = sem_open(TEGRASTATS_SEM, O_RDONLY);
     if (sem == SEM_FAILED)
     {
-        spdlog::error("Failed to link to semaphore (read-only).");
+        SPDLOG_ERROR("Failed to link to semaphore (read-only).");
     }
     return sem;
 }

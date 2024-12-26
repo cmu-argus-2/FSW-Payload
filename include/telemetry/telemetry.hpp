@@ -1,9 +1,12 @@
 #ifndef TELEMETRY_HPP
 #define TELEMETRY_HPP
 
-#define SEMAPHORE_TIMEOUT_NS 100000000 // 100 milliseconds
+#define SEMAPHORE_TIMEOUT_NS 200000000 // 200 milliseconds
 #define DEFAULT_TM_FREQUENCY_HZ 1  
 
+#define MAXIMUM_COUNT_WITHOUT_UPDATE 3
+
+#include <atomic>
 #include <mutex>
 #include <semaphore.h>
 #include "telemetry/tegra.hpp"
@@ -17,8 +20,9 @@ class Payload;
 bool CheckTegraTmProcessRunning();
 // Kill the process
 bool KillTegraTmProcess();
-// Start the TM_TEGRASTSTS executable that updates the shared memory
-bool StartTegrastatsProcessor();
+// (Re)start the TM_TEGRASTSTS executable that updates the shared memory
+// No point in just starting
+bool RestartTegrastatsProcessor();
 
 struct TelemetryFrame
 {
@@ -59,8 +63,12 @@ public:
 
     Telemetry();
 
+    ~Telemetry();
+
     // Runs the continuous update of the frame and the live management of the associated tegrastats process
     void RunService(Payload* payload);
+    // Stop the telemetry service (running on a thread)
+    void StopService();
 
     // Returns a copy of the current telemetry frame 
     TelemetryFrame GetTmFrame() const;
@@ -71,7 +79,8 @@ public:
 
 private:
 
-    int frequency_hz = DEFAULT_TM_FREQUENCY_HZ;
+    int tm_frequency_hz = DEFAULT_TM_FREQUENCY_HZ;
+    std::atomic<bool> loop_flag = false;
 
     uint8_t read_flag = 0; // reader set the flag to 0
     TegraTM* shared_mem;
@@ -81,12 +90,17 @@ private:
     
     // Link the shared memory and semaphore to those of the TM_TEGRASTASTS 
     bool LinkToTegraTmProcess();
+    bool tegra_tm_configured = false;
 
     void UpdateFrame(Payload* payload);
 
     void _UpdateTmSystemPart(Payload* payload);
     // Returns True if successfully updated, False otherwise (semaphore failure, no tegra update, etc)
     bool _UpdateTmTegraPart();
+
+
+    int _counter_before_tegra_restart = 0;
+
 
 };
 

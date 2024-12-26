@@ -137,6 +137,9 @@ void Payload::Run()
     // Launch communication system
     StartCommunicationThread();
 
+    // Launch telemetry service
+    StartTelemetryService();
+
     // Running execution loop 
     _running_instance = true;
 
@@ -179,6 +182,9 @@ void Payload::Stop()
 {
     // Stop execution loop
     _running_instance = false;
+
+    // Stop the telemetry service
+    StopTelemetryService();
 
     // Stop camera system
     StopCameraThread();
@@ -266,13 +272,17 @@ void Payload::StopCommunicationThread()
     communication->Disconnect();
 }
 
-void Payload::StartTelemetryThread()
+void Payload::StartTelemetryService()
 {
+    telemetry_thread = std::thread(&Telemetry::RunService, &telemetry, this);
+    SPDLOG_INFO("Telemetry thread started");
 
 }
 
 
-void Payload::StopTelemetryThread()
+void Payload::StopTelemetryService()
 {
-    
+    telemetry.StopService();
+    telemetry_thread.join();
+    SPDLOG_INFO("Telemetry thread stopped");
 }

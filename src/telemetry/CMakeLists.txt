@@ -1,6 +1,11 @@
 
 add_library(telemetry
     telemetry.cpp
+    tegra.cpp
+)
+
+target_link_libraries(telemetry PRIVATE
+    rt
 )
 
 

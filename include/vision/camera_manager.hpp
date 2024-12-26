@@ -65,7 +65,7 @@ public:
     bool EnableCamera(int cam_id);
     bool DisableCamera(int cam_id);
 
-    const CAPTURE_MODE& GetCaptureMode() const;
+    CAPTURE_MODE GetCaptureMode() const;
     int CountActiveCameras() const;
     void FillCameraStatus(uint8_t* status);
 

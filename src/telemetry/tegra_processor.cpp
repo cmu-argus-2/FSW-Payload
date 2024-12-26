@@ -25,9 +25,10 @@ void EmulateTegrastatsProcessor(TegraTM* shared_frame, RegexContainer& regexes, 
 
             sem_wait(sem); 
             memcpy(shared_frame, &frame, sizeof(frame));
+            SPDLOG_INFO("Set the reading flag? {}", shared_frame->change_flag);
             sem_post(sem);
 
-            spdlog::info("Data written to shared memory. (e.g {} RAM used, CPU Core 1 load: {}%, ...)", frame.ram_used, frame.cpu_load[0]);
+            SPDLOG_INFO("Data written to shared memory. (e.g {} RAM used, CPU Core 1 load: {}%, ...)", frame.ram_used, frame.cpu_load[0]);
 
             // Simulate wait to replicate tegrastats behavior
             usleep(TEGRASTATS_INTERVAL * 1000); 

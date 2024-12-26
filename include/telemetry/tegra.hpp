@@ -20,7 +20,7 @@ Author: Ibrahima S. Sow
 #define TEGRASTATS_SEM "/tm_tegrastats_sem"
 
 // Interval between log outputs to stdout of the tegrastats statistics
-#define TEGRASTATS_INTERVAL 250 // Also determines the update rate of the shared memory
+#define TEGRASTATS_INTERVAL 200 // Also determines the update rate of the shared memory
 
 
 
@@ -91,19 +91,10 @@ void RunTegrastatsProcessor(TegraTM* frame, RegexContainer& regexes, sem_t* sem)
 /* Reading side */
 
 // Link the argument struct pointer to the shared memory. Requires the memory to be already configured.
-bool LinkToSharedMemory(TegraTM* shared_mem);
+bool LinkToSharedMemory(TegraTM*& shared_mem);
 
 // Link to synchronization semaphore
 sem_t* LinkToSemaphore();
-
-/* 
-Read the shared memory space and copy the contents to the argument struct pointer. After reading, the function
-sets the change_flag to 0 and returns true.
-
-If the change_flag is still 0 for a subsequent read, no copy is performed and the function returns false.
-
-Note: a copy could be avoided by directly using the shared memory struct.
-*/
 
 
 

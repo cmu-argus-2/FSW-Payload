@@ -102,9 +102,9 @@ private:
 
     // Telemetry
     std::thread telemetry_thread;
-    
-    void StartTelemetryThread();
-    void StopTelemetryThread();
+    Telemetry telemetry;
+    void StartTelemetryService();
+    void StopTelemetryService();
 
     
 };

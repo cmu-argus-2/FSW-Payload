@@ -115,7 +115,7 @@ void CameraManager::RunLoop(Payload* payload)
     while (loop_flag) 
     {
         // TODO remove busy waiting ~ add condition variable
-        switch (capture_mode)
+        switch (capture_mode.load())
         {
             case CAPTURE_MODE::IDLE:
             {
@@ -269,7 +269,7 @@ bool CameraManager::GetDisplayFlag() const
 
 void CameraManager::SetCaptureMode(CAPTURE_MODE mode)
 {
-    capture_mode = mode;
+    capture_mode.store(mode);
 }
 
 
@@ -360,9 +360,9 @@ int CameraManager::CountActiveCameras() const
     return active_count;
 }
 
-const CAPTURE_MODE& CameraManager::GetCaptureMode() const
+CAPTURE_MODE CameraManager::GetCaptureMode() const
 {
-    return capture_mode; // atomic
+    return capture_mode.load(); // atomic
 }   
 
 void CameraManager::FillCameraStatus(uint8_t* status) 

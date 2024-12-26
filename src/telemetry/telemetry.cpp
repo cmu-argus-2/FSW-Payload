@@ -1,12 +1,16 @@
 #include <string>
 #include <cstdio>
-#include "unistd.h"
+#include <chrono>
+#include <thread>
+#include <sys/mman.h>
+#include <unistd.h>
+
 #include "spdlog/spdlog.h"
 
 #include "payload.hpp"
-
 #include "core/data_handling.hpp"
 #include "telemetry/telemetry.hpp"
+#include "core/utils.hpp"
 
 bool CheckTegraTmProcessRunning()
 {   
@@ -32,12 +36,22 @@ bool KillTegraTmProcess()
 }
 
 
-bool StartTegrastatsProcessor()
+bool RestartTegrastatsProcessor()
 {
     // kill any process that was already running
     KillTegraTmProcess();
     
     std::string cmd = std::string("./build/bin/") + TM_TEGRASTATS;
+
+    if (!DetectJetsonPlatform()) // for emulation
+    {   
+        cmd += " emulate";
+    }
+
+    // Add redirection and background execution
+    cmd += " > /dev/null 2>&1 &";
+
+
     int result = std::system(cmd.c_str());
 
     return (result == 0);
@@ -78,10 +92,46 @@ shared_mem(nullptr),
 sem_shared_mem(nullptr),
 tm_frame()
 { 
-    // Start the tegrastats processor if not started 
     if (!CheckTegraTmProcessRunning())
     {
-        StartTegrastatsProcessor();
+        if (RestartTegrastatsProcessor())
+        {
+            SPDLOG_INFO("Started TM Tegrastats Processor");
+        }
+        else
+        {
+            SPDLOG_WARN("Failed to start the TM Tegrastats Processor");
+        }
+    }
+
+    if (LinkToTegraTmProcess())
+    {
+        SPDLOG_INFO("Linked shared memory to tegrastats processor");
+    }
+    else
+    {
+        SPDLOG_WARN("Failed to link shared memory to tegrastats processor");
+    }
+
+}
+
+
+Telemetry::~Telemetry()
+{
+    StopService();
+    
+    KillTegraTmProcess();
+
+    if (sem_shared_mem != nullptr)
+    {
+        sem_close(sem_shared_mem);
+        sem_shared_mem = nullptr;
+    }
+
+    if (shared_mem != nullptr)
+    {
+        munmap(shared_mem, sizeof(shared_mem));
+        shared_mem = nullptr;
     }
 }
 
@@ -93,10 +143,39 @@ TelemetryFrame Telemetry::GetTmFrame() const
 
 
 bool Telemetry::LinkToTegraTmProcess() 
-{
-    // Check both conditions and do the semaphore assignment ('=' on purpose) at the same time (just a one liner)
-    return LinkToSharedMemory(shared_mem) && (sem_shared_mem = LinkToSemaphore());
+{   
+    // if already configured, return immediately
+    /*if (tegra_tm_configured)
+    {
+        return tegra_tm_configured;
+    }
+
+    
+    // close existing semaphore if already open
+    if (sem_shared_mem != nullptr) {
+        sem_close(sem_shared_mem);
+        sem_shared_mem = nullptr;
+    }*/
+
+
+
+    if (!LinkToSharedMemory(shared_mem)) {
+        SPDLOG_ERROR("Failed to link to shared memory");
+        tegra_tm_configured = false;
+        return false;
+    }
+
+    sem_shared_mem = LinkToSemaphore();
+    if (sem_shared_mem == nullptr) 
+    {
+        SPDLOG_ERROR("Failed to link to semaphore");
+        tegra_tm_configured = false;
+        return false;
+    }
+
+    return true;
 }
+
 
 void Telemetry::UpdateFrame(Payload* payload)
 {
@@ -105,24 +184,56 @@ void Telemetry::UpdateFrame(Payload* payload)
     _UpdateTmSystemPart(payload);
 
     // Tegrastats part
-    _UpdateTmTegraPart();
+    bool update = _UpdateTmTegraPart();
+    if (!update)
+    {
+        _counter_before_tegra_restart++;
+        if (_counter_before_tegra_restart >= MAXIMUM_COUNT_WITHOUT_UPDATE)
+        {
+            SPDLOG_WARN("Restarting TM_TEGRASTATS...");
+            RestartTegrastatsProcessor();
+            LinkToTegraTmProcess();
+            _counter_before_tegra_restart = 0;
+        }
+    }
 
 }
 
 void Telemetry::RunService(Payload* payload)
 {
 
+    loop_flag.store(true); // just to be explicit
+    const auto service_start = std::chrono::high_resolution_clock::now();
+    const auto interval = std::chrono::duration_cast<std::chrono::high_resolution_clock::duration>(
+        std::chrono::duration<double>(1.0 / tm_frequency_hz)
+    );
+    auto next = std::chrono::high_resolution_clock::now();
 
+    while (loop_flag.load()) 
+    {
+
+        UpdateFrame(payload);
+
+
+        next += interval;
+        std::this_thread::sleep_until(next);
+    }
 
 
     (void)payload;
 
 }
 
+void Telemetry::StopService()
+{
+    loop_flag.store(false);
+    // join externally
+}
+
 
 void Telemetry::_UpdateTmSystemPart(Payload* payload)
 {
-
+    SPDLOG_DEBUG("Updating system part of the TM frame..");
     // TODO error handling
 
     // tm_frame.SYSTEM_TIME = 
@@ -133,7 +244,6 @@ void Telemetry::_UpdateTmSystemPart(Payload* payload)
     tm_frame.ACTIVE_CAMERAS = static_cast<uint8_t>(payload->GetCameraManager().CountActiveCameras());
     tm_frame.CAPTURE_MODE = static_cast<uint8_t>(payload->GetCameraManager().GetCaptureMode());
     payload->GetCameraManager().FillCameraStatus(tm_frame.CAM_STATUS);
-
     int disk_use = DH::GetTotalDiskUsage();
     if (disk_use >= 0)
     {
@@ -152,6 +262,8 @@ void Telemetry::_UpdateTmSystemPart(Payload* payload)
 
 bool Telemetry::_UpdateTmTegraPart() 
 {
+    SPDLOG_DEBUG("Updating tegra part of the TM frame..");
+    
     struct timespec ts;
     clock_gettime(CLOCK_REALTIME, &ts);
     ts.tv_nsec += SEMAPHORE_TIMEOUT_NS; // Add the timeout 

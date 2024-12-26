@@ -1,4 +1,5 @@
-#include "core/utils.cpp"
+#include <cstdlib>
+#include "core/utils.hpp"
 
 
 bool DetectJetsonPlatform()

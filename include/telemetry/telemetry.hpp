@@ -54,6 +54,7 @@ struct TelemetryFrame
 
 };
 
+void PrintTelemetryFrame(const TelemetryFrame& tm_frame);
 
 class Telemetry
 {

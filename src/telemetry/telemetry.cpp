@@ -85,6 +85,31 @@ VDD_SOC(0)
 {
 }
 
+void PrintTelemetryFrame(const TelemetryFrame& tm_frame)
+{
+    SPDLOG_INFO("SYSTEM_TIME: {}", tm_frame.SYSTEM_TIME);
+    SPDLOG_INFO("UPTIME: {}", tm_frame.UPTIME);
+    SPDLOG_INFO("PAYLOAD_STATE: {}", tm_frame.PAYLOAD_STATE);
+    SPDLOG_INFO("ACTIVE_CAMERAS: {}", tm_frame.ACTIVE_CAMERAS);
+    SPDLOG_INFO("CAPTURE_MODE: {}", tm_frame.CAPTURE_MODE);
+    SPDLOG_INFO("CAM_STATUS: [{}, {}, {}, {}]", tm_frame.CAM_STATUS[0], tm_frame.CAM_STATUS[1], tm_frame.CAM_STATUS[2], tm_frame.CAM_STATUS[3]);
+    SPDLOG_INFO("TASKS_IN_EXECUTION: {}", tm_frame.TASKS_IN_EXECUTION);
+    SPDLOG_INFO("DISK_USAGE: {}", tm_frame.DISK_USAGE);
+    SPDLOG_INFO("LATEST_ERROR: {}", tm_frame.LATEST_ERROR);
+    SPDLOG_INFO("LAST_EXECUTED_CMD_ID: {}", tm_frame.LAST_EXECUTED_CMD_ID);
+    SPDLOG_INFO("LAST_EXECUTED_CMD_TIME: {}", tm_frame.LAST_EXECUTED_CMD_TIME);
+    SPDLOG_INFO("TEGRASTATS_PROCESS_STATUS: {}", tm_frame.TEGRASTATS_PROCESS_STATUS);
+    SPDLOG_INFO("RAM_USAGE: {}", tm_frame.RAM_USAGE);
+    SPDLOG_INFO("SWAP_USAGE: {}", tm_frame.SWAP_USAGE);
+    SPDLOG_INFO("ACTIVE_CORES: {}", tm_frame.ACTIVE_CORES);
+    SPDLOG_INFO("CPU_LOAD: [{}, {}, {}, {}, {}, {}]", tm_frame.CPU_LOAD[0], tm_frame.CPU_LOAD[1], tm_frame.CPU_LOAD[2], tm_frame.CPU_LOAD[3], tm_frame.CPU_LOAD[4], tm_frame.CPU_LOAD[5]);
+    SPDLOG_INFO("GPU_FREQ: {}", tm_frame.GPU_FREQ);
+    SPDLOG_INFO("CPU_TEMP: {}", tm_frame.CPU_TEMP);
+    SPDLOG_INFO("GPU_TEMP: {}", tm_frame.GPU_TEMP);
+    SPDLOG_INFO("VDD_IN: {}", tm_frame.VDD_IN);
+    SPDLOG_INFO("VDD_CPU_GPU_CV: {}", tm_frame.VDD_CPU_GPU_CV);
+    SPDLOG_INFO("VDD_SOC: {}", tm_frame.VDD_SOC);
+}
 
 Telemetry::Telemetry()
 :
@@ -145,18 +170,10 @@ TelemetryFrame Telemetry::GetTmFrame() const
 bool Telemetry::LinkToTegraTmProcess() 
 {   
     // if already configured, return immediately
-    /*if (tegra_tm_configured)
+    if (tegra_tm_configured)
     {
         return tegra_tm_configured;
     }
-
-    
-    // close existing semaphore if already open
-    if (sem_shared_mem != nullptr) {
-        sem_close(sem_shared_mem);
-        sem_shared_mem = nullptr;
-    }*/
-
 
 
     if (!LinkToSharedMemory(shared_mem)) {
@@ -164,6 +181,13 @@ bool Telemetry::LinkToTegraTmProcess()
         tegra_tm_configured = false;
         return false;
     }
+
+    // close existing semaphore if already open
+    if (sem_shared_mem != nullptr) {
+        sem_close(sem_shared_mem);
+        sem_shared_mem = nullptr;
+    }
+
 
     sem_shared_mem = LinkToSemaphore();
     if (sem_shared_mem == nullptr) 
@@ -213,6 +237,8 @@ void Telemetry::RunService(Payload* payload)
     {
 
         UpdateFrame(payload);
+
+        PrintTelemetryFrame(tm_frame);
 
 
         next += interval;

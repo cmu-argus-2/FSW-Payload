@@ -80,7 +80,7 @@ void StopTegrastats();
 /* Writer side */
 
 // Allocate the sized shared memory and map it to the argument struct pointer
-bool ConfigureSharedMemory(TegraTM* shared_mem);
+bool ConfigureSharedMemory(TegraTM*& shared_mem);
 
 // Create a semaphore for synchronization
 sem_t* InitializeSemaphore();

@@ -169,7 +169,7 @@ void StopTegrastats()
     }
 }
 
-bool ConfigureSharedMemory(TegraTM* shared_mem)
+bool ConfigureSharedMemory(TegraTM*& shared_mem)
 {
 
     int shm_fd = shm_open(TEGRASTATS_SHARED_MEM, O_CREAT | O_RDWR, 0666);
@@ -186,9 +186,11 @@ bool ConfigureSharedMemory(TegraTM* shared_mem)
     //close(shm_fd);
     if (shared_mem == MAP_FAILED)
     {
-        spdlog::error("Failed to map shared memory");
+        spdlog::error("Failed to map shared memory: {}", strerror(errno));
         return false;
     }
+
+
 
     return true;
 }
@@ -264,7 +266,7 @@ bool LinkToSharedMemory(TegraTM*& shared_mem)
 
     // map the shared memory in the address space of the calling process
     shared_mem = static_cast<TegraTM*>(mmap(NULL, SHARED_MEM_SIZE, PROT_READ | PROT_WRITE, MAP_SHARED, shm_fd, 0));
-    // close(shm_fd); // Close file descriptor after mapping
+    close(shm_fd); // Close file descriptor after mapping
     if (shared_mem == MAP_FAILED)
     {
         SPDLOG_ERROR("Failed to map shared memory");
@@ -275,7 +277,6 @@ bool LinkToSharedMemory(TegraTM*& shared_mem)
     return true;   
 
 }
-
 
 sem_t* LinkToSemaphore()
 {   

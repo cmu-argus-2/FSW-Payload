@@ -24,11 +24,13 @@ void EmulateTegrastatsProcessor(TegraTM* shared_frame, RegexContainer& regexes, 
             ParseTegrastatsLine(line, regexes, frame);
 
             sem_wait(sem); 
+            SPDLOG_INFO("Reading flag before modifiication {}", shared_frame->change_flag);
             memcpy(shared_frame, &frame, sizeof(frame));
-            SPDLOG_INFO("Set the reading flag? {}", shared_frame->change_flag);
+            SPDLOG_INFO("Setting the reading flag to {}", shared_frame->change_flag);
+            SPDLOG_INFO("Data written to shared memory. (e.g {} RAM used, CPU Core 1 load: {}%, ...)", shared_frame->ram_used, shared_frame->cpu_load[0]);
             sem_post(sem);
 
-            SPDLOG_INFO("Data written to shared memory. (e.g {} RAM used, CPU Core 1 load: {}%, ...)", frame.ram_used, frame.cpu_load[0]);
+            
 
             // Simulate wait to replicate tegrastats behavior
             usleep(TEGRASTATS_INTERVAL * 1000); 
@@ -43,11 +45,12 @@ void EmulateTegrastatsProcessor(TegraTM* shared_frame, RegexContainer& regexes, 
 int main(int argc, char* argv[])
 {
 
-    TegraTM shared_frame; // Shared memory frame
+    TegraTM* shared_frame; // Shared memory frame
+    memset(shared_frame, 0, sizeof(TegraTM));
     RegexContainer regexes; // Regular expression container
 
 
-    if (!ConfigureSharedMemory(&shared_frame))
+    if (!ConfigureSharedMemory(shared_frame))
     {
         return 1;
     }
@@ -64,13 +67,13 @@ int main(int argc, char* argv[])
         if (std::string(argv[1]) == "emulate")
         {
             spdlog::info("Running tegrastats process in emulation mode.");
-            EmulateTegrastatsProcessor(&shared_frame, regexes, sem);
+            EmulateTegrastatsProcessor(shared_frame, regexes, sem);
             return 0;
         }
     }
 
     spdlog::info("Running tegrastats process on target hardware.");
-    RunTegrastatsProcessor(&shared_frame, regexes, sem);
+    RunTegrastatsProcessor(shared_frame, regexes, sem);
 
     return 0;
 }

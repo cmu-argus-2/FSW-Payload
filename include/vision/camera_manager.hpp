@@ -9,6 +9,8 @@
 #define NUM_CAMERAS 4
 #define MAX_PERIODIC_FRAMES_TO_CAPTURE 255
 #define DEFAULT_PERIODIC_FRAMES_TO_CAPTURE 100
+#define CAMERA_HEALTH_CHECK_INTERVAL 500 // seconds 
+
 
 // Forward declaration of Payload class
 class Payload;
@@ -93,6 +95,8 @@ private:
     std::array<CAM_STATUS, NUM_CAMERAS> cam_status;
 
 
+
+    void _PerformCameraHealthCheck(); // background watchdog for the cameras
     void _UpdateCamStatus();
 
 

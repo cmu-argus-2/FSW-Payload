@@ -35,7 +35,7 @@ bool Camera::Enable()
 
         // Check if the camera is opened successfully
         if (!cap.isOpened()) {
-            SPDLOG_WARNING("Unable to open the camera");
+            SPDLOG_WARN("Unable to open the camera");
             throw std::runtime_error("Unable to open the camera");
         }
 
@@ -58,7 +58,7 @@ bool Camera::Enable()
     } 
     catch (const std::exception& e) 
     {
-        SPDLOG_ERROR("Exception occurred: {}", e.what());
+        SPDLOG_WARN("Exception occurred: {}", e.what());
 
 
         HandleErrors(CAM_ERROR::INITIALIZATION_FAILED);
@@ -138,6 +138,8 @@ void Camera::CaptureFrame()
         buffer_frame._img = local_buffer_img.clone(); 
         _new_frame_flag = true;
     }
+
+    HandleErrors(CAM_ERROR::NO_ERROR);
 
 
 }
@@ -252,4 +254,9 @@ void Camera::StopCaptureLoop()
 bool Camera::IsCaptureLoopRunning() const
 {
     return capture_loop_flag.load();
+}
+
+CAM_ERROR Camera::GetLastError() const
+{
+    return last_error;
 }

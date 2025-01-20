@@ -61,6 +61,7 @@ void CameraManager::RunLoop(Payload* payload)
 {
     loop_flag = true;
 
+    auto last_health_check_time = std::chrono::high_resolution_clock::now(); // Track health check timing
     auto current_capture_time = std::chrono::high_resolution_clock::now();
     auto last_capture_time = std::chrono::high_resolution_clock::now();
 
@@ -123,6 +124,14 @@ void CameraManager::RunLoop(Payload* payload)
             default:
                 SPDLOG_WARN("Unknown capture mode: {}", capture_mode.load());
                 break;
+        }
+
+        // Perform health check periodically
+        auto current_health_check_time = std::chrono::high_resolution_clock::now();
+        if (std::chrono::duration_cast<std::chrono::seconds>(current_health_check_time - last_health_check_time).count() >= CAMERA_HEALTH_CHECK_INTERVAL) 
+        {
+            _PerformCameraHealthCheck();
+            last_health_check_time = current_health_check_time;
         }
 
         _UpdateCamStatus();
@@ -328,5 +337,38 @@ void CameraManager::FillCameraStatus(uint8_t* status)
 
         status[i] = static_cast<uint8_t>(this->cam_status[i]);
 
+    }
+}
+
+void CameraManager::_PerformCameraHealthCheck()
+{
+    for (auto& camera : cameras) 
+    {
+        switch (camera.GetStatus())
+        {
+            case CAM_STATUS::ACTIVE:
+            {
+                if (camera.GetLastError() != CAM_ERROR::NO_ERROR) 
+                {
+                    // Restart the camera
+                    camera.Disable();
+                    camera.Enable();
+                }
+                break;
+            }
+
+            case CAM_STATUS::INACTIVE:
+            {
+                camera.Enable();
+                break;
+            }
+
+            default:
+                // Restart to get out of an undefined state
+                camera.Disable();
+                camera.Enable();
+                break;
+        }
+        
     }
 }

@@ -49,6 +49,7 @@ public:
     
     int GetID() const;
     CAM_STATUS GetStatus() const;
+    CAM_ERROR GetLastError() const;
 
 
     void DisplayLastFrame();

@@ -12,8 +12,9 @@ else()
     set(CMAKE_PREFIX_PATH $ENV{LIBTORCH_PATH})
 endif()
 
-# Set a global output directory for all executable
-set(CMAKE_RUNTIME_OUTPUT_DIRECTORY ${CMAKE_BINARY_DIR}/bin)
+# Set a global output directory for all executables
+set(CMAKE_RUNTIME_OUTPUT_DIRECTORY ${CMAKE_SOURCE_DIR}/bin)
+
 
 # Preprocessor definition for the path of the inter-process fifo (command-line interface)
 add_compile_definitions(IPC_FIFO_PATH="/tmp/payload_fifo")

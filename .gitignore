@@ -45,3 +45,4 @@ ignore.py
 Testing/
 
 data/
+bin/

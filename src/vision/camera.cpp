@@ -11,6 +11,7 @@ last_error(CAM_ERROR::NO_ERROR),
 consecutive_error_count(0),
 cam_id(cam_id),
 cam_path(path),
+local_buffer_img(cv::Mat(height, width, CV_8UC3)),
 buffer_frame(cam_id, cv::Mat(height, width, CV_8UC3), 0),
 _new_frame_flag(false)
 {
@@ -110,7 +111,8 @@ bool Camera::Disable()
 void Camera::CaptureFrame()
 {
     // Single responsibility principle. Status must be checked externally
-    static cv::Mat local_buffer_img(height, width, CV_8UC3); // pre-allocate memory
+
+    // static cv::Mat local_buffer_img(height, width, CV_8UC3); // pre-allocate memory
     
     // Capture frame without holding the mutex - TODO access the reference from the hardware API 
     auto timestamp = std::chrono::duration_cast<std::chrono::milliseconds>(

@@ -68,6 +68,7 @@ private:
     int cam_id;
     std::string cam_path;
     cv::VideoCapture cap;
+    cv::Mat local_buffer_img;
 
 
     Frame buffer_frame;

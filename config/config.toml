@@ -1,8 +1,8 @@
 [camera-device.cam1]
 id = 1
 path = '/dev/video0'
-resolution_height = 1280
-resolution_width = 720
+resolution_height = 2592
+resolution_width = 4608
 
 [camera-device.cam2]
 id = 2

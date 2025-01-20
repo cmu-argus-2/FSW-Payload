@@ -58,8 +58,8 @@ The configuration file is located at config/config.toml. Update this file to mod
 As a functional debugging tool, the Payload can be run and controlled locally through a named pipe (FIFO) given to the Payload and the command line interface. For this control mode, the command line interface must be run first:
 
 ```bash
-./CLI_CMD
-./PAYLOAD [optional: <communication-interface: [UART, CLI]>] // default to UART 
+./bin/CLI_CMD
+./bin/PAYLOAD [optional: <communication-interface: [UART, CLI]>] // default to UART 
 ```
 
 ## Command-based paradigm 

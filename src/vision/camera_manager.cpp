@@ -151,12 +151,14 @@ void CameraManager::RunDisplayLoop()
             if (cam.GetStatus() == CAM_STATUS::ACTIVE) 
             {
                 ++active_cams;
+
+                if (cam.IsNewFrameAvailable())
+                {
+                    cam.DisplayLastFrame();
+                }
             }
 
-            if (cam.IsNewFrameAvailable())
-            {
-                cam.DisplayLastFrame();
-            }
+
         }
 
         if (active_cams == 0) 

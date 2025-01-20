@@ -20,8 +20,14 @@ _new_frame_flag(false)
 
 bool Camera::Enable()
 {
-    bool success = false;
     
+    if (cam_status == CAM_STATUS::ACTIVE) {
+        SPDLOG_WARN("CAM{}: Camera is already active", cam_id);
+        return true;
+    }
+
+    bool success = false;
+
     try 
     {
 
@@ -29,7 +35,7 @@ bool Camera::Enable()
 
         // Check if the camera is opened successfully
         if (!cap.isOpened()) {
-            SPDLOG_ERROR("Unable to open the camera");
+            SPDLOG_WARNING("Unable to open the camera");
             throw std::runtime_error("Unable to open the camera");
         }
 
@@ -85,6 +91,7 @@ bool Camera::Disable()
         {
             StopCaptureLoop();
             cap.release();
+            cam_status = CAM_STATUS::INACTIVE;
             SPDLOG_INFO("CAM{}: Camera successfully disabled.", cam_id);
             return true;
         }
@@ -158,12 +165,12 @@ void Camera::HandleErrors(CAM_ERROR error)
     consecutive_error_count++;
     SPDLOG_ERROR("CAM{}: Error occurred: {}", cam_id, last_error);
 
-    if (consecutive_error_count >= MAX_CONSECUTIVE_ERROR_COUNT) {
-        cam_status = CAM_STATUS::INACTIVE;
+    /*if (consecutive_error_count >= MAX_CONSECUTIVE_ERROR_COUNT) {
+        cam_status = CAM_STATUS::DISABLED;
         SPDLOG_ERROR("CAM{}: Camera disabled after {} errors", cam_id, consecutive_error_count);
-        // consecutive_error_count = 0; // Reset the count for next retry? // Could be stuck in a loop
+        consecutive_error_count = 0; // Reset the count for next retry? // Could be stuck in a loop
         return;
-    }
+    }*/
 
     if (last_error == CAM_ERROR::INITIALIZATION_FAILED) {
         cam_status = CAM_STATUS::INACTIVE;
@@ -225,7 +232,7 @@ void Camera::RunCaptureLoop()
     auto t2 = std::chrono::high_resolution_clock::now();
     capture_loop_flag = true;
 
-    while (cam_status == CAM_STATUS::ACTIVE && capture_loop_flag) 
+    while (cam_status == CAM_STATUS::ACTIVE && capture_loop_flag.load()) 
     {
         t1 = std::chrono::high_resolution_clock::now();
         CaptureFrame();
@@ -236,8 +243,13 @@ void Camera::RunCaptureLoop()
 
 void Camera::StopCaptureLoop()
 {
-    capture_loop_flag = false;
+    capture_loop_flag.store(false);
     if (capture_thread.joinable()) {
         capture_thread.join();
     }
+}
+
+bool Camera::IsCaptureLoopRunning() const
+{
+    return capture_loop_flag.load();
 }

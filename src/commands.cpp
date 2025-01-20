@@ -16,10 +16,8 @@ std::array<CommandFunction, COMMAND_NUMBER> COMMAND_FUNCTIONS =
     run_self_diagnostics,
     request_last_telemetry,
     set_telemetry_frequency,
-    turn_on_cameras,
-    turn_off_cameras,
-    enable_camera_x,
-    disable_camera_x,
+    enable_cameras,
+    disable_cameras,
     capture_images,
     start_capture_images_every_x_seconds,
     stop_capture_images,
@@ -43,10 +41,8 @@ std::array<std::string_view, COMMAND_NUMBER> COMMAND_NAMES = {
     "RUN_SELF_DIAGNOSTICS",
     "REQUEST_LAST_TELEMETRY",
     "SET_TELEMETRY_FREQUENCY",
-    "TURN_ON_CAMERAS",
-    "TURN_OFF_CAMERAS",
-    "ENABLE_CAMERA_X",
-    "DISABLE_CAMERA_X",
+    "ENABLE_CAMERAS",
+    "DISABLE_CAMERAS",
     "CAPTURE_IMAGES",
     "START_CAPTURE_IMAGES_EVERY_X_SECONDS",
     "STOP_CAPTURE_IMAGES",
@@ -123,27 +119,9 @@ void set_telemetry_frequency(Payload& payload, std::vector<uint8_t>& data)
     // TODO
 }
 
-void turn_on_cameras(Payload& payload, std::vector<uint8_t>& data)
-{
-    SPDLOG_INFO("Turning on cameras..");
-
-
-    (void)data;
-    // TODO
-}
-
-void turn_off_cameras(Payload& payload, std::vector<uint8_t>& data)
-{
-    SPDLOG_INFO("Turning off cameras..");
-
-
-    (void)data;
-
-}
-
 
 // If a series of IDs is not given, it tries to activate all cameras by default 
-void enable_camera_x(Payload& payload, std::vector<uint8_t>& data)
+void enable_cameras(Payload& payload, std::vector<uint8_t>& data)
 {
     if (data.empty())
     {
@@ -176,7 +154,7 @@ void enable_camera_x(Payload& payload, std::vector<uint8_t>& data)
 
 }
 
-void disable_camera_x(Payload& payload, std::vector<uint8_t>& data)
+void disable_cameras(Payload& payload, std::vector<uint8_t>& data)
 {
  
     if (data.empty())

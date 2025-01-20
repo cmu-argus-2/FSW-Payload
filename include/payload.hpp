@@ -18,9 +18,7 @@
 
 enum class PayloadState : uint8_t {
     STARTUP = 0x00,
-    IDLE = 0x01,
-    NOMINAL = 0x02,
-    SAFE_MODE = 0x03
+    NOMINAL = 0x01
 };
 
 // Function to convert PayloadState enum to string

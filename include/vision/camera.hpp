@@ -13,9 +13,8 @@
 
 enum class CAM_STATUS : uint8_t {
     UNDEFINED = 0,
-    DISABLED = 1,
-    TURNED_ON = 2,
-    TURNED_OFF = 3
+    INACTIVE = 1,
+    ACTIVE = 2,
 };
 
 enum class CAM_ERROR : uint8_t {
@@ -37,8 +36,6 @@ public:
     bool Disable();
     bool IsEnabled() const;
 
-    void TurnOn();
-    void TurnOff();
     // void Restart(); // Restart after failure, but need to avoid loops
 
     void CaptureFrame();
@@ -76,6 +73,7 @@ private:
 
     std::thread capture_thread;
     mutable std::shared_mutex frame_mutex;
+    std::atomic<bool> capture_loop_flag = false;
 
     int width = DEFAULT_FRAME_WIDTH;
     int height = DEFAULT_FRAME_HEIGHT;

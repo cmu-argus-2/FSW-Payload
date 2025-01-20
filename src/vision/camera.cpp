@@ -6,7 +6,7 @@
 
 Camera::Camera(int cam_id, std::string path)
 : 
-cam_status(CAM_STATUS::DISABLED),
+cam_status(CAM_STATUS::INACTIVE),
 last_error(CAM_ERROR::NO_ERROR),
 consecutive_error_count(0),
 cam_id(cam_id),
@@ -16,93 +16,14 @@ _new_frame_flag(false)
 {
 }
 
+
+
 bool Camera::Enable()
 {
-    switch (cam_status)
+    bool success = false;
+    
+    try 
     {
-        case CAM_STATUS::TURNED_ON:
-        {
-            SPDLOG_WARN("CAM{}: Camera is already enabled", cam_id);
-            return true;
-        }
-        case CAM_STATUS::DISABLED:
-        {
-            cam_status = CAM_STATUS::TURNED_OFF;
-            [[fallthrough]]; // Explicitly marks intentional fall-through (avoid compiler warning)
-        }
-        case CAM_STATUS::TURNED_OFF:
-        {
-            TurnOn();
-            if (cam_status == CAM_STATUS::TURNED_ON)
-            {
-                SPDLOG_INFO("CAM{}: Camera already enabled", cam_id);
-                return true;
-            }
-            else
-            {
-                SPDLOG_ERROR("CAM{}: Camera failed to enable", cam_id);
-                return false;
-            }
-        }
-
-        default:
-        {
-            SPDLOG_ERROR("CAM{}: Unknown camera status", cam_id);
-            return false;
-        }
-    }
-}
-
-
-bool Camera::Disable()
-{
-    switch (cam_status)
-    {
-        case CAM_STATUS::DISABLED:
-        {
-            SPDLOG_WARN("CAM{}: Camera is already disabled", cam_id);
-            return true;
-        }
-        case CAM_STATUS::TURNED_OFF:
-        {
-            cam_status = CAM_STATUS::DISABLED;
-            SPDLOG_INFO("CAM{}: Camera disabled", cam_id);
-            return true;
-        }
-        case CAM_STATUS::TURNED_ON:
-        {
-            TurnOff();
-            if (cam_status == CAM_STATUS::TURNED_OFF) 
-            {
-                cam_status = CAM_STATUS::DISABLED;
-                SPDLOG_INFO("CAM{}: Camera disabled", cam_id);
-                return true;
-            } 
-            else 
-            {
-                SPDLOG_ERROR("CAM{}: Failed to turn off the camera", cam_id);
-                return false;
-            }
-        }
-
-        default:
-        {
-            SPDLOG_ERROR("CAM{}: Unknown camera status", cam_id);
-            return false;
-        }
-    }
-}
-
-
-
-void Camera::TurnOn()
-{
-    try {
-
-        if (cam_status == CAM_STATUS::DISABLED) {
-            SPDLOG_ERROR("CAM{}: Camera is disabled", cam_id);
-            return;
-        }
 
         cap.open(cam_path, cv::CAP_V4L2);
 
@@ -121,9 +42,11 @@ void Camera::TurnOn()
         SPDLOG_INFO("CAM{}: Camera gain set to {}", cam_id, cap.get(cv::CAP_PROP_GAIN));
 
         // Start capture loop
-        cam_status = CAM_STATUS::TURNED_ON;
+        cam_status = CAM_STATUS::ACTIVE;
         capture_thread = std::thread(&Camera::RunCaptureLoop, this);
         SPDLOG_INFO("CAM{}: Camera successfully turned on", cam_id);
+
+        success = true;
 
 
     } 
@@ -141,38 +64,36 @@ void Camera::TurnOn()
 
     }
 
+    return success;
 }
 
-void Camera::TurnOff()
+bool Camera::Disable()
 {
     StopCaptureLoop();
+
     switch (cam_status)
     {
-        case CAM_STATUS::DISABLED:
-        {
-            SPDLOG_WARN("CAM{}: Camera is disabled", cam_id);
-            break;
-        }
 
-        case CAM_STATUS::TURNED_OFF:
+        case CAM_STATUS::INACTIVE:
         {
-            SPDLOG_WARN("CAM{}: Camera is already turned off", cam_id);
+            SPDLOG_WARN("CAM{}: Camera is already inactive", cam_id);
             cap.release();
-            break;
+            return true;
         }
 
-        case CAM_STATUS::TURNED_ON:
+        case CAM_STATUS::ACTIVE:
         {
             StopCaptureLoop();
             cap.release();
-            SPDLOG_INFO("CAM{}: Camera successfully turned off", cam_id);
-            break;
+            SPDLOG_INFO("CAM{}: Camera successfully disabled.", cam_id);
+            return true;
         }
 
         default:
         {
             SPDLOG_ERROR("CAM{}: Unknown camera status", cam_id);
-            break;
+            // TODO: Handle error
+            return false;
         }
 
     }
@@ -238,14 +159,14 @@ void Camera::HandleErrors(CAM_ERROR error)
     SPDLOG_ERROR("CAM{}: Error occurred: {}", cam_id, last_error);
 
     if (consecutive_error_count >= MAX_CONSECUTIVE_ERROR_COUNT) {
-        cam_status = CAM_STATUS::DISABLED;
+        cam_status = CAM_STATUS::INACTIVE;
         SPDLOG_ERROR("CAM{}: Camera disabled after {} errors", cam_id, consecutive_error_count);
         // consecutive_error_count = 0; // Reset the count for next retry? // Could be stuck in a loop
         return;
     }
 
     if (last_error == CAM_ERROR::INITIALIZATION_FAILED) {
-        cam_status = CAM_STATUS::DISABLED;
+        cam_status = CAM_STATUS::INACTIVE;
         SPDLOG_ERROR("CAM{}: Initialization failed. Still disabled.", cam_id);
         return;
     }
@@ -269,7 +190,7 @@ const Frame& Camera::GetBufferFrame() const
 
 bool Camera::IsEnabled() const
 {
-    return (cam_status == CAM_STATUS::DISABLED) ? false : true;
+    return (cam_status == CAM_STATUS::INACTIVE) ? false : true;
 }
 
 int Camera::GetID() const
@@ -302,8 +223,9 @@ void Camera::RunCaptureLoop()
     
     auto t1 = std::chrono::high_resolution_clock::now();
     auto t2 = std::chrono::high_resolution_clock::now();
+    capture_loop_flag = true;
 
-    while (cam_status == CAM_STATUS::TURNED_ON) 
+    while (cam_status == CAM_STATUS::ACTIVE && capture_loop_flag) 
     {
         t1 = std::chrono::high_resolution_clock::now();
         CaptureFrame();
@@ -314,7 +236,7 @@ void Camera::RunCaptureLoop()
 
 void Camera::StopCaptureLoop()
 {
-    cam_status = CAM_STATUS::TURNED_OFF;
+    capture_loop_flag = false;
     if (capture_thread.joinable()) {
         capture_thread.join();
     }

@@ -42,10 +42,6 @@ public:
 
     CameraManager(const std::array<CameraConfig, NUM_CAMERAS>& camera_configs);
 
-
-    void TurnOn();
-    void TurnOff();
-
     void RunLoop(Payload* payload);
     void StopLoops();
     void SetDisplayFlag(bool display_flag);

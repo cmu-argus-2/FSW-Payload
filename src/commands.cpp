@@ -2,6 +2,7 @@
 #include "messages.hpp"
 #include "payload.hpp"
 #include "core/data_handling.hpp"
+#include "telemetry/telemetry.hpp"
 
 // (void)data does nothing special, it is just used to avoid compiler warnings about a variable that is not used 
 
@@ -110,6 +111,7 @@ void request_last_telemetry(Payload& payload, std::vector<uint8_t>& data)
     SPDLOG_INFO("Requesting last telemetry..");
     (void)payload;
     (void)data;
+    PrintTelemetryFrame(payload.GetTelemetry().GetTmFrame());
     // TODO
 }
 

@@ -49,8 +49,6 @@ public:
     void RunCaptureLoop();
     void StopCaptureLoop();
     
-
-
     int GetID() const;
     CAM_STATUS GetStatus() const;
 

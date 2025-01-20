@@ -59,6 +59,7 @@ public:
 
     void ReadNewConfiguration(Configuration& config);
 
+    const Telemetry& GetTelemetry() const;
 
 private:
 

@@ -286,3 +286,8 @@ void Payload::StopTelemetryService()
     telemetry_thread.join();
     SPDLOG_INFO("Telemetry thread stopped");
 }
+
+const Telemetry& Payload::GetTelemetry() const
+{
+    return telemetry;
+}

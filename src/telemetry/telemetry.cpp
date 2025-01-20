@@ -238,7 +238,7 @@ void Telemetry::RunService(Payload* payload)
 
         UpdateFrame(payload);
 
-        PrintTelemetryFrame(tm_frame);
+        // PrintTelemetryFrame(tm_frame);
 
 
         next += interval;

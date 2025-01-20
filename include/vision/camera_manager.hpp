@@ -5,7 +5,6 @@
 #include <atomic>
 #include "spdlog/spdlog.h"
 #include "camera.hpp"
-#include "configuration.hpp"
 
 #define NUM_CAMERAS 4
 #define MAX_PERIODIC_FRAMES_TO_CAPTURE 255
@@ -13,6 +12,17 @@
 
 // Forward declaration of Payload class
 class Payload;
+
+// Configuration struct for each camera
+struct CameraConfig 
+{
+    int64_t id;
+    std::string path;
+    int64_t width;
+    int64_t height;
+};
+
+
 
 // Capture modes for the camera system
 enum class CAPTURE_MODE : uint8_t {
@@ -75,8 +85,6 @@ private:
 
     std::array<CameraConfig, NUM_CAMERAS> camera_configs;
     std::array<Camera, NUM_CAMERAS> cameras;
-    
-    bool config_changed = false;
 
     std::atomic<bool> display_flag = false;
     std::atomic<bool> loop_flag = false;
@@ -90,10 +98,6 @@ private:
 
 
     void _UpdateCamStatus();
-
-    // returns True if the camera configurations have been updated, False otherwise
-    bool _UpdateCameraConfigs(Payload* payload);
-
 
 
 

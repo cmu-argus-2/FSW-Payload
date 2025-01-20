@@ -1,26 +1,22 @@
 [camera-device.cam1]
-enable = true
 id = 1
 path = '/dev/video0'
 resolution_height = 480
 resolution_width = 640
 
 [camera-device.cam2]
-enable = false
 id = 2
 path = '/dev/video2'
 resolution_height = 480
 resolution_width = 640
 
 [camera-device.cam3]
-enable = false
 id = 3
 path = '/dev/video3'
 resolution_height = 480
 resolution_width = 640
 
 [camera-device.cam4]
-enable = false
 id = 4
 path = '/dev/video4'
 resolution_height = 480

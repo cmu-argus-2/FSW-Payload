@@ -6,10 +6,10 @@
 #include <shared_mutex>
 #include "frame.hpp"
 #include <opencv2/opencv.hpp>
-#include "configuration.hpp"
 
 #define DEFAULT_CAMERA_FPS 30 // 10
-#define MAX_CONSECUTIVE_ERROR_COUNT 3 // before disabling 
+#define MAX_CONSECUTIVE_ERROR_COUNT 3 
+
 
 enum class CAM_STATUS : uint8_t {
     UNDEFINED = 0,
@@ -29,8 +29,7 @@ class Camera
 
 
 public:
-    Camera(int id, std::string path, bool enabled = false);
-    Camera(const CameraConfig& config);
+    Camera(int id, std::string path);
 
     // Attempt to enable the camera. Returns true if successful
     bool Enable();

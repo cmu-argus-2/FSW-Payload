@@ -4,25 +4,13 @@
 #include "vision/camera.hpp"
 
 
-Camera::Camera(int cam_id, std::string path, bool enabled)
+Camera::Camera(int cam_id, std::string path)
 : 
-cam_status((enabled == false) ? CAM_STATUS::DISABLED : CAM_STATUS::TURNED_OFF),
+cam_status(CAM_STATUS::DISABLED),
 last_error(CAM_ERROR::NO_ERROR),
 consecutive_error_count(0),
 cam_id(cam_id),
 cam_path(path),
-buffer_frame(cam_id, cv::Mat(height, width, CV_8UC3), 0),
-_new_frame_flag(false)
-{
-}
-
-Camera::Camera(const CameraConfig& config)
-:
-cam_status((config.enable == false) ? CAM_STATUS::DISABLED : CAM_STATUS::TURNED_OFF),
-last_error(CAM_ERROR::NO_ERROR),
-consecutive_error_count(0),
-cam_id(static_cast<int>(config.id)),
-cam_path(config.path),
 buffer_frame(cam_id, cv::Mat(height, width, CV_8UC3), 0),
 _new_frame_flag(false)
 {

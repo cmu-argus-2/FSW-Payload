@@ -6,7 +6,10 @@ CameraManager::CameraManager(const std::array<CameraConfig, NUM_CAMERAS>& camera
 :
 capture_mode(CAPTURE_MODE::IDLE),
 camera_configs(camera_configs),
-cameras({Camera(camera_configs[0]), Camera(camera_configs[1]), Camera(camera_configs[2]), Camera(camera_configs[3])})
+cameras({Camera(camera_configs[0].id, camera_configs[0].path), 
+    Camera(camera_configs[1].id, camera_configs[1].path), 
+    Camera(camera_configs[2].id, camera_configs[2].path), 
+    Camera(camera_configs[3].id, camera_configs[3].path)})
 {
     _UpdateCamStatus();
     SPDLOG_INFO("Camera Manager initialized");
@@ -18,32 +21,6 @@ void CameraManager::_UpdateCamStatus()
     for (size_t i = 0; i < NUM_CAMERAS; ++i) {
         cam_status[i] = cameras[i].GetStatus();
     }
-}
-
-bool CameraManager::_UpdateCameraConfigs(Payload* payload)
-{
-    bool config_changed = false;
-
-    // Check if the configuration of the cameras has changed
-    for (auto& camera : cameras) 
-    {
-
-        // Check status of each camera and modify configuration accordingly
-        auto config = GetCameraConfig(camera.GetID());
-        if (camera.IsEnabled() != config->enable) {
-            config_changed = true;
-            config->enable = camera.IsEnabled();
-        }
-    }
-
-    if (config_changed) 
-    {
-        SPDLOG_WARN("Camera configuration modified");
-        assert(payload != nullptr); // TODO
-        payload->GetConfiguration().UpdateCameraConfigs(camera_configs);
-    }
-
-    return config_changed;
 }
 
 
@@ -174,7 +151,6 @@ void CameraManager::RunLoop(Payload* payload)
         }
 
         _UpdateCamStatus();
-        _UpdateCameraConfigs(payload);
     }
 
     SPDLOG_INFO("Exiting Camera Manager Run Loop");

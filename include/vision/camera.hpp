@@ -7,7 +7,7 @@
 #include "frame.hpp"
 #include <opencv2/opencv.hpp>
 
-#define DEFAULT_CAMERA_FPS 30 // 10
+#define DEFAULT_CAMERA_FPS 10
 #define MAX_CONSECUTIVE_ERROR_COUNT 3 
 
 

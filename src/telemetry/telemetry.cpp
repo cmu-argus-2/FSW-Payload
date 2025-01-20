@@ -239,6 +239,7 @@ void Telemetry::RunService(Payload* payload)
         UpdateFrame(payload);
 
         // PrintTelemetryFrame(tm_frame);
+        SPDLOG_DEBUG("Telemetry Frame Updated");
 
 
         next += interval;

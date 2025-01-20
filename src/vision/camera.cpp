@@ -43,7 +43,7 @@ bool Camera::Enable()
         cap.set(cv::CAP_PROP_FRAME_WIDTH, width);
         cap.set(cv::CAP_PROP_FRAME_HEIGHT, height);
         cap.set(cv::CAP_PROP_FPS, DEFAULT_CAMERA_FPS);
-        cap.set(cv::CAP_PROP_BUFFERSIZE, 3);
+        cap.set(cv::CAP_PROP_BUFFERSIZE, 3); 
         cap.set(cv::CAP_PROP_GAIN, 10000); // Set gain to maximum - OpenCV will clamp it to the maximum value
         SPDLOG_INFO("CAM{}: Camera gain set to {}", cam_id, cap.get(cv::CAP_PROP_GAIN));
 
@@ -110,20 +110,20 @@ bool Camera::Disable()
 void Camera::CaptureFrame()
 {
     // Single responsibility principle. Status must be checked externally
-
     static cv::Mat local_buffer_img(height, width, CV_8UC3); // pre-allocate memory
     
     // Capture frame without holding the mutex - TODO access the reference from the hardware API 
     auto timestamp = std::chrono::duration_cast<std::chrono::milliseconds>(
         std::chrono::system_clock::now().time_since_epoch()).count();
-
+    // SPDLOG_CRITICAL("CAM{}: copying frame", cam_id);
     cap >> local_buffer_img;
-    
+    // SPDLOG_CRITICAL("CAM{}: frame copied", cam_id);
 
     if (local_buffer_img.empty()) 
     {
         std::lock_guard<std::shared_mutex> lock(frame_mutex);
         _new_frame_flag = false;
+        // local_buffer_img = cv::Mat::zeros(height, width, CV_8UC3);
         SPDLOG_ERROR("Unable to capture frame");
         HandleErrors(CAM_ERROR::CAPTURE_FAILED);
         return;

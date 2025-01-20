@@ -1,26 +1,26 @@
 [camera-device.cam1]
 id = 1
 path = '/dev/video0'
-resolution_height = 480
-resolution_width = 640
+resolution_height = 1280
+resolution_width = 720
 
 [camera-device.cam2]
 id = 2
 path = '/dev/video2'
-resolution_height = 480
-resolution_width = 640
+resolution_height = 2592
+resolution_width = 4608
 
 [camera-device.cam3]
 id = 3
 path = '/dev/video3'
-resolution_height = 480
-resolution_width = 640
+resolution_height = 2592
+resolution_width = 4608
 
 [camera-device.cam4]
 id = 4
 path = '/dev/video4'
-resolution_height = 480
-resolution_width = 640
+resolution_height = 2592
+resolution_width = 4608
 
 [ld_net.10S]
 enable = true

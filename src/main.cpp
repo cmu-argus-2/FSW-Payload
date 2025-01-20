@@ -32,7 +32,6 @@ void SetupLogger()
     spdlog::set_pattern("[%Y-%m-%d %H:%M:%S.%e][%^%l%$][thread:%t][%s:%#] %v");
 }
 
-
 int main(int argc, char** argv)
 {
 

@@ -19,6 +19,9 @@ echo "Building in ${BUILD_TYPE} mode"
 # Create binary directory
 mkdir -p bin
 
+# Create log directory
+mkdir -p logs
+
 # Create build directory and build
 mkdir -p build
 cd build/

@@ -6,8 +6,8 @@
 #include <opencv2/opencv.hpp>
 
 // 4608×2592
-#define DEFAULT_FRAME_WIDTH 1280 // 4608
-#define DEFAULT_FRAME_HEIGHT 720 // 2592
+#define DEFAULT_FRAME_WIDTH 4608
+#define DEFAULT_FRAME_HEIGHT 2592
 
 struct Frame 
 {

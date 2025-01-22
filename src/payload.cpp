@@ -32,6 +32,10 @@ thread_pool(std::make_unique<ThreadPool>(4))
     
 }
 
+Payload::~Payload()
+{
+    Stop();
+}
 
 void Payload::ReadNewConfiguration(Configuration& config)
 {
@@ -129,19 +133,20 @@ void Payload::Run()
 
     SPDLOG_INFO("Starting Payload Task Manager");
 
+    // Launch communication system
+    StartCommunicationThread();
+
     // Launch camera system
     StartCameraThread();
 
-    // Launch communication system
-    StartCommunicationThread();
+    // Launch OD system
+    StartODThread();
 
     // Launch telemetry service
     StartTelemetryService();
 
     // Running execution loop 
     _running_instance = true;
-
-
 
     while (_running_instance) 
     {
@@ -183,6 +188,9 @@ void Payload::Stop()
 
     // Stop the telemetry service
     StopTelemetryService();
+
+    // Stop OD system
+    StopODThread();
 
     // Stop camera system
     StopCameraThread();
@@ -244,15 +252,23 @@ void Payload::StartCameraThread()
 void Payload::StopCameraThread()
 {
     camera_manager.StopLoops();
-    camera_thread.join();
+    if (camera_thread.joinable())
+    {
+        camera_thread.join();
+    }
 }
 
 void Payload::StopThreadPool()
 {
-
-    thread_pool->shutdown();
-    thread_pool.reset(nullptr);
-
+    if (thread_pool) 
+    {
+        thread_pool->shutdown();
+        thread_pool.reset(nullptr);
+    }
+    else 
+    {
+        SPDLOG_WARN("ThreadPool is nullptr in StopThreadPool.");
+    }
 }
 
 void Payload::StartCommunicationThread()
@@ -266,7 +282,11 @@ void Payload::StartCommunicationThread()
 void Payload::StopCommunicationThread()
 {
     communication->StopLoop();
-    communication_thread.join();
+    if (communication_thread.joinable())
+    {
+        SPDLOG_INFO("Joining communication thread...");
+        communication_thread.join();
+    }
     SPDLOG_INFO("Communication thread stopped");
     communication->Disconnect();
 }
@@ -282,11 +302,34 @@ void Payload::StartTelemetryService()
 void Payload::StopTelemetryService()
 {
     telemetry.StopService();
-    telemetry_thread.join();
+    if (telemetry_thread.joinable())
+    {
+        SPDLOG_INFO("Joining telemetry thread...");
+        telemetry_thread.join();
+    }
     SPDLOG_INFO("Telemetry thread stopped");
+    
 }
 
 const Telemetry& Payload::GetTelemetry() const
 {
     return telemetry;
+}
+
+void Payload::StartODThread()
+{
+    // Launch OD thread
+    od_thread = std::thread(&OD::RunLoop, &od, this);
+    SPDLOG_INFO("OD thread started");
+}
+
+void Payload::StopODThread()
+{
+    od.StopLoop();
+    if (od_thread.joinable())
+    {
+        SPDLOG_INFO("Joining OD thread...");
+        od_thread.join();
+    }
+    SPDLOG_INFO("OD thread stopped");
 }

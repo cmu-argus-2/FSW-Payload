@@ -2,6 +2,7 @@
 #define OD_HPP
 
 #include <cstdint>
+#include <mutex>
 #include <condition_variable>
 #include <atomic>
 
@@ -26,32 +27,33 @@ public:
     OD();
 
 
-
     void RunLoop(Payload* payload);
+    void StopLoop();
 
+    OD_STATE GetState() const;
     void StartExperiment();
-
     bool IsExperimentDone() const;
-    
+
 
 
 private:
 
-    OD_STATE process_state;
-
+    std::atomic<OD_STATE> process_state;
+    std::atomic<bool> experiment_done = false;
+    std::atomic<bool> loop_flag = false;
+    std::mutex mtx_active;
     std::condition_variable cv_active;
+
+    // This must be called frequently to check if the OD process must stop and save its states to disk
+    bool PingRunningStatus(); 
 
     void _Initialize(Payload* payload);
     void _DoBatchOptimization(Payload* payload);
     void _DoTracking(Payload* payload);
 
+
+
     
-
-    std::atomic<bool> _experiment_done;
-
-
-
-
 };
 
 

@@ -53,9 +53,6 @@ public:
 
     Configuration& GetConfiguration();
 
-    void StartCameraThread();
-    void StopCameraThread();
-
     void ReadNewConfiguration(Configuration& config);
 
     const Telemetry& GetTelemetry() const;
@@ -63,25 +60,13 @@ public:
 private:
 
     Payload(Configuration& config, std::unique_ptr<Communication> comms_interface);
-    // ~Payload();
+    ~Payload();
     Payload(const Payload&) = delete;
     void operator=(const Payload&) = delete;
 
     std::atomic<bool> _running_instance;
 
     Configuration config;
-
-    // Communication interface
-    std::unique_ptr<Communication> communication;
-    std::thread communication_thread;
-
-    // Camera interface
-    CameraManager camera_manager;
-    std::thread camera_thread;
-
-    // OD interface
-    OD od;
-
     PayloadState state;
     RX_Queue rx_queue;
     TX_Queue tx_queue;
@@ -89,20 +74,31 @@ private:
     std::mutex mtx;
     std::condition_variable cv_queue;
 
-    // Thread Pool
-    std::unique_ptr<ThreadPool> thread_pool;
-
     void SwitchToState(PayloadState new_state);
-
     void RunStartupHealthProcedures();
     void RetrieveInternalStates();
 
-    void StopThreadPool();
-
-
+    // Communication interface
+    std::unique_ptr<Communication> communication;
+    std::thread communication_thread;
     void StartCommunicationThread();
     void StopCommunicationThread();
 
+    // Camera interface
+    CameraManager camera_manager;
+    std::thread camera_thread;
+    void StartCameraThread();
+    void StopCameraThread();
+
+    // OD interface
+    OD od;
+    std::thread od_thread;
+    void StartODThread();
+    void StopODThread();
+
+    // Thread Pool
+    std::unique_ptr<ThreadPool> thread_pool;
+    void StopThreadPool();
 
     // Telemetry
     std::thread telemetry_thread;
@@ -110,7 +106,6 @@ private:
     void StartTelemetryService();
     void StopTelemetryService();
 
-    
 };
 
 #endif // PAYLOAD_HPP

@@ -65,7 +65,7 @@ void CameraManager::RunLoop(Payload* payload)
     auto current_capture_time = std::chrono::high_resolution_clock::now();
     auto last_capture_time = std::chrono::high_resolution_clock::now();
 
-    while (loop_flag) 
+    while (loop_flag.load()) 
     {
         // TODO remove busy waiting ~ add condition variable
         switch (capture_mode.load())
@@ -143,7 +143,7 @@ void CameraManager::RunDisplayLoop()
 
     int active_cams = 0;
     
-    while (display_flag && loop_flag) 
+    while (display_flag.load() && loop_flag.load()) 
     {
         
         active_cams = 0;

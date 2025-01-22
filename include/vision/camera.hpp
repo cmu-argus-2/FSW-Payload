@@ -11,13 +11,15 @@
 #define MAX_CONSECUTIVE_ERROR_COUNT 3 
 
 
-enum class CAM_STATUS : uint8_t {
+enum class CAM_STATUS : uint8_t 
+{
     UNDEFINED = 0,
     INACTIVE = 1,
     ACTIVE = 2,
 };
 
-enum class CAM_ERROR : uint8_t {
+enum class CAM_ERROR : uint8_t
+ {
     NO_ERROR = 0x00,
     CAPTURE_FAILED = 0x01,
     INITIALIZATION_FAILED = 0x02

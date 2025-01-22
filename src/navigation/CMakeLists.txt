@@ -1,6 +1,7 @@
 
 
 add_library(navigation
+    od.cpp
     quaternion.cpp
     utils.cpp
 )

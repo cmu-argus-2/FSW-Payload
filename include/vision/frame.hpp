@@ -9,12 +9,15 @@
 #define DEFAULT_FRAME_WIDTH 4608
 #define DEFAULT_FRAME_HEIGHT 2592
 
+#define EARTH_THRESHOLD 0.7
+
 struct Frame 
 {
     int _cam_id;
     cv::Mat _img;
     std::uint64_t _timestamp;
-    std::string _region; // Detected region of interest
+    bool _earth_flag; // Flag to indicate if the frame contains the Earth above a certain threshold
+    std::string _region; // Detected region of interest, could directly use a uint8_t ID
     // Landmark data structure
 
 

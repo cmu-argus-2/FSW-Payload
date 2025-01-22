@@ -12,6 +12,7 @@
 #include "commands.hpp"
 #include "core/thread_pool.hpp"
 #include "vision/camera_manager.hpp"
+#include "navigation/od.hpp"
 #include "communication/named_pipe.hpp"
 #include "communication/uart.hpp"
 #include "telemetry/telemetry.hpp"
@@ -74,8 +75,12 @@ private:
     std::unique_ptr<Communication> communication;
     std::thread communication_thread;
 
+    // Camera interface
     CameraManager camera_manager;
     std::thread camera_thread;
+
+    // OD interface
+    OD od;
 
     PayloadState state;
     RX_Queue rx_queue;

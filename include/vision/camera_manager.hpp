@@ -30,9 +30,8 @@ struct CameraConfig
 enum class CAPTURE_MODE : uint8_t {
     IDLE = 0,            // Camera system is not saving frames and waiting for a command
     CAPTURE_SINGLE = 1,  // Camera system stores the latest frame from each available cameras
-    PERIODIC = 2,        // Camera system stores all frames at a fixed rate
+    PERIODIC = 2,        // Camera system stores all frames at a fixed frequency
     PERIODIC_EARTH = 3,  // Camera system store frames at a fixed rate, but applies a filter to store only frames with a visible Earth
-    VIDEO_STREAM = 4     // Camera system store frames at a fixed rate and streams them to a video file
 };
 
 

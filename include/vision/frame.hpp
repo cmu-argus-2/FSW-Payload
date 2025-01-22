@@ -14,6 +14,9 @@ struct Frame
     int _cam_id;
     cv::Mat _img;
     std::uint64_t _timestamp;
+    std::string _region; // Detected region of interest
+    // Landmark data structure
+
 
     Frame();
     Frame(int cam_id, const cv::Mat& img, std::uint64_t timestamp);
@@ -21,6 +24,7 @@ struct Frame
     int GetID() const;
     const cv::Mat& GetImg() const;
     const std::uint64_t& GetTimestamp() const;
+    std::string_view GetRegion() const;
     // Locking? 
 };
 

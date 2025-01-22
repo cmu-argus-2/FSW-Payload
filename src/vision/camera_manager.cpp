@@ -116,11 +116,6 @@ void CameraManager::RunLoop(Payload* payload)
                 break;
             }
 
-            case CAPTURE_MODE::VIDEO_STREAM:
-            {
-                break;
-            }
-
             default:
                 SPDLOG_WARN("Unknown capture mode: {}", capture_mode.load());
                 break;

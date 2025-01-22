@@ -41,3 +41,8 @@ const std::uint64_t& Frame::GetTimestamp() const
 {
     return _timestamp;
 }
+
+std::string_view Frame::GetRegion() const
+{
+    return _region;
+}

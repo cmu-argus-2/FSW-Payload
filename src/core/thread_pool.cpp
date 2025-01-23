@@ -49,8 +49,12 @@ ThreadPool::~ThreadPool()
 }
 
 
-void ThreadPool::worker_thread() {
-    while (!stop) {
+void ThreadPool::worker_thread() 
+{
+    last_exec_times_us[std::this_thread::get_id()] = 0;
+    
+    while (!stop) 
+    {
 
         std::function<void()> task;
 
@@ -76,10 +80,10 @@ void ThreadPool::worker_thread() {
             task(); 
             auto end = std::chrono::high_resolution_clock::now();
             // finished execution
-            --busy_threads; /// atomic decrement
+            --busy_threads; // atomic decrement
             auto duration = std::chrono::duration_cast<std::chrono::microseconds>(end - start);
-            std::hash<std::thread::id> hasher;
-            SPDLOG_INFO("Task executed in {} μs from thread id {}.", duration.count(), hasher(std::this_thread::get_id()));
+            last_exec_times_us[std::this_thread::get_id()] = duration.count();
+            SPDLOG_INFO("Task executed in {} μs from thread id (hash) {}.", duration.count(), hasher(std::this_thread::get_id()));
         }  
 
     }

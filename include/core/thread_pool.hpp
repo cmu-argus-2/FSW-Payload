@@ -69,6 +69,10 @@ private:
 
     // Tracks busy threads
     std::atomic<size_t> busy_threads{0};  
+
+    // last execution times per thread ids
+    std::unordered_map<std::thread::id, int64_t> last_exec_times_us;
+    std::hash<std::thread::id> hasher;
                  
                                      
 };

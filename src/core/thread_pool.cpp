@@ -1,7 +1,7 @@
 #include "spdlog/spdlog.h"
 #include "core/thread_pool.hpp"
 #include <algorithm>
-
+#include <chrono>
 
 ThreadPool::ThreadPool(size_t num_threads) 
 : 
@@ -70,10 +70,16 @@ void ThreadPool::worker_thread() {
         }
 
         // Execute task outside lock scope
-        if (task) {
+        if (task) 
+        {
+            auto start = std::chrono::high_resolution_clock::now();
             task(); 
+            auto end = std::chrono::high_resolution_clock::now();
             // finished execution
             --busy_threads; /// atomic decrement
+            auto duration = std::chrono::duration_cast<std::chrono::microseconds>(end - start);
+            std::hash<std::thread::id> hasher;
+            SPDLOG_INFO("Task executed in {} μs from thread id {}.", duration.count(), hasher(std::this_thread::get_id()));
         }  
 
     }

@@ -34,7 +34,7 @@ private:
     int pipe_fd;
     struct pollfd pfd;
 
-    void ParseCommand(const std::string& command, uint8_t& cmd_id, std::vector<uint8_t>& data);
+    bool ParseCommand(const std::string& command, uint8_t& cmd_id, std::vector<uint8_t>& data);
 
 };
 

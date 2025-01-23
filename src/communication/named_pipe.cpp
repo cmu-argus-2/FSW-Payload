@@ -36,7 +36,8 @@ bool ReadLineFromPipe(int fd, std::string& line) {
     char chunk[1024];          // Temporary read buffer
     // Read data from the file descriptor
     ssize_t bytesRead = read(fd, chunk, sizeof(chunk) - 1);
-    if (bytesRead <= 0) {
+    if (bytesRead <= 0) 
+    {
         return false; // No data read or error
     }
     // Null-terminate and append to the buffer
@@ -141,9 +142,10 @@ bool NamedPipe::Receive(uint8_t& cmd_id, std::vector<uint8_t>& data) {
     bool LineReceived = ReadLineFromPipe(pipe_fd, command); // Use custom getline
     // SPDLOG_INFO("Received command?: {}", LineReceived);
 
-    if (LineReceived) {
-        ParseCommand(command, cmd_id, data);
-        return true;
+    if (LineReceived) 
+    {
+        bool status = ParseCommand(command, cmd_id, data);
+        return status;
     } 
     else 
     {
@@ -181,8 +183,8 @@ void NamedPipe::RunLoop(Payload* payload)
 
     while (_running_loop && _connected)
     {
-        //SPDLOG_INFO("NamedPipe loop running");
-        //std::this_thread::sleep_for(std::chrono::milliseconds(500));
+        // SPDLOG_INFO("NamedPipe loop running");
+        // std::this_thread::sleep_for(std::chrono::milliseconds(500));
         
         // Receive new command
         uint8_t cmd_id;
@@ -227,51 +229,59 @@ void NamedPipe::StopLoop()
 }
 
 
-
-void NamedPipe::ParseCommand(const std::string& command, uint8_t& cmd_id, std::vector<uint8_t>& data)
+bool NamedPipe::ParseCommand(const std::string& command, uint8_t& cmd_id, std::vector<uint8_t>& data)
 {
     std::istringstream stream(command);
     std::string token;
 
     // Extract the command ID (first token)
     int cmd_int;
-    if (stream >> cmd_int) {
-        if (cmd_int < 0 || cmd_int > 255) {
+    if (stream >> cmd_int) 
+    {
+        if (cmd_int < 0 || cmd_int > 255) 
+        {
             SPDLOG_ERROR("Command ID out of uint8_t range: {}", cmd_int);
-            return;
+            return false;
         }
         cmd_id = static_cast<uint8_t>(cmd_int);
-    } else {
+    } else 
+    {
         SPDLOG_ERROR("Invalid command format. Could not parse command ID.");
-        return;
+        return false;
     }
 
     // Parse remaining tokens as uint8_t arguments for data
-    while (stream >> token) {
+    while (stream >> token) 
+    {
         int arg;
         bool is_numeric = true;
 
         // Check if token is numeric
-        for (char c : token) {
+        for (char c : token) 
+        {
             if (!isdigit(c) && !(c == '-' && &c == &token[0])) { // Allow leading negative sign
                 is_numeric = false;
                 break;
             }
         }
 
-        if (!is_numeric) {
+        if (!is_numeric) 
+        {
             SPDLOG_ERROR("Invalid argument: '{}'. Not a numeric value.", token);
-            return;
+            return false;
         }
 
         // Convert to integer and check range
         arg = std::stoi(token);
-        if (arg < 0 || arg > 255) {
+        if (arg < 0 || arg > 255) 
+        {
             SPDLOG_ERROR("Argument '{}' out of uint8_t range", token);
-            return;
+            return false;
         }
 
         data.push_back(static_cast<uint8_t>(arg));
     }
+
+    return true;
 
 }

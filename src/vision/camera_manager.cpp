@@ -59,7 +59,7 @@ uint8_t CameraManager::SaveLatestFrames()
 
 void CameraManager::RunLoop(Payload* payload)
 {
-    loop_flag = true;
+    loop_flag.store(true);
 
     auto last_health_check_time = std::chrono::high_resolution_clock::now(); // Track health check timing
     auto current_capture_time = std::chrono::high_resolution_clock::now();
@@ -145,7 +145,6 @@ void CameraManager::RunDisplayLoop()
     
     while (display_flag.load() && loop_flag.load()) 
     {
-        
         active_cams = 0;
         
         for (std::size_t i = 0; i < NUM_CAMERAS; ++i) 
@@ -171,7 +170,7 @@ void CameraManager::RunDisplayLoop()
             break;
         }
 
-        if (!display_flag || !loop_flag) 
+        if (!display_flag.load() || !loop_flag.load()) 
         {
             SPDLOG_WARN("Display loop terminated by flags.");
             break;
@@ -180,7 +179,7 @@ void CameraManager::RunDisplayLoop()
         std::this_thread::sleep_for(std::chrono::milliseconds(10)); 
     }
 
-    display_flag = false;
+    display_flag.store(false);
     cv::destroyAllWindows();
 
     SPDLOG_INFO("Exiting Camera Manager Display Loop");
@@ -203,8 +202,8 @@ CameraConfig* CameraManager::GetCameraConfig(int cam_id)
 
 void CameraManager::StopLoops()
 {
-    display_flag = false;
-    loop_flag = false;
+    display_flag.store(false);
+    loop_flag.store(false);
 
     for (auto& camera : cameras) 
     {
@@ -216,12 +215,12 @@ void CameraManager::StopLoops()
 
 void CameraManager::SetDisplayFlag(bool display_flag)
 {
-    this->display_flag = display_flag;
+    this->display_flag.store(display_flag);
 }
 
 bool CameraManager::GetDisplayFlag() const
 {
-    return display_flag;
+    return display_flag.load();
 }
 
 void CameraManager::SetCaptureMode(CAPTURE_MODE mode)

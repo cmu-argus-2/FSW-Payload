@@ -12,7 +12,7 @@ Message::Message(uint8_t id, uint8_t data_length, uint16_t seq_count)
 }
 
 
-MSG_RequestState::MSG_RequestState() 
+/* MSG_RequestState::MSG_RequestState() 
     : Message(CommandID::REQUEST_STATE, 1) {}
 
 void MSG_RequestState::serialize(){
@@ -22,4 +22,4 @@ void MSG_RequestState::serialize(){
     packet.push_back(static_cast<uint8_t>(seq_count & 0xFF));
     packet.push_back(data_length);
     packet.push_back(state); 
-}
+} */

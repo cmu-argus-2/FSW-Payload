@@ -116,6 +116,11 @@ void CameraManager::RunLoop(Payload* payload)
                 break;
             }
 
+            case CAPTURE_MODE::PERIODIC_ROI:
+            {
+                break;
+            }
+
             default:
                 SPDLOG_WARN("Unknown capture mode: {}", capture_mode.load());
                 break;

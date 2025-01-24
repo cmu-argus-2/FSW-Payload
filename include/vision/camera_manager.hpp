@@ -32,6 +32,7 @@ enum class CAPTURE_MODE : uint8_t {
     CAPTURE_SINGLE = 1,  // Camera system stores the latest frame from each available cameras
     PERIODIC = 2,        // Camera system stores all frames at a fixed frequency
     PERIODIC_EARTH = 3,  // Camera system store frames at a fixed rate, but applies a filter to store only frames with a visible Earth
+    PERIODIC_ROI = 4, // Camera system store frames at a fixed rate, but applies a filter to store only frames with regions of interest
 };
 
 

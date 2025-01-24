@@ -13,7 +13,8 @@
 
 
 // Base message structure
-struct Message {
+struct Message 
+{
     uint8_t id;               // ID field (1 byte)
     uint16_t seq_count = 1;       // Sequence count (2 bytes), default to 1
     uint8_t data_length;      // Data length field (1 byte)
@@ -32,10 +33,9 @@ struct Message {
     virtual bool Serialized() const { return _serialized; } // Check if the message has been serialized
 };
 
-struct MSG_RequestState : public Message {
-    uint8_t state;
-
-    MSG_RequestState();
+struct MSG_PING_ACK : public Message 
+{
+    MSG_PING_ACK();
     void serialize() override; 
 };
 

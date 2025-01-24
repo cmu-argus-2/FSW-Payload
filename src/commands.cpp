@@ -48,10 +48,11 @@ std::array<std::string_view, COMMAND_NUMBER> COMMAND_NAMES = {
 void ping_ack(Payload& payload, std::vector<uint8_t>& data)
 {
     SPDLOG_INFO("Received PING_ACK");
-    // Do nothing
-    (void)payload;
+    auto msg = std::make_shared<MSG_PING_ACK>();
+    msg->serialize();
+
+    payload.TransmitMessage(msg);
     (void)data;
-    // TODO
 }
 
 void shutdown(Payload& payload, std::vector<uint8_t>& data)

@@ -17,7 +17,8 @@ typedef std::function<void(Payload&, std::vector<uint8_t>&)> CommandFunction;
 // Command IDs within a namespace
 // Chose this instead of enum class so command IDs can be accessed without casting
 namespace CommandID {
-    enum Type : uint8_t {
+    enum Type : uint8_t 
+    {
         PING_ACK = 0,
         SHUTDOWN = 1,
         SYNCHRONIZE_TIME = 2,

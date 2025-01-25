@@ -35,7 +35,7 @@ public:
             tasks.emplace([task]() { (*task)(); });
         }
 
-        cv_.notify_one();
+        cv_.notify_one(); // notifies one worker thread to pick up the new task 
         return res;
     }
     // return results
@@ -73,7 +73,6 @@ private:
     // last execution times per thread ids
     std::unordered_map<std::thread::id, int64_t> last_exec_times_us;
     std::hash<std::thread::id> hasher;
-                 
                                      
 };
 

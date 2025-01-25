@@ -333,3 +333,18 @@ void Payload::StopODThread()
     }
     SPDLOG_INFO("OD thread stopped");
 }
+
+const OD& Payload::GetOD() const
+{
+    return od;
+}
+
+void Payload::SetLastExecutedCmdID(uint8_t cmd_id)
+{
+    last_executed_cmd_id.store(cmd_id);
+}
+
+uint8_t Payload::GetLastExecutedCmdID() const
+{
+    return last_executed_cmd_id.load();
+}

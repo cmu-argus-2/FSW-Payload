@@ -57,6 +57,11 @@ public:
 
     const Telemetry& GetTelemetry() const;
 
+    const OD& GetOD() const;
+
+    void SetLastExecutedCmdID(uint8_t cmd_id);
+    uint8_t GetLastExecutedCmdID() const;
+
 private:
 
     Payload(Configuration& config, std::unique_ptr<Communication> comms_interface);
@@ -99,6 +104,8 @@ private:
     // Thread Pool
     std::unique_ptr<ThreadPool> thread_pool;
     void StopThreadPool();
+    std::atomic<uint8_t> last_executed_cmd_id = 99; // None
+
 
     // Telemetry
     std::thread telemetry_thread;

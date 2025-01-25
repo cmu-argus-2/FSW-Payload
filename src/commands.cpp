@@ -53,13 +53,17 @@ void ping_ack(Payload& payload, std::vector<uint8_t>& data)
 
     payload.TransmitMessage(msg);
     (void)data;
+
+    payload.SetLastExecutedCmdID(CommandID::PING_ACK);
 }
 
 void shutdown(Payload& payload, std::vector<uint8_t>& data)
 {
     SPDLOG_INFO("Initiating Payload shutdown..");
     payload.Stop();
-    (void)data; // TODO
+    (void)data;
+
+    payload.SetLastExecutedCmdID(CommandID::SHUTDOWN);
 }
 
 void synchronize_time(Payload& payload, std::vector<uint8_t>& data)
@@ -68,6 +72,8 @@ void synchronize_time(Payload& payload, std::vector<uint8_t>& data)
     (void)payload;
     (void)data;
     // TODO
+
+    payload.SetLastExecutedCmdID(CommandID::SYNCHRONIZE_TIME);
 }
 
 void request_telemetry(Payload& payload, std::vector<uint8_t>& data)
@@ -77,6 +83,8 @@ void request_telemetry(Payload& payload, std::vector<uint8_t>& data)
     (void)data;
     PrintTelemetryFrame(payload.GetTelemetry().GetTmFrame());
     // TODO
+
+    payload.SetLastExecutedCmdID(CommandID::REQUEST_TELEMETRY);
 }
 
 
@@ -112,6 +120,8 @@ void enable_cameras(Payload& payload, std::vector<uint8_t>& data)
 
     }
 
+    payload.SetLastExecutedCmdID(CommandID::ENABLE_CAMERAS);
+
 }
 
 void disable_cameras(Payload& payload, std::vector<uint8_t>& data)
@@ -145,6 +155,9 @@ void disable_cameras(Payload& payload, std::vector<uint8_t>& data)
         }
 
     } 
+
+
+    payload.SetLastExecutedCmdID(CommandID::DISABLE_CAMERAS);
  
 }
 
@@ -158,6 +171,8 @@ void capture_images(Payload& payload, std::vector<uint8_t>& data)
     // Basically should wait until the camera has captured the image or wait later to send the ocnfirmation and just exit the task? 
     (void)data;
     // TODO
+
+    payload.SetLastExecutedCmdID(CommandID::CAPTURE_IMAGES);
 }
 
 void start_capture_images_periodically(Payload& payload, std::vector<uint8_t>& data)
@@ -177,6 +192,8 @@ void start_capture_images_periodically(Payload& payload, std::vector<uint8_t>& d
     payload.GetCameraManager().SetCaptureMode(CAPTURE_MODE::PERIODIC);
 
     // TODO: Implement a return type to indicate success or failure, if needed.
+
+    payload.SetLastExecutedCmdID(CommandID::START_CAPTURE_IMAGES_PERIODICALLY);
 }
 
 void stop_capture_images(Payload& payload, std::vector<uint8_t>& data)
@@ -187,6 +204,8 @@ void stop_capture_images(Payload& payload, std::vector<uint8_t>& data)
 
     payload.GetCameraManager().SetCaptureMode(CAPTURE_MODE::IDLE);
     // TODO return true or false based on the success of the operations
+
+    payload.SetLastExecutedCmdID(CommandID::STOP_CAPTURE_IMAGES);
 }
 
 
@@ -197,6 +216,8 @@ void stored_images(Payload& payload, std::vector<uint8_t>& data)
     (void)payload;
     (void)data;
     // TODO
+
+    payload.SetLastExecutedCmdID(CommandID::STORED_IMAGES);
 }
 
 void request_image(Payload& payload, std::vector<uint8_t>& data)
@@ -211,6 +232,8 @@ void request_image(Payload& payload, std::vector<uint8_t>& data)
 
     // TODO: Transmit the image
     // Need to be flagged for deletion
+
+    payload.SetLastExecutedCmdID(CommandID::REQUEST_IMAGE);
 }
 
 
@@ -220,6 +243,8 @@ void delete_images(Payload& payload, std::vector<uint8_t>& data)
     (void)payload;
     (void)data;
     // TODO
+
+    payload.SetLastExecutedCmdID(CommandID::DELETE_IMAGES);
 }
 
 
@@ -229,6 +254,8 @@ void run_od(Payload& payload, std::vector<uint8_t>& data)
     (void)payload;
     (void)data;
     // TODO
+
+    payload.SetLastExecutedCmdID(CommandID::RUN_OD);
 }
 
 
@@ -248,13 +275,17 @@ void debug_display_camera(Payload& payload, std::vector<uint8_t>& data)
     // This will block the thread until the display flag is set to false or all cameras are turned off
     payload.GetCameraManager().RunDisplayLoop(); 
 
-    (void)data; // TODO
+    (void)data;
+
+    payload.SetLastExecutedCmdID(CommandID::DEBUG_DISPLAY_CAMERA);
 }
 
 void debug_stop_display(Payload& payload, std::vector<uint8_t>& data)
 {
     SPDLOG_INFO("Stopping the display of the camera");
     payload.GetCameraManager().SetDisplayFlag(false);
-    (void)data; // TODO
+    (void)data;
     // return ACK
+
+    payload.SetLastExecutedCmdID(CommandID::DEBUG_STOP_DISPLAY);
 }

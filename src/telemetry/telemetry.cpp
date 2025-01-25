@@ -282,7 +282,7 @@ void Telemetry::_UpdateTmSystemPart(Payload* payload)
     }
 
     // tm_frame.LATEST_ERROR = 
-    // tm_frame.LAST_EXECUTED_CMD_ID = 
+    tm_frame.LAST_EXECUTED_CMD_ID = payload->GetLastExecutedCmdID();
     
 }
 

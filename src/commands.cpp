@@ -47,21 +47,22 @@ std::array<std::string_view, COMMAND_NUMBER> COMMAND_NAMES = {
 
 void ping_ack(Payload& payload, std::vector<uint8_t>& data)
 {
-    SPDLOG_INFO("Received PING_ACK");
-    auto msg = std::make_shared<MSG_PING_ACK>();
-    msg->serialize();
-
-    payload.TransmitMessage(msg);
     (void)data;
+    SPDLOG_INFO("Received PING_ACK");
+
+    std::vector<uint8_t> transmit_data = {PING_VALUE};
+    auto msg = CreateMessage(CommandID::PING_ACK, transmit_data);
+    payload.TransmitMessage(msg);
 
     payload.SetLastExecutedCmdID(CommandID::PING_ACK);
 }
 
 void shutdown(Payload& payload, std::vector<uint8_t>& data)
 {
+    (void)data;
     SPDLOG_INFO("Initiating Payload shutdown..");
     payload.Stop();
-    (void)data;
+    
 
     payload.SetLastExecutedCmdID(CommandID::SHUTDOWN);
 }
@@ -79,10 +80,44 @@ void synchronize_time(Payload& payload, std::vector<uint8_t>& data)
 void request_telemetry(Payload& payload, std::vector<uint8_t>& data)
 {
     SPDLOG_INFO("Requesting last telemetry..");
-    (void)payload;
     (void)data;
-    PrintTelemetryFrame(payload.GetTelemetry().GetTmFrame());
-    // TODO
+
+
+    auto tm = payload.GetTelemetry().GetTmFrame();
+    PrintTelemetryFrame(tm);
+    std::vector<uint8_t> transmit_data;
+
+    SerializeToBytes(tm.SYSTEM_TIME, transmit_data);
+    SerializeToBytes(tm.UPTIME, transmit_data);
+    SerializeToBytes(tm.LAST_EXECUTED_CMD_TIME, transmit_data);
+    transmit_data.push_back(tm.LAST_EXECUTED_CMD_ID);
+    transmit_data.push_back(tm.PAYLOAD_STATE);
+    transmit_data.push_back(tm.ACTIVE_CAMERAS);
+    transmit_data.push_back(tm.CAPTURE_MODE);
+    for (int i = 0; i < 4; i++)
+    {
+        transmit_data.push_back(tm.CAM_STATUS[i]);
+    }
+    transmit_data.push_back(tm.TASKS_IN_EXECUTION);
+    transmit_data.push_back(tm.DISK_USAGE);
+    transmit_data.push_back(tm.LATEST_ERROR);
+    transmit_data.push_back(static_cast<uint8_t>(tm.TEGRASTATS_PROCESS_STATUS));
+    transmit_data.push_back(tm.RAM_USAGE);
+    transmit_data.push_back(tm.SWAP_USAGE);
+    transmit_data.push_back(tm.ACTIVE_CORES);
+    for (int i = 0; i < 6; i++)
+    {
+        transmit_data.push_back(tm.CPU_LOAD[i]);
+    }
+    transmit_data.push_back(tm.GPU_FREQ);
+    transmit_data.push_back(tm.CPU_TEMP);
+    transmit_data.push_back(tm.GPU_TEMP);
+    SerializeToBytes(tm.VDD_IN, transmit_data);
+    SerializeToBytes(tm.VDD_CPU_GPU_CV, transmit_data);
+    SerializeToBytes(tm.VDD_SOC, transmit_data);
+
+    auto msg = CreateMessage(CommandID::REQUEST_TELEMETRY, transmit_data);
+    payload.TransmitMessage(msg);
 
     payload.SetLastExecutedCmdID(CommandID::REQUEST_TELEMETRY);
 }

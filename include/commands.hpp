@@ -8,6 +8,8 @@
 #include <string>
 #include <functional>
 
+#define PING_VALUE 0x60
+
 // Forward declaration of Payload class
 class Payload;
 

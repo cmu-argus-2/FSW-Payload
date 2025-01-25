@@ -26,9 +26,13 @@ bool RestartTegrastatsProcessor();
 
 struct TelemetryFrame
 {
+    // No need to optimize for alignment 
 
-    long SYSTEM_TIME;
-    long UPTIME;
+    // System part
+    uint32_t SYSTEM_TIME;
+    uint32_t UPTIME;
+    uint32_t LAST_EXECUTED_CMD_TIME;
+    uint8_t LAST_EXECUTED_CMD_ID;
     uint8_t PAYLOAD_STATE;
     uint8_t ACTIVE_CAMERAS;
     uint8_t CAPTURE_MODE;
@@ -36,8 +40,8 @@ struct TelemetryFrame
     uint8_t TASKS_IN_EXECUTION;
     uint8_t DISK_USAGE;
     uint8_t LATEST_ERROR;
-    uint8_t LAST_EXECUTED_CMD_ID;
-    long LAST_EXECUTED_CMD_TIME;
+
+    // Tegrastats part
     bool TEGRASTATS_PROCESS_STATUS;
     uint8_t RAM_USAGE;
     uint8_t SWAP_USAGE;
@@ -46,9 +50,10 @@ struct TelemetryFrame
     uint8_t GPU_FREQ;
     uint8_t CPU_TEMP;
     uint8_t GPU_TEMP;
-    int VDD_IN;
-    int VDD_CPU_GPU_CV;
-    int VDD_SOC;
+    // Blocks’s current power consumption in milliwatts 
+    uint16_t VDD_IN; 
+    uint16_t VDD_CPU_GPU_CV;
+    uint16_t VDD_SOC;
     
     TelemetryFrame();
 

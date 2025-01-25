@@ -5,12 +5,14 @@
 #include <cstdint>
 #include <chrono>
 #include <atomic>
+#include <memory>
 #include "commands.hpp"
 
 // If seq_count > 1, priority is automatically set to 2
 #define TX_PRIORITY_1 1
 #define TX_PRIORITY_2 2
 
+#define PING_VALUE 0x60
 
 // Base message structure
 struct Message 
@@ -29,14 +31,15 @@ struct Message
     Message(uint8_t id, uint8_t data_length, uint16_t seq_count = 1);
 
     virtual ~Message() = default; // Virtual destructor
-    virtual void serialize() = 0; // Pure virtual method for serialization
-    virtual bool Serialized() const { return _serialized; } // Check if the message has been serialized
+    void AddToPacket(std::vector<uint8_t>& data); // Add data to the packet
+    void SerializeHeader(); // Serialize the header
+    bool VerifyPacketSerialization(); // Check if the packet is serialized
+    bool Serialized() const { return _serialized; } // Check if the message has been serialized
 };
 
-struct MSG_PING_ACK : public Message 
-{
-    MSG_PING_ACK();
-    void serialize() override; 
-};
+
+std::shared_ptr<Message> CreateMessage(CommandID::Type id, std::vector<uint8_t>& tx_data);
+void SerializeToBytes(uint32_t value, std::vector<uint8_t>& output);
+void SerializeToBytes(uint16_t value, std::vector<uint8_t>& output);
 
 #endif // MESSAGES_HPP

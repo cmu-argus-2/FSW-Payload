@@ -335,9 +335,9 @@ bool Telemetry::_UpdateTmTegraPart()
     tm_frame.GPU_FREQ = shared_mem->gpu_freq;
     tm_frame.CPU_TEMP = static_cast<uint8_t>(shared_mem->cpu_temp); 
     tm_frame.GPU_TEMP = static_cast<uint8_t>(shared_mem->gpu_temp); 
-    tm_frame.VDD_IN = shared_mem->vdd_in;
-    tm_frame.VDD_CPU_GPU_CV = shared_mem->vdd_cpu_gpu_cv;
-    tm_frame.VDD_SOC = shared_mem->vdd_soc;
+    tm_frame.VDD_IN = static_cast<uint16_t>(shared_mem->vdd_in);
+    tm_frame.VDD_CPU_GPU_CV = static_cast<uint16_t>(shared_mem->vdd_cpu_gpu_cv);
+    tm_frame.VDD_SOC = static_cast<uint16_t>(shared_mem->vdd_soc);
 
     // Set the read flag to 0
     memcpy(&(shared_mem->change_flag), &read_flag, sizeof(shared_mem->change_flag));

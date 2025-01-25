@@ -200,10 +200,6 @@ void NamedPipe::RunLoop(Payload* payload)
         while (!payload->GetTxQueue().IsEmpty())
         {
             std::shared_ptr<Message> msg = payload->GetTxQueue().GetNextMsg();
-            if (!msg->Serialized())
-            {
-                msg->serialize();
-            }
 
             bool succ = Send(msg->packet);
             if (succ)

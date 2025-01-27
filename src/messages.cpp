@@ -30,6 +30,11 @@ void Message::AddToPacket(std::vector<uint8_t>& data)
     packet.insert(packet.end(), data.begin(), data.end());
 }
 
+void Message::AddToPacket(uint8_t data)
+{
+    packet.push_back(data);
+}
+
 bool Message::VerifyPacketSerialization()
 {
     _serialized = (packet.size() == data_length + 4);
@@ -58,4 +63,26 @@ void SerializeToBytes(uint16_t value, std::vector<uint8_t>& output)
 {
     output.push_back(static_cast<uint8_t>(value >> 8));
     output.push_back(static_cast<uint8_t>(value & 0xFF));
+}
+
+std::shared_ptr<Messgae> CreateSuccessAckMessage(CommandID::Type id)
+{
+    auto msg = std::make_shared<Message>(id, 1);
+    msg->AddToPacket(SUCCESS_FLAG);
+
+    assert(msg->VerifyPacketSerialization() && ("Packet serialization verification failed for CommandID: " + std::to_string(static_cast<int>(id))).c_str());
+
+    return msg;
+}
+
+
+std::shared_ptr<Messgae> CreateErrorAckMessage(CommandID::Type id, uint8_t error_code)
+{
+    auto msg = std::make_shared<Message>(id, 2);
+    msg->AddToPacket(ERROR_FLAG);
+    msg->AddToPacket(error_code);
+
+    assert(msg->VerifyPacketSerialization() && ("Packet serialization verification failed for CommandID: " + std::to_string(static_cast<int>(id))).c_str());
+
+    return msg;
 }

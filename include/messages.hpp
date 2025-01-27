@@ -14,6 +14,9 @@
 
 #define PING_VALUE 0x60
 
+#define SUCCESS_FLAG 0x0A
+#define ERROR_FLAG 0x0B
+
 // Base message structure
 struct Message 
 {
@@ -31,7 +34,8 @@ struct Message
     Message(uint8_t id, uint8_t data_length, uint16_t seq_count = 1);
 
     virtual ~Message() = default; // Virtual destructor
-    void AddToPacket(std::vector<uint8_t>& data); // Add data to the packet
+    void AddToPacket(std::vector<uint8_t>& data); // Add data (vector) to the packet
+    void AddToPacket(uint8_t data); // Add data to the packet
     void SerializeHeader(); // Serialize the header
     bool VerifyPacketSerialization(); // Check if the packet is serialized
     bool Serialized() const { return _serialized; } // Check if the message has been serialized
@@ -41,5 +45,9 @@ struct Message
 std::shared_ptr<Message> CreateMessage(CommandID::Type id, std::vector<uint8_t>& tx_data);
 void SerializeToBytes(uint32_t value, std::vector<uint8_t>& output);
 void SerializeToBytes(uint16_t value, std::vector<uint8_t>& output);
+
+std::shared_ptr<Message> CreateSuccessAckMessage(CommandID::Type id);
+std::shared_ptr<Message> CreateErrorAckMessgae(CommandID::Type id, uint8_t error_code);
+
 
 #endif // MESSAGES_HPP

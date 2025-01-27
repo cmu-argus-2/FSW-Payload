@@ -34,8 +34,9 @@ namespace CommandID {
         REQUEST_IMAGE = 10,
         DELETE_IMAGES = 11,
         RUN_OD = 12,
-        DEBUG_DISPLAY_CAMERA = 13,
-        DEBUG_STOP_DISPLAY = 14
+        PING_OD_STATUS = 13,
+        DEBUG_DISPLAY_CAMERA = 14,
+        DEBUG_STOP_DISPLAY = 15
     };
 }
 
@@ -55,6 +56,7 @@ constexpr CommandID::Type ALL_COMMAND_IDS[] =
     CommandID::REQUEST_IMAGE,
     CommandID::DELETE_IMAGES,
     CommandID::RUN_OD,
+    CommandID::PING_OD_STATUS,
     CommandID::DEBUG_DISPLAY_CAMERA,
     CommandID::DEBUG_STOP_DISPLAY
 };
@@ -75,6 +77,7 @@ void stored_images(Payload& payload, std::vector<uint8_t>& data);
 void request_image(Payload& payload, std::vector<uint8_t>& data);
 void delete_images(Payload& payload, std::vector<uint8_t>& data);
 void run_od(Payload& payload, std::vector<uint8_t>& data);
+void ping_od_status(Payload& payload, std::vector<uint8_t>& data);
 void debug_display_camera(Payload& payload, std::vector<uint8_t>& data);
 void debug_stop_display(Payload& payload, std::vector<uint8_t>& data);
 

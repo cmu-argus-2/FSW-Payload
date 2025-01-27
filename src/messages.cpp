@@ -65,7 +65,7 @@ void SerializeToBytes(uint16_t value, std::vector<uint8_t>& output)
     output.push_back(static_cast<uint8_t>(value & 0xFF));
 }
 
-std::shared_ptr<Messgae> CreateSuccessAckMessage(CommandID::Type id)
+std::shared_ptr<Message> CreateSuccessAckMessage(CommandID::Type id)
 {
     auto msg = std::make_shared<Message>(id, 1);
     msg->AddToPacket(SUCCESS_FLAG);
@@ -76,7 +76,7 @@ std::shared_ptr<Messgae> CreateSuccessAckMessage(CommandID::Type id)
 }
 
 
-std::shared_ptr<Messgae> CreateErrorAckMessage(CommandID::Type id, uint8_t error_code)
+std::shared_ptr<Message> CreateErrorAckMessage(CommandID::Type id, uint8_t error_code)
 {
     auto msg = std::make_shared<Message>(id, 2);
     msg->AddToPacket(ERROR_FLAG);

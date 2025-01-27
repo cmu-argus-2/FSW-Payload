@@ -293,6 +293,18 @@ void run_od(Payload& payload, std::vector<uint8_t>& data)
     payload.SetLastExecutedCmdID(CommandID::RUN_OD);
 }
 
+void ping_od_status(Payload& payload, std::vector<uint8_t>& data)
+{
+
+    SPDLOG_INFO("Pinging the status of the orbit determination process...");
+    (void)payload;
+    (void)data;
+    // TODO
+
+
+    payload.SetLastExecutedCmdID(CommandID::PING_OD_STATUS);
+}
+
 
 void debug_display_camera(Payload& payload, std::vector<uint8_t>& data)
 {

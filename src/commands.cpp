@@ -22,6 +22,7 @@ std::array<CommandFunction, COMMAND_NUMBER> COMMAND_FUNCTIONS =
     request_image, // REQUEST_IMAGE
     delete_images, // DELETE_IMAGES
     run_od, // RUN_OD
+    ping_od_status, // PING_OD_STATUS
     debug_display_camera, // DEBUG_DISPLAY_CAMERA
     debug_stop_display // DEBUG_STOP_DISPLAY
 };
@@ -41,6 +42,7 @@ std::array<std::string_view, COMMAND_NUMBER> COMMAND_NAMES = {
     "REQUEST_IMAGE",
     "DELETE_IMAGES",
     "RUN_OD",
+    "PING_OD_STATUS",
     "DEBUG_DISPLAY_CAMERA",
     "DEBUG_STOP_DISPLAY"
 };
@@ -62,8 +64,10 @@ void shutdown(Payload& payload, std::vector<uint8_t>& data)
     (void)data;
     SPDLOG_INFO("Initiating Payload shutdown..");
     payload.Stop();
-    
 
+    auto msg = CreateSuccessAckMessage(CommandID::SHUTDOWN);
+    payload.TransmitMessage(msg);
+    
     payload.SetLastExecutedCmdID(CommandID::SHUTDOWN);
 }
 
@@ -313,7 +317,8 @@ void debug_display_camera(Payload& payload, std::vector<uint8_t>& data)
     if (payload.GetCameraManager().GetDisplayFlag() == true) 
     {
         SPDLOG_WARN("Display already active");
-        // TODO: return success
+        auto msg = CreateSuccessAckMessage(CommandID::DEBUG_DISPLAY_CAMERA);
+        payload.TransmitMessage(msg);
         return;
     }
 
@@ -321,6 +326,9 @@ void debug_display_camera(Payload& payload, std::vector<uint8_t>& data)
     // the command is already by a thread of the ThreadPool so no need to spawn a new thread here
     // This will block the thread until the display flag is set to false or all cameras are turned off
     payload.GetCameraManager().RunDisplayLoop(); 
+
+    auto msg = CreateSuccessAckMessage(CommandID::DEBUG_DISPLAY_CAMERA);
+    payload.TransmitMessage(msg);
 
     (void)data;
 
@@ -333,6 +341,8 @@ void debug_stop_display(Payload& payload, std::vector<uint8_t>& data)
     payload.GetCameraManager().SetDisplayFlag(false);
     (void)data;
     // return ACK
+    auto msg = CreateSuccessAckMessage(CommandID::DEBUG_STOP_DISPLAY);
+    payload.TransmitMessage(msg);
 
     payload.SetLastExecutedCmdID(CommandID::DEBUG_STOP_DISPLAY);
 }

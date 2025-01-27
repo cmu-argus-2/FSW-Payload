@@ -35,6 +35,7 @@ thread_pool(std::make_unique<ThreadPool>(4))
 Payload::~Payload()
 {
     Stop();
+    StopCommunicationThread();
 }
 
 void Payload::ReadNewConfiguration(Configuration& config)
@@ -170,12 +171,6 @@ void Payload::Run()
 
             thread_pool->enqueue([task]() mutable { task.Execute(); }); // Capturing `task` by value
         }
-
-        // Check for outgoing messages - Comms thread responsible for this
-        /*if (!tx_queue.IsEmpty()) 
-        {
-            std::shared_ptr<Message> msg = tx_queue.GetNextMsg();
-        }*/
     }
     
     SPDLOG_INFO("Exiting Payload Run Loop");
@@ -199,7 +194,7 @@ void Payload::Stop()
     StopThreadPool();
 
     // Stop communication system
-    StopCommunicationThread();
+    // StopCommunicationThread(); ~ done in destructor so we can ACK the command
 
     
     SPDLOG_WARN("Payload Shutdown");

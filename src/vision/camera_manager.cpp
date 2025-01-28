@@ -67,11 +67,15 @@ void CameraManager::RunLoop(Payload* payload)
 
     while (loop_flag.load()) 
     {
-        // TODO remove busy waiting ~ add condition variable
+
+        // Check for incoming camera commands
         switch (capture_mode.load())
         {
             case CAPTURE_MODE::IDLE:
             {
+                std::unique_lock<std::mutex> lock(capture_mode_mutex);
+                capture_mode_cv.wait(lock, [this] { return !loop_flag.load() || !(capture_mode.load() != CAPTURE_MODE::IDLE); });
+                
                 break;
             }
 
@@ -125,7 +129,7 @@ void CameraManager::RunLoop(Payload* payload)
                 SPDLOG_WARN("Unknown capture mode: {}", capture_mode.load());
                 break;
         }
-
+        
         // Perform health check periodically
         auto current_health_check_time = std::chrono::high_resolution_clock::now();
         if (std::chrono::duration_cast<std::chrono::seconds>(current_health_check_time - last_health_check_time).count() >= CAMERA_HEALTH_CHECK_INTERVAL) 
@@ -135,6 +139,7 @@ void CameraManager::RunLoop(Payload* payload)
         }
 
         _UpdateCamStatus();
+
     }
 
     SPDLOG_INFO("Exiting Camera Manager Run Loop");
@@ -181,7 +186,7 @@ void CameraManager::RunDisplayLoop()
             break;
         }
 
-        std::this_thread::sleep_for(std::chrono::milliseconds(10)); 
+        std::this_thread::sleep_for(std::chrono::milliseconds(30)); // Just displaying
     }
 
     display_flag.store(false);

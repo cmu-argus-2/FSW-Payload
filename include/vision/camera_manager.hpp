@@ -3,6 +3,8 @@
 
 #include <array>
 #include <atomic>
+#include <mutex>
+#include <condition_variable>
 #include "spdlog/spdlog.h"
 #include "camera.hpp"
 
@@ -86,6 +88,9 @@ private:
 
     std::atomic<bool> display_flag = false;
     std::atomic<bool> loop_flag = false;
+
+    std::mutex capture_mode_mutex;
+    std::condition_variable capture_mode_cv;
     
     std::atomic<uint8_t> periodic_capture_rate = 5; // Default rate of 5 seconds
     std::atomic<uint8_t> periodic_frames_to_capture = DEFAULT_PERIODIC_FRAMES_TO_CAPTURE; // After the request is serviced, it gets back to the default value

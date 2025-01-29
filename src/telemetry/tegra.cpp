@@ -197,7 +197,6 @@ bool ConfigureSharedMemory(TegraTM*& shared_mem)
 
 sem_t* InitializeSemaphore()
 {
-    sem_unlink(TEGRASTATS_SEM); // Remove any existing semaphore before creating a new one
     sem_t* sem = sem_open(TEGRASTATS_SEM, O_CREAT, 0666, 1);
     if (sem == SEM_FAILED)
     {
@@ -283,7 +282,7 @@ sem_t* LinkToSemaphore()
     sem_t* sem = sem_open(TEGRASTATS_SEM, O_RDONLY);
     if (sem == SEM_FAILED)
     {
-        SPDLOG_ERROR("Failed to link to semaphore (read-only).");
+        SPDLOG_ERROR("Failed to link to semaphore (read-only): {}", strerror(errno));
     }
     return sem;
 }

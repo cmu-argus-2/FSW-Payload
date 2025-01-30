@@ -1,15 +1,15 @@
 #ifndef TELEMETRY_HPP
 #define TELEMETRY_HPP
 
-#define SEMAPHORE_TIMEOUT_NS 200000000 // 200 milliseconds
-#define DEFAULT_TM_FREQUENCY_HZ 1  
-
-#define MAXIMUM_COUNT_WITHOUT_UPDATE 3
-
 #include <atomic>
 #include <mutex>
 #include <semaphore.h>
 #include "telemetry/tegra.hpp"
+
+#define SEMAPHORE_TIMEOUT_NS 200000000 // 200 milliseconds
+#define DEFAULT_TM_FREQUENCY_HZ 1  
+
+#define MAXIMUM_COUNT_WITHOUT_UPDATE 3
 
 
 // Forward declaration

@@ -24,7 +24,6 @@ bool CheckTegraTmProcessRunning()
 
 bool KillTegraTmProcess() 
 {
-
     if (CheckTegraTmProcessRunning()) 
     {
         std::string cmd = std::string("pkill ") + TM_TEGRASTATS;
@@ -38,10 +37,11 @@ bool KillTegraTmProcess()
 
 bool RestartTegrastatsProcessor()
 {
+    SPDLOG_INFO("Restarting TM Tegrastats Processor...");
     // kill any process that was already running
     KillTegraTmProcess();
     
-    std::string cmd = std::string("./build/bin/") + TM_TEGRASTATS;
+    std::string cmd = std::string(EXECUTABLE_DIR) + TM_TEGRASTATS;
 
     if (!DetectJetsonPlatform()) // for emulation
     {   
@@ -50,9 +50,11 @@ bool RestartTegrastatsProcessor()
 
     // Add redirection and background execution
     cmd += " > /dev/null 2>&1 &";
+    // cmd += " &"; // Simply run in the background with no output redirection
 
 
     int result = std::system(cmd.c_str());
+    std::this_thread::sleep_for(std::chrono::milliseconds(300)); // Wait for the process to start and shared memory to be created
 
     return (result == 0);
 }
@@ -119,6 +121,7 @@ tm_frame()
 { 
     if (!CheckTegraTmProcessRunning())
     {
+        SPDLOG_INFO("TM Tegrastats Processor is not running. Starting it...");
         if (RestartTegrastatsProcessor())
         {
             SPDLOG_INFO("Started TM Tegrastats Processor");
@@ -127,6 +130,10 @@ tm_frame()
         {
             SPDLOG_WARN("Failed to start the TM Tegrastats Processor");
         }
+    }
+    else
+    {
+        SPDLOG_INFO("TM Tegrastats Processor is already running");
     }
 
     if (LinkToTegraTmProcess())
@@ -183,10 +190,10 @@ bool Telemetry::LinkToTegraTmProcess()
     }
 
     // close existing semaphore if already open
-    if (sem_shared_mem != nullptr) {
+    /*if (sem_shared_mem != nullptr) {
         sem_close(sem_shared_mem);
         sem_shared_mem = nullptr;
-    }
+    }*/
 
 
     sem_shared_mem = LinkToSemaphore();

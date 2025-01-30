@@ -202,6 +202,10 @@ sem_t* InitializeSemaphore()
     {
         spdlog::error("Failed to create semaphore");
     }
+    else
+    {
+        spdlog::info("Semaphore created successfully");
+    }
     return sem;
 }
 
@@ -282,7 +286,7 @@ sem_t* LinkToSemaphore()
     sem_t* sem = sem_open(TEGRASTATS_SEM, O_RDONLY);
     if (sem == SEM_FAILED)
     {
-        SPDLOG_ERROR("Failed to link to semaphore (read-only): {}", strerror(errno));
+        SPDLOG_ERROR("Failed to link to semaphore: {}", strerror(errno));
     }
     return sem;
 }

@@ -38,7 +38,7 @@ Build the project
 
 ```bash
 ./build.sh
-./build/PAYLOAD [optional: <communication-interface: [UART, CLI]>]
+./bin/PAYLOAD [optional: <communication-interface: [UART, CLI]>]
 ```
 
 or 
@@ -47,7 +47,8 @@ or
 mkdir build
 cd build
 cmake .. && make
-./PAYLOAD [optional: <communication-interface: [UART, CLI]>] // default to UART 
+cd ..
+./bin/PAYLOAD [optional: <communication-interface: [UART, CLI]>] // default to UART 
 ```
 ## Configuration
 

@@ -13,7 +13,9 @@ else()
 endif()
 
 # Set a global output directory for all executables
-set(CMAKE_RUNTIME_OUTPUT_DIRECTORY ${CMAKE_SOURCE_DIR}/bin)
+set(CMAKE_RUNTIME_OUTPUT_DIRECTORY ${CMAKE_SOURCE_DIR}/bin/)
+# Set a compile definition for the executable directory
+add_compile_definitions(EXECUTABLE_DIR=\"${CMAKE_RUNTIME_OUTPUT_DIRECTORY}\")
 
 
 # Preprocessor definition for the path of the inter-process fifo (command-line interface)

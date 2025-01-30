@@ -24,7 +24,7 @@ void EmulateTegrastatsProcessor(TegraTM* shared_frame, RegexContainer& regexes, 
             ParseTegrastatsLine(line, regexes, frame);
 
             sem_wait(sem); 
-            SPDLOG_INFO("Reading flag before modifiication {}", shared_frame->change_flag);
+            SPDLOG_INFO("Reading flag before modification {}", shared_frame->change_flag);
             memcpy(shared_frame, &frame, sizeof(frame));
             SPDLOG_INFO("Setting the reading flag to {}", shared_frame->change_flag);
             SPDLOG_INFO("Data written to shared memory. (e.g {} RAM used, CPU Core 1 load: {}%, ...)", shared_frame->ram_used, shared_frame->cpu_load[0]);

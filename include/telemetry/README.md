@@ -2,7 +2,7 @@
 
 The Telemetry Service is responsible for collecting, processing, and managing telemetry data from the system. It also interfaces with NVIDIA Tegra-based hardware to provide real-time statistics and diagnostics for performance monitoring. The Telemetry Service is automatically launched by the Payload instance.
 
-## Architecture 
+## Telemetry Frame 
 
 The Telemetry Frame is composed of two distincts parts, coming from 2 different sources:
 - System part: contains general state and information about the submodules running on the flight software main process (time, camera states, last executed command, last error, disk usage, etc).

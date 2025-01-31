@@ -1,6 +1,8 @@
+#ifndef RC_HPP
+#define RC_HPP
 
 /*
-Current supported regions:
+Currently supported regions:
     '10S': 'California',
     '10T': 'Washington / Oregon',
     '11R': 'Baja California, Mexico',
@@ -18,8 +20,6 @@ Current supported regions:
     '54S': 'Tokyo to Hachinohe, Japan',
     '54T': 'Sapporo, Japan'
 */
-#ifndef RC_HPP
-#define RC_HPP
 
 #include <torch/script.h> 
 #include <torch/torch.h>

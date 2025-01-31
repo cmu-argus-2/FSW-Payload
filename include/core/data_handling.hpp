@@ -12,6 +12,7 @@ This file contains classes and functions providing file services and data handli
 #include <vector>
 #include <opencv2/opencv.hpp>
 #include "spdlog/spdlog.h"
+#include "vision/frame.hpp"
 
 #define ROOT_DISK "/"
 
@@ -51,7 +52,7 @@ namespace DH // Data Handling
     void StoreRawImgToDisk(std::uint64_t timestamp, int cam_id, const cv::Mat& img);
 
     // Load in memory the latest img
-    bool ReadLatestStoredRawImg(cv::Mat& img, std::uint64_t& timestamp, int& cam_id);
+    bool ReadLatestStoredRawImg(Frame& frame);
 
     // count the number of images in the images folder
     int CountRawImgNumberOnDisk();

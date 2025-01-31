@@ -1,5 +1,5 @@
 #include <gtest/gtest.h>
-#include "vision/region_classifier.hpp"
+#include "vision/rc.hpp"
 
 
 /*TEST(RegionClassifierTest, RCModelIntegrity) {

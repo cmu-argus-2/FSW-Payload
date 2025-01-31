@@ -1,6 +1,6 @@
 
-#ifndef REGION_CLASSIFIER_HPP
-#define REGION_CLASSIFIER_HPP
+#ifndef RC_HPP
+#define RC_HPP
 
 #include <torch/script.h> 
 #include <torch/torch.h>
@@ -8,6 +8,7 @@
 
 #define NUM_CLASSES 16
 
+typedef uint8_t RegionID;
 
 bool DetectGPU();
 
@@ -29,4 +30,4 @@ private:
     void set_device();
 };
 
-#endif // REGION_CLASSIFIER_HPP
+#endif // RC_HPP

@@ -4,7 +4,8 @@ add_library(vision
     camera_manager.cpp
     camera.cpp
     frame.cpp
-    region_classifier.cpp
+    rc.cpp
+    ld.cpp
 )
 
 

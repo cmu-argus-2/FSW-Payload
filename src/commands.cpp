@@ -267,9 +267,9 @@ void request_image(Payload& payload, std::vector<uint8_t>& data)
     
     // Read the latest image from disk
     Frame frame;
-    DH::ReadLatestStoredRawImg(frame._img, frame._timestamp, frame._cam_id);
+    bool res = DH::ReadLatestStoredRawImg(frame);
 
-    // TODO: Transmit the image
+    // TODO: Transmit the image if successful, else error ACK
     // Need to be flagged for deletion
 
     payload.SetLastExecutedCmdID(CommandID::REQUEST_IMAGE);

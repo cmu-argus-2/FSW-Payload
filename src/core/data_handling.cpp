@@ -165,9 +165,8 @@ void SplitRawImgPath(const std::string& input, std::uint64_t& timestamp, int& ca
 
 
 
-bool ReadLatestStoredRawImg(cv::Mat& img, std::uint64_t& timestamp, int& cam_id)
+bool ReadLatestStoredRawImg(Frame& frame)
 {
-
 
     std::filesystem::directory_entry latest_file;
 
@@ -181,18 +180,22 @@ bool ReadLatestStoredRawImg(cv::Mat& img, std::uint64_t& timestamp, int& cam_id)
     std::string infolder_latest_file_path = latest_file_path.substr(latest_file_path.find_last_of("/\\") + 1);
 
     // Extract timestamp and id from filename
-    SplitRawImgPath(infolder_latest_file_path, timestamp, cam_id);
-    SPDLOG_DEBUG("Timestamp: {}, Camera ID: {}", timestamp, cam_id);
+    std::uint64_t extracted_timestamp;
+    int extracted_cam_id;
+    SplitRawImgPath(infolder_latest_file_path, extracted_timestamp, extracted_cam_id);
+    SPDLOG_DEBUG("Timestamp: {}, Camera ID: {}", extracted_timestamp, extracted_cam_id);
 
 
     // Load the image into memory
     // CV_8UC3 - 8-bit unsigned integer matrix/image with 3 channels
-    img = cv::imread(latest_file_path, cv::IMREAD_COLOR); // Load the image from the file
-    if (img.empty()) 
+    cv::Mat extracted_img = cv::imread(latest_file_path, cv::IMREAD_COLOR); // Load the image from the file
+    if (extracted_img.empty()) 
     {
         SPDLOG_ERROR("Failed to load image from disk.");
         return false;
     }
+
+    frame.Update(extracted_cam_id, extracted_img, extracted_timestamp);
 
     SPDLOG_INFO("Image loaded successfully.");
     return true;

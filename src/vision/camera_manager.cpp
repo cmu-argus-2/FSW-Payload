@@ -44,9 +44,9 @@ uint8_t CameraManager::SaveLatestFrames()
         if (cameras[i].GetStatus() == CAM_STATUS::ACTIVE && cameras[i].IsNewFrameAvailable())
         {
             DH::StoreRawImgToDisk(
-                cameras[i].GetBufferFrame()._timestamp,
-                cameras[i].GetBufferFrame()._cam_id,
-                cameras[i].GetBufferFrame()._img
+                cameras[i].GetBufferFrame().GetTimestamp(),
+                cameras[i].GetBufferFrame().GetCamID(),
+                cameras[i].GetBufferFrame().GetImg()
             );
             cameras[i].SetOffNewFrameFlag();
             save_count++;

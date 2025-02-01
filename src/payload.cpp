@@ -10,19 +10,27 @@ const char* ToString(PayloadState state) {
     }
 }
 
-Payload& Payload::GetInstance(Configuration& config, std::unique_ptr<Communication> comms_interface)
+// Singleton instance creation
+Payload& Payload::CreateInstance(std::unique_ptr<Configuration> config, std::unique_ptr<Communication> comms_interface)
 {
-    static Payload instance(config, std::move(comms_interface));
+    static Payload instance(std::move(config), std::move(comms_interface));
     return instance;
 }
 
+// Accessor for the existing instance after initialization
+Payload& Payload::GetInstance()
+{
+    return CreateInstance(nullptr, nullptr);
+}
 
-Payload::Payload(Configuration& config, std::unique_ptr<Communication> comms_interface)
+
+
+Payload::Payload(std::unique_ptr<Configuration> _config, std::unique_ptr<Communication> _comms_interface)
 :
 _running_instance(false),
-config(config),
-communication(std::move(comms_interface)),
-camera_manager(config.GetCameraConfigs()),
+config(std::move(_config)),
+communication(std::move(_comms_interface)),
+camera_manager(config->GetCameraConfigs()),
 state(PayloadState::STARTUP),
 thread_pool(std::make_unique<ThreadPool>(4))
 {   
@@ -37,16 +45,6 @@ Payload::~Payload()
     Stop();
     StopCommunicationThread();
 }
-
-void Payload::ReadNewConfiguration(Configuration& config)
-{
-    // Read New Configuration
-    this->config = config;
-    SPDLOG_INFO("New reconfiguration read successfully");
-    // TODO
-
-}
-
 
 
 void Payload::SwitchToState(PayloadState new_state) 
@@ -123,11 +121,6 @@ void Payload::TransmitMessage(std::shared_ptr<Message> msg)
     tx_queue.AddMsg(msg);
 }
 
-
-Configuration& Payload::GetConfiguration()
-{
-    return config;
-}
 
 void Payload::Run()
 {   
@@ -311,6 +304,11 @@ const Telemetry& Payload::GetTelemetry() const
     return telemetry;
 }
 
+Telemetry& Payload::GetTelemetry()
+{
+    return telemetry;
+}
+
 void Payload::StartODThread()
 {
     // Launch OD thread
@@ -330,6 +328,11 @@ void Payload::StopODThread()
 }
 
 const OD& Payload::GetOD() const
+{
+    return od;
+}
+
+OD& Payload::GetOD()
 {
     return od;
 }

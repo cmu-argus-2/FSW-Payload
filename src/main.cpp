@@ -49,8 +49,8 @@ int main(int argc, char** argv)
     } //TODO back up default configuration (without file if not found)
 
     SPDLOG_INFO("Using configuration file at {}", config_path);
-    Configuration config;
-    config.LoadConfiguration(config_path);
+    std::unique_ptr<Configuration> config = std::make_unique<Configuration>();
+    config->LoadConfiguration(config_path);
 
 
 
@@ -86,7 +86,7 @@ int main(int argc, char** argv)
     
    
     
-    Payload& payload = Payload::GetInstance(config, std::move(comms_interface));
+    Payload& payload = Payload::CreateInstance(std::move(config), std::move(comms_interface));
     payload.Initialize();
     payload.Run(); // Starts the main loop
 

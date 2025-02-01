@@ -29,9 +29,10 @@ class Payload
 {
 public:
 
-
-    // Make Payload a Singleton 
-    static Payload& GetInstance(Configuration& config, std::unique_ptr<Communication> comms_interface);
+    // First-time initialization; subsequent calls return the same instance.
+    static Payload& CreateInstance(std::unique_ptr<Configuration> _config, std::unique_ptr<Communication> _comms_interface);
+    // Accessor for the existing instance (after initialization).
+    static Payload& GetInstance();
 
     void Initialize();
     const PayloadState& GetState() const;
@@ -51,27 +52,29 @@ public:
     const CameraManager& GetCameraManager() const; 
     CameraManager& GetCameraManager(); 
 
-    Configuration& GetConfiguration();
-
-    void ReadNewConfiguration(Configuration& config);
-
     const Telemetry& GetTelemetry() const;
+    Telemetry& GetTelemetry();
 
     const OD& GetOD() const;
+    OD& GetOD();
 
     void SetLastExecutedCmdID(uint8_t cmd_id);
     uint8_t GetLastExecutedCmdID() const;
 
 private:
 
-    Payload(Configuration& config, std::unique_ptr<Communication> comms_interface);
+    Payload(std::unique_ptr<Configuration> config, std::unique_ptr<Communication> comms_interface);
     ~Payload();
+
+    // Singleton constraints
     Payload(const Payload&) = delete;
     void operator=(const Payload&) = delete;
 
+    // static std::unique_ptr<Payload> _instance; // Singleton instance
+
     std::atomic<bool> _running_instance;
 
-    Configuration config;
+    std::unique_ptr<Configuration> config;
     PayloadState state;
     RX_Queue rx_queue;
     TX_Queue tx_queue;
@@ -114,5 +117,11 @@ private:
     void StopTelemetryService();
 
 };
+
+// Inline helper functions to access the payload instance throughout the codebase
+static inline Payload& payload() { return Payload::GetInstance(); }
+static inline CameraManager& cameraManager() { return payload().GetCameraManager(); }
+static inline OD& od() { return payload().GetOD(); }
+static inline Telemetry& telemetry() { return payload().GetTelemetry(); }
 
 #endif // PAYLOAD_HPP

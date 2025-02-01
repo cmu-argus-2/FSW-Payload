@@ -37,7 +37,7 @@ bool KillTegraTmProcess()
 
 bool RestartTegrastatsProcessor()
 {
-    SPDLOG_INFO("Restarting TM Tegrastats Processor...");
+    SPDLOG_INFO("(Re)starting TM Tegrastats Processor...");
     // kill any process that was already running
     KillTegraTmProcess();
     

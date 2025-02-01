@@ -281,7 +281,7 @@ void Payload::StopCommunicationThread()
 
 void Payload::StartTelemetryService()
 {
-    telemetry_thread = std::thread(&Telemetry::RunService, &telemetry, this);
+    telemetry_thread = std::thread(&Telemetry::RunService, &telemetry);
     SPDLOG_INFO("Telemetry thread started");
 
 }

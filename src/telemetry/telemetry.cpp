@@ -208,11 +208,11 @@ bool Telemetry::LinkToTegraTmProcess()
 }
 
 
-void Telemetry::UpdateFrame(Payload* payload)
+void Telemetry::UpdateFrame()
 {
 
     // System part 
-    _UpdateTmSystemPart(payload);
+    _UpdateTmSystemPart();
 
     // Tegrastats part
     bool update = _UpdateTmTegraPart();
@@ -230,7 +230,7 @@ void Telemetry::UpdateFrame(Payload* payload)
 
 }
 
-void Telemetry::RunService(Payload* payload)
+void Telemetry::RunService()
 {
 
     loop_flag.store(true); // just to be explicit
@@ -243,7 +243,7 @@ void Telemetry::RunService(Payload* payload)
     while (loop_flag.load()) 
     {
 
-        UpdateFrame(payload);
+        UpdateFrame();
 
         // PrintTelemetryFrame(tm_frame);
         SPDLOG_DEBUG("Telemetry Frame Updated");
@@ -252,9 +252,6 @@ void Telemetry::RunService(Payload* payload)
         next += interval;
         std::this_thread::sleep_until(next);
     }
-
-
-    (void)payload;
 
 }
 
@@ -265,8 +262,9 @@ void Telemetry::StopService()
 }
 
 
-void Telemetry::_UpdateTmSystemPart(Payload* payload)
+void Telemetry::_UpdateTmSystemPart()
 {
+
     SPDLOG_DEBUG("Updating system part of the TM frame..");
     // TODO error handling
 
@@ -274,10 +272,10 @@ void Telemetry::_UpdateTmSystemPart(Payload* payload)
     // tm_frame.SYSTEM_UPTIME = 
 
 
-    tm_frame.PAYLOAD_STATE = static_cast<uint8_t>(payload->GetState());
-    tm_frame.ACTIVE_CAMERAS = static_cast<uint8_t>(payload->GetCameraManager().CountActiveCameras());
-    tm_frame.CAPTURE_MODE = static_cast<uint8_t>(payload->GetCameraManager().GetCaptureMode());
-    payload->GetCameraManager().FillCameraStatus(tm_frame.CAM_STATUS);
+    tm_frame.PAYLOAD_STATE = static_cast<uint8_t>(sys::payload().GetState());
+    tm_frame.ACTIVE_CAMERAS = static_cast<uint8_t>(sys::cameraManager().CountActiveCameras());
+    tm_frame.CAPTURE_MODE = static_cast<uint8_t>(sys::cameraManager().GetCaptureMode());
+    sys::cameraManager().FillCameraStatus(tm_frame.CAM_STATUS);
     int disk_use = DH::GetTotalDiskUsage();
     if (disk_use >= 0)
     {
@@ -289,7 +287,7 @@ void Telemetry::_UpdateTmSystemPart(Payload* payload)
     }
 
     // tm_frame.LATEST_ERROR = 
-    tm_frame.LAST_EXECUTED_CMD_ID = payload->GetLastExecutedCmdID();
+    tm_frame.LAST_EXECUTED_CMD_ID = sys::payload().GetLastExecutedCmdID();
     
 }
 

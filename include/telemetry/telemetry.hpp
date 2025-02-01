@@ -12,10 +12,6 @@
 #define MAXIMUM_COUNT_WITHOUT_UPDATE 3
 
 
-// Forward declaration
-class Payload;
-
-
 // Execute the pgrep command and check its return value
 bool CheckTegraTmProcessRunning();
 // Kill the process
@@ -72,7 +68,7 @@ public:
     ~Telemetry();
 
     // Runs the continuous update of the frame and the live management of the associated tegrastats process
-    void RunService(Payload* payload);
+    void RunService();
     // Stop the telemetry service (running on a thread)
     void StopService();
 
@@ -98,9 +94,9 @@ private:
     bool LinkToTegraTmProcess();
     bool tegra_tm_configured = false;
 
-    void UpdateFrame(Payload* payload);
+    void UpdateFrame();
 
-    void _UpdateTmSystemPart(Payload* payload);
+    void _UpdateTmSystemPart();
     // Returns True if successfully updated, False otherwise (semaphore failure, no tegra update, etc)
     bool _UpdateTmTegraPart();
 

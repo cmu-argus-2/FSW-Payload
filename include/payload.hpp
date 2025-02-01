@@ -119,9 +119,15 @@ private:
 };
 
 // Inline helper functions to access the payload instance throughout the codebase
-static inline Payload& payload() { return Payload::GetInstance(); }
-static inline CameraManager& cameraManager() { return payload().GetCameraManager(); }
-static inline OD& od() { return payload().GetOD(); }
-static inline Telemetry& telemetry() { return payload().GetTelemetry(); }
+
+
+namespace sys
+{
+    inline Payload& payload() { return Payload::GetInstance(); }
+    inline CameraManager& cameraManager() { return payload().GetCameraManager(); }
+    inline OD& od() { return payload().GetOD(); }
+    inline Telemetry& telemetry() { return payload().GetTelemetry(); }
+}
+
 
 #endif // PAYLOAD_HPP

@@ -4,12 +4,11 @@
 #include "core/task.hpp"
 
 
-Task::Task(uint8_t task_id, CommandFunction func, std::vector<uint8_t>& data, Payload* payload, uint8_t priority, std::string_view name)
+Task::Task(uint8_t task_id, CommandFunction func, std::vector<uint8_t>& data, uint8_t priority, std::string_view name)
 : 
 task_id(task_id),
 priority(priority),
 data(data),
-payload(payload),
 func(func),
 name(name)
 {
@@ -26,7 +25,7 @@ void Task::Execute()
     {
         try
         {
-            func(std::ref(*payload), data);
+            func(data);
             break;
         }
         catch (const std::exception& e)

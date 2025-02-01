@@ -97,7 +97,7 @@ void Payload::AddCommand(uint8_t cmd_id, std::vector<uint8_t>& data, uint8_t pri
         CommandFunction cmd_function = COMMAND_FUNCTIONS[cmd_id];
 
         // Create task object 
-        Task task(cmd_id, cmd_function, data, this, priority, COMMAND_NAMES[cmd_id]);
+        Task task(cmd_id, cmd_function, data, priority, COMMAND_NAMES[cmd_id]);
 
         // Add task to the RX queue
         rx_queue.AddTask(task);
@@ -233,7 +233,7 @@ void Payload::StartCameraThread()
     // Launch camera thread
     std::vector<int> temp;
     camera_manager.EnableCameras(temp);
-    camera_thread = std::thread(&CameraManager::RunLoop, &camera_manager, this);
+    camera_thread = std::thread(&CameraManager::RunLoop, &camera_manager);
 }
 
 
@@ -263,7 +263,7 @@ void Payload::StartCommunicationThread()
 {
     
     communication->Connect();
-    communication_thread = std::thread(&Communication::RunLoop, communication.get(), this);
+    communication_thread = std::thread(&Communication::RunLoop, communication.get());
     SPDLOG_INFO("Communication thread started");
 }
 
@@ -312,7 +312,7 @@ Telemetry& Payload::GetTelemetry()
 void Payload::StartODThread()
 {
     // Launch OD thread
-    od_thread = std::thread(&OD::RunLoop, &od, this);
+    od_thread = std::thread(&OD::RunLoop, &od);
     SPDLOG_INFO("OD thread started");
 }
 

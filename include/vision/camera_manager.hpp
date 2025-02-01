@@ -13,10 +13,6 @@
 #define DEFAULT_PERIODIC_FRAMES_TO_CAPTURE 100
 #define CAMERA_HEALTH_CHECK_INTERVAL 500 // seconds 
 
-
-// Forward declaration of Payload class
-class Payload;
-
 // Configuration struct for each camera
 struct CameraConfig 
 {
@@ -46,7 +42,7 @@ public:
 
     CameraManager(const std::array<CameraConfig, NUM_CAMERAS>& camera_configs);
 
-    void RunLoop(Payload* payload);
+    void RunLoop();
     void StopLoops();
     void SetDisplayFlag(bool display_flag);
     bool GetDisplayFlag() const;

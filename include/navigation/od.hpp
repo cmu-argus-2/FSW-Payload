@@ -6,9 +6,6 @@
 #include <condition_variable>
 #include <atomic>
 
-// Forward declaration of Payload
-class Payload;
-
 enum class OD_STATE : uint8_t 
 {
     IDLE = 0, // No operation, waiting for command to start
@@ -27,7 +24,7 @@ public:
     OD();
 
 
-    void RunLoop(Payload* payload);
+    void RunLoop();
     void StopLoop();
 
     OD_STATE GetState() const;
@@ -47,9 +44,9 @@ private:
     // This must be called frequently to check if the OD process must stop and save its states to disk
     bool PingRunningStatus(); 
 
-    void _Initialize(Payload* payload);
-    void _DoBatchOptimization(Payload* payload);
-    void _DoTracking(Payload* payload);
+    void _Initialize();
+    void _DoBatchOptimization();
+    void _DoTracking();
 
 
 

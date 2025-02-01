@@ -10,11 +10,8 @@
 
 #define PING_VALUE 0x60
 
-// Forward declaration of Payload class
-class Payload;
-
 // Command function type
-typedef std::function<void(Payload&, std::vector<uint8_t>&)> CommandFunction;
+typedef std::function<void(std::vector<uint8_t>&)> CommandFunction;
 
 // Command IDs within a namespace
 // Chose this instead of enum class so command IDs can be accessed without casting
@@ -64,22 +61,22 @@ constexpr CommandID::Type ALL_COMMAND_IDS[] =
 constexpr uint8_t COMMAND_NUMBER = sizeof(ALL_COMMAND_IDS) / sizeof(ALL_COMMAND_IDS[0]);
 
 // Command functions declarations
-void ping_ack(Payload& payload, std::vector<uint8_t>& data);
-void shutdown(Payload& payload, std::vector<uint8_t>& data);
-void synchronize_time(Payload& payload, std::vector<uint8_t>& data);
-void request_telemetry(Payload& payload, std::vector<uint8_t>& data);
-void enable_cameras(Payload& payload, std::vector<uint8_t>& data);
-void disable_cameras(Payload& payload, std::vector<uint8_t>& data);
-void capture_images(Payload& payload, std::vector<uint8_t>& data);
-void start_capture_images_periodically(Payload& payload, std::vector<uint8_t>& data);
-void stop_capture_images(Payload& payload, std::vector<uint8_t>& data);
-void stored_images(Payload& payload, std::vector<uint8_t>& data);
-void request_image(Payload& payload, std::vector<uint8_t>& data);
-void delete_images(Payload& payload, std::vector<uint8_t>& data);
-void run_od(Payload& payload, std::vector<uint8_t>& data);
-void ping_od_status(Payload& payload, std::vector<uint8_t>& data);
-void debug_display_camera(Payload& payload, std::vector<uint8_t>& data);
-void debug_stop_display(Payload& payload, std::vector<uint8_t>& data);
+void ping_ack(std::vector<uint8_t>& data);
+void shutdown(std::vector<uint8_t>& data);
+void synchronize_time(std::vector<uint8_t>& data);
+void request_telemetry(std::vector<uint8_t>& data);
+void enable_cameras(std::vector<uint8_t>& data);
+void disable_cameras(std::vector<uint8_t>& data);
+void capture_images(std::vector<uint8_t>& data);
+void start_capture_images_periodically(std::vector<uint8_t>& data);
+void stop_capture_images(std::vector<uint8_t>& data);
+void stored_images(std::vector<uint8_t>& data);
+void request_image(std::vector<uint8_t>& data);
+void delete_images(std::vector<uint8_t>& data);
+void run_od(std::vector<uint8_t>& data);
+void ping_od_status(std::vector<uint8_t>& data);
+void debug_display_camera(std::vector<uint8_t>& data);
+void debug_stop_display(std::vector<uint8_t>& data);
 
 
 // Array mapping CommandID to corresponding functions

@@ -1,6 +1,5 @@
 #include "vision/camera_manager.hpp"
 #include "core/data_handling.hpp"
-#include "payload.hpp"
 
 CameraManager::CameraManager(const std::array<CameraConfig, NUM_CAMERAS>& camera_configs) 
 :
@@ -57,7 +56,7 @@ uint8_t CameraManager::SaveLatestFrames()
 
 
 
-void CameraManager::RunLoop(Payload* payload)
+void CameraManager::RunLoop()
 {
     loop_flag.store(true);
 

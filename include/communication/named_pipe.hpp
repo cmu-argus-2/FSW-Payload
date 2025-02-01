@@ -25,7 +25,7 @@ public:
     void Disconnect() override;
     bool Receive(uint8_t& cmd_id, std::vector<uint8_t>& data) override;
     bool Send(const std::vector<uint8_t>& data) override;
-    void RunLoop(Payload* payload) override;
+    void RunLoop() override;
     void StopLoop() override;
 
 

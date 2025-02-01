@@ -12,7 +12,7 @@ process_state(OD_STATE::IDLE)
 
 
 
-void OD::RunLoop(Payload* payload)
+void OD::RunLoop()
 {
     loop_flag = true;
 
@@ -40,21 +40,21 @@ void OD::RunLoop(Payload* payload)
             case OD_STATE::INIT:
             {
                 SPDLOG_INFO("OD: INIT");
-                _Initialize(payload);
+                _Initialize();
                 break;
             }
 
             case OD_STATE::BATCH_OPT:
             {
                 SPDLOG_INFO("OD: BATCH_OPT");
-                _DoBatchOptimization(payload);
+                _DoBatchOptimization();
                 break;
             }
 
             case OD_STATE::TRACKING:
             {
                 SPDLOG_INFO("OD: TRACKING");
-                _DoTracking(payload);
+                _DoTracking();
                 break;
             }
 
@@ -101,14 +101,14 @@ bool OD::PingRunningStatus()
 
 
 
-void OD::_Initialize(Payload* payload)
+void OD::_Initialize()
 {
     // Initialize the OD process
     // TODO: for now
     process_state.store(OD_STATE::BATCH_OPT);
 }
 
-void OD::_DoBatchOptimization(Payload* payload)
+void OD::_DoBatchOptimization()
 {
     // Perform batch optimization
     // TODO
@@ -116,7 +116,7 @@ void OD::_DoBatchOptimization(Payload* payload)
 }
 
 
-void OD::_DoTracking(Payload* payload)
+void OD::_DoTracking()
 {
     // Perform tracking
     // TODO

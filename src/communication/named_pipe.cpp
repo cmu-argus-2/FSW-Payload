@@ -170,7 +170,7 @@ bool NamedPipe::Send(const std::vector<uint8_t>& data)
 
 
 
-void NamedPipe::RunLoop(Payload* payload)
+void NamedPipe::RunLoop()
 {
     _running_loop = true;
     pfd.fd = pipe_fd; // File descriptor for the pipe
@@ -193,13 +193,13 @@ void NamedPipe::RunLoop(Payload* payload)
 
         if (recv)
         {
-            payload->AddCommand(cmd_id, data);
+            sys::payload().AddCommand(cmd_id, data);
         } 
 
         // Transmit messages
-        while (!payload->GetTxQueue().IsEmpty())
+        while (!sys::payload().GetTxQueue().IsEmpty())
         {
-            std::shared_ptr<Message> msg = payload->GetTxQueue().GetNextMsg();
+            std::shared_ptr<Message> msg = sys::payload().GetTxQueue().GetNextMsg();
 
             bool succ = Send(msg->packet);
             if (succ)

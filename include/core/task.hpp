@@ -8,18 +8,14 @@
 
 #define MAX_ATTEMPTS 3
 
-// Forward declaration of Payload class
-class Payload;
-
-
-typedef std::function<void(Payload&, std::vector<uint8_t>&)> CommandFunction;
+typedef std::function<void(std::vector<uint8_t>&)> CommandFunction;
 
 
 class Task
 {
 
 public:
-    Task(uint8_t task_id, CommandFunction func, std::vector<uint8_t>& data, Payload* payload, uint8_t priority=0, std::string_view name="");
+    Task(uint8_t task_id, CommandFunction func, std::vector<uint8_t>& data, uint8_t priority=0, std::string_view name="");
     // ~Task() = default; // TODO
 
     void Execute();
@@ -35,7 +31,6 @@ private:
     uint8_t task_id; // Unique identifier for the task.
     uint8_t priority; // Priority of the task.
     std::vector<uint8_t> data; // Data to be passed to the task's function.
-    Payload* payload; // Payload object to be passed to the task's function.
     CommandFunction func; // task's function to be executed.
     std::chrono::system_clock::time_point created_at; // Timestamp for when the task was created.
     std::string name; // Name of the task.

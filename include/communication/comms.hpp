@@ -5,8 +5,6 @@
 #include <cstdint>
 #include <atomic>
 
-// Forward declaration
-class Payload;
 
 // Abstract class for communication interfaces
 class Communication
@@ -24,7 +22,7 @@ public:
     virtual void Disconnect() = 0;
     virtual bool Receive(uint8_t& cmd_id, std::vector<uint8_t>& data) = 0;
     virtual bool Send(const std::vector<uint8_t>& data) = 0;
-    virtual void RunLoop(Payload* payload) = 0;
+    virtual void RunLoop() = 0;
     virtual void StopLoop() = 0;
     virtual bool IsConnected() const { return _connected; }
     

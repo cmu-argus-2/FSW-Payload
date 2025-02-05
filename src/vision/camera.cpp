@@ -126,7 +126,7 @@ void Camera::CaptureFrame()
     if (local_buffer_img.empty()) 
     {
         std::lock_guard<std::shared_mutex> lock(frame_mutex);
-        _new_frame_flag = false;
+        _new_frame_flag.store(false);
         // local_buffer_img = cv::Mat::zeros(height, width, CV_8UC3);
         SPDLOG_ERROR("Unable to capture frame");
         HandleErrors(CAM_ERROR::CAPTURE_FAILED);
@@ -139,7 +139,7 @@ void Camera::CaptureFrame()
     {
         std::lock_guard<std::shared_mutex> lock(frame_mutex); // Exclusive lock
         buffer_frame.Update(cam_id, local_buffer_img, static_cast<uint64_t>(timestamp));
-        _new_frame_flag = true;
+        _new_frame_flag.store(true);
     }
 
     HandleErrors(CAM_ERROR::NO_ERROR);
@@ -150,12 +150,12 @@ void Camera::CaptureFrame()
 
 void Camera::SetOffNewFrameFlag()
 {
-    _new_frame_flag = false;
+    _new_frame_flag.store(false);
 }
 
 bool Camera::IsNewFrameAvailable() const
 {
-    return _new_frame_flag;
+    return _new_frame_flag.load();
 }
 
 void Camera::HandleErrors(CAM_ERROR error)
@@ -199,6 +199,13 @@ const Frame& Camera::GetBufferFrame() const
     std::shared_lock<std::shared_mutex> lock(frame_mutex);
     return buffer_frame;
 }
+
+void Camera::CopyBufferFrame(Frame& dest) const
+{
+    std::shared_lock<std::shared_mutex> lock(frame_mutex);
+    dest.Update(buffer_frame.GetCamID(), buffer_frame.GetImg(), buffer_frame.GetTimestamp());
+}
+
 
 bool Camera::IsEnabled() const
 {

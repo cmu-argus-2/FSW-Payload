@@ -42,6 +42,7 @@ uint8_t CameraManager::SaveLatestFrames()
     {
         if (cameras[i].GetStatus() == CAM_STATUS::ACTIVE && cameras[i].IsNewFrameAvailable())
         {
+            // TODO: make a single call to GetBufferFrame() to avoid memory changes between calls (had the explicit locking interface in the camera class)
             DH::StoreRawImgToDisk(
                 cameras[i].GetBufferFrame().GetTimestamp(),
                 cameras[i].GetBufferFrame().GetCamID(),

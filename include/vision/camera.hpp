@@ -42,6 +42,7 @@ public:
 
     void CaptureFrame();
     const Frame& GetBufferFrame() const;
+    void CopyBufferFrame(Frame& dest) const;
     void SetOffNewFrameFlag();
     bool IsNewFrameAvailable() const;
 

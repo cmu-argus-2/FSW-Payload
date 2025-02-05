@@ -5,6 +5,8 @@ project(PAYLOAD VERSION 1.0 LANGUAGES CXX)
 add_definitions(-DROOT_DIR=\"${CMAKE_SOURCE_DIR}\")
 add_definitions(-DMODELS_DIR=\"${CMAKE_SOURCE_DIR}/models\")
 
+# set(CMAKE_CXX_COMPILER clang++)
+
 # Check if LIBTORCH_PATH is set in the environment
 if(NOT DEFINED ENV{LIBTORCH_PATH})
     message(FATAL_ERROR "LIBTORCH_PATH environment variable is not set. Please set it in your .bashrc (e.g., export LIBTORCH_PATH=/path/to/libtorch/share/cmake/Torch/).")
@@ -16,7 +18,6 @@ endif()
 set(CMAKE_RUNTIME_OUTPUT_DIRECTORY ${CMAKE_SOURCE_DIR}/bin/)
 # Set a compile definition for the executable directory
 add_compile_definitions(EXECUTABLE_DIR=\"${CMAKE_RUNTIME_OUTPUT_DIRECTORY}\")
-
 
 # Preprocessor definition for the path of the inter-process fifo (command-line interface)
 add_compile_definitions(IPC_FIFO_PATH="/tmp/payload_fifo")

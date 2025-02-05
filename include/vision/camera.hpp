@@ -61,6 +61,9 @@ public:
 
 private:
 
+    int width;
+    int height;
+
     std::atomic<CAM_STATUS> cam_status;
     CAM_ERROR last_error;
     int consecutive_error_count;
@@ -80,15 +83,9 @@ private:
     mutable std::shared_mutex frame_mutex;
     std::atomic<bool> capture_loop_flag = false;
 
-    int width = DEFAULT_FRAME_WIDTH;
-    int height = DEFAULT_FRAME_HEIGHT;
-
     cv::Mat intrinsics;
     cv::Mat distortion_parameters; 
 
-
-    
-    
 
 };
 

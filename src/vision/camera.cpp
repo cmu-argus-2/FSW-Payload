@@ -6,6 +6,8 @@
 
 Camera::Camera(int cam_id, std::string path)
 : 
+width(DEFAULT_FRAME_WIDTH),
+height(DEFAULT_FRAME_HEIGHT),
 cam_status(CAM_STATUS::INACTIVE),
 last_error(CAM_ERROR::NO_ERROR),
 consecutive_error_count(0),

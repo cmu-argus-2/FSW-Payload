@@ -2,8 +2,9 @@
 
 This repository contains the Flight Software (FSW) written for the Jetson Orin Nano (8GB) and its custom carrier board. Argus-1 is a technology demonstration mission focused on vision-based orbit determination.
 
+## Install instructions 
 
-## Requirements
+TODO
 
 - [spdlog](https://github.com/gabime/spdlog) - Logging library
 - [OpenCV](https://docs.opencv.org/4.x/d7/d9f/tutorial_linux_install.html?ref=wasyresearch.com) - Computer vision library

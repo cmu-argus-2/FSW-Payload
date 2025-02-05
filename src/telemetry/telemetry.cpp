@@ -218,6 +218,8 @@ void Telemetry::UpdateFrame()
     bool update = _UpdateTmTegraPart();
     if (!update)
     {
+        
+        tm_frame.TEGRASTATS_PROCESS_STATUS = false;
         _counter_before_tegra_restart++;
         if (_counter_before_tegra_restart >= MAXIMUM_COUNT_WITHOUT_UPDATE)
         {
@@ -332,7 +334,7 @@ bool Telemetry::_UpdateTmTegraPart()
 
    
     // Copy shared memory contents into TM frame
-
+    tm_frame.TEGRASTATS_PROCESS_STATUS = true;
     tm_frame.RAM_USAGE = static_cast<uint8_t>((shared_mem->ram_used * 100.0f) / shared_mem->ram_total);
     tm_frame.SWAP_USAGE = static_cast<uint8_t>((shared_mem->swap_used * 100.0f) / shared_mem->swap_total);
     tm_frame.ACTIVE_CORES = static_cast<uint8_t>(shared_mem->active_cores);

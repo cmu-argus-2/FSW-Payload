@@ -54,6 +54,9 @@ public:
 
     uint8_t SaveLatestFrames();
 
+    // Copy the latest frames from each camera to the provided vector and return the number of frames copied
+    uint8_t CopyFrames(std::vector<Frame>& vec_frames);
+
 
     // Set the capture mode of the camera system
     void SetCaptureMode(CAPTURE_MODE mode);

@@ -56,6 +56,27 @@ uint8_t CameraManager::SaveLatestFrames()
 }
 
 
+uint8_t CameraManager::CopyFrames(std::vector<Frame>& vec_frames)
+{
+
+    uint8_t frame_count = 0;
+    vec_frames.reserve(vec_frames.size() + NUM_CAMERAS); // assumes void vector
+
+    for (std::size_t i = 0; i < NUM_CAMERAS; ++i) 
+    {
+        if (cameras[i].GetStatus() == CAM_STATUS::ACTIVE)
+        {   
+            Frame new_frame;
+            cameras[i].CopyBufferFrame(new_frame);
+            vec_frames.emplace_back(std::move(new_frame)); // Move to avoid copying
+            frame_count++;
+        }
+    }
+
+    return frame_count;
+}
+
+
 
 void CameraManager::RunLoop()
 {

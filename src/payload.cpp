@@ -33,7 +33,7 @@ config(std::move(_config)),
 communication(std::move(_comms_interface)),
 camera_manager(config->GetCameraConfigs()),
 state(PayloadState::STARTUP),
-thread_pool(std::make_unique<ThreadPool>(4))
+thread_pool(std::make_unique<ThreadPool>(5))
 {   
 
     timing::InitializeBootTime(); // Just in case

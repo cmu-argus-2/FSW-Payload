@@ -1,10 +1,17 @@
+/*
+
+This file contains a series of utility functions to interface with the Real-Time Clock (RTC) and system time.
+The time references are provided in milliseconds. 
+ 
+Functions relies on the `clock_gettime` function from the POSIX standard to retrieve time values.
+see: https://www.man7.org/linux/man-pages/man3/clock_gettime.3.html
+
+ */
 #ifndef TIMING_HPP
 #define TIMING_HPP
 
 #include <time.h>
 #include <cstdint>
-
-// https://www.man7.org/linux/man-pages/man3/clock_gettime.3.html
 
 namespace timing
 {
@@ -24,6 +31,7 @@ namespace timing
 
     uint64_t GetCurrentTime();
 
+    // void SetTimeRTC();
 
 }
 

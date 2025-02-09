@@ -27,7 +27,7 @@ struct TelemetryFrame
     // System part
     uint64_t SYSTEM_TIME;
     uint32_t SYSTEM_UPTIME;
-    uint32_t LAST_EXECUTED_CMD_TIME;
+    uint32_t LAST_EXECUTED_CMD_TIME; // Using uptime (can recover the time from SYSTEM_TIME)
     uint8_t LAST_EXECUTED_CMD_ID;
     uint8_t PAYLOAD_STATE;
     uint8_t ACTIVE_CAMERAS;

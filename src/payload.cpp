@@ -337,6 +337,18 @@ OD& Payload::GetOD()
     return od;
 }
 
+size_t Payload::GetNbTasksInExecution()
+{
+    if (thread_pool)
+    {
+        return thread_pool->GetBusyThreadCount();
+    }
+    else
+    {
+        return 0;
+    }
+}
+
 void Payload::SetLastExecutedCmdID(uint8_t cmd_id)
 {
     last_executed_cmd_id.store(cmd_id);

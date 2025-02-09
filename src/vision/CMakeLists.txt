@@ -1,9 +1,10 @@
 
 
 add_library(vision
-    camera_manager.cpp
-    camera.cpp
     frame.cpp
+    camera.cpp
+    camera_manager.cpp
+    dataset.cpp
     rc.cpp
     ld.cpp
 )

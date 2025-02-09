@@ -58,6 +58,8 @@ public:
     const OD& GetOD() const;
     OD& GetOD();
 
+    size_t GetNbTasksInExecution();
+
     void SetLastExecutedCmdID(uint8_t cmd_id);
     uint8_t GetLastExecutedCmdID() const;
 

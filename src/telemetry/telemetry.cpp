@@ -11,6 +11,7 @@
 #include "core/data_handling.hpp"
 #include "telemetry/telemetry.hpp"
 #include "core/utils.hpp"
+#include "core/timing.hpp"
 
 bool CheckTegraTmProcessRunning()
 {   
@@ -63,7 +64,7 @@ bool RestartTegrastatsProcessor()
 TelemetryFrame::TelemetryFrame()
 : 
 SYSTEM_TIME(0), 
-UPTIME(0), 
+SYSTEM_UPTIME(0), 
 PAYLOAD_STATE(0), 
 ACTIVE_CAMERAS(0), 
 CAPTURE_MODE(0),
@@ -90,7 +91,7 @@ VDD_SOC(0)
 void PrintTelemetryFrame(const TelemetryFrame& tm_frame)
 {
     SPDLOG_INFO("SYSTEM_TIME: {}", tm_frame.SYSTEM_TIME);
-    SPDLOG_INFO("UPTIME: {}", tm_frame.UPTIME);
+    SPDLOG_INFO("SYSTEM_UPTIME: {}", tm_frame.SYSTEM_UPTIME);
     SPDLOG_INFO("PAYLOAD_STATE: {}", tm_frame.PAYLOAD_STATE);
     SPDLOG_INFO("ACTIVE_CAMERAS: {}", tm_frame.ACTIVE_CAMERAS);
     SPDLOG_INFO("CAPTURE_MODE: {}", tm_frame.CAPTURE_MODE);
@@ -270,14 +271,16 @@ void Telemetry::_UpdateTmSystemPart()
     SPDLOG_DEBUG("Updating system part of the TM frame..");
     // TODO error handling
 
-    // tm_frame.SYSTEM_TIME = 
-    // tm_frame.SYSTEM_UPTIME = 
-
+    tm_frame.SYSTEM_TIME = timing::GetCurrentTime();
+    tm_frame.SYSTEM_UPTIME = static_cast<uint32_t>(timing::GetUptime()); // Uptime will never exceed 49 days (due to power reasons)
+    tm_frame.LAST_EXECUTED_CMD_TIME = sys::payload().GetLastExecutedCmdTime();
+    tm_frame.LAST_EXECUTED_CMD_ID = sys::payload().GetLastExecutedCmdID();
 
     tm_frame.PAYLOAD_STATE = static_cast<uint8_t>(sys::payload().GetState());
     tm_frame.ACTIVE_CAMERAS = static_cast<uint8_t>(sys::cameraManager().CountActiveCameras());
     tm_frame.CAPTURE_MODE = static_cast<uint8_t>(sys::cameraManager().GetCaptureMode());
     sys::cameraManager().FillCameraStatus(tm_frame.CAM_STATUS);
+
     tm_frame.TASKS_IN_EXECUTION = static_cast<uint8_t>(sys::payload().GetNbTasksInExecution());
     int disk_use = DH::GetTotalDiskUsage();
     if (disk_use >= 0)
@@ -290,8 +293,6 @@ void Telemetry::_UpdateTmSystemPart()
     }
 
     // tm_frame.LATEST_ERROR = 
-    tm_frame.LAST_EXECUTED_CMD_ID = sys::payload().GetLastExecutedCmdID();
-    
 }
 
 

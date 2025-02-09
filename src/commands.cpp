@@ -91,7 +91,7 @@ void request_telemetry(std::vector<uint8_t>& data)
     std::vector<uint8_t> transmit_data;
 
     SerializeToBytes(tm.SYSTEM_TIME, transmit_data);
-    SerializeToBytes(tm.UPTIME, transmit_data);
+    SerializeToBytes(tm.SYSTEM_UPTIME, transmit_data);
     SerializeToBytes(tm.LAST_EXECUTED_CMD_TIME, transmit_data);
     transmit_data.push_back(tm.LAST_EXECUTED_CMD_ID);
     transmit_data.push_back(tm.PAYLOAD_STATE);

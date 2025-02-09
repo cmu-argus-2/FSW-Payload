@@ -62,6 +62,7 @@ public:
 
     void SetLastExecutedCmdID(uint8_t cmd_id);
     uint8_t GetLastExecutedCmdID() const;
+    uint32_t GetLastExecutedCmdTime() const;
 
 private:
 
@@ -110,6 +111,7 @@ private:
     std::unique_ptr<ThreadPool> thread_pool;
     void StopThreadPool();
     std::atomic<uint8_t> last_executed_cmd_id = 99; // None
+    std::atomic<uint32_t> last_executed_cmd_time = 0;
 
 
     // Telemetry

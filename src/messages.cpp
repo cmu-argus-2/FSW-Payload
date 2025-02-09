@@ -51,6 +51,18 @@ std::shared_ptr<Message> CreateMessage(CommandID::Type id, std::vector<uint8_t>&
     return msg;
 }
 
+void SerializeToBytes(uint64_t value, std::vector<uint8_t>& output)
+{
+    output.push_back(static_cast<uint8_t>(value >> 56));
+    output.push_back(static_cast<uint8_t>(value >> 48));
+    output.push_back(static_cast<uint8_t>(value >> 40));
+    output.push_back(static_cast<uint8_t>(value >> 32));
+    output.push_back(static_cast<uint8_t>(value >> 24));
+    output.push_back(static_cast<uint8_t>(value >> 16));
+    output.push_back(static_cast<uint8_t>(value >> 8));
+    output.push_back(static_cast<uint8_t>(value & 0xFF));
+}
+
 void SerializeToBytes(uint32_t value, std::vector<uint8_t>& output)
 {
     output.push_back(static_cast<uint8_t>(value >> 24));

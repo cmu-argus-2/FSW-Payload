@@ -17,6 +17,7 @@ Author: Ibrahima Sory Sow
 #include "configuration.hpp"
 #include "communication/named_pipe.hpp"
 #include "communication/uart.hpp"
+#include "core/timing.hpp"
 
 
 void SetupLogger()
@@ -35,6 +36,10 @@ void SetupLogger()
 int main(int argc, char** argv)
 {
 
+    // Set the reference time
+    timing::InitializeBootTime();
+    
+    
     SetupLogger();
     // spdlog::set_level(spdlog::level::warn);
 

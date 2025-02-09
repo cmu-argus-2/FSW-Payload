@@ -25,8 +25,8 @@ struct TelemetryFrame
     // No need to optimize for alignment 
 
     // System part
-    uint32_t SYSTEM_TIME;
-    uint32_t UPTIME;
+    uint64_t SYSTEM_TIME;
+    uint32_t SYSTEM_UPTIME;
     uint32_t LAST_EXECUTED_CMD_TIME;
     uint8_t LAST_EXECUTED_CMD_ID;
     uint8_t PAYLOAD_STATE;
@@ -52,7 +52,6 @@ struct TelemetryFrame
     uint16_t VDD_SOC;
     
     TelemetryFrame();
-
 };
 
 void PrintTelemetryFrame(const TelemetryFrame& tm_frame);

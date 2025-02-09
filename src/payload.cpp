@@ -1,6 +1,7 @@
 #include <filesystem>
 #include "payload.hpp"
 #include "core/data_handling.hpp"
+#include "core/timing.hpp"
 
 const char* ToString(PayloadState state) {
     switch (state) {
@@ -35,6 +36,7 @@ state(PayloadState::STARTUP),
 thread_pool(std::make_unique<ThreadPool>(4))
 {   
 
+    timing::InitializeBootTime(); // Just in case
     SPDLOG_INFO("Configuration read successfully");
     SPDLOG_INFO("Payload state initialized to: {}", ToString(state)); 
     
@@ -352,9 +354,15 @@ size_t Payload::GetNbTasksInExecution()
 void Payload::SetLastExecutedCmdID(uint8_t cmd_id)
 {
     last_executed_cmd_id.store(cmd_id);
+    last_executed_cmd_time.store(timing::GetUptime());
 }
 
 uint8_t Payload::GetLastExecutedCmdID() const
 {
     return last_executed_cmd_id.load();
+}
+
+uint32_t Payload::GetLastExecutedCmdTime() const
+{
+    return last_executed_cmd_time.load();
 }

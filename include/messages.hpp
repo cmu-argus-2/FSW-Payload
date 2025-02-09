@@ -43,6 +43,7 @@ struct Message
 
 
 std::shared_ptr<Message> CreateMessage(CommandID::Type id, std::vector<uint8_t>& tx_data);
+void SerializeToBytes(uint64_t value, std::vector<uint8_t>& output);
 void SerializeToBytes(uint32_t value, std::vector<uint8_t>& output);
 void SerializeToBytes(uint16_t value, std::vector<uint8_t>& output);
 

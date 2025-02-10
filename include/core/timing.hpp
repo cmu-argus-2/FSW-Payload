@@ -6,15 +6,19 @@ The time references are provided in milliseconds.
 Functions relies on the `clock_gettime` function from the POSIX standard to retrieve time values.
 see: https://www.man7.org/linux/man-pages/man3/clock_gettime.3.html
 
+
+Unix Epoch: the time 00:00:00 UTC on 1 January 1970 (or 1970-01-01T00:00:00Z ISO 8601). 
+
  */
 #ifndef TIMING_HPP
 #define TIMING_HPP
 
-#include <time.h>
 #include <cstdint>
+#include <chrono>
 
 namespace timing
 {
+    using Clock = std::chrono::high_resolution_clock; 
     
     // All in milliseconds
     
@@ -25,11 +29,15 @@ namespace timing
     void InitializeBootTime();
 
     // Get time since the first call to InitializeBootTime()
-    uint64_t GetUptime();
+    uint64_t GetUptimeMs();
 
-    uint64_t GetMonotonicTime();
+    uint64_t GetMonotonicTimeMs();
 
-    uint64_t GetCurrentTime();
+    uint64_t GetCurrentTimeMs();
+
+    void SleepMs(uint32_t milliseconds);
+
+    void SleepSeconds(uint32_t seconds);
 
     // void SetTimeRTC();
 

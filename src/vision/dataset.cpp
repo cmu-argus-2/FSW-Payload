@@ -3,5 +3,5 @@
 
 DatasetManager::DatasetManager()
 {
-    
+    created_at = timing::GetCurrentTimeMs();
 }

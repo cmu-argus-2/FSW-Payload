@@ -29,7 +29,7 @@ struct Message
     std::vector<uint8_t> packet = {}; // Serialized packet buffer
     
     uint8_t priority = TX_PRIORITY_1;         // For the TX priority queue
-    std::chrono::system_clock::time_point created_at; // Timestamp for when the task was created.
+    uint64_t created_at; // UNIX timestamp for when the task was created.
     
     Message(uint8_t id, uint8_t data_length, uint16_t seq_count = 1);
 

@@ -23,7 +23,7 @@ public:
     uint8_t GetPriority() const;
     uint8_t GetID() const;
     size_t GetDataSize() const;
-    std::chrono::system_clock::time_point GetCreationTime() const;
+    uint64_t GetCreationTime() const;
 
 private:
 
@@ -32,7 +32,7 @@ private:
     uint8_t priority; // Priority of the task.
     std::vector<uint8_t> data; // Data to be passed to the task's function.
     CommandFunction func; // task's function to be executed.
-    std::chrono::system_clock::time_point created_at; // Timestamp for when the task was created.
+    uint64_t created_at; // UNIX timestamp for when the task was created.
     std::string name; // Name of the task.
 
 };

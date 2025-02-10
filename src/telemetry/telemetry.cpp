@@ -1,6 +1,5 @@
 #include <string>
 #include <cstdio>
-#include <chrono>
 #include <thread>
 #include <sys/mman.h>
 #include <unistd.h>
@@ -55,7 +54,7 @@ bool RestartTegrastatsProcessor()
 
 
     int result = std::system(cmd.c_str());
-    std::this_thread::sleep_for(std::chrono::milliseconds(300)); // Wait for the process to start and shared memory to be created
+    timing::SleepMs(300); // Wait for the process to start and shared memory to be created
 
     return (result == 0);
 }
@@ -237,11 +236,8 @@ void Telemetry::RunService()
 {
 
     loop_flag.store(true); // just to be explicit
-    const auto service_start = std::chrono::high_resolution_clock::now();
-    const auto interval = std::chrono::duration_cast<std::chrono::high_resolution_clock::duration>(
-        std::chrono::duration<double>(1.0 / tm_frequency_hz)
-    );
-    auto next = std::chrono::high_resolution_clock::now();
+    const auto interval = std::chrono::duration_cast<timing::Clock::duration>(std::chrono::duration<double>(1.0 / tm_frequency_hz));
+    auto next = timing::Clock::now();
 
     while (loop_flag.load()) 
     {
@@ -271,8 +267,8 @@ void Telemetry::_UpdateTmSystemPart()
     SPDLOG_DEBUG("Updating system part of the TM frame..");
     // TODO error handling
 
-    tm_frame.SYSTEM_TIME = timing::GetCurrentTime();
-    tm_frame.SYSTEM_UPTIME = static_cast<uint32_t>(timing::GetUptime()); // Uptime will never exceed 49 days (due to power reasons)
+    tm_frame.SYSTEM_TIME = timing::GetCurrentTimeMs();
+    tm_frame.SYSTEM_UPTIME = static_cast<uint32_t>(timing::GetUptimeMs()); // Uptime will never exceed 49 days (due to power reasons)
     tm_frame.LAST_EXECUTED_CMD_TIME = sys::payload().GetLastExecutedCmdTime();
     tm_frame.LAST_EXECUTED_CMD_ID = sys::payload().GetLastExecutedCmdID();
 

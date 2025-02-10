@@ -354,7 +354,7 @@ size_t Payload::GetNbTasksInExecution()
 void Payload::SetLastExecutedCmdID(uint8_t cmd_id)
 {
     last_executed_cmd_id.store(cmd_id);
-    last_executed_cmd_time.store(timing::GetUptime());
+    last_executed_cmd_time.store(timing::GetUptimeMs());
 }
 
 uint8_t Payload::GetLastExecutedCmdID() const

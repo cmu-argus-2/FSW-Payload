@@ -3,6 +3,7 @@
 #include <filesystem>
 #include "communication/named_pipe.hpp"
 #include "payload.hpp"
+#include "core/timing.hpp"
 
 
 bool IsFifo(const char *path)
@@ -138,7 +139,7 @@ bool NamedPipe::Receive(uint8_t& cmd_id, std::vector<uint8_t>& data)
 
 bool NamedPipe::Receive(uint8_t& cmd_id, std::vector<uint8_t>& data) {
     std::string command;
-    std::this_thread::sleep_for(std::chrono::milliseconds(50)); // TODO this is obviously not the best way to do this and limits the data rate (also TX)
+    timing::SleepMs(40); // Obviously not the best way to do this and limits the data rate (also TX)
     bool LineReceived = ReadLineFromPipe(pipe_fd, command); // Use custom getline
     // SPDLOG_INFO("Received command?: {}", LineReceived);
 
@@ -184,7 +185,6 @@ void NamedPipe::RunLoop()
     while (_running_loop && _connected)
     {
         // SPDLOG_INFO("NamedPipe loop running");
-        // std::this_thread::sleep_for(std::chrono::milliseconds(500));
         
         // Receive new command
         uint8_t cmd_id;

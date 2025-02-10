@@ -2,7 +2,7 @@
 #include <chrono>
 #include "spdlog/spdlog.h"
 #include "vision/camera.hpp"
-
+#include "core/timing.hpp"
 
 Camera::Camera(int cam_id, std::string path)
 : 
@@ -116,9 +116,9 @@ void Camera::CaptureFrame()
 
     // static cv::Mat local_buffer_img(height, width, CV_8UC3); // pre-allocate memory
     
-    // Capture frame without holding the mutex - TODO access the reference from the hardware API 
-    auto timestamp = std::chrono::duration_cast<std::chrono::milliseconds>(
-        std::chrono::system_clock::now().time_since_epoch()).count();
+    // Capture frame without holding the mutex - TODO access the time ref from the hardware API 
+    auto timestamp = timing::GetCurrentTimeMs();
+
     // SPDLOG_CRITICAL("CAM{}: copying frame", cam_id);
     cap >> local_buffer_img;
     // SPDLOG_CRITICAL("CAM{}: frame copied", cam_id);
@@ -131,9 +131,7 @@ void Camera::CaptureFrame()
         SPDLOG_ERROR("Unable to capture frame");
         HandleErrors(CAM_ERROR::CAPTURE_FAILED);
         return;
-        
     }
-
 
     // Lock only for modifying shared resources
     {
@@ -143,8 +141,6 @@ void Camera::CaptureFrame()
     }
 
     HandleErrors(CAM_ERROR::NO_ERROR);
-
-
 }
 
 

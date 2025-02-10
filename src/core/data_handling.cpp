@@ -9,12 +9,12 @@ namespace DH // Data Handling
 
 bool INIT_DATA_FOLDER_TREE = false;
 
-bool make_new_directory(std::string_view directory_path)
+bool MakeNewDirectory(std::string_view directory_path)
 {
     bool success = false;
     if (std::filesystem::exists(directory_path)) 
     {
-        SPDLOG_INFO("Folder already exists.");
+        SPDLOG_DEBUG("Folder already exists.");
         success = true;
     } 
     else if (std::filesystem::create_directory(directory_path)) 
@@ -78,14 +78,15 @@ bool InitializeDataStorage()
         ROOT_DATA_FOLDER,
         IMAGES_FOLDER,
         TELEMETRY_FOLDER,
-        EXPERIMENTS_FOLDER,
+        DATASETS_FOLDER,
+        RESULTS_FOLDER,
         LOGGING_FOLDER
     };
 
     bool success = true;
     for (const auto& dir : directories) 
     {
-        if (!make_new_directory(dir)) {
+        if (!MakeNewDirectory(dir)) {
             SPDLOG_CRITICAL("Failed to create directory: {}", dir);
             success = false;
         }
@@ -99,6 +100,7 @@ bool InitializeDataStorage()
     }
 
     return success;
+    // TODO retry if failure
 }
 
 

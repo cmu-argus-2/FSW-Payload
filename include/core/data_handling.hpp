@@ -19,8 +19,10 @@ This file contains classes and functions providing file services and data handli
 #define ROOT_DATA_FOLDER "data/"
 #define IMAGES_FOLDER "data/images/"
 #define TELEMETRY_FOLDER "data/telemetry/"
-#define EXPERIMENTS_FOLDER "data/experiments/"
+#define DATASETS_FOLDER "data/datasets/"
+#define RESULTS_FOLDER "data/results/"
 #define LOGGING_FOLDER "data/logging/"
+
 
 #define DELIMITER "_"
 
@@ -43,12 +45,12 @@ namespace DH // Data Handling
 
 
 
-    bool make_directory(std::string_view directory_path);
+    bool MakeNewDirectory(std::string_view directory_path);
     long GetFileSize(std::string_view file_path);
     long GetDirectorySize(std::string_view directory_path); 
     int CountFilesInDirectory(std::string_view directory_path);
 
-    // raw_timestamp_camid.png - timestamp should be more accurate 
+    // raw_timestamp_camid.png - TODO timestamp should be more accurate and include dates 
     void StoreRawImgToDisk(std::uint64_t timestamp, int cam_id, const cv::Mat& img);
 
     // Load in memory the latest img

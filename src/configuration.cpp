@@ -1,7 +1,7 @@
 #include "configuration.hpp"
-#include "spdlog/spdlog.h"
 #include <string>
-#include "iostream"
+#include <iostream>
+#include "spdlog/spdlog.h"
 
 Configuration::Configuration()
 : configured(false), config(), camera_devices_config(nullptr)

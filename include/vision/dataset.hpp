@@ -8,7 +8,8 @@
 #include <mutex>
 #include <condition_variable>
 #include <thread>
-
+#include <memory>
+#include <unordered_map>
 
 /*
 TODO
@@ -25,6 +26,7 @@ TODO
 #define TIMEOUT_NO_DATA 500 
 #define DEFAULT_COLLECTION_PERIOD 10
 #define ABSOLUTE_MINIMUM_PERIOD 0.1
+#define DEFAULT_DS_KEY "None"
 
 // Error codes TODO with framework
 
@@ -59,22 +61,33 @@ class DatasetManager
 
 public:
 
-    DatasetManager(double min_period, uint32_t nb_frames, DatasetType type);
+    // Static methods
+
+    // It is recommended to have the Create functions under a try-except ot catch instantiation failures
+    static std::shared_ptr<DatasetManager> Create(double min_period, uint16_t nb_frames, DatasetType type, std::string ds_key = DEFAULT_DS_KEY); // fine to pass string by value/copy
+    // If the folder path does not exist or does not contain a config file, it throws.
+    static std::shared_ptr<DatasetManager> Create(const std::string& folder_path, std::string key = DEFAULT_DS_KEY);
+
+    static std::shared_ptr<DatasetManager> GetActiveDataset(const std::string& key);
+    static void StopDataset(const std::string& key);
+    static std::vector<std::string> ListActiveDatasets();
+
+    static std::vector<std::string> ListAllStoredDatasets();
+
+
+
+    // Actual constructors
+    DatasetManager(double min_period, uint16_t nb_frames, DatasetType type);
     // If the folder path does not exist or does not contain a config file, it throws.
     DatasetManager(const std::string& folder_path);
 
-    bool IsConfigured();
+
     bool IsCompleted();
 
     bool StartCollection();
     void StopCollection();
-    
-
+    bool Running();
     const DatasetProgress& QueryProgress() const;
-
-    static std::vector<std::string> ListDatasets();
-    
-
 
 
 private:
@@ -82,7 +95,7 @@ private:
     uint64_t created_at;
     std::string folder_path;
     double minimum_period;
-    uint32_t target_frame_nb;
+    uint16_t target_frame_nb;
     DatasetType dataset_type;
 
     DatasetProgress progress;
@@ -97,6 +110,10 @@ private:
     
     std::mutex loop_mtx;
     std::condition_variable loop_cv;
+
+
+    static std::unordered_map<std::string, std::shared_ptr<DatasetManager>> active_datasets;
+    static std::mutex datasets_mtx;
 
     // DataFormatter
 

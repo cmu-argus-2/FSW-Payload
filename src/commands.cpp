@@ -3,6 +3,9 @@
 #include "payload.hpp"
 #include "core/data_handling.hpp"
 #include "telemetry/telemetry.hpp"
+#include "vision/dataset.hpp"
+
+#define DATASET_KEY_CMD "CMD"
 
 // (void)data does nothing special, it is just used to avoid compiler warnings about a variable that is not used 
 
@@ -217,7 +220,7 @@ void start_capture_images_periodically(std::vector<uint8_t>& data)
 {
     SPDLOG_INFO("Starting capture images every X seconds..");
 
-    if (!data.empty()) {
+    /*if (!data.empty()) {
         uint8_t period = data[0]; // Period in seconds
         sys::cameraManager().SetPeriodicCaptureRate(period);
 
@@ -227,21 +230,103 @@ void start_capture_images_periodically(std::vector<uint8_t>& data)
         }
     }
 
-    sys::cameraManager().SetCaptureMode(CAPTURE_MODE::PERIODIC);
+    sys::cameraManager().SetCaptureMode(CAPTURE_MODE::PERIODIC);*/
 
-    // TODO: Implement a return type to indicate success or failure, if needed.
+    // 1 byte for type
+    // 2 bytes period (for now)
+    // 2 bytes nb_frames
+    if (data.size() < 5)
+    {
+        // TODO: Send Error ACK
+        uint8_t ERR_PERIODIC = 0x20; // TODO define elsewhere
+        SPDLOG_ERROR("Invalid data size for START_CAPTURE_IMAGES_PERIODICALLY command");
+        auto msg = CreateErrorAckMessage(CommandID::START_CAPTURE_IMAGES_PERIODICALLY, 0x20);
+        sys::payload().TransmitMessage(msg);
+        return;
+    }
+
+    auto ds = DatasetManager::GetActiveDataset(DATASET_KEY_CMD);
+
+    if (ds) // if already exists
+    {
+        // need to ensure it's actually running
+        if (ds->Running())
+        {
+            // if running: TODO: return ERROR ACK saying that a dataset is already running
+            // If completed, stop it then too
+        }
+        else
+        {
+            ds->StopDataset(DATASET_KEY_CMD); // remove it (will create a new one)
+        }
+    }
+
+    // Create a new Dataset
+    DatasetType dataset_type = static_cast<DatasetType>(data[0]);
+    double period = static_cast<double>((data[1] << 8) | data[2]);
+    uint16_t nb_frames = (data[3] << 8) | data[4];
+    SPDLOG_INFO("Starting dataset collection (type {}) for {} frames at a period of {} seconds.", dataset_type, nb_frames, period);
+
+    try
+    {
+        ds = DatasetManager::Create(period, nb_frames, dataset_type, DATASET_KEY_CMD);
+        ds->StartCollection();
+    }
+    catch(const std::exception& e)
+    {
+        
+        SPDLOG_ERROR("Failed to start dataset collection: {}", e.what());
+        auto msg = CreateErrorAckMessage(CommandID::START_CAPTURE_IMAGES_PERIODICALLY, 0x21); // TODO example error code
+        sys::payload().TransmitMessage(msg);
+    }
+    
+    // All good
+    auto msg = CreateSuccessAckMessage(CommandID::START_CAPTURE_IMAGES_PERIODICALLY);
+    sys::payload().TransmitMessage(msg);
 
     sys::payload().SetLastExecutedCmdID(CommandID::START_CAPTURE_IMAGES_PERIODICALLY);
 }
+
+
 
 void stop_capture_images(std::vector<uint8_t>& data)
 {
     SPDLOG_INFO("Stopping capture images..");
 
-    (void)data;
+    (void)data; // no need for data here, so ignore
 
-    sys::cameraManager().SetCaptureMode(CAPTURE_MODE::IDLE);
+    // sys::cameraManager().SetCaptureMode(CAPTURE_MODE::IDLE);
     // TODO return true or false based on the success of the operations
+
+    auto ds = DatasetManager::GetActiveDataset(DATASET_KEY_CMD);
+    if (ds) // if it exists
+    {
+        ds->StopCollection();
+        DatasetProgress ds_progress = ds->QueryProgress();
+        // include in message statistics about the collected data (how many frame)
+        uint16_t nb_frames = ds_progress.current_frames;
+        uint8_t completion = static_cast<uint8_t>(ds_progress.completion);
+
+        // Stop dataset process and remove from registry
+        ds->StopDataset(DATASET_KEY_CMD);
+
+        // Create ACK message with stats
+        auto msg = CreateSuccessAckMessage(CommandID::STOP_CAPTURE_IMAGES);
+        std::vector<uint8_t> stats_output;
+        stats_output.push_back(completion);
+        SerializeToBytes(nb_frames, stats_output);
+        msg->AddToPacket(stats_output);
+        sys::payload().TransmitMessage(msg);
+
+    }
+    else
+    {
+        // Return (error) ACK telling that no dataset is running
+        SPDLOG_ERROR("No dataset collection has been started on the command side");
+        auto msg = CreateErrorAckMessage(CommandID::STOP_CAPTURE_IMAGES, 0x22); // TODO
+        sys::payload().TransmitMessage(msg);
+
+    }
 
     sys::payload().SetLastExecutedCmdID(CommandID::STOP_CAPTURE_IMAGES);
 }

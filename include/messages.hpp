@@ -48,7 +48,7 @@ void SerializeToBytes(uint32_t value, std::vector<uint8_t>& output);
 void SerializeToBytes(uint16_t value, std::vector<uint8_t>& output);
 
 std::shared_ptr<Message> CreateSuccessAckMessage(CommandID::Type id);
-std::shared_ptr<Message> CreateErrorAckMessgae(CommandID::Type id, uint8_t error_code);
+std::shared_ptr<Message> CreateErrorAckMessage(CommandID::Type id, uint8_t error_code);
 
 
 #endif // MESSAGES_HPP

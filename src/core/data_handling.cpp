@@ -104,7 +104,11 @@ bool InitializeDataStorage()
     // TODO retry if failure
 }
 
-
+void StoreFrameToDisk(Frame& frame, std::string_view target_folder)
+{
+    StoreRawImgToDisk(frame.GetTimestamp(), frame.GetCamID(), frame.GetImg(), target_folder);
+}
+    
 
 void StoreRawImgToDisk(std::uint64_t timestamp, int cam_id, const cv::Mat& img, std::string_view target_folder)
 {

@@ -30,7 +30,83 @@ void DatasetProgress::Update(uint16_t nb_new_frames, double instant_hit_ratio)
     SPDLOG_INFO("Current progress: {} / {}", current_frames, target_frames);
 }
 
-DatasetManager::DatasetManager(double min_period, uint32_t nb_frames, DatasetType type)
+
+std::unordered_map<std::string, std::shared_ptr<DatasetManager>> DatasetManager::active_datasets;
+std::mutex DatasetManager::datasets_mtx;
+
+
+
+std::shared_ptr<DatasetManager> DatasetManager::Create(double min_period, uint16_t nb_frames, DatasetType type, std::string ds_key)
+{
+    auto instance = std::make_shared<DatasetManager>(min_period, nb_frames, type);
+    std::lock_guard<std::mutex> lock(datasets_mtx);
+    if (ds_key == DEFAULT_DS_KEY)
+    {
+        ds_key = std::to_string(instance->created_at);
+    }
+    active_datasets[ds_key] = instance;
+    return instance;
+}
+
+std::shared_ptr<DatasetManager> DatasetManager::Create(const std::string& folder_path, std::string ds_key)
+{
+    auto instance = std::make_shared<DatasetManager>(folder_path);
+    std::lock_guard<std::mutex> lock(datasets_mtx);
+    if (ds_key == DEFAULT_DS_KEY)
+    {
+        ds_key = std::to_string(instance->created_at);
+    }
+    active_datasets[ds_key] = instance;
+    return instance;
+}
+
+std::shared_ptr<DatasetManager> DatasetManager::GetActiveDataset(const std::string& key)
+{
+    std::lock_guard<std::mutex> lock(datasets_mtx);
+    auto it = active_datasets.find(key);
+    return (it != active_datasets.end()) ? it->second : nullptr;
+    // TODO: must check it's actually running (collection in progress)
+}
+
+void DatasetManager::StopDataset(const std::string& key)
+{
+    std::lock_guard<std::mutex> lock(datasets_mtx);
+    auto it = active_datasets.find(key);
+    if (it != active_datasets.end())
+    {
+        it->second->StopCollection();
+        active_datasets.erase(it);
+    }
+}
+
+std::vector<std::string> DatasetManager::ListActiveDatasets()
+{
+    std::lock_guard<std::mutex> lock(datasets_mtx);
+    std::vector<std::string> keys;
+    for (const auto& entry : active_datasets)
+    {
+        keys.push_back(entry.first);
+    }
+    return keys;
+}
+
+std::vector<std::string> DatasetManager::ListAllStoredDatasets()
+{
+    // List all folders in the dataset folder
+    std::vector<std::string> dataset_folders;
+    for (const auto& entry : std::filesystem::directory_iterator(DATASETS_FOLDER))
+    {
+        if (entry.is_directory())
+        {
+            dataset_folders.push_back(DATASETS_FOLDER + entry.path().filename().string());
+        }
+    }
+    return dataset_folders;
+}
+
+
+
+DatasetManager::DatasetManager(double min_period, uint16_t nb_frames, DatasetType type)
 :
 minimum_period(min_period),
 target_frame_nb(nb_frames),
@@ -182,6 +258,10 @@ void DatasetManager::StopCollection()
     }
 }
 
+bool DatasetManager::Running()
+{
+    return loop_flag.load();
+}
 
 const DatasetProgress& DatasetManager::QueryProgress() const
 {
@@ -190,7 +270,7 @@ const DatasetProgress& DatasetManager::QueryProgress() const
 
 bool DatasetManager::CheckTermination()
 {
-    return (progress.current_frames >= target_frame_nb) || (progress.current_frames <= MAX_SAMPLES);
+    return (progress.current_frames >= target_frame_nb) || (progress.current_frames >= MAX_SAMPLES);
 }
 
 void DatasetManager::CollectionLoop()
@@ -216,7 +296,7 @@ void DatasetManager::CollectionLoop()
 
 
     // Assumes folder exists
-    while (loop_flag.load() && CheckTermination())
+    while (loop_flag.load() && !CheckTermination())
     {
         // Wait for stopping condition or timeout based on the predetermined period 
         {
@@ -235,6 +315,7 @@ void DatasetManager::CollectionLoop()
 
         // Copy the latest frames 
         uint8_t nb_copied_frames = sys::cameraManager().CopyFrames(buffer_frames, earth_flag);
+        SPDLOG_WARN("Number of copied frames {}", nb_copied_frames);
 
         if (nb_copied_frames > 0)
         {
@@ -256,11 +337,19 @@ void DatasetManager::CollectionLoop()
                     DH::StoreFrameToDisk(frame, folder_path);
                     saved_frames++;
                     progress.Update(saved_frames);
+                    SPDLOG_WARN("Number of saved frames {}", saved_frames);
                 }
             }
 
             // reset
             saved_frames = 0;
+            buffer_frames.clear();
+
+            if (CheckTermination())
+            {
+                SPDLOG_INFO("Completed dataset collection!");
+                break;
+            }
 
             // pause till next period
             next_time += interval;

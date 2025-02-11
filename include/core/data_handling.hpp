@@ -36,7 +36,8 @@ namespace DH // Data Handling
         data/
         ├── images/
         ├── telemetry/
-        ├── experiments/ (orbit determination results)
+        ├── datasets/
+        ├── results/ (orbit determination results)
         ├── logging/
 
         @return true if successful, false otherwise
@@ -50,8 +51,12 @@ namespace DH // Data Handling
     long GetDirectorySize(std::string_view directory_path); 
     int CountFilesInDirectory(std::string_view directory_path);
 
-    // raw_timestamp_camid.png - TODO timestamp should be more accurate and include dates 
-    void StoreRawImgToDisk(std::uint64_t timestamp, int cam_id, const cv::Mat& img);
+
+    
+
+    // raw_timestamp_camid.png 
+    void StoreFrameToDisk(Frame& frame, std::string_view target_folder = IMAGES_FOLDER);
+    void StoreRawImgToDisk(std::uint64_t timestamp, int cam_id, const cv::Mat& img, std::string_view target_folder = IMAGES_FOLDER);
 
     // Load in memory the latest img
     bool ReadLatestStoredRawImg(Frame& frame);
@@ -64,8 +69,6 @@ namespace DH // Data Handling
     // need to read from disk (transfre img from disk to RAM) - reinitialize the frame buffer
     // need to be able to select the latest img from the disk
     // need to save telemetry data on disk
-
-
 
 
 

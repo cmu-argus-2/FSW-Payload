@@ -76,7 +76,7 @@ void synchronize_time(std::vector<uint8_t>& data)
     SPDLOG_INFO("Synchronizing time..");
     (void)data;
     // TODO
-
+    // SHOULD SHUTDOWN and REBOOT
     sys::payload().SetLastExecutedCmdID(CommandID::SYNCHRONIZE_TIME);
 }
 

@@ -236,7 +236,7 @@ void Telemetry::RunService()
 {
 
     loop_flag.store(true); // just to be explicit
-    const auto interval = std::chrono::duration_cast<timing::Clock::duration>(std::chrono::duration<double>(1.0 / tm_frequency_hz));
+    const auto interval = std::chrono::duration_cast<timing::Clock::duration>(std::chrono::duration<double>(1.0 / tm_frequency_hz)); // casting set it to nanoseconds given the clock
     auto next = timing::Clock::now();
 
     while (loop_flag.load()) 

@@ -12,17 +12,18 @@ bool INIT_DATA_FOLDER_TREE = false;
 bool MakeNewDirectory(std::string_view directory_path)
 {
     bool success = false;
-    if (std::filesystem::exists(directory_path)) 
+    if (fs::exists(directory_path)) 
     {
-        SPDLOG_DEBUG("Folder already exists.");
+        SPDLOG_DEBUG("Folder {} already exists.", directory_path);
         success = true;
     } 
-    else if (std::filesystem::create_directory(directory_path)) 
+    else if (fs::create_directory(directory_path)) 
     {
-        SPDLOG_INFO("Data folder created.");
+        SPDLOG_INFO("Folder created: {}.", directory_path);
         success = true;
-    } else {
-        SPDLOG_CRITICAL("Failed to create data folder.");
+    } else 
+    {
+        SPDLOG_CRITICAL("Failed to create folder: {}.", directory_path);
     }    
 
     return success;
@@ -105,16 +106,16 @@ bool InitializeDataStorage()
 
 
 
-void StoreRawImgToDisk(std::uint64_t timestamp, int cam_id, const cv::Mat& img)
+void StoreRawImgToDisk(std::uint64_t timestamp, int cam_id, const cv::Mat& img, std::string_view target_folder)
 {
     std::ostringstream oss;
-    oss << IMAGES_FOLDER << "raw" << DELIMITER << timestamp << DELIMITER << cam_id << ".png";
+    oss << target_folder << "raw" << DELIMITER << timestamp << DELIMITER << cam_id << ".png";
     const std::string& file_path = oss.str();
     cv::imwrite(file_path, img);
     SPDLOG_INFO("Saved img to disk: {}", file_path);
     SPDLOG_INFO("File size: {} bytes", GetFileSize(file_path));
-    SPDLOG_DEBUG("Total size of images folder: {} bytes", GetDirectorySize(IMAGES_FOLDER));
-    SPDLOG_DEBUG("Number of images in images folder: {}", CountFilesInDirectory(IMAGES_FOLDER));
+    SPDLOG_DEBUG("Total size of folder {}: {} bytes", target_folder, GetDirectorySize(target_folder));
+    SPDLOG_DEBUG("Number of files in folder {}: {}", target_folder, CountFilesInDirectory(target_folder));
 }
 
 

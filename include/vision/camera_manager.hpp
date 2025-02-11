@@ -52,10 +52,10 @@ public:
 
     void CaptureFrames();
 
-    uint8_t SaveLatestFrames();
+    uint8_t SaveLatestFrames(bool only_earth = true);
 
     // Copy the latest frames from each camera to the provided vector and return the number of frames copied
-    uint8_t CopyFrames(std::vector<Frame>& vec_frames);
+    uint8_t CopyFrames(std::vector<Frame>& vec_frames, bool only_earth = true);
 
 
     // Set the capture mode of the camera system

@@ -8,6 +8,7 @@ see: https://www.man7.org/linux/man-pages/man3/clock_gettime.3.html
 
 
 Unix Epoch: the time 00:00:00 UTC on 1 January 1970 (or 1970-01-01T00:00:00Z ISO 8601). 
+NOTE: We don't need dates since we're using a UNIX timestamp
 
  */
 #ifndef TIMING_HPP

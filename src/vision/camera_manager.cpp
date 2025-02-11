@@ -35,7 +35,7 @@ void CameraManager::CaptureFrames()
 }
 
 
-uint8_t CameraManager::SaveLatestFrames()
+uint8_t CameraManager::SaveLatestFrames(bool only_earth)
 {
     uint8_t save_count = 0;
     for (std::size_t i = 0; i < NUM_CAMERAS; ++i) 
@@ -56,7 +56,7 @@ uint8_t CameraManager::SaveLatestFrames()
 }
 
 
-uint8_t CameraManager::CopyFrames(std::vector<Frame>& vec_frames)
+uint8_t CameraManager::CopyFrames(std::vector<Frame>& vec_frames, bool only_earth)
 {
 
     uint8_t frame_count = 0;
@@ -191,8 +191,6 @@ void CameraManager::RunDisplayLoop()
                     cam.DisplayLastFrame();
                 }
             }
-
-
         }
 
         if (active_cams == 0) 
@@ -235,6 +233,7 @@ void CameraManager::StopLoops()
 {
     display_flag.store(false);
     loop_flag.store(false);
+    capture_mode_cv.notify_all();
 
     for (auto& camera : cameras) 
     {

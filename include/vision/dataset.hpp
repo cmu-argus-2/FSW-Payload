@@ -24,6 +24,7 @@ TODO
 #define MAX_SAMPLES 1000
 #define TIMEOUT_NO_DATA 500 
 #define DEFAULT_COLLECTION_PERIOD 10
+#define ABSOLUTE_MINIMUM_PERIOD 0.1
 
 // Error codes TODO with framework
 
@@ -40,13 +41,18 @@ struct DatasetProgress
     void Update(uint16_t nb_new_frames, double instant_hit_ratio = 1.0f);
 };
 
-enum class DatasetType 
+enum class DatasetType
 {
-    ANY,
-    EARTH_ONLY,
-    LANDMARKS
+    ANY = 0,
+    EARTH_ONLY = 1,
+    LANDMARKS = 2,
 };
 
+inline bool IsValidDatasetType(DatasetType value)
+{
+    return (value >= DatasetType::ANY && 
+            value <= DatasetType::LANDMARKS);
+}
 
 class DatasetManager
 {

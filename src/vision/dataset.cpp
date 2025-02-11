@@ -71,10 +71,56 @@ progress(target_frame_nb)
         throw std::invalid_argument("The provided folder path does not exist..."); // throwing is the best way in this case
     }
 
-    // Then read config file and fill all parameters
-    // TODO
-    
+    // read config file and fill all parameters
+    try
+    {
+        toml::table config = toml::parse_file(candidate_folder + DATASET_CONFIG_FILE_NAME);
+
+        std::optional<double> min_period = config["minimum_period"].value<double>();
+        if (!min_period)
+        {
+            throw std::invalid_argument("Missing or invalid 'minimum_period' in configuration.");
+        }
+        minimum_period = *min_period;
+        if (minimum_period < ABSOLUTE_MINIMUM_PERIOD)
+        {
+            SPDLOG_ERROR("Minimum period {} is below the absolute minimum period {}", minimum_period, ABSOLUTE_MINIMUM_PERIOD);
+            throw std::invalid_argument("Minimum period is below the absolute minimum period.");
+        }
+
+        std::optional<uint64_t> target_frames = config["target_frames"].value<uint64_t>();
+        if (!target_frames)
+        {
+            throw std::invalid_argument("Missing or invalid 'target_frames' in configuration.");
+        }
+        target_frame_nb = static_cast<uint32_t>(*target_frames);
+        if (target_frame_nb > MAX_SAMPLES)
+        {
+            SPDLOG_ERROR("Target frame number {} exceeds the maximum allowed {}", target_frame_nb, MAX_SAMPLES);
+            throw std::invalid_argument("Target frame number exceeds the maximum allowed.");
+        }
+
+        std::optional<uint64_t> dataset_type_val = config["dataset_type"].value<uint64_t>();
+        if (!dataset_type_val)
+        {
+            throw std::invalid_argument("Missing or invalid 'dataset_type' in configuration.");
+        }
+        dataset_type = static_cast<DatasetType>(*dataset_type_val);
+        if (IsValidDatasetType(dataset_type))
+        {
+            SPDLOG_ERROR("Invalid dataset type {}", static_cast<int>(dataset_type));
+            throw std::invalid_argument("Invalid dataset type.");
+        }
+    }
+    catch (const std::exception& e)
+    {
+        SPDLOG_ERROR("Failed to parse configuration file: {}", e.what());
+        throw std::runtime_error("Failed to parse configuration file or incorrect configuration.");
+    }
+
 }
+
+
 
 void DatasetManager::CreateConfigurationFile()
 {

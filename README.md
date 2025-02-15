@@ -5,11 +5,12 @@ This repository contains the Flight Software (FSW) written for the Jetson Orin N
 ## Install instructions 
 
 TODO
-
+- CUDA
+- TensorRT
 - [spdlog](https://github.com/gabime/spdlog) - Logging library
 - [OpenCV](https://docs.opencv.org/4.x/d7/d9f/tutorial_linux_install.html?ref=wasyresearch.com) - Computer vision library
 - [Eigen3](http://eigen.tuxfamily.org/index.php?title=Main_Page#Download) - Linear algebra Library
-- [Torch](https://pytorch.org/get-started/locally/) - Deep learning 
+- [Torch](https://pytorch.org/get-started/locally/) - Deep learning (In process of removal :) )
 - [GTest](https://github.com/google/googletest) - testing framework
 
 ## Build instructions

@@ -11,15 +11,6 @@
 #include <memory>
 #include <unordered_map>
 
-/*
-TODO
-- Manages folder management for a single dataset process 
-- Store frames, handles naming with DH, performs neural engine calls as necessary 
-- Interface to query progress 
-- Able to pause, resume, retrieve a process even after reboot 
-- Is used by bioth OD and commands
-- contains static methods to nalyze the other datasets 
-*/
 
 #define DATASET_CONFIG_FILE_NAME "config.toml"
 #define MAX_SAMPLES 1000
@@ -63,7 +54,7 @@ public:
 
     // Static methods
 
-    // It is recommended to have the Create functions under a try-except ot catch instantiation failures
+    // It is recommended to have the Create functions under a try-except to catch instantiation failures
     static std::shared_ptr<DatasetManager> Create(double min_period, uint16_t nb_frames, DatasetType type, std::string ds_key = DEFAULT_DS_KEY); // fine to pass string by value/copy
     // If the folder path does not exist or does not contain a config file, it throws.
     static std::shared_ptr<DatasetManager> Create(const std::string& folder_path, std::string key = DEFAULT_DS_KEY);
@@ -74,20 +65,22 @@ public:
 
     static std::vector<std::string> ListAllStoredDatasets();
 
-
-
-    // Actual constructors
-    DatasetManager(double min_period, uint16_t nb_frames, DatasetType type);
-    // If the folder path does not exist or does not contain a config file, it throws.
-    DatasetManager(const std::string& folder_path);
-
-
     bool IsCompleted();
 
     bool StartCollection();
     void StopCollection();
     bool Running();
-    const DatasetProgress& QueryProgress() const;
+    // Copy is easier (and cheap here), instead of dealing with all the multithreading
+    DatasetProgress QueryProgress() const;
+
+
+
+
+    // Actual constructors ~ not to be used
+    DatasetManager(double min_period, uint16_t nb_frames, DatasetType type);
+    // If the folder path does not exist or does not contain a config file, it throws.
+    DatasetManager(const std::string& folder_path);
+
 
 
 private:

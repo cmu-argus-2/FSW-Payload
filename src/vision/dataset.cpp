@@ -264,7 +264,7 @@ bool DatasetManager::Running()
     return loop_flag.load();
 }
 
-const DatasetProgress& DatasetManager::QueryProgress() const
+DatasetProgress DatasetManager::QueryProgress() const
 {
     return progress;
 }

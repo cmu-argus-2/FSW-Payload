@@ -5,6 +5,12 @@
 #include <mutex>
 #include <condition_variable>
 #include <atomic>
+#include <vision/dataset.hpp>
+
+#define OD_DEFAULT_COLLECTION_PERIOD 10
+#define OD_DEFAULT_COLLECTION_SAMPLES 30
+
+#define DATASET_KEY_OD "OD"
 
 enum class OD_STATE : uint8_t 
 {
@@ -43,6 +49,11 @@ private:
 
     // This must be called frequently to check if the OD process must stop and save its states to disk
     bool PingRunningStatus(); 
+
+
+    std::shared_ptr<DatasetManager> dataset_collector;
+
+
 
     void _Initialize();
     void _DoBatchOptimization();

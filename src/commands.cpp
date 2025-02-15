@@ -389,7 +389,50 @@ void ping_od_status(std::vector<uint8_t>& data)
     
     (void)data;
     // TODO
+    OD_STATE od_state = sys::od().GetState();
+    std::vector<uint8_t> transmit_data;
 
+    // Add the current ststae to pcket
+    transmit_data.push_back(static_cast<uint8_t>(od_state));
+
+    // Based on the state, return more information
+    switch (od_state)
+    {
+        case OD_STATE::IDLE:
+        {
+            break;
+        }
+        case OD_STATE::INIT:
+        {
+            auto ds = DatasetManager::GetActiveDataset(DATASET_KEY_OD);
+            if (ds) // if it exists
+            {
+                DatasetProgress ds_progress = ds->QueryProgress();
+                uint16_t nb_frames = ds_progress.current_frames;
+                uint8_t completion = static_cast<uint8_t>(ds_progress.completion);
+                transmit_data.push_back(completion);
+                SerializeToBytes(nb_frames, transmit_data);
+            }
+            else
+            {
+                // Return (error) ACK telling that no dataset is running
+                SPDLOG_ERROR("No dataset collection has been started on the command side");
+                // TODO
+            }
+            break;
+        }
+        case OD_STATE::BATCH_OPT:
+        {
+            break;
+        }
+        case OD_STATE::TRACKING:
+        {
+            break;
+        }
+    }
+
+    auto msg = CreateMessage(CommandID::PING_OD_STATUS, transmit_data);
+    sys::payload().TransmitMessage(msg);
 
     sys::payload().SetLastExecutedCmdID(CommandID::PING_OD_STATUS);
 }

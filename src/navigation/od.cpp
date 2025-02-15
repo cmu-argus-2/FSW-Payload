@@ -5,7 +5,8 @@
 
 OD::OD()
 : 
-process_state(OD_STATE::IDLE)
+process_state(OD_STATE::IDLE),
+dataset_collector(nullptr)
 {
 }
 

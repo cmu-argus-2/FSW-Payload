@@ -5,6 +5,7 @@ project(PAYLOAD VERSION 1.0 LANGUAGES CXX)
 add_definitions(-DROOT_DIR=\"${CMAKE_SOURCE_DIR}\")
 add_definitions(-DMODELS_DIR=\"${CMAKE_SOURCE_DIR}/models\")
 
+# Don't use
 # set(CMAKE_CXX_COMPILER clang++)
 
 # Check if LIBTORCH_PATH is set in the environment

@@ -11,6 +11,7 @@
 #include "telemetry/telemetry.hpp"
 #include "core/utils.hpp"
 #include "core/timing.hpp"
+#include "core/errors.hpp"
 
 bool CheckTegraTmProcessRunning()
 {   
@@ -287,8 +288,12 @@ void Telemetry::_UpdateTmSystemPart()
     {
         tm_frame.DISK_USAGE = 0;
     }
-
-    // tm_frame.LATEST_ERROR = 
+    EC last_err = GetLastError();
+    if (last_err != EC::OK)
+    {
+        tm_frame.LATEST_ERROR = static_cast<uint8_t>(last_err);
+    }
+    
 }
 
 

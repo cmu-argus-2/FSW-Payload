@@ -4,6 +4,7 @@
 #include "core/data_handling.hpp"
 #include "telemetry/telemetry.hpp"
 #include "vision/dataset.hpp"
+#include "core/errors.hpp"
 
 #define DATASET_KEY_CMD "CMD"
 

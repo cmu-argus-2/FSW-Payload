@@ -6,6 +6,7 @@ add_library(core
     thread_pool.cpp
     utils.cpp
     timing.cpp
+    errors.cpp
 )
 
 # target_link_libraries(core <dependencies>)

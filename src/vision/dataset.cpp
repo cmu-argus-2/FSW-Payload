@@ -148,6 +148,7 @@ progress(target_frame_nb)
     }
 
     // read config file and fill all parameters
+    // TODO: remove this high-level try-catch and throw OR have a default config... (well-documented)
     try
     {
         toml::table config = toml::parse_file(candidate_folder + DATASET_CONFIG_FILE_NAME);

@@ -1,18 +1,23 @@
-dataset_key_od = "OD"
-
 [INIT]
+# INT
 collection_period = 10 # sec
+# INT
 target_samples = 20 # samples 
+# INT
 max_collection_time = 3600 # sec
 
 [BATCH_OPT] # Nonlinear Batch-LSQ
-tolerance_solver = 0.05 # placeholder 
+# INT or floating
+tolerance_solver = 0.05 # placeholder
+# INT
 max_iterations = 10000 # iterations
 # TODO
 
 [TRACKING] 
-gyro_update_frequency = 10
-img_update_frequency = 1
+# INT or floating
+gyro_update_frequency = 10.0
+# INT or floating
+img_update_frequency = 1.0 
 # TODO
 
 

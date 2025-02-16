@@ -1,3 +1,4 @@
+#include <optional>
 #include "navigation/od.hpp"
 #include "payload.hpp"
 #include "spdlog/spdlog.h"
@@ -21,18 +22,24 @@ max_iterations(10000)
 
 TRACKING_config::TRACKING_config()
 : 
-gyro_update_frequency(10.0),
-img_update_frequency(1.0)
+gyro_update_frequency(10.0f),
+img_update_frequency(1.0f)
+{
+}
+
+OD_Config::OD_Config()
 {
 }
 
 
 
-OD::OD()
+OD::OD(const std::string& config_path)
 : 
 process_state(OD_STATE::IDLE),
 dataset_collector(nullptr)
 {
+    SPDLOG_INFO("Will read OD configuration file...");
+    ReadConfig(config_path);
 }
 
 
@@ -125,17 +132,70 @@ bool OD::PingRunningStatus()
     return loop_flag.load();
 }
 
-void OD::ReadConfig(std::string_view config_path)
+void OD::ReadConfig(const std::string& config_path)
 {
+    toml::table params;
+    try
+    {
+        params = toml::parse_file(config_path);
+    }
+    catch (const toml::parse_error& err)
+    { 
+        SPDLOG_ERROR("Failed to parse config file: {}", err.what());
+        return;
+    }
+
+    // Helper to get parameter as double (supports int64_t and double)
+    auto get_param_as_double = [](const toml::table* params, const std::string& key, double default_value) -> double {
+        if (auto val = params->get_as<double>(key)) {
+            return **val;
+        }
+        if (auto val_int = params->get_as<int64_t>(key)) {
+            return static_cast<double>(**val_int);
+        }
+        return default_value;
+    };
     
-    toml::table config = toml::parse_file(config_path);
+    // INIT
+    auto INIT_params = params["INIT"].as_table();
+    config.init.collection_period = INIT_params->get_as<int64_t>("collection_period")->value_or(config.init.collection_period);
+    config.init.target_samples = INIT_params->get_as<int64_t>("target_samples")->value_or(config.init.target_samples);
+    config.init.max_collection_time = INIT_params->get_as<int64_t>("max_collection_time")->value_or(config.init.max_collection_time);
 
-    auto INIT_config = config["INIT"].as_table();
-    auto BATCH_OPT_config = config["BATCH_OPT"].as_table();
-    auto TRACKING_config = config["TRACKING"].as_table();
+    // BATCH_OPT
+    auto BATCH_OPT_params = params["BATCH_OPT"].as_table();
+    config.batch_opt.tolerance_solver = get_param_as_double(BATCH_OPT_params, "tolerance_solver", config.batch_opt.tolerance_solver);
+    config.batch_opt.max_iterations = BATCH_OPT_params->get_as<int64_t>("max_iterations")->value_or(config.batch_opt.max_iterations);
 
+    // TRACKING
+    auto TRACKING_params = params["TRACKING"].as_table();
+    config.tracking.gyro_update_frequency = get_param_as_double(TRACKING_params, "gyro_update_frequency", config.tracking.gyro_update_frequency);
+    config.tracking.img_update_frequency = get_param_as_double(TRACKING_params, "img_update_frequency", config.tracking.img_update_frequency);
+
+    // TODO: safe value checking on each params
+    
+    LogConfig();
 
 }
+
+
+void OD::LogConfig()
+{
+    SPDLOG_INFO("OD Current Configuration parameters: ");
+
+    SPDLOG_INFO("INIT_config:");
+    SPDLOG_INFO("  collection_period: {}", config.init.collection_period);
+    SPDLOG_INFO("  target_samples: {}", config.init.target_samples);
+    SPDLOG_INFO("  max_collection_time: {}", config.init.max_collection_time);
+
+    SPDLOG_INFO("BATCH_OPT_config:");
+    SPDLOG_INFO("  tolerance_solver: {}", config.batch_opt.tolerance_solver);
+    SPDLOG_INFO("  max_iterations: {}", config.batch_opt.max_iterations);
+
+    SPDLOG_INFO("TRACKING_config:");
+    SPDLOG_INFO("  gyro_update_frequency: {}", config.tracking.gyro_update_frequency);
+    SPDLOG_INFO("  img_update_frequency: {}", config.tracking.img_update_frequency);
+} 
 
 
 void OD::_Initialize()

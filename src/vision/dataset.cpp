@@ -158,7 +158,7 @@ progress(target_frame_nb)
         {
             throw std::invalid_argument("Missing or invalid 'minimum_period' in configuration.");
         }
-        minimum_period = *min_period;
+        minimum_period = *min_period; // dereference the contained value
         if (minimum_period < ABSOLUTE_MINIMUM_PERIOD)
         {
             SPDLOG_ERROR("Minimum period {} is below the absolute minimum period {}", minimum_period, ABSOLUTE_MINIMUM_PERIOD);

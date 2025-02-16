@@ -5,6 +5,8 @@ project(PAYLOAD VERSION 1.0 LANGUAGES CXX)
 add_definitions(-DROOT_DIR=\"${CMAKE_SOURCE_DIR}\")
 add_definitions(-DMODELS_DIR=\"${CMAKE_SOURCE_DIR}/models\")
 
+set(CMAKE_CXX_COMPILER_LAUNCHER ccache)
+
 # Don't use
 # set(CMAKE_CXX_COMPILER clang++)
 

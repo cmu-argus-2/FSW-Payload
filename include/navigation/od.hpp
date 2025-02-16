@@ -6,12 +6,11 @@
 #include <condition_variable>
 #include <atomic>
 #include <vision/dataset.hpp>
-#include <string_view>
 
 #define OD_DEFAULT_COLLECTION_PERIOD 10
 #define OD_DEFAULT_COLLECTION_SAMPLES 30
-
 #define DATASET_KEY_OD "OD"
+#define OD_DEFAULT_CONFIG_PATH "config/od.toml"
 
 enum class OD_STATE : uint8_t 
 {
@@ -48,12 +47,21 @@ struct TRACKING_config
 };
 
 
+struct OD_Config
+{
+    INIT_config init;
+    BATCH_OPT_config batch_opt;
+    TRACKING_config tracking;
+
+    OD_Config();
+};
+
 class OD
 {
 
 public:
 
-    OD();
+    OD(const std::string& config_path = OD_DEFAULT_CONFIG_PATH);
 
     // Main running loop for the OD process
     void RunLoop();
@@ -76,9 +84,12 @@ private:
     // This must be called frequently to check if the OD process must stop and save its states to disk
     bool PingRunningStatus(); 
 
-    // Read the config yaml file 
-    void ReadConfig(std::string_view config_path);
+    // Configurations
+    OD_Config config;
 
+    // Read the config yaml file 
+    void ReadConfig(const std::string& config_path);
+    void LogConfig();
 
     std::shared_ptr<DatasetManager> dataset_collector;
 

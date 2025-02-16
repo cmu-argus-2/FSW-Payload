@@ -30,7 +30,7 @@ void DatasetProgress::Update(uint16_t nb_new_frames, double instant_hit_ratio)
     SPDLOG_INFO("Current progress: {} / {}", current_frames, target_frames);
 }
 
-
+// Registry for the datasets
 std::unordered_map<std::string, std::shared_ptr<DatasetManager>> DatasetManager::active_datasets;
 std::mutex DatasetManager::datasets_mtx;
 

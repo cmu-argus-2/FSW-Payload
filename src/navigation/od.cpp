@@ -1,6 +1,31 @@
 #include "navigation/od.hpp"
 #include "payload.hpp"
 #include "spdlog/spdlog.h"
+#include "toml.hpp"
+
+
+INIT_config::INIT_config()
+: 
+collection_period(10),
+target_samples(20),
+max_collection_time(3600)
+{
+}
+
+BATCH_OPT_config::BATCH_OPT_config()
+: 
+tolerance_solver(0.05),
+max_iterations(10000)
+{
+}
+
+TRACKING_config::TRACKING_config()
+: 
+gyro_update_frequency(10.0),
+img_update_frequency(1.0)
+{
+}
+
 
 
 OD::OD()
@@ -100,6 +125,17 @@ bool OD::PingRunningStatus()
     return loop_flag.load();
 }
 
+void OD::ReadConfig(std::string_view config_path)
+{
+    
+    toml::table config = toml::parse_file(config_path);
+
+    auto INIT_config = config["INIT"].as_table();
+    auto BATCH_OPT_config = config["BATCH_OPT"].as_table();
+    auto TRACKING_config = config["TRACKING"].as_table();
+
+
+}
 
 
 void OD::_Initialize()

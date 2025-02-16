@@ -5,6 +5,8 @@ collection_period = 10 # sec
 target_samples = 20 # samples 
 # INT
 max_collection_time = 3600 # sec
+# INT 
+max_downtime_for_restart_in_minutes = 120 # min : difference of time to allow between the current time and the last sample of a previous collection process to restart it
 
 [BATCH_OPT] # Nonlinear Batch-LSQ
 # INT or floating

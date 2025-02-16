@@ -1,4 +1,3 @@
-#include <optional>
 #include "navigation/od.hpp"
 #include "payload.hpp"
 #include "spdlog/spdlog.h"
@@ -8,8 +7,9 @@
 INIT_config::INIT_config()
 : 
 collection_period(10),
-target_samples(20),
-max_collection_time(3600)
+target_samples(20), 
+max_collection_time(3600), // 1 hr
+max_downtime_for_restart(60) // 1hr
 {
 }
 
@@ -73,7 +73,7 @@ void OD::RunLoop()
             case OD_STATE::INIT:
             {
                 SPDLOG_INFO("OD: INIT");
-                _Initialize();
+                _DoInit();
                 break;
             }
 
@@ -127,10 +127,11 @@ bool OD::IsExperimentDone() const
     return experiment_done.load();
 }
 
-bool OD::PingRunningStatus()
+void OD::SwitchState(OD_STATE new_od_state)
 {
-    return loop_flag.load();
+    process_state.store(new_od_state);
 }
+
 
 void OD::ReadConfig(const std::string& config_path)
 {
@@ -161,6 +162,7 @@ void OD::ReadConfig(const std::string& config_path)
     config.init.collection_period = INIT_params->get_as<int64_t>("collection_period")->value_or(config.init.collection_period);
     config.init.target_samples = INIT_params->get_as<int64_t>("target_samples")->value_or(config.init.target_samples);
     config.init.max_collection_time = INIT_params->get_as<int64_t>("max_collection_time")->value_or(config.init.max_collection_time);
+    config.init.max_downtime_for_restart = INIT_params->get_as<int64_t>("max_downtime_for_restart_in_minutes")->value_or(config.init.max_downtime_for_restart);
 
     // BATCH_OPT
     auto BATCH_OPT_params = params["BATCH_OPT"].as_table();
@@ -197,26 +199,47 @@ void OD::LogConfig()
     SPDLOG_INFO("  img_update_frequency: {}", config.tracking.img_update_frequency);
 } 
 
-
-void OD::_Initialize()
+bool OD::PingRunningStatus()
 {
-    // Initialize the OD process
-    // TODO: for now
-    process_state.store(OD_STATE::BATCH_OPT);
+    return loop_flag.load();
 }
 
-void OD::_DoBatchOptimization()
+bool OD::HandleStop()
 {
-    // Perform batch optimization
-    // TODO
-    process_state.store(OD_STATE::TRACKING);
+    bool return_status = false;
+
+    if (!PingRunningStatus())
+    {
+        // Need to save some data and states for the next run
+        return_status = true;
+
+        switch (process_state)
+        {
+
+            case OD_STATE::INIT:
+            {
+                SPDLOG_INFO("Stopping in INIT");
+                // Stop the data collection process 
+                break;
+            }
+
+            case OD_STATE::BATCH_OPT:
+            {
+                SPDLOG_INFO("Stopping in BATCH_OPT");
+                // At this point might be better to just cancel the run (should be fairly fast that we shouldn't need to cache stuff)
+                break;
+            }
+
+            case OD_STATE::TRACKING:
+            {
+                SPDLOG_INFO("Stopping in TRACKING");
+                // Ensure all data has been written
+                break;
+            }   
+
+        }
+    }
+
+    return return_status;
+
 }
-
-
-void OD::_DoTracking()
-{
-    // Perform tracking
-    // TODO
-    process_state.store(OD_STATE::IDLE);
-}
-

@@ -26,6 +26,7 @@ struct INIT_config
     uint32_t collection_period;
     uint32_t target_samples;
     uint32_t max_collection_time;
+    uint32_t max_downtime_for_restart; 
 
     INIT_config();
 };
@@ -81,8 +82,8 @@ private:
     std::mutex mtx_active;
     std::condition_variable cv_active;
 
-    // This must be called frequently to check if the OD process must stop and save its states to disk
-    bool PingRunningStatus(); 
+    void SwitchState(OD_STATE new_od_state);
+
 
     // Configurations
     OD_Config config;
@@ -93,11 +94,25 @@ private:
 
     std::shared_ptr<DatasetManager> dataset_collector;
 
-    
+    // Check if the OD is running
+    bool PingRunningStatus(); 
 
-    void _Initialize();
+    /* 
+    Must be called frequently within the DoXXX function process so the OD process can stop properly and save correctly its states for the next run
+    - Return True if states have been saved and the process must stop 
+    Example usage: 
+        if (HandleStop())
+        {
+            return;
+        }
+    */
+    bool HandleStop();
+
+    // Main running steps for each stages
+    void _DoInit();
     void _DoBatchOptimization();
     void _DoTracking();
+
 
 
 

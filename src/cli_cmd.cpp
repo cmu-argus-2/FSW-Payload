@@ -26,11 +26,12 @@ int main(int argc, char* argv[])
     (void)argc;
     (void)argv;
 
-    const char* fifo_path = IPC_FIFO_PATH; // Use predefined FIFO path
+    const char* fifo_path_in = IPC_FIFO_PATH_IN; // Payload reads from this fifo, external process is writing into it
 
 
     // Create the FIFO if it doesn't exist
-    if (mkfifo(fifo_path, 0666) == -1) {
+    if (mkfifo(fifo_path_in, 0666) == -1) 
+    {
         if (errno != EEXIST) 
         { // Ignore error if FIFO already exists
             std::cerr << "Error creating FIFO: " << strerror(errno) << std::endl;
@@ -39,17 +40,16 @@ int main(int argc, char* argv[])
     }
 
 
-
     // Check if IPC_FIFO is a FIFO
-    if (!is_fifo(fifo_path)) {
-        std::cerr << "Error: " << fifo_path << " is not a FIFO / named pipe." << std::endl;
+    if (!is_fifo(fifo_path_in)) {
+        std::cerr << "Error: " << fifo_path_in << " is not a FIFO / named pipe." << std::endl;
         return 1;
     }
 
-    std::ofstream pipe(fifo_path);
+    std::ofstream pipe(fifo_path_in);
     if (!pipe.is_open()) 
     {
-        std::cerr << "Error: Could not open FIFO " << fifo_path << std::endl;
+        std::cerr << "Error: Could not open FIFO " << fifo_path_in << std::endl;
         return 1;
     }
 

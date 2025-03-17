@@ -1,11 +1,6 @@
 #ifndef NAMED_PIPE_HPP
 #define NAMED_PIPE_HPP
 
-#ifndef IPC_FIFO_PATH
-#define IPC_FIFO_PATH "/tmp/payload_fifo"
-#endif
-
-
 #include <string>
 #include <fstream>
 #include <poll.h>

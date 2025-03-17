@@ -9,7 +9,8 @@
 bool IsFifo(const char *path)
 {
     std::error_code ec;
-    if (!std::filesystem::is_fifo(path, ec)) {
+    if (!std::filesystem::is_fifo(path, ec)) 
+    {
         if (ec) std::cerr << ec.message() << std::endl;
         return false;
     }
@@ -32,9 +33,11 @@ void Set_NonBlocking(int fd)
 }
 
 
-bool ReadLineFromPipe(int fd, std::string& line) {
+bool ReadLineFromPipe(int fd, std::string& line) 
+{
     static std::string buffer; // Buffer to accumulate data
     char chunk[1024];          // Temporary read buffer
+
     // Read data from the file descriptor
     ssize_t bytesRead = read(fd, chunk, sizeof(chunk) - 1);
     if (bytesRead <= 0) 
@@ -46,12 +49,13 @@ bool ReadLineFromPipe(int fd, std::string& line) {
     buffer.append(chunk);
 
     // Find the first newline in the buffer
-    size_t newlinePos = buffer.find('\n');
-    if (newlinePos != std::string::npos) {
+    size_t new_line_pos = buffer.find('\n');
+    if (new_line_pos != std::string::npos) 
+    {
         // Extract the line up to the newline
-        line = buffer.substr(0, newlinePos);
+        line = buffer.substr(0, new_line_pos);
         // Remove the line from the buffer
-        buffer = buffer.substr(newlinePos + 1);
+        buffer = buffer.substr(new_line_pos + 1);
 
         return true;
     }
@@ -66,10 +70,10 @@ NamedPipe::NamedPipe()
 
 bool NamedPipe::Connect()
 {
-    const char* fifo_path = IPC_FIFO_PATH; // Use predefined FIFO path
+    const char* fifo_path_in = IPC_FIFO_PATH_IN; // Payload reads from this fifo, external process is writing into it
 
     // Create the FIFO if it doesn't exist
-    if (mkfifo(fifo_path, 0666) == -1) {
+    if (mkfifo(fifo_path_in, 0666) == -1) {
         if (errno != EEXIST) 
         { // Ignore error if FIFO already exists
             std::cerr << "Error creating FIFO: " << strerror(errno) << std::endl;
@@ -78,23 +82,23 @@ bool NamedPipe::Connect()
     }
 
     // Check if the path is a FIFO and open it directly
-    if (IsFifo(fifo_path)) 
+    if (IsFifo(fifo_path_in)) 
     {
-        pipe_fd = open(fifo_path, O_RDONLY | O_NONBLOCK);
+        pipe_fd = open(fifo_path_in, O_RDONLY | O_NONBLOCK);
         if (pipe_fd >= 0) 
         {
             Set_NonBlocking(pipe_fd);
             _connected = true;
-            SPDLOG_INFO("Connected to FIFO {}", fifo_path);
+            SPDLOG_INFO("Connected to FIFO {}", fifo_path_in);
         } 
         else 
         {
-            SPDLOG_WARN("Error: Could not open FIFO {}. Disabling pipe reading.", fifo_path);
+            SPDLOG_WARN("Error: Could not open FIFO {}. Disabling pipe reading.", fifo_path_in);
         }
     } 
     else 
     {
-        SPDLOG_WARN("Error: {} is not a FIFO / named pipe. Disabling pipe reading.", fifo_path);
+        SPDLOG_WARN("Error: {} is not a FIFO / named pipe. Disabling pipe reading.", fifo_path_in);
     }
 
     return _connected;
@@ -184,7 +188,8 @@ void NamedPipe::RunLoop()
 
     while (_running_loop && _connected)
     {
-        // SPDLOG_INFO("NamedPipe loop running");
+        // SPDLOG_INFO("NamedPipe loop running"); 
+        // TODO: avoid busy waiting here 
         
         // Receive new command
         uint8_t cmd_id;
@@ -255,7 +260,8 @@ bool NamedPipe::ParseCommand(const std::string& command, uint8_t& cmd_id, std::v
         // Check if token is numeric
         for (char c : token) 
         {
-            if (!isdigit(c) && !(c == '-' && &c == &token[0])) { // Allow leading negative sign
+            if (!isdigit(c) && !(c == '-' && &c == &token[0])) 
+            { // Allow leading negative sign
                 is_numeric = false;
                 break;
             }

@@ -175,10 +175,6 @@ void disable_cameras(std::vector<uint8_t>& data)
         std::vector<int> ids;
         ids.reserve(4);
         sys::cameraManager().DisableCameras(ids);
-        for (auto cam_id : ids)
-        {
-            SPDLOG_INFO("Disabled camera {}.", cam_id);
-        }
     }
     else
     {

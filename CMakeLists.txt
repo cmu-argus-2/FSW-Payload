@@ -22,8 +22,10 @@ set(CMAKE_RUNTIME_OUTPUT_DIRECTORY ${CMAKE_SOURCE_DIR}/bin/)
 # Set a compile definition for the executable directory
 add_compile_definitions(EXECUTABLE_DIR=\"${CMAKE_RUNTIME_OUTPUT_DIRECTORY}\")
 
-# Preprocessor definition for the path of the inter-process fifo (command-line interface)
-add_compile_definitions(IPC_FIFO_PATH="/tmp/payload_fifo")
+# Preprocessor definition for the path of the inter-process fifo 
+# This could be a command-line interface, scripts, or another related process destined to control the payload
+add_compile_definitions(IPC_FIFO_PATH_IN="/tmp/payload_fifo_in") # Payload reads from this fifo, external process is writing into it
+add_compile_definitions(IPC_FIFO_PATH_OUT="/tmp/payload_fifo_out") # Payload writes to this fifo, external process is reading from it
 
 ##### FIND THE REQUIRED PACKAGES
 

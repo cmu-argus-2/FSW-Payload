@@ -23,6 +23,7 @@ def is_fifo(path):
     """Check if a path is a named pipe (FIFO)."""
     return os.path.exists(path) and os.path.stat(path).st_mode & 0o170000 == 0o10000
 
+
 def read_responses(fifo_out):
     """Background thread function to read responses from FIFO without blocking."""
     global RUNNING
@@ -48,6 +49,7 @@ def read_responses(fifo_out):
                 pass
 
     os.close(fd)
+
 
 def main():
     global RUNNING
@@ -88,7 +90,5 @@ def main():
     pipe_out.close()
 
 
-
 if __name__ == "__main__":
     sys.exit(main())
-

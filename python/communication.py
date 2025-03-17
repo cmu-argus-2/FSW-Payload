@@ -1,17 +1,19 @@
 # Low-Level Communication layer
 import os
+
 _PCKT_BUF_SIZE = 256
 
-class PayloadComms:
+
+class PayloadCommunicationInterface:
     _connected = False
     _pckt_available = False
     _buffer = bytearray(_PCKT_BUF_SIZE)
 
     def __new__(cls, *args, **kwargs):
-        if cls is PayloadComms:
+        if cls is PayloadCommunicationInterface:
             raise TypeError("PayloadComms is a static class and cannot be instantiated.")
         return super().__new__(cls)
-    
+
     @classmethod
     def connect(cls):
         raise NotImplementedError("Subclass must implement connect()")
@@ -35,4 +37,3 @@ class PayloadComms:
     @classmethod
     def packet_available(cls):
         return cls._pckt_available
-    

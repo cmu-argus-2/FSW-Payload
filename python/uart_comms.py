@@ -1,9 +1,9 @@
 # Low-Level Communication layer - UART
 
-from communication import PayloadComms
+from communication import PayloadCommunicationInterface
 
 
-class PayloadCommsUART(PayloadComms):
+class PayloadUART(PayloadCommunicationInterface):
     _connected = False
     _pckt_available = False
 

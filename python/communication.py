@@ -1,13 +1,7 @@
 # Low-Level Communication layer
 import os
 
-_PCKT_BUF_SIZE = 256
-
-
 class PayloadCommunicationInterface:
-    _connected = False
-    _pckt_available = False
-    _buffer = bytearray(_PCKT_BUF_SIZE)
 
     def __new__(cls, *args, **kwargs):
         if cls is PayloadCommunicationInterface:
@@ -24,7 +18,7 @@ class PayloadCommunicationInterface:
 
     @classmethod
     def is_connected(cls):
-        return cls._connected
+        raise NotImplementedError("Subclass must implement is_connected()")
 
     @classmethod
     def send(cls, pckt):
@@ -36,4 +30,4 @@ class PayloadCommunicationInterface:
 
     @classmethod
     def packet_available(cls):
-        return cls._pckt_available
+        raise NotImplementedError("Subclass must implement packet_available()")

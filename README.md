@@ -58,12 +58,19 @@ The configuration file is located at config/config.toml. Update this file to mod
 
 ## Local interaction with the FSW
 
-As a functional debugging tool, the Payload can be run and controlled locally through a named pipe (FIFO) given to the Payload and the command line interface. For this control mode, the command line interface must be run first:
+As a functional debugging tool, the Payload can be run and controlled locally through a command-line interface, either through the compiled one or the python interface (perfect replica). First, run the main process in CLI mode:
 
 ```bash
-./bin/CLI_CMD
 ./bin/PAYLOAD [optional: <communication-interface: [UART, CLI]>] // default to UART 
 ```
+In another terminal, launch either the compiled CLI or its python equivalent (perfect replica):
+```bash
+./bin/CLI_CMD
+or
+python python/cli_cmd.py
+```
+
+Under the hood, both processes communicates through 2 distinct named pipes (FIFO).
 
 ## Command-based paradigm 
 

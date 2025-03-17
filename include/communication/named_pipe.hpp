@@ -26,7 +26,8 @@ public:
 
 private:
 
-    int pipe_fd;
+    int pipe_fd_in;
+    int pipe_fd_out;
     struct pollfd pfd;
 
     bool ParseCommand(const std::string& command, uint8_t& cmd_id, std::vector<uint8_t>& data);

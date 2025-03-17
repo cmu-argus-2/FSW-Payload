@@ -71,34 +71,49 @@ NamedPipe::NamedPipe()
 bool NamedPipe::Connect()
 {
     const char* fifo_path_in = IPC_FIFO_PATH_IN; // Payload reads from this fifo, external process is writing into it
+    const char* fifo_path_out = IPC_FIFO_PATH_OUT; // Payload writes to this fifo, external process is reading from it
 
-    // Create the FIFO if it doesn't exist
-    if (mkfifo(fifo_path_in, 0666) == -1) {
-        if (errno != EEXIST) 
-        { // Ignore error if FIFO already exists
-            std::cerr << "Error creating FIFO: " << strerror(errno) << std::endl;
-            return 1;
-        }
+    // Create the FIFOs if they don't exist
+    if (mkfifo(fifo_path_in, 0666) == -1 && errno != EEXIST)
+    {
+        SPDLOG_ERROR("Error creating FIFO: {}", strerror(errno));
+        return 1;
     }
 
-    // Check if the path is a FIFO and open it directly
+    if (mkfifo(fifo_path_out, 0666) == -1 && errno != EEXIST)
+    {
+        SPDLOG_ERROR("Error creating FIFO: {}", strerror(errno));
+        return 1;
+    }
+
+    // Open the input FIFO for reading
     if (IsFifo(fifo_path_in)) 
     {
-        pipe_fd = open(fifo_path_in, O_RDONLY | O_NONBLOCK);
-        if (pipe_fd >= 0) 
+        pipe_fd_in = open(fifo_path_in, O_RDONLY | O_NONBLOCK);
+        if (pipe_fd_in >= 0) 
         {
-            Set_NonBlocking(pipe_fd);
+            Set_NonBlocking(pipe_fd_in);
             _connected = true;
             SPDLOG_INFO("Connected to FIFO {}", fifo_path_in);
         } 
         else 
         {
-            SPDLOG_WARN("Error: Could not open FIFO {}. Disabling pipe reading.", fifo_path_in);
+            SPDLOG_ERROR("Could not open FIFO {}. Disabling pipe reading.", fifo_path_in);
         }
-    } 
-    else 
+    }
+
+    // Open the output FIFO for writing (NEW)
+    if (IsFifo(fifo_path_out)) 
     {
-        SPDLOG_WARN("Error: {} is not a FIFO / named pipe. Disabling pipe reading.", fifo_path_in);
+        pipe_fd_out = open(fifo_path_out, O_RDWR | O_NONBLOCK); // write-only requires at least a reader and we don't want that assumption
+        if (pipe_fd_out >= 0) 
+        {
+            SPDLOG_INFO("Connected to FIFO {}", fifo_path_out);
+        } 
+        else 
+        {
+            SPDLOG_ERROR("Could not open FIFO {}. Disabling pipe writing.", fifo_path_out);
+        }
     }
 
     return _connected;
@@ -107,44 +122,25 @@ bool NamedPipe::Connect()
 
 void NamedPipe::Disconnect()
 {
-    if (pipe_fd >= 0) 
+    if (pipe_fd_in >= 0) 
     {
-        close(pipe_fd);
-        pipe_fd = -1;
+        close(pipe_fd_in);
+        pipe_fd_in = -1;
+    }
+    if (pipe_fd_out >= 0) 
+    {
+        close(pipe_fd_out);
+        pipe_fd_out = -1;
     }
     _connected = false;
-    SPDLOG_WARN("Disconnected from FIFO");
+    SPDLOG_WARN("Disconnected from FIFOs");
 }
-
-/*
-bool NamedPipe::Receive(uint8_t& cmd_id, std::vector<uint8_t>& data)
-{
-
-    int ret = poll(&pfd, 1, 100); // Wait up to 100 ms
-    bool flag = false;
-    
-    if (ret > 0)
-    {
-        std::string command;
-        std::getline(pipe, command);
-        ParseCommand(command, cmd_id, data);
-        flag = true;
-    } // == 0 means no data to read
-    else if (ret < 0)
-    {
-        SPDLOG_ERROR("Error polling FIFO: {}", strerror(errno));
-    }
-
-    return flag;
-
-}
-*/
 
 
 bool NamedPipe::Receive(uint8_t& cmd_id, std::vector<uint8_t>& data) {
     std::string command;
     timing::SleepMs(40); // Obviously not the best way to do this and limits the data rate (also TX)
-    bool LineReceived = ReadLineFromPipe(pipe_fd, command); // Use custom getline
+    bool LineReceived = ReadLineFromPipe(pipe_fd_in, command); // Use custom getline
     // SPDLOG_INFO("Received command?: {}", LineReceived);
 
     if (LineReceived) 
@@ -164,12 +160,31 @@ bool NamedPipe::Receive(uint8_t& cmd_id, std::vector<uint8_t>& data) {
 
 bool NamedPipe::Send(const std::vector<uint8_t>& data)
 {
-    // Log data to console - TODO in the meantime
+    if (pipe_fd_out < 0) 
+    {
+        SPDLOG_ERROR("Write FIFO is not open, cannot send data.");
+        return false;
+    }
+
+
+    // Convert data to a space-separated string
     std::ostringstream oss;
-    for (uint8_t byte : data) {
+    for (uint8_t byte : data) 
+    {
         oss << static_cast<int>(byte) << " ";
     }
-    SPDLOG_INFO("Sending data: {}", oss.str());
+    //oss << "\n";  // append newline for correct `readline()` behavior
+
+    // write to FIFO
+    ssize_t bytes_written = write(pipe_fd_out, oss.str().c_str(), oss.str().size());
+
+    if (bytes_written == -1) 
+    {
+        SPDLOG_ERROR("Failed to write to FIFO {}: {}", IPC_FIFO_PATH_OUT, strerror(errno));
+        return false;
+    }
+
+    SPDLOG_INFO("Sent data: {}", oss.str());
     return true;
 }
 
@@ -178,8 +193,15 @@ bool NamedPipe::Send(const std::vector<uint8_t>& data)
 void NamedPipe::RunLoop()
 {
     _running_loop = true;
-    pfd.fd = pipe_fd; // File descriptor for the pipe
-    pfd.events = POLLIN; // Monitor for data to read
+
+
+    struct pollfd pfds[2];
+    pfds[0].fd = pipe_fd_in;  // Read FIFO
+    pfds[0].events = POLLIN;  // Wait for data to read
+
+    pfds[1].fd = pipe_fd_out; // Write FIFO
+    pfds[1].events = POLLOUT; // Wait for availability to write
+
 
     if (!_connected) 
     {
@@ -191,31 +213,45 @@ void NamedPipe::RunLoop()
         // SPDLOG_INFO("NamedPipe loop running"); 
         // TODO: avoid busy waiting here 
         
-        // Receive new command
-        uint8_t cmd_id;
-        std::vector<uint8_t> data;
-        bool recv = Receive(cmd_id, data);
+        int ret = poll(pfds, 2, 1000); // wait up to 1000ms for events
 
-        if (recv)
+        if (ret > 0)
         {
-            sys::payload().AddCommand(cmd_id, data);
-        } 
-
-        // Transmit messages
-        while (!sys::payload().GetTxQueue().IsEmpty())
-        {
-            std::shared_ptr<Message> msg = sys::payload().GetTxQueue().GetNextMsg();
-
-            bool succ = Send(msg->packet);
-            if (succ)
+            // if somethign to read
+            if (pfds[0].revents & POLLIN) 
             {
-                SPDLOG_INFO("Transmitted message with ID: {}", msg->id);
-            } 
-            else
-            {
-                // Need some retry mechanism and fault handling
-                SPDLOG_WARN("Failed to transmit message with ID: {}", msg->id);
+                uint8_t cmd_id;
+                std::vector<uint8_t> data;
+                bool recv = Receive(cmd_id, data);
+                if (recv)
+                {
+                    sys::payload().AddCommand(cmd_id, data);
+                }
             }
+
+            // check FIFO is ready for writing + TX queue has something for us
+            if (pfds[1].revents & POLLOUT && !sys::payload().GetTxQueue().IsEmpty()) 
+            {
+                std::shared_ptr<Message> msg = sys::payload().GetTxQueue().GetNextMsg();
+                bool succ = Send(msg->packet);
+                if (succ)
+                {
+                    SPDLOG_INFO("Transmitted message with ID: {}", msg->id);
+                } 
+                else
+                {
+                    // Need some retry mechanism and fault handling
+                    SPDLOG_WARN("Failed to transmit message with ID: {}", msg->id);
+                }
+            }
+        }
+        else if (ret == 0) 
+        {
+            continue; // most likely timeout
+        }
+        else 
+        {
+            SPDLOG_ERROR("poll() error: {}", strerror(errno));
         }
 
     }

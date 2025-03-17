@@ -63,11 +63,11 @@ target_link_libraries(${PROJECT_NAME}
 
 
 ##### COMMAND-LINE INTERFACE
-
+find_package(Threads REQUIRED)
 find_library(READLINE_LIBRARY readline)
 add_executable(CLI_CMD src/cli_cmd.cpp)
 if (READLINE_LIBRARY)
-    target_link_libraries(CLI_CMD PRIVATE ${READLINE_LIBRARY})
+    target_link_libraries(CLI_CMD PRIVATE ${READLINE_LIBRARY} Threads::Threads)
 else()
     message(FATAL_ERROR "Readline library not found. Please install libreadline-dev.")
 endif()

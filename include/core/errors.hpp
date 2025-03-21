@@ -23,6 +23,16 @@ enum class ErrorCode // Error codes
     // Camera subsystem
     // Telemetry
     // Communication
+
+    // UART
+    UART_OPEN_FAILED,
+    UART_OPEN_FAILED_AFTER_RETRY,
+    UART_GETATTR_FAILED,
+    UART_CONFIG_FAILED,
+    
+
+
+
     // Neural Engine 
     // OD
 

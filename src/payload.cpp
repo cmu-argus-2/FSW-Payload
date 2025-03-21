@@ -263,7 +263,6 @@ void Payload::StopThreadPool()
 
 void Payload::StartCommunicationThread()
 {
-    
     communication->Connect();
     communication_thread = std::thread(&Communication::RunLoop, communication.get());
     SPDLOG_INFO("Communication thread started");

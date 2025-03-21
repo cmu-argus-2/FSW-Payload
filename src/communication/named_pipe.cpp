@@ -73,6 +73,13 @@ bool NamedPipe::Connect()
     const char* fifo_path_in = IPC_FIFO_PATH_IN; // Payload reads from this fifo, external process is writing into it
     const char* fifo_path_out = IPC_FIFO_PATH_OUT; // Payload writes to this fifo, external process is reading from it
 
+    if (_connected) 
+    {
+        SPDLOG_WARN("NamedPipe already connected.");
+        return true;
+    }
+
+
     // Create the FIFOs if they don't exist
     if (mkfifo(fifo_path_in, 0666) == -1 && errno != EEXIST)
     {

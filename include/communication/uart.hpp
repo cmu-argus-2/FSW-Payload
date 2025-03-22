@@ -29,11 +29,13 @@ private:
     bool port_opened = false;
     int failed_open_counter = 0;
 
-
+    static constexpr uint8_t READ_BUF[INCOMING_PCKT_SIZE] = {0};
+    static constexpr uint8_t WRITE_BUF[OUTGOING_PCKT_SIZE] = {0};
 
     void OpenPort();
     void ConfigurePort();
     void ClearUpLink(); // flushes data received but not read and data written but not transmitted
+    bool FillWriteBuffer(const std::vector<uint8_t>& data);
 
 
 }

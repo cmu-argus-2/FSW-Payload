@@ -5,6 +5,10 @@
 #include <cstdint>
 #include <atomic>
 
+// Asymmetric sizes for send and receive buffers
+static constexpr uint8_t OUTGOING_PCKT_SIZE = 250;
+static constexpr uint8_t INCOMING_PCKT_SIZE = 32;
+
 
 // Abstract class for communication interfaces
 class Communication

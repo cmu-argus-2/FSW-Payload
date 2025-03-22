@@ -89,8 +89,6 @@ int main(int argc, char** argv)
         // comms_interface = std::make_unique<UARTCommunication>();
     }
     
-   
-    
     Payload& payload = Payload::CreateInstance(std::move(config), std::move(comms_interface));
     payload.Initialize();
     payload.Run(); // Starts the main loop

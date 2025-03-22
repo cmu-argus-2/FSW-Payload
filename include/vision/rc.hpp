@@ -20,9 +20,11 @@ Currently supported regions:
     '54S': 'Tokyo to Hachinohe, Japan',
     '54T': 'Sapporo, Japan'
 */
-
+#if NN_ENABLED
 #include <torch/script.h> 
 #include <torch/torch.h>
+#endif // NN_ENABLED
+
 #include <string>
 
 #define NUM_CLASSES 16
@@ -40,7 +42,7 @@ namespace RegionMapping
 }
 
 
-
+#if NN_ENABLED
 bool DetectGPU();
 
 // Verify there is only one model file in the given directory
@@ -60,5 +62,6 @@ private:
     void load_model(const std::string& model_path);
     void set_device();
 };
+#endif // NN_ENABLED
 
 #endif // RC_HPP

@@ -36,22 +36,15 @@ In your terminal:
     source ~/.bashrc
     ```
 
-Build the project
+Build the project using the helper script:
 
 ```bash
-./build.sh
+./build.sh [Debug|Release] [disable-nn]
 ./bin/PAYLOAD [optional: <communication-interface: [UART, CLI]>]
 ```
 
-or 
+All binaries will appear in the bin folder.
 
-```bash
-mkdir build
-cd build
-cmake .. && make
-cd ..
-./bin/PAYLOAD [optional: <communication-interface: [UART, CLI]>] // default to UART 
-```
 ## Configuration
 
 The configuration file is located at config/config.toml. Update this file to modify system parameters.

@@ -52,7 +52,7 @@ namespace RegionMapping
     }
 }
 
-
+#if NN_ENABLED
 bool DetectGPU() {
     return torch::cuda::is_available();
 }
@@ -106,3 +106,5 @@ torch::Tensor RegionClassifierModel::run_inference(torch::Tensor input) {
     input = input.to(device);  
     return model.forward({input}).toTensor();
 }
+
+#endif // NN_ENABLED

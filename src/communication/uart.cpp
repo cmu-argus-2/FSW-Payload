@@ -1,16 +1,18 @@
 #include "communication/uart.hpp"
 
+#include <sys/stat.h>
+#include <sys/types.h>
 #include <fcntl.h>   // File control options
 #include <errno.h>   // Error number definitions
 
+#include "payload.hpp"
 #include "core/errors.hpp"
 
 #include "spdlog/spdlog.h"
 
 
-static constexpr speed_t BAUD_RATE = B115200;
-static constexpr const char* PORT_NAME = "/dev/ttyTHS0"; // TODO: CONFIG File
-
+static std::array<uint8_t, INCOMING_PCKT_SIZE> READ_BUF = {0};
+static std::array<uint8_t, OUTGOING_PCKT_SIZE> WRITE_BUF = {0};
 
 
 UART::UART()
@@ -27,7 +29,7 @@ void UART::OpenPort()
         if (serial_port_fd == -1) 
         {
             SPDLOG_ERROR("Failed to open UART port {}: {}", PORT_NAME, strerror(errno));
-            log_error(EC::UART_OPEN_FAILED);
+            LogError(EC::UART_OPEN_FAILED);
             failed_open_counter++;
         }
         else
@@ -40,7 +42,7 @@ void UART::OpenPort()
     if (!port_opened)
     {
         SPDLOG_ERROR("Failed to open UART port after 3 attempts. Exiting.");
-        log_error(EC::UART_OPEN_FAILED_AFTER_RETRY);
+        LogError(EC::UART_OPEN_FAILED_AFTER_RETRY);
         // exit(1); // TODO: Can afford to do this when the superloop is implemented
     }
     
@@ -72,7 +74,7 @@ void UART::ConfigurePort()
         if(tcgetattr(serial_port_fd, &tty) != 0) // get current attributes
         {
             SPDLOG_ERROR("Error from tcgetattr: {}", strerror(errno));
-            log_error(EC::UART_GETATTR_FAILED);
+            LogError(EC::UART_GETATTR_FAILED);
             continue; // retry
         }
 
@@ -116,10 +118,10 @@ void UART::ConfigurePort()
         tty.c_cc[VTIME] = 10; // timeout in deciseconds
         tty.c_cc[VMIN] = 0;
 
-        if (tcsetattr(serial_port, TCSANOW, &tty)) // apply changes
+        if (tcsetattr(serial_port_fd, TCSANOW, &tty)) // apply changes
         {
             SPDLOG_ERROR("Error from tcsetattr: {}", strerror(errno));
-            log_error(EC::UART_SETATTR_FAILED);
+            LogError(EC::UART_SETATTR_FAILED);
             continue; // retry
         }
 
@@ -143,7 +145,7 @@ bool UART::FillWriteBuffer(const std::vector<uint8_t>& data)
     if (data.size() > OUTGOING_PCKT_SIZE)
     {
         SPDLOG_ERROR("Data size exceeds outgoing packet size.");
-        log_error(EC::UART_WRITE_BUFFER_OVERFLOW);
+        LogError(EC::UART_WRITE_BUFFER_OVERFLOW);
         return false;
     }
     // Clear the buffer
@@ -154,18 +156,18 @@ bool UART::FillWriteBuffer(const std::vector<uint8_t>& data)
 }
 
 
-void UART::Send(const std::vector<uint8_t>& data)
+bool UART::Send(const std::vector<uint8_t>& data)
 {
     if (!port_opened)
     {
         SPDLOG_ERROR("UART port is not open, cannot send data.");
-        log_error(EC::UART_NOT_OPEN);
-        return;
+        LogError(EC::UART_NOT_OPEN);
+        return false;
     }
 
     if (!FillWriteBuffer(data))
     {
-        return;
+        return false;
     }
 
     ssize_t bytes_written = write(serial_port_fd, WRITE_BUF.data(), OUTGOING_PCKT_SIZE);
@@ -173,31 +175,33 @@ void UART::Send(const std::vector<uint8_t>& data)
     if (bytes_written == -1 || bytes_written != OUTGOING_PCKT_SIZE) 
     {
         SPDLOG_ERROR("Failed to write to UART port {}: {}", PORT_NAME, strerror(errno));
-        log_error(EC::UART_FAILED_WRITE);
-        return;
+        LogError(EC::UART_FAILED_WRITE);
+        return false;
     }
 
-    SPDLOG_INFO("Sent data: {}", data);
+    SPDLOG_INFO("Sent data of size {} !", bytes_written);
+    return true;
 }
 
-void UART::Receive(uint8_t& cmd_id, std::vector<uint8_t>& data)
+bool UART::Receive(uint8_t& cmd_id, std::vector<uint8_t>& data)
 {
     // Non-blocking 
     ssize_t bytes_read = read(serial_port_fd, READ_BUF.data(), INCOMING_PCKT_SIZE);
 
     if (bytes_read <= 0) // No data or error
     {
-        return;
+        return false;
     } 
 
     if (bytes_read < INCOMING_PCKT_SIZE) 
     {
-        log_error(EC::UART_INCOMPLETE_READ);
-        return;
+        LogError(EC::UART_INCOMPLETE_READ);
+        return false;
     }
 
     cmd_id = READ_BUF[0];
     data.assign(READ_BUF.begin() + 1, READ_BUF.begin() + bytes_read);
+    return true;
 }
 
 

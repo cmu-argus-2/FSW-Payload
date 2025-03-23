@@ -57,7 +57,16 @@ bool RestartTegrastatsProcessor()
     int result = std::system(cmd.c_str());
     timing::SleepMs(300); // Wait for the process to start and shared memory to be created
 
-    return (result == 0);
+    if (result == 0)
+    {
+        SPDLOG_INFO("TM Tegrastats Processor started successfully");
+        return true;
+    }
+    else
+    {
+        SPDLOG_ERROR("Failed to start TM Tegrastats Processor");
+        return false;
+    }
 }
 
 

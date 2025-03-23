@@ -13,6 +13,7 @@ set(CMAKE_CXX_COMPILER_LAUNCHER ccache)
 
 ##### COMPILE DEFINITIONS
 # Executable directory
+set(CMAKE_RUNTIME_OUTPUT_DIRECTORY ${CMAKE_SOURCE_DIR}/bin/)
 add_compile_definitions(EXECUTABLE_DIR=\"${CMAKE_RUNTIME_OUTPUT_DIRECTORY}\")
 # Preprocessor definition for the path of the inter-process fifo 
 # This could be a command-line interface, scripts, or another related process destined to control the payload

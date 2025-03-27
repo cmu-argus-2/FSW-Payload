@@ -23,10 +23,11 @@ class CommandID:
     DEBUG_STOP_DISPLAY = 0x0F
 
 class ACK:
-    ACK_SUCCESS = 0x0A
-    ACK_ERROR = 0x0B # Temp
+    SUCCESS = 0x0A
+    ERROR = 0x0B 
 
 class ErrorCodes:
     OK = 0
     INVALID_COMMAND = 1
-    INVALID_PACKET = 2
+    COMMAND_ERROR_EXECUTION = 2
+    INVALID_RESPONSE = 3

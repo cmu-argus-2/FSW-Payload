@@ -42,6 +42,12 @@ class PayloadController:
 
     communication_interface = None
 
+    # Contains the last command IDs sent to the Payload
+    last_cmds_sent = []
+    
+    # No response coutner
+    no_resp_counter = 0
+
     @classmethod
     def initialize(cls, communication_interface):
         cls.communication_interface = communication_interface
@@ -50,6 +56,21 @@ class PayloadController:
     @classmethod
     def deinitialize(cls): 
         cls.communication_interface.disconnect()
+
+    @classmethod
+    def did_we_send_a_command(cls):
+        return len(cls.last_cmds_sent) > 0
+
+    @classmethod
+    def collect_response(cls):
+        pass
+
+    @classmethod
+    def receive_response(cls):
+        resp = cls.communication_interface.receive()
+        if resp:
+            return Decoder.decode(resp)
+        return None
 
     @classmethod 
     def ping(cls):
@@ -62,8 +83,15 @@ class PayloadController:
 
     @classmethod
     def shutdown(cls):
+        # Simply send the shutdown command
         pass
 
     @classmethod
     def request_telemetry(cls):
+        pass
+
+    @classmethod 
+    def reboot(cls):
+        # This is an expensive and drastic operation on the HW so must be limited to strict necessity
+        # Preferable after a shutdown command
         pass

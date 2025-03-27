@@ -1,8 +1,8 @@
 """
 Low-Level Communication layer - Named Pipe (FIFO)"
 
-This is the low-level communication layer for the Payload process using named pipes (FIFO). 
-This is used in lieu of of UART for Software-in-the-Loop (SIL) testing and local test 
+This is the low-level communication layer for the Payload process using named pipes (FIFO).
+This is used in lieu of of UART for Software-in-the-Loop (SIL) testing and local test
 scripts (on the host device) with the Payload.
 
 Author: Ibrahima Sory Sow
@@ -75,10 +75,10 @@ class PayloadIPC(PayloadCommunicationInterface):  # needed for local testing and
 
         try:
             # Convert bytearray to a hex string representation
-            #cls._pipe_in.write(pckt.hex() + "\n") # Append newline for FIFO compatibility
+            # cls._pipe_in.write(pckt.hex() + "\n") # Append newline for FIFO compatibility
             # NOTE: this is just for ease of piping data. The Payload in this mode decode the string to bytes
             # and the actual UART communication is done with raw bytes
-            #cls._pipe_in.flush()
+            # cls._pipe_in.flush()
 
             # Convert each byte to its integer string representation and join with spaces
             byte_str = " ".join(str(b) for b in pckt) + "\n"  # Ensure newline for FIFO compatibility
@@ -109,7 +109,7 @@ class PayloadIPC(PayloadCommunicationInterface):  # needed for local testing and
                         # Decode bytes to string and split into space-separated values
                         ascii_str = data.decode().strip()
                         num_list = ascii_str.split()  # Split by spaces
-                        
+
                         # Convert each ASCII number string to an integer byte
                         byte_values = bytearray(int(num) for num in num_list)
 
@@ -120,10 +120,11 @@ class PayloadIPC(PayloadCommunicationInterface):  # needed for local testing and
             print(f"[ERROR] Failed to read from FIFO: {e}")
 
         return bytearray()  # No data available
+
     @classmethod
     def is_connected(cls) -> bool:
         return cls._connected
-    
+
     @classmethod
     def packet_available(cls) -> bool:
         """Checks if a packet is available to read."""
@@ -137,6 +138,7 @@ class PayloadIPC(PayloadCommunicationInterface):  # needed for local testing and
             print(f"[ERROR] Failed to check FIFO: {e}")
             return False
 
+
 if __name__ == "__main__":
 
     import time
@@ -148,7 +150,7 @@ if __name__ == "__main__":
     if PayloadIPC.is_connected():
         print("Connected.")
 
-    PayloadIPC.send(bytearray([0x03])) # Request telemetry data
+    PayloadIPC.send(bytearray([0x03]))  # Request telemetry data
     # PayloadIPC.send(bytearray([0x07,0x01, 0x00, 0x02, 0x00, 0x05])) # Request data capture every 2sec for 5 samples
 
     time.sleep(0.5)
@@ -159,6 +161,6 @@ if __name__ == "__main__":
 
     response = PayloadIPC.receive()
     if response:
-        print(f"Received: {response.decode()}")
-
+        print(f"Received packet of size {len(response)}: {response}")
+        # Note the actual packet size is different from the one contained in response
     PayloadIPC.disconnect()

@@ -1,6 +1,7 @@
 import time 
 from controller import PayloadController
 from ipc_comms import PayloadIPC
+from definitions import PayloadTM
 
 
 if __name__ == '__main__':
@@ -25,7 +26,6 @@ if __name__ == '__main__':
         print("[INFO] Sending ping...")
 
         resp = controller.ping()
-        time.sleep(0.1)
 
         if resp:
             counter += 1
@@ -35,6 +35,18 @@ if __name__ == '__main__':
 
         time.sleep(0.5)
         print(f"[INFO] {counter}/{i} ping(s) succeeded.")
+
+    # Testing telemetry request
+    print("[INFO] Requesting telemetry...")
+    controller.request_telemetry()
+
+    resp = controller.receive_response()
+    print(resp)
+    if resp:
+        print("[INFO] Telemetry received.")
+        PayloadTM.print()
+
+    controller.shutdown()
 
     print("[INFO] Done.")
     controller.deinitialize()

@@ -4,6 +4,7 @@ Payload Commands and Responses Definitions
 Author: Ibrahima Sory Sow
 """
 
+
 class CommandID:
     PING_ACK = 0x00
     SHUTDOWN = 0x01
@@ -22,12 +23,16 @@ class CommandID:
     DEBUG_DISPLAY_CAMERA = 0x0E
     DEBUG_STOP_DISPLAY = 0x0F
 
+
 class ACK:
     SUCCESS = 0x0A
-    ERROR = 0x0B 
+    ERROR = 0x0B
+
 
 class ErrorCodes:
+    # Contains host's error codes
     OK = 0
     INVALID_COMMAND = 1
     COMMAND_ERROR_EXECUTION = 2
     INVALID_RESPONSE = 3
+    TIMEOUT_SHUTDOWN = 4

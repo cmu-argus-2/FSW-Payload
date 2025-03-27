@@ -1,6 +1,6 @@
-# Payload Flight Software for Argus-1
+# Payload Flight Software for Argus
 
-This repository contains the Flight Software (FSW) written for the Jetson Orin Nano (8GB) and its custom carrier board. Argus-1 is a technology demonstration mission focused on vision-based orbit determination.
+This repository contains the Flight Software (FSW) written for the Jetson Orin Nano (8GB) and its custom carrier board. Argus is a technology demonstration mission focused on vision-based orbit determination.
 
 ## Install instructions 
 

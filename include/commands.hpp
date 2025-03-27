@@ -8,7 +8,7 @@
 #include <string>
 #include <functional>
 
-#define PING_VALUE 0x60
+#define PING_RESP_VALUE 0x60
 
 // Command function type
 typedef std::function<void(std::vector<uint8_t>&)> CommandFunction;

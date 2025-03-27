@@ -86,7 +86,7 @@ void SerializeToBytes(uint16_t value, std::vector<uint8_t>& output)
 std::shared_ptr<Message> CreateSuccessAckMessage(CommandID::Type id)
 {
     auto msg = std::make_shared<Message>(id, 1);
-    msg->AddToPacket(SUCCESS_FLAG);
+    msg->AddToPacket(ACK_SUCCESS);
 
     assert(msg->VerifyPacketSerialization() && ("Packet serialization verification failed for CommandID: " + std::to_string(static_cast<int>(id))).c_str());
 
@@ -97,7 +97,7 @@ std::shared_ptr<Message> CreateSuccessAckMessage(CommandID::Type id)
 std::shared_ptr<Message> CreateErrorAckMessage(CommandID::Type id, uint8_t error_code)
 {
     auto msg = std::make_shared<Message>(id, 2);
-    msg->AddToPacket(ERROR_FLAG);
+    msg->AddToPacket(ACK_ERROR);
     msg->AddToPacket(error_code);
 
     assert(msg->VerifyPacketSerialization() && ("Packet serialization verification failed for CommandID: " + std::to_string(static_cast<int>(id))).c_str());

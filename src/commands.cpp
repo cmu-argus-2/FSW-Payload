@@ -56,7 +56,7 @@ void ping_ack(std::vector<uint8_t>& data)
     (void)data;
     SPDLOG_INFO("Received PING_ACK");
 
-    std::vector<uint8_t> transmit_data = {PING_VALUE};
+    std::vector<uint8_t> transmit_data = {PING_RESP_VALUE};
     auto msg = CreateMessage(CommandID::PING_ACK, transmit_data);
     sys::payload().TransmitMessage(msg);
 
@@ -69,7 +69,7 @@ void shutdown(std::vector<uint8_t>& data)
     SPDLOG_INFO("Initiating Payload shutdown..");
     sys::payload().Stop();
 
-    auto msg = CreateSuccessAckMessage(CommandID::SHUTDOWN);
+    auto msg = CreateSuccessAc kMessage(CommandID::SHUTDOWN);
     sys::payload().TransmitMessage(msg);
     
     sys::payload().SetLastExecutedCmdID(CommandID::SHUTDOWN);

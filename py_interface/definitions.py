@@ -23,8 +23,8 @@ class CommandID:
     DEBUG_STOP_DISPLAY = 0x0F
 
 class ACK:
-    SUCCESS_FLAG = 0x0A
-    ERROR_FLAG = 0x0B # Temp
+    ACK_SUCCESS = 0x0A
+    ACK_ERROR = 0x0B # Temp
 
 class ErrorCodes:
     OK = 0

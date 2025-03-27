@@ -12,10 +12,8 @@
 #define TX_PRIORITY_1 1
 #define TX_PRIORITY_2 2
 
-#define PING_VALUE 0x60
-
-#define SUCCESS_FLAG 0x0A
-#define ERROR_FLAG 0x0B
+#define ACK_SUCCESS 0x0A
+#define ACK_ERROR 0x0B
 
 // Base message structure
 struct Message 

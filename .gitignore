@@ -231,3 +231,6 @@ Testing/
 data/
 bin/
 logs/
+
+# ignore install folder
+deps/

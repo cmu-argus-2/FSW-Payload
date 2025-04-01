@@ -13,6 +13,11 @@ TODO
 - [Torch](https://pytorch.org/get-started/locally/) - Deep learning (In process of removal :) )
 - [GTest](https://github.com/google/googletest) - testing framework
 
+```bash
+sudo chmod +x install_deps.sh build.sh run.sh 
+./install_deps.sh
+```
+
 ## Build instructions
 
 Give permissions to both scripts 

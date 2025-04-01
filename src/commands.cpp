@@ -69,7 +69,7 @@ void shutdown(std::vector<uint8_t>& data)
     SPDLOG_INFO("Initiating Payload shutdown..");
     sys::payload().Stop();
 
-    auto msg = CreateSuccessAc kMessage(CommandID::SHUTDOWN);
+    auto msg = CreateSuccessAckMessage(CommandID::SHUTDOWN);
     sys::payload().TransmitMessage(msg);
     
     sys::payload().SetLastExecutedCmdID(CommandID::SHUTDOWN);
@@ -262,7 +262,7 @@ void start_capture_images_periodically(std::vector<uint8_t>& data)
     DatasetType dataset_type = static_cast<DatasetType>(data[0]);
     double period = static_cast<double>((data[1] << 8) | data[2]);
     uint16_t nb_frames = (data[3] << 8) | data[4];
-    SPDLOG_INFO("Starting dataset collection (type {}) for {} frames at a period of {} seconds.", dataset_type, nb_frames, period);
+    SPDLOG_INFO("Starting dataset collection (type {}) for {} frames at a period of {} seconds.", static_cast<uint8_t>(dataset_type), nb_frames, period);
 
     try
     {

@@ -164,7 +164,7 @@ void Camera::HandleErrors(CAM_ERROR error)
     }
 
     consecutive_error_count++;
-    SPDLOG_ERROR("CAM{}: Error occurred: {}", cam_id, last_error);
+    SPDLOG_ERROR("CAM{}: Error occurred: {}", cam_id, static_cast<uint8_t>(last_error));
 
     /*if (consecutive_error_count >= MAX_CONSECUTIVE_ERROR_COUNT) {
         cam_status = CAM_STATUS::DISABLED;

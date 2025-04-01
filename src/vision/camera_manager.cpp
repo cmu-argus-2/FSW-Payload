@@ -147,7 +147,7 @@ void CameraManager::RunLoop()
             }
 
             default:
-                SPDLOG_WARN("Unknown capture mode: {}", capture_mode.load());
+                SPDLOG_WARN("Unknown capture mode: {}", static_cast<uint8_t>(capture_mode.load()));
                 break;
         }
         

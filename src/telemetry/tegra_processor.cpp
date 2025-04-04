@@ -46,7 +46,6 @@ int main(int argc, char* argv[])
 {
 
     TegraTM* shared_frame; // Shared memory frame
-    memset(shared_frame, 0, sizeof(TegraTM));
     RegexContainer regexes; // Regular expression container
 
 

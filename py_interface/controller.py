@@ -10,11 +10,11 @@ Author: Ibrahima Sory Sow
 
 import time
 
-from definitions import CommandID, ErrorCodes
+from definitions import CommandID, ErrorCodes, ExternalRequest, PayloadTM
 from protocol import Decoder, Encoder
 
 _PING_RESP_VALUE = 0x60
-
+_TELEMETRY_FREQUENCY = 0.2  # seconds
 
 class PayloadState:  # Only from the host perspective
     OFF = 0  # Fully powered down
@@ -45,6 +45,18 @@ class PayloadController:
     TIMEOUT_SHUTDOWN = 10  # 10 seconds
     time_we_sent_shutdown = 0
 
+    # Current request
+    current_request = ExternalRequest.NO_ACTION
+    timestamp_request = 0
+
+    # Last telemetry received
+    _prev_tm_time = time.monotonic()
+    _now = time.monotonic()
+    telemetry_period = 1 / _TELEMETRY_FREQUENCY 
+
+
+
+
     @classmethod
     def initialize(cls, communication_interface):
         cls.communication_interface = communication_interface
@@ -55,16 +67,36 @@ class PayloadController:
         cls.communication_interface.disconnect()
 
     @classmethod
-    def did_we_send_a_command(cls):
+    def _did_we_send_a_command(cls):
         return len(cls.last_cmds_sent) > 0
+
+    @classmethod 
+    def add_request(cls, request: ExternalRequest) -> bool:
+        if not isinstance(request, int) or request < ExternalRequest.NO_ACTION or request >= ExternalRequest.INVALID:
+            # Invalid request
+            # log error
+            return False
+        cls.current_request = request
+        cls.timestamp_request = time.monotonic()
+
 
     @classmethod
     def process_external_requests(cls):
-        pass
+        if cls.current_request != ExternalRequest.NO_ACTION:
+            # Process the request
+            # switch case TODO
+            pass
+
+    @classmethod
+    def _switch_to_state(cls, new_state: PayloadState):
+        if new_state != cls.state:
+            # Log state change
+            cls.state = new_state
 
     @classmethod
     def run_control_logic(cls):
         # Move this potentially at the task level
+        cls._now = time.monotonic()
 
         if cls.state == PayloadState.OFF:
             # Do nothing unless it's time to power on
@@ -78,8 +110,22 @@ class PayloadController:
             pass
 
         elif cls.state == PayloadState.READY:
-            # Check for commands
-            pass
+            
+            # Check for requests
+            cls.process_external_requests()
+
+
+            # Check for telemetry
+            if cls._now - cls._prev_tm_time > cls.telemetry_period:
+                # Request telemetry
+                cls.request_telemetry()
+
+                resp = cls.receive_response()
+                if resp:
+                    # print("[INFO] Telemetry received.")
+                    PayloadTM.print()
+                    cls._prev_tm_time = cls._now
+
 
         elif cls.state == PayloadState.SHUTTING_DOWN:
             # Wait for the Payload to shutdown

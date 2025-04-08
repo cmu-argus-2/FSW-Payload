@@ -233,8 +233,8 @@ const PayloadState& Payload::GetState() const {
 void Payload::StartCameraThread()
 {
     // Launch camera thread
-    std::vector<int> temp;
-    camera_manager.EnableCameras(temp);
+    std::array<bool, NUM_CAMERAS> temp;
+    [[maybe_unused]] int nb_enabled_cams = camera_manager.EnableCameras(temp);
     camera_thread = std::thread(&CameraManager::RunLoop, &camera_manager);
 }
 

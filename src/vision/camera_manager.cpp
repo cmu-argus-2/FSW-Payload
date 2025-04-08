@@ -305,35 +305,44 @@ bool CameraManager::DisableCamera(int cam_id)
 }
 
 
-void CameraManager::EnableCameras(std::vector<int>& id_activated_cams)
+int CameraManager::EnableCameras(std::array<bool, NUM_CAMERAS>& id_activated_cams)
 {
-    for (auto& camera : cameras) 
-    {
-        camera.Enable();
+    id_activated_cams.fill(false); // Initialize to false
+    int count = 0;
 
-        if (camera.GetStatus() == CAM_STATUS::ACTIVE)
+    for (size_t i = 0; i < NUM_CAMERAS; ++i) 
+    {
+        cameras[i].Enable(); 
+
+        if (cameras[i].GetStatus() == CAM_STATUS::ACTIVE)
         {
-            id_activated_cams.push_back(camera.GetID());
+            id_activated_cams[i] = true;
+            count++;
         }
     }
-
     _UpdateCamStatus();
+    return count;
 }
 
 
-void CameraManager::DisableCameras(std::vector<int>& id_disabled_cams)
+int CameraManager::DisableCameras(std::array<bool, NUM_CAMERAS>& id_disabled_cams)
 {
-    for (auto& camera : cameras) 
-    {
-        camera.Disable();
+    id_disabled_cams.fill(false); // Initialize to false
+    int count = 0;
 
-        if (camera.GetStatus() == CAM_STATUS::INACTIVE)
+    for (size_t i = 0; i < NUM_CAMERAS; ++i) 
+    {
+        cameras[i].Disable();
+
+        if (cameras[i].GetStatus() == CAM_STATUS::INACTIVE)
         {
-            id_disabled_cams.push_back(camera.GetID());
+            id_disabled_cams[i] = true;
+            count++;
         }
     }
 
     _UpdateCamStatus();
+    return count;
 }
 
 int CameraManager::CountActiveCameras() const

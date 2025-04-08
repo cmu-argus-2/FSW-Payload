@@ -35,6 +35,8 @@ enum class ErrorCode // Error codes
     UART_INCOMPLETE_READ,
     
 
+    // Commands
+    
 
 
     // Neural Engine 

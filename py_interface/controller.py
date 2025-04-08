@@ -52,10 +52,7 @@ class PayloadController:
     # Last telemetry received
     _prev_tm_time = time.monotonic()
     _now = time.monotonic()
-    telemetry_period = 1 / _TELEMETRY_FREQUENCY 
-
-
-
+    telemetry_period = 1 / _TELEMETRY_FREQUENCY # seconds
 
     @classmethod
     def initialize(cls, communication_interface):

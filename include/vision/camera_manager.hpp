@@ -67,9 +67,9 @@ public:
     // Set the number of frames to capture in PERIODIC mode
     void SetPeriodicFramesToCapture(uint8_t frames);
 
-
-    void EnableCameras(std::vector<int>& id_activated_cams);
-    void DisableCameras(std::vector<int>& id_disabled_cams);
+    // Returns the number of cameras that were activated
+    int EnableCameras(std::array<bool, NUM_CAMERAS>& id_activated_cams);
+    int DisableCameras(std::array<bool, NUM_CAMERAS>& id_disabled_cams);
 
     bool EnableCamera(int cam_id);
     bool DisableCamera(int cam_id);

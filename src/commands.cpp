@@ -6,9 +6,9 @@
 #include "vision/dataset.hpp"
 #include "core/errors.hpp"
 
-#define DATASET_KEY_CMD "CMD"
+#include <array>
 
-// (void)data does nothing special, it is just used to avoid compiler warnings about a variable that is not used 
+#define DATASET_KEY_CMD "CMD"
 
 // Command functions array definition 
 std::array<CommandFunction, COMMAND_NUMBER> COMMAND_FUNCTIONS = 
@@ -51,9 +51,8 @@ std::array<std::string_view, COMMAND_NUMBER> COMMAND_NAMES = {
     "DEBUG_STOP_DISPLAY"
 };
 
-void ping_ack(std::vector<uint8_t>& data)
+void ping_ack([[maybe_unused]] std::vector<uint8_t>& data)
 {
-    (void)data;
     SPDLOG_INFO("Received PING_ACK");
 
     std::vector<uint8_t> transmit_data = {PING_RESP_VALUE};
@@ -63,9 +62,8 @@ void ping_ack(std::vector<uint8_t>& data)
     sys::payload().SetLastExecutedCmdID(CommandID::PING_ACK);
 }
 
-void shutdown(std::vector<uint8_t>& data)
+void shutdown([[maybe_unused]] std::vector<uint8_t>& data)
 {
-    (void)data;
     SPDLOG_INFO("Initiating Payload shutdown..");
     sys::payload().Stop();
 
@@ -75,20 +73,17 @@ void shutdown(std::vector<uint8_t>& data)
     sys::payload().SetLastExecutedCmdID(CommandID::SHUTDOWN);
 }
 
-void synchronize_time(std::vector<uint8_t>& data)
+void synchronize_time([[maybe_unused]] std::vector<uint8_t>& data)
 {
     SPDLOG_INFO("Synchronizing time..");
-    (void)data;
     // TODO
     // SHOULD SHUTDOWN and REBOOT
     sys::payload().SetLastExecutedCmdID(CommandID::SYNCHRONIZE_TIME);
 }
 
-void request_telemetry(std::vector<uint8_t>& data)
+void request_telemetry([[maybe_unused]] std::vector<uint8_t>& data)
 {
     SPDLOG_INFO("Requesting last telemetry..");
-    (void)data;
-
 
     auto tm = sys::telemetry().GetTmFrame();
     PrintTelemetryFrame(tm);
@@ -130,76 +125,83 @@ void request_telemetry(std::vector<uint8_t>& data)
 }
 
 
-// If a series of IDs is not given, it tries to activate all cameras by default 
-void enable_cameras(std::vector<uint8_t>& data)
+void enable_cameras([[maybe_unused]] std::vector<uint8_t>& data)
 {
-    if (data.empty())
-    {
-        SPDLOG_INFO("Trying to enable all cameras...");
-        std::vector<int> ids;
-        ids.reserve(4);
-        sys::cameraManager().EnableCameras(ids);
-        for (auto cam_id : ids)
-        {
-            SPDLOG_INFO("Enabled camera {}.", cam_id);
-        }
-    }
-    else
-    {
-        for (uint8_t cam_id : data)
-        {
-            bool res = sys::cameraManager().EnableCamera(cam_id);
-            if (res)
-            {
-                SPDLOG_INFO("Enabled camera {}.", cam_id);
-                // Return a success msg 
-            }
-            else 
-            {
-                // transmit a failure msg 
-            }
-        }
+    SPDLOG_INFO("Trying to enable all cameras...");
+    std::array<bool, NUM_CAMERAS> on_cameras;
 
+    int nb_activated_cams = sys::cameraManager().EnableCameras(on_cameras);
+    bool at_least_one_was_enabled = false;
+    for (size_t i = 0; i < NUM_CAMERAS; ++i)
+    {
+        if (on_cameras[i])
+        {
+            SPDLOG_INFO("Camera {} is enabled.", i);
+            at_least_one_was_enabled = true;
+        }
     }
+
+    if (!at_least_one_was_enabled)
+    {
+        SPDLOG_ERROR("No cameras were enabled.");
+        // Get latest error from camera subsystem instead
+        auto msg = CreateErrorAckMessage(CommandID::ENABLE_CAMERAS, 0x51); // TODO: define error code
+        sys::payload().TransmitMessage(msg);
+        return;
+    }
+
+    std::vector<uint8_t> transmit_data;
+    transmit_data.push_back(static_cast<uint8_t>(nb_activated_cams));
+    for (size_t i = 0; i < NUM_CAMERAS; ++i)
+    {
+        transmit_data.push_back(static_cast<uint8_t>(on_cameras[i]));
+    }
+
+    auto msg = CreateMessage(CommandID::ENABLE_CAMERAS, transmit_data);
+    sys::payload().TransmitMessage(msg);
 
     sys::payload().SetLastExecutedCmdID(CommandID::ENABLE_CAMERAS);
-
 }
 
-void disable_cameras(std::vector<uint8_t>& data)
+void disable_cameras([[maybe_unused]] std::vector<uint8_t>& data)
 {
- 
-    if (data.empty())
+    SPDLOG_INFO("Trying to disable all cameras...");
+    std::array<bool, NUM_CAMERAS> off_cameras;
+
+    int nb_disabled_cams = sys::cameraManager().DisableCameras(off_cameras);
+    bool at_least_one_was_disabled = false;
+    for (size_t i = 0; i < NUM_CAMERAS; ++i)
     {
-        SPDLOG_INFO("Trying to disable all cameras...");
-        std::vector<int> ids;
-        ids.reserve(4);
-        sys::cameraManager().DisableCameras(ids);
-    }
-    else
-    {
-        for (uint8_t cam_id : data)
+        if (off_cameras[i])
         {
-            bool res = sys::cameraManager().DisableCamera(cam_id);
-            if (res)
-            {
-                SPDLOG_INFO("Disabled camera {}.", cam_id);
-                // Return a success msg 
-            }
-            else 
-            {
-                // transmit a failure msg 
-            }
+            SPDLOG_INFO("Camera {} is disabled.", i);
+            at_least_one_was_disabled = true;
         }
+    }
 
-    } 
+    if (!at_least_one_was_disabled)
+    {
+        SPDLOG_ERROR("No cameras were disabled.");
+        // Get latest error from camera subsystem instead
+        auto msg = CreateErrorAckMessage(CommandID::DISABLE_CAMERAS, 0x52); // TODO: define error code
+        sys::payload().TransmitMessage(msg);
+        return;
+    }
 
+    std::vector<uint8_t> transmit_data;
+    transmit_data.push_back(static_cast<uint8_t>(nb_disabled_cams));
+    for (size_t i = 0; i < NUM_CAMERAS; ++i)
+    {
+        transmit_data.push_back(static_cast<uint8_t>(off_cameras[i]));
+    }
+
+    auto msg = CreateMessage(CommandID::DISABLE_CAMERAS, transmit_data);
+    sys::payload().TransmitMessage(msg);
 
     sys::payload().SetLastExecutedCmdID(CommandID::DISABLE_CAMERAS);
- 
 }
 
-void capture_images(std::vector<uint8_t>& data)
+void capture_images([[maybe_unused]] std::vector<uint8_t>& data)
 {
     SPDLOG_INFO("Capturing image now..");
 
@@ -207,13 +209,12 @@ void capture_images(std::vector<uint8_t>& data)
 
     // Need to return true or false based on the success of the operations
     // Basically should wait until the camera has captured the image or wait later to send the ocnfirmation and just exit the task? 
-    (void)data;
     // TODO
 
     sys::payload().SetLastExecutedCmdID(CommandID::CAPTURE_IMAGES);
 }
 
-void start_capture_images_periodically(std::vector<uint8_t>& data)
+void start_capture_images_periodically([[maybe_unused]] std::vector<uint8_t>& data)
 {
     SPDLOG_INFO("Starting capture images every X seconds..");
 
@@ -286,11 +287,9 @@ void start_capture_images_periodically(std::vector<uint8_t>& data)
 
 
 
-void stop_capture_images(std::vector<uint8_t>& data)
+void stop_capture_images([[maybe_unused]] std::vector<uint8_t>& data)
 {
     SPDLOG_INFO("Stopping capture images..");
-
-    (void)data; // no need for data here, so ignore
 
     // sys::cameraManager().SetCaptureMode(CAPTURE_MODE::IDLE);
     // TODO return true or false based on the success of the operations
@@ -330,22 +329,19 @@ void stop_capture_images(std::vector<uint8_t>& data)
 
 
 
-void stored_images(std::vector<uint8_t>& data)
+void stored_images([[maybe_unused]] std::vector<uint8_t>& data)
 {
     SPDLOG_INFO("Getting stored images..");
-    
-    (void)data;
+
     // TODO
 
     sys::payload().SetLastExecutedCmdID(CommandID::STORED_IMAGES);
 }
 
-void request_image(std::vector<uint8_t>& data)
+void request_image([[maybe_unused]] std::vector<uint8_t>& data)
 {
     SPDLOG_INFO("Requesting last image..");
-    
-    (void)data;
-    
+
     // Read the latest image from disk
     Frame frame;
     bool res = DH::ReadLatestStoredRawImg(frame);
@@ -357,33 +353,30 @@ void request_image(std::vector<uint8_t>& data)
 }
 
 
-void delete_images(std::vector<uint8_t>& data)
+void delete_images([[maybe_unused]] std::vector<uint8_t>& data)
 {
     SPDLOG_INFO("Deleting all stored images..");
     
-    (void)data;
     // TODO
 
     sys::payload().SetLastExecutedCmdID(CommandID::DELETE_IMAGES);
 }
 
 
-void run_od(std::vector<uint8_t>& data)
+void run_od([[maybe_unused]] std::vector<uint8_t>& data)
 {
     SPDLOG_INFO("Running orbit determination..");
-    
-    (void)data;
+
     // TODO
 
     sys::payload().SetLastExecutedCmdID(CommandID::RUN_OD);
 }
 
-void ping_od_status(std::vector<uint8_t>& data)
+void ping_od_status([[maybe_unused]] std::vector<uint8_t>& data)
 {
 
     SPDLOG_INFO("Pinging the status of the orbit determination process...");
-    
-    (void)data;
+
     // TODO
     OD_STATE od_state = sys::od().GetState();
     std::vector<uint8_t> transmit_data;
@@ -434,7 +427,7 @@ void ping_od_status(std::vector<uint8_t>& data)
 }
 
 
-void debug_display_camera(std::vector<uint8_t>& data)
+void debug_display_camera([[maybe_unused]] std::vector<uint8_t>& data)
 {
     SPDLOG_INFO("Activating the display of the camera");
 
@@ -454,16 +447,14 @@ void debug_display_camera(std::vector<uint8_t>& data)
     auto msg = CreateSuccessAckMessage(CommandID::DEBUG_DISPLAY_CAMERA);
     sys::payload().TransmitMessage(msg);
 
-    (void)data;
-
     sys::payload().SetLastExecutedCmdID(CommandID::DEBUG_DISPLAY_CAMERA);
 }
 
-void debug_stop_display(std::vector<uint8_t>& data)
+void debug_stop_display([[maybe_unused]] std::vector<uint8_t>& data)
 {
     SPDLOG_INFO("Stopping the display of the camera");
     sys::cameraManager().SetDisplayFlag(false);
-    (void)data;
+
     // return ACK
     auto msg = CreateSuccessAckMessage(CommandID::DEBUG_STOP_DISPLAY);
     sys::payload().TransmitMessage(msg);

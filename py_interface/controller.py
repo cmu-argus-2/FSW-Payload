@@ -166,6 +166,14 @@ class PayloadController:
         cls.communication_interface.send(Encoder.encode_request_telemetry())
 
     @classmethod
+    def enable_cameras(cls):
+        cls.communication_interface.send(Encoder.encode_enable_cameras())
+
+    @classmethod
+    def disable_cameras(cls):
+        cls.communication_interface.send(Encoder.encode_disable_cameras())
+
+    @classmethod
     def turn_on_power(cls):
         pass
 

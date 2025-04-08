@@ -144,8 +144,8 @@ void enable_cameras([[maybe_unused]] std::vector<uint8_t>& data)
     if (!at_least_one_was_enabled)
     {
         SPDLOG_ERROR("No cameras were enabled.");
-        // Get latest error from camera subsystem instead
-        auto msg = CreateErrorAckMessage(CommandID::ENABLE_CAMERAS, 0x51); // TODO: define error code
+        // TODO: Get latest error from camera subsystem instead
+        auto msg = CreateErrorAckMessage(CommandID::ENABLE_CAMERAS, 0x51); 
         sys::payload().TransmitMessage(msg);
         return;
     }

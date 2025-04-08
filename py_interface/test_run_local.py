@@ -1,7 +1,7 @@
 import time 
 from controller import PayloadController
 from ipc_comms import PayloadIPC
-from definitions import PayloadTM
+from definitions import PayloadTM, Resp_EnableCameras, Resp_DisableCameras
 
 
 if __name__ == '__main__':
@@ -45,6 +45,25 @@ if __name__ == '__main__':
     if resp:
         print("[INFO] Telemetry received.")
         PayloadTM.print()
+
+    # Testing camera disable and renable 
+    print("[INFO] Disabling cameras...")
+    controller.disable_cameras()
+    time.sleep(0.2)
+    resp = controller.receive_response()
+    if resp:
+        print(f"[INFO] {Resp_DisableCameras.num_deactivated_cameras} cameras disabled.")
+
+    time.sleep(1) 
+
+    print("[INFO] Enabling cameras...")
+    controller.enable_cameras()
+    time.sleep(0.2)
+    resp = controller.receive_response()
+    if resp:
+        print(f"[INFO] {Resp_EnableCameras.num_activated_cameras} cameras enabled.")
+
+    time.sleep(1)
 
     controller.shutdown()
 

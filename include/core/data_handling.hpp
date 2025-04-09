@@ -22,6 +22,7 @@ This file contains classes and functions providing file services and data handli
 #define DATASETS_FOLDER "data/datasets/"
 #define RESULTS_FOLDER "data/results/"
 #define LOGGING_FOLDER "data/logging/"
+#define COMMS_FOLDER "data/comms/"
 
 
 #define DELIMITER "_"
@@ -39,11 +40,11 @@ namespace DH // Data Handling
         ├── datasets/
         ├── results/ (orbit determination results)
         ├── logging/
+        └── comms/ (Special folder for communication purposes)
 
         @return true if successful, false otherwise
     */
     bool InitializeDataStorage();
-
 
 
     bool MakeNewDirectory(std::string_view directory_path);
@@ -51,8 +52,6 @@ namespace DH // Data Handling
     long GetDirectorySize(std::string_view directory_path); 
     int CountFilesInDirectory(std::string_view directory_path);
 
-
-    
 
     // raw_timestamp_camid.png 
     void StoreFrameToDisk(Frame& frame, std::string_view target_folder = IMAGES_FOLDER);
@@ -77,6 +76,12 @@ namespace DH // Data Handling
     Returns the disk usage as a positive percentage. -1 in case of errors.
     */
     int GetTotalDiskUsage();
+
+
+    // Communication related helper functions
+    void EmptyCommsFolder();
+    void CopyFrameToCommsFolder(Frame& frame);
+
 
 
 }

@@ -335,12 +335,23 @@ void request_image([[maybe_unused]] std::vector<uint8_t>& data)
 {
     SPDLOG_INFO("Requesting last image..");
 
-    // Read the latest image from disk
+    // Back-end for images will change soon. However, this is sufficient for now
     Frame frame;
     bool res = DH::ReadLatestStoredRawImg(frame);
 
-    // TODO: Transmit the image if successful, else error ACK
-    // Need to be flagged for deletion
+    // If no image available, return an error ACK
+    if (!res)
+    {
+        SPDLOG_ERROR("Couldn't get an image..");
+        auto msg = CreateErrorAckMessage(CommandID::REQUEST_IMAGE, 0x23); // TODO later
+        sys::payload().TransmitMessage(msg);
+        return;
+    }
+
+    // Select the file to be used, copy it to the temporary folder, and ACK the command 
+    DH::CopyFrameToCommsFolder(frame);
+
+
 
     sys::payload().SetLastExecutedCmdID(CommandID::REQUEST_IMAGE);
 }

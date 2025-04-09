@@ -81,7 +81,8 @@ bool InitializeDataStorage()
         TELEMETRY_FOLDER,
         DATASETS_FOLDER,
         RESULTS_FOLDER,
-        LOGGING_FOLDER
+        LOGGING_FOLDER,
+        COMMS_FOLDER
     };
 
     bool success = true;
@@ -156,7 +157,7 @@ void SplitRawImgPath(const std::string& input, std::uint64_t& timestamp, int& ca
 
     // Extract the timestamp and camera ID
     end = input.find(DELIMITER, start);
-    SPDLOG_INFO("Start: {}, End: {}", start, end);
+    SPDLOG_DEBUG("Start: {}, End: {}", start, end);
     SPDLOG_DEBUG("Timestamp substring: {}", input.substr(start, end - start));
     timestamp = std::stoull(input.substr(start, end - start));
     //timestamp = std::strtoull(input.substr(start, end - start).c_str(), nullptr, 10);
@@ -232,6 +233,25 @@ int GetTotalDiskUsage()
     double usage_percentage = (1.0 - static_cast<double>(info.free) / info.capacity) * 100.0;
     return static_cast<int>(std::round(usage_percentage)); // round to nearest integer
 
+}
+
+void EmptyCommsFolder()
+{
+    for (const auto& entry : std::filesystem::directory_iterator(COMMS_FOLDER)) 
+    {
+        std::filesystem::remove_all(entry.path());
+    }
+}
+
+void CopyFrameToCommsFolder(Frame& frame)
+{
+    if (CountFilesInDirectory(COMMS_FOLDER) > 0)
+    {
+       SPDLOG_WARN("Overwriting file in comms folder.");
+        EmptyCommsFolder();
+    }
+    // Store the image in the comms folder
+    StoreRawImgToDisk(frame.GetTimestamp(), frame.GetCamID(), frame.GetImg(), COMMS_FOLDER);
 }
 
 

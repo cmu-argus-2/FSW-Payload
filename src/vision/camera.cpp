@@ -47,7 +47,7 @@ bool Camera::Enable()
         cap.set(cv::CAP_PROP_FRAME_HEIGHT, height);
         cap.set(cv::CAP_PROP_FPS, DEFAULT_CAMERA_FPS);
         cap.set(cv::CAP_PROP_BUFFERSIZE, 3); 
-        cap.set(cv::CAP_PROP_GAIN, 10000); // Set gain to maximum - OpenCV will clamp it to the maximum value
+        // cap.set(cv::CAP_PROP_GAIN, 10000); // Set gain to maximum - OpenCV will clamp it to the maximum value
         SPDLOG_INFO("CAM{}: Camera gain set to {}", cam_id, cap.get(cv::CAP_PROP_GAIN));
 
         // Start capture loop

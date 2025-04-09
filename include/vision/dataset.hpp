@@ -11,7 +11,7 @@
 #include <memory>
 #include <unordered_map>
 
-
+// Move all that to contexpr
 #define DATASET_CONFIG_FILE_NAME "config.toml"
 #define MAX_SAMPLES 1000
 #define TIMEOUT_NO_DATA 500 

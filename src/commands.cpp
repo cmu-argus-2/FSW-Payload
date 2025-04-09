@@ -15,18 +15,21 @@ std::array<CommandFunction, COMMAND_NUMBER> COMMAND_FUNCTIONS =
 {
     ping_ack, // PING_ACK
     shutdown, // SHUTDOWN
-    synchronize_time, // SYNCHRONIZE_TIME
     request_telemetry, // REQUEST_TELEMETRY
     enable_cameras, // ENABLE_CAMERAS
     disable_cameras, // DISABLE_CAMERAS
     capture_images, // CAPTURE_IMAGES
     start_capture_images_periodically, // START_CAPTURE_IMAGES_PERIODICALLY
     stop_capture_images, // STOP_CAPTURE_IMAGES
-    stored_images, // STORED_IMAGES
+    request_storage_info, // REQUEST_STORAGE_INFO
     request_image, // REQUEST_IMAGE
-    delete_images, // DELETE_IMAGES
-    run_od, // RUN_OD
+    request_next_file_packet, // REQUEST_NEXT_FILE_PACKET
+    clear_storage, // CLEAR_STORAGE
     ping_od_status, // PING_OD_STATUS
+    run_od, // RUN_OD
+    request_od_result, // REQUEST_OD_RESULT
+    synchronize_time, // SYNCHRONIZE_TIME
+    full_reset, // FULL_RESET (no implementation provided)
     debug_display_camera, // DEBUG_DISPLAY_CAMERA
     debug_stop_display // DEBUG_STOP_DISPLAY
 };
@@ -35,18 +38,21 @@ std::array<CommandFunction, COMMAND_NUMBER> COMMAND_FUNCTIONS =
 std::array<std::string_view, COMMAND_NUMBER> COMMAND_NAMES = {
     "PING_ACK",
     "SHUTDOWN",
-    "SYNCHRONIZE_TIME",
     "REQUEST_TELEMETRY",
     "ENABLE_CAMERAS",
     "DISABLE_CAMERAS",
     "CAPTURE_IMAGES",
     "START_CAPTURE_IMAGES_PERIODICALLY",
     "STOP_CAPTURE_IMAGES",
-    "STORED_IMAGES",
+    "REQUEST_STORAGE_INFO",
     "REQUEST_IMAGE",
-    "DELETE_IMAGES",
-    "RUN_OD",
+    "REQUEST_NEXT_FILE_PACKET",
+    "CLEAR_STORAGE",
     "PING_OD_STATUS",
+    "RUN_OD",
+    "REQUEST_OD_RESULT",
+    "SYNCHRONIZE_TIME",
+    "FULL_RESET",
     "DEBUG_DISPLAY_CAMERA",
     "DEBUG_STOP_DISPLAY"
 };
@@ -73,13 +79,6 @@ void shutdown([[maybe_unused]] std::vector<uint8_t>& data)
     sys::payload().SetLastExecutedCmdID(CommandID::SHUTDOWN);
 }
 
-void synchronize_time([[maybe_unused]] std::vector<uint8_t>& data)
-{
-    SPDLOG_INFO("Synchronizing time..");
-    // TODO
-    // SHOULD SHUTDOWN and REBOOT
-    sys::payload().SetLastExecutedCmdID(CommandID::SYNCHRONIZE_TIME);
-}
 
 void request_telemetry([[maybe_unused]] std::vector<uint8_t>& data)
 {
@@ -285,8 +284,6 @@ void start_capture_images_periodically([[maybe_unused]] std::vector<uint8_t>& da
     sys::payload().SetLastExecutedCmdID(CommandID::START_CAPTURE_IMAGES_PERIODICALLY);
 }
 
-
-
 void stop_capture_images([[maybe_unused]] std::vector<uint8_t>& data)
 {
     SPDLOG_INFO("Stopping capture images..");
@@ -327,15 +324,11 @@ void stop_capture_images([[maybe_unused]] std::vector<uint8_t>& data)
     sys::payload().SetLastExecutedCmdID(CommandID::STOP_CAPTURE_IMAGES);
 }
 
-
-
-void stored_images([[maybe_unused]] std::vector<uint8_t>& data)
+void request_storage_info([[maybe_unused]] std::vector<uint8_t>& data)
 {
-    SPDLOG_INFO("Getting stored images..");
+    SPDLOG_INFO("Requesting storage information...");
 
-    // TODO
-
-    sys::payload().SetLastExecutedCmdID(CommandID::STORED_IMAGES);
+    sys::payload().SetLastExecutedCmdID(CommandID::REQUEST_STORAGE_INFO);
 }
 
 void request_image([[maybe_unused]] std::vector<uint8_t>& data)
@@ -352,24 +345,22 @@ void request_image([[maybe_unused]] std::vector<uint8_t>& data)
     sys::payload().SetLastExecutedCmdID(CommandID::REQUEST_IMAGE);
 }
 
-
-void delete_images([[maybe_unused]] std::vector<uint8_t>& data)
+void request_next_file_packet([[maybe_unused]] std::vector<uint8_t>& data)
 {
-    SPDLOG_INFO("Deleting all stored images..");
-    
+    SPDLOG_INFO("Requesting next file packet..");
+
     // TODO
 
-    sys::payload().SetLastExecutedCmdID(CommandID::DELETE_IMAGES);
+    sys::payload().SetLastExecutedCmdID(CommandID::REQUEST_NEXT_FILE_PACKET);
 }
 
-
-void run_od([[maybe_unused]] std::vector<uint8_t>& data)
+void clear_storage([[maybe_unused]] std::vector<uint8_t>& data)
 {
-    SPDLOG_INFO("Running orbit determination..");
+    SPDLOG_INFO("Clearing storage..");
 
     // TODO
 
-    sys::payload().SetLastExecutedCmdID(CommandID::RUN_OD);
+    sys::payload().SetLastExecutedCmdID(CommandID::CLEAR_STORAGE);
 }
 
 void ping_od_status([[maybe_unused]] std::vector<uint8_t>& data)
@@ -424,6 +415,42 @@ void ping_od_status([[maybe_unused]] std::vector<uint8_t>& data)
     sys::payload().TransmitMessage(msg);
 
     sys::payload().SetLastExecutedCmdID(CommandID::PING_OD_STATUS);
+}
+
+void run_od([[maybe_unused]] std::vector<uint8_t>& data)
+{
+    SPDLOG_INFO("Running orbit determination..");
+
+    // TODO
+
+    sys::payload().SetLastExecutedCmdID(CommandID::RUN_OD);
+}
+
+void request_od_result([[maybe_unused]] std::vector<uint8_t>& data)
+{
+    SPDLOG_INFO("Requesting OD result..");
+
+    // TODO
+
+    sys::payload().SetLastExecutedCmdID(CommandID::REQUEST_OD_RESULT);
+}
+
+
+void synchronize_time([[maybe_unused]] std::vector<uint8_t>& data)
+{
+    SPDLOG_INFO("Synchronizing time..");
+    // TODO
+    // SHOULD SHUTDOWN and REBOOT
+    sys::payload().SetLastExecutedCmdID(CommandID::SYNCHRONIZE_TIME);
+}
+
+void full_reset([[maybe_unused]] std::vector<uint8_t>& data)
+{
+    SPDLOG_INFO("Performing full reset..");
+
+    // TODO
+
+    sys::payload().SetLastExecutedCmdID(CommandID::FULL_RESET);
 }
 
 

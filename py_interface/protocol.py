@@ -17,7 +17,7 @@ The outgoing packet format is as follows:
 The incoming packet format is as follows:
 - Byte 0: Command ID
 - Byte 1-2: Sequence count
-- Byte 3: Data length
+- Byte 3: Data length.
 - Byte 4-255: Data
 
 

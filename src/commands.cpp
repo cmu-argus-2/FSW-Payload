@@ -62,7 +62,7 @@ void ping_ack([[maybe_unused]] std::vector<uint8_t>& data)
     SPDLOG_INFO("Received PING_ACK");
 
     std::vector<uint8_t> transmit_data = {PING_RESP_VALUE};
-    auto msg = CreateMessage(CommandID::PING_ACK, transmit_data);
+    std::shared_ptr<Message> msg = CreateMessage(CommandID::PING_ACK, transmit_data);
     sys::payload().TransmitMessage(msg);
 
     sys::payload().SetLastExecutedCmdID(CommandID::PING_ACK);
@@ -73,7 +73,7 @@ void shutdown([[maybe_unused]] std::vector<uint8_t>& data)
     SPDLOG_INFO("Initiating Payload shutdown..");
     sys::payload().Stop();
 
-    auto msg = CreateSuccessAckMessage(CommandID::SHUTDOWN);
+    std::shared_ptr<Message> msg = CreateSuccessAckMessage(CommandID::SHUTDOWN);
     sys::payload().TransmitMessage(msg);
     
     sys::payload().SetLastExecutedCmdID(CommandID::SHUTDOWN);
@@ -117,7 +117,7 @@ void request_telemetry([[maybe_unused]] std::vector<uint8_t>& data)
     SerializeToBytes(tm.VDD_CPU_GPU_CV, transmit_data);
     SerializeToBytes(tm.VDD_SOC, transmit_data);
 
-    auto msg = CreateMessage(CommandID::REQUEST_TELEMETRY, transmit_data);
+    std::shared_ptr<Message> msg = CreateMessage(CommandID::REQUEST_TELEMETRY, transmit_data);
     sys::payload().TransmitMessage(msg);
 
     sys::payload().SetLastExecutedCmdID(CommandID::REQUEST_TELEMETRY);
@@ -144,7 +144,7 @@ void enable_cameras([[maybe_unused]] std::vector<uint8_t>& data)
     {
         SPDLOG_ERROR("No cameras were enabled.");
         // TODO: Get latest error from camera subsystem instead
-        auto msg = CreateErrorAckMessage(CommandID::ENABLE_CAMERAS, 0x51); 
+        std::shared_ptr<Message> msg = CreateErrorAckMessage(CommandID::ENABLE_CAMERAS, 0x51); 
         sys::payload().TransmitMessage(msg);
         return;
     }
@@ -156,7 +156,7 @@ void enable_cameras([[maybe_unused]] std::vector<uint8_t>& data)
         transmit_data.push_back(static_cast<uint8_t>(on_cameras[i]));
     }
 
-    auto msg = CreateMessage(CommandID::ENABLE_CAMERAS, transmit_data);
+    std::shared_ptr<Message> msg = CreateMessage(CommandID::ENABLE_CAMERAS, transmit_data);
     sys::payload().TransmitMessage(msg);
 
     sys::payload().SetLastExecutedCmdID(CommandID::ENABLE_CAMERAS);
@@ -182,7 +182,7 @@ void disable_cameras([[maybe_unused]] std::vector<uint8_t>& data)
     {
         SPDLOG_ERROR("No cameras were disabled.");
         // Get latest error from camera subsystem instead
-        auto msg = CreateErrorAckMessage(CommandID::DISABLE_CAMERAS, 0x52); // TODO: define error code
+        std::shared_ptr<Message> msg = CreateErrorAckMessage(CommandID::DISABLE_CAMERAS, 0x52); // TODO: define error code
         sys::payload().TransmitMessage(msg);
         return;
     }
@@ -194,7 +194,7 @@ void disable_cameras([[maybe_unused]] std::vector<uint8_t>& data)
         transmit_data.push_back(static_cast<uint8_t>(off_cameras[i]));
     }
 
-    auto msg = CreateMessage(CommandID::DISABLE_CAMERAS, transmit_data);
+    std::shared_ptr<Message> msg = CreateMessage(CommandID::DISABLE_CAMERAS, transmit_data);
     sys::payload().TransmitMessage(msg);
 
     sys::payload().SetLastExecutedCmdID(CommandID::DISABLE_CAMERAS);
@@ -237,7 +237,7 @@ void start_capture_images_periodically([[maybe_unused]] std::vector<uint8_t>& da
         // TODO: Send Error ACK
         uint8_t ERR_PERIODIC = 0x20; // TODO define elsewhere
         SPDLOG_ERROR("Invalid data size for START_CAPTURE_IMAGES_PERIODICALLY command");
-        auto msg = CreateErrorAckMessage(CommandID::START_CAPTURE_IMAGES_PERIODICALLY, 0x20);
+        std::shared_ptr<Message> msg = CreateErrorAckMessage(CommandID::START_CAPTURE_IMAGES_PERIODICALLY, 0x20);
         sys::payload().TransmitMessage(msg);
         return;
     }
@@ -273,12 +273,12 @@ void start_capture_images_periodically([[maybe_unused]] std::vector<uint8_t>& da
     {
         
         SPDLOG_ERROR("Failed to start dataset collection: {}", e.what());
-        auto msg = CreateErrorAckMessage(CommandID::START_CAPTURE_IMAGES_PERIODICALLY, 0x21); // TODO example error code
+        std::shared_ptr<Message> msg = CreateErrorAckMessage(CommandID::START_CAPTURE_IMAGES_PERIODICALLY, 0x21); // TODO example error code
         sys::payload().TransmitMessage(msg);
     }
     
     // All good
-    auto msg = CreateSuccessAckMessage(CommandID::START_CAPTURE_IMAGES_PERIODICALLY);
+    std::shared_ptr<Message> msg = CreateSuccessAckMessage(CommandID::START_CAPTURE_IMAGES_PERIODICALLY);
     sys::payload().TransmitMessage(msg);
 
     sys::payload().SetLastExecutedCmdID(CommandID::START_CAPTURE_IMAGES_PERIODICALLY);
@@ -304,7 +304,7 @@ void stop_capture_images([[maybe_unused]] std::vector<uint8_t>& data)
         ds->StopDataset(DATASET_KEY_CMD);
 
         // Create ACK message with stats
-        auto msg = CreateSuccessAckMessage(CommandID::STOP_CAPTURE_IMAGES);
+        std::shared_ptr<Message> msg = CreateSuccessAckMessage(CommandID::STOP_CAPTURE_IMAGES);
         std::vector<uint8_t> stats_output;
         stats_output.push_back(completion);
         SerializeToBytes(nb_frames, stats_output);
@@ -316,7 +316,7 @@ void stop_capture_images([[maybe_unused]] std::vector<uint8_t>& data)
     {
         // Return (error) ACK telling that no dataset is running
         SPDLOG_ERROR("No dataset collection has been started on the command side");
-        auto msg = CreateErrorAckMessage(CommandID::STOP_CAPTURE_IMAGES, 0x22); // TODO
+        std::shared_ptr<Message> msg = CreateErrorAckMessage(CommandID::STOP_CAPTURE_IMAGES, 0x22); // TODO
         sys::payload().TransmitMessage(msg);
 
     }
@@ -343,14 +343,18 @@ void request_image([[maybe_unused]] std::vector<uint8_t>& data)
     if (!res)
     {
         SPDLOG_ERROR("Couldn't get an image..");
-        auto msg = CreateErrorAckMessage(CommandID::REQUEST_IMAGE, 0x23); // TODO later
+        std::shared_ptr<Message> msg = CreateErrorAckMessage(CommandID::REQUEST_IMAGE, 0x23); // TODO later
         sys::payload().TransmitMessage(msg);
         return;
     }
 
-    // Select the file to be used, copy it to the temporary folder, and ACK the command 
+    // Follow the logic when a file is requested
+    // Select the file to be used -> overwrite/copy it to comms buffer folder -> ACK the command (= I'm ready)
     DH::CopyFrameToCommsFolder(frame);
 
+
+    std::shared_ptr<Message> msg = CreateSuccessAckMessage(CommandID::REQUEST_IMAGE);
+    sys::payload().TransmitMessage(msg);
 
 
     sys::payload().SetLastExecutedCmdID(CommandID::REQUEST_IMAGE);
@@ -422,7 +426,7 @@ void ping_od_status([[maybe_unused]] std::vector<uint8_t>& data)
         }
     }
 
-    auto msg = CreateMessage(CommandID::PING_OD_STATUS, transmit_data);
+    std::shared_ptr<Message> msg = CreateMessage(CommandID::PING_OD_STATUS, transmit_data);
     sys::payload().TransmitMessage(msg);
 
     sys::payload().SetLastExecutedCmdID(CommandID::PING_OD_STATUS);
@@ -472,7 +476,7 @@ void debug_display_camera([[maybe_unused]] std::vector<uint8_t>& data)
     if (sys::cameraManager().GetDisplayFlag() == true) 
     {
         SPDLOG_WARN("Display already active");
-        auto msg = CreateSuccessAckMessage(CommandID::DEBUG_DISPLAY_CAMERA);
+        std::shared_ptr<Message> msg = CreateSuccessAckMessage(CommandID::DEBUG_DISPLAY_CAMERA);
         sys::payload().TransmitMessage(msg);
         return;
     }
@@ -482,7 +486,7 @@ void debug_display_camera([[maybe_unused]] std::vector<uint8_t>& data)
     // This will block the thread until the display flag is set to false or all cameras are turned off
     sys::cameraManager().RunDisplayLoop(); 
 
-    auto msg = CreateSuccessAckMessage(CommandID::DEBUG_DISPLAY_CAMERA);
+    std::shared_ptr<Message> msg = CreateSuccessAckMessage(CommandID::DEBUG_DISPLAY_CAMERA);
     sys::payload().TransmitMessage(msg);
 
     sys::payload().SetLastExecutedCmdID(CommandID::DEBUG_DISPLAY_CAMERA);
@@ -494,7 +498,7 @@ void debug_stop_display([[maybe_unused]] std::vector<uint8_t>& data)
     sys::cameraManager().SetDisplayFlag(false);
 
     // return ACK
-    auto msg = CreateSuccessAckMessage(CommandID::DEBUG_STOP_DISPLAY);
+    std::shared_ptr<Message> msg = CreateSuccessAckMessage(CommandID::DEBUG_STOP_DISPLAY);
     sys::payload().TransmitMessage(msg);
 
     sys::payload().SetLastExecutedCmdID(CommandID::DEBUG_STOP_DISPLAY);

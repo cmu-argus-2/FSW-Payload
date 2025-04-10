@@ -15,19 +15,29 @@ enum class ErrorCode // Error codes
 {
     // TODO must be extremely well documented 
     OK = 0, // Can't be logged
-    PLACEHOLDER,
+    PLACEHOLDER = 1,
 
     // Divide per subsystem
 
-    // Task execution and queue 
-    // Thread pool 
+
+    // Commands
+    INVALID_COMMAND_ID,
+    INVALID_COMMAND_ARGUMENTS,
+    NO_FILE_READY,
+    NO_MORE_PACKET_FOR_FILE,
+
     // Data handling
     FILE_DOES_NOT_EXIST,
     FILE_NOT_FOUND,
+    
+
+    // Task execution and queue 
+    // Thread pool 
+
     // Camera subsystem
     IMAGE_NOT_AVAILABLE,
     // Telemetry
-    // Communication
+
 
     // UART
     UART_OPEN_FAILED,
@@ -39,8 +49,6 @@ enum class ErrorCode // Error codes
     UART_WRITE_BUFFER_OVERFLOW,
     UART_INCOMPLETE_READ,
     
-
-    // Commands
 
 
 

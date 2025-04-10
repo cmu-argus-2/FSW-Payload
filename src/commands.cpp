@@ -374,11 +374,40 @@ void request_image([[maybe_unused]] std::vector<uint8_t>& data)
     sys::payload().SetLastExecutedCmdID(CommandID::REQUEST_IMAGE);
 }
 
-void request_next_file_packet([[maybe_unused]] std::vector<uint8_t>& data)
+void request_next_file_packet(std::vector<uint8_t>& data)
 {
     SPDLOG_INFO("Requesting next file packet..");
 
-    // TODO
+    if (data.size() < 2)
+    {
+        SPDLOG_ERROR("Invalid data size for REQUEST_NEXT_FILE_PACKET command");
+        std::shared_ptr<Message> msg = CreateErrorAckMessage(CommandID::REQUEST_NEXT_FILE_PACKET, to_uint8(EC::INVALID_COMMAND_ARGUMENTS));
+        sys::payload().TransmitMessage(msg);
+        return;
+    }
+
+    // check if a file has been readied -> NO_FILE_READY
+    if (!FileTransferManager::is_there_available_file() && FileTransferManager::active_transfer())
+    {
+        SPDLOG_ERROR("No file available for transfer.");
+        std::shared_ptr<Message> msg = CreateErrorAckMessage(CommandID::REQUEST_NEXT_FILE_PACKET, to_uint8(EC::NO_FILE_READY));
+        sys::payload().TransmitMessage(msg);
+        return;
+    }
+
+    // Note that we soft ignore if there is additional arguments if there is more than needed. More graceful this way
+    uint16_t requested_packet_nb = (data[0] << 8) | data[1]; // 2 bytes for the sequence number
+
+    // check if requested seq number is valid -> NO_MORE_PACKET_FOR_FILE
+    if (requested_packet_nb > FileTransferManager::total_seq_count())
+    {
+        SPDLOG_ERROR("Requested packet number {} is out of range.", requested_packet_nb);
+        std::shared_ptr<Message> msg = CreateErrorAckMessage(CommandID::REQUEST_NEXT_FILE_PACKET, to_uint8(EC::NO_MORE_PACKET_FOR_FILE)); // Important!
+        sys::payload().TransmitMessage(msg);
+        return;
+    }
+
+
 
     sys::payload().SetLastExecutedCmdID(CommandID::REQUEST_NEXT_FILE_PACKET);
 }

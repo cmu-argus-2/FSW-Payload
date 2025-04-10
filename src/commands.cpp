@@ -356,7 +356,7 @@ void request_image([[maybe_unused]] std::vector<uint8_t>& data)
 
     // Set the file transfer manager
     FileTransferManager::Reset();
-    EC err = FileTransferManager::PopulateMetadata(file_path);
+    EC err = FileTransferManager::populate_metadata(file_path);
 
     if (err != EC::OK)
     {
@@ -396,7 +396,7 @@ void request_next_file_packet(std::vector<uint8_t>& data)
     }
 
     // Note that we soft ignore if there is additional arguments if there is more than needed. More graceful this way
-    uint16_t requested_packet_nb = (data[0] << 8) | data[1]; // 2 bytes for the sequence number
+    uint16_t requested_packet_nb = (data[0] << 8) | data[1]; 
 
     // check if requested seq number is valid -> NO_MORE_PACKET_FOR_FILE
     if (requested_packet_nb > FileTransferManager::total_seq_count())
@@ -407,6 +407,10 @@ void request_next_file_packet(std::vector<uint8_t>& data)
         return;
     }
 
+    // Take the corresponding chunk of data, load it to ram, and send it 
+    std::vector<uint8_t> transmit_data;
+    transmit_data.reserve(Packet::OUTGOING_PCKT_SIZE);
+    
 
 
     sys::payload().SetLastExecutedCmdID(CommandID::REQUEST_NEXT_FILE_PACKET);

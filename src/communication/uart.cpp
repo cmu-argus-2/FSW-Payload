@@ -11,8 +11,8 @@
 #include "spdlog/spdlog.h"
 
 
-static std::array<uint8_t, INCOMING_PCKT_SIZE> READ_BUF = {0};
-static std::array<uint8_t, OUTGOING_PCKT_SIZE> WRITE_BUF = {0};
+static std::array<uint8_t, Packet::INCOMING_PCKT_SIZE> READ_BUF = {0};
+static std::array<uint8_t, Packet::OUTGOING_PCKT_SIZE> WRITE_BUF = {0};
 
 
 UART::UART()
@@ -142,7 +142,7 @@ void UART::ClearUpLink()
 
 bool UART::FillWriteBuffer(const std::vector<uint8_t>& data)
 {
-    if (data.size() > OUTGOING_PCKT_SIZE)
+    if (data.size() > Packet::OUTGOING_PCKT_SIZE)
     {
         SPDLOG_ERROR("Data size exceeds outgoing packet size.");
         LogError(EC::UART_WRITE_BUFFER_OVERFLOW);
@@ -170,9 +170,9 @@ bool UART::Send(const std::vector<uint8_t>& data)
         return false;
     }
 
-    ssize_t bytes_written = write(serial_port_fd, WRITE_BUF.data(), OUTGOING_PCKT_SIZE);
+    ssize_t bytes_written = write(serial_port_fd, WRITE_BUF.data(), Packet::OUTGOING_PCKT_SIZE);
 
-    if (bytes_written == -1 || bytes_written != OUTGOING_PCKT_SIZE) 
+    if (bytes_written == -1 || bytes_written != Packet::OUTGOING_PCKT_SIZE) 
     {
         SPDLOG_ERROR("Failed to write to UART port {}: {}", PORT_NAME, strerror(errno));
         LogError(EC::UART_FAILED_WRITE);
@@ -186,14 +186,14 @@ bool UART::Send(const std::vector<uint8_t>& data)
 bool UART::Receive(uint8_t& cmd_id, std::vector<uint8_t>& data)
 {
     // Non-blocking 
-    ssize_t bytes_read = read(serial_port_fd, READ_BUF.data(), INCOMING_PCKT_SIZE);
+    ssize_t bytes_read = read(serial_port_fd, READ_BUF.data(), Packet::INCOMING_PCKT_SIZE);
 
     if (bytes_read <= 0) // No data or error
     {
         return false;
     } 
 
-    if (bytes_read < INCOMING_PCKT_SIZE) 
+    if (bytes_read < Packet::INCOMING_PCKT_SIZE) 
     {
         LogError(EC::UART_INCOMPLETE_READ);
         return false;

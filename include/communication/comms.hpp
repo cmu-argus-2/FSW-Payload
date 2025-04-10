@@ -10,8 +10,11 @@
 #include "core/data_handling.hpp"
 
 // Asymmetric sizes for send and receive buffers
-static constexpr uint8_t OUTGOING_PCKT_SIZE = 250;
-static constexpr uint8_t INCOMING_PCKT_SIZE = 32;
+namespace Packet
+{
+    static constexpr uint8_t OUTGOING_PCKT_SIZE = 250;
+    static constexpr uint8_t INCOMING_PCKT_SIZE = 32;
+}
 
 struct FileTransferManager
 {
@@ -19,6 +22,7 @@ struct FileTransferManager
     static inline std::mutex _mtx;
     static inline std::atomic<bool> _active_transfer = false;
     static inline uint16_t _total_seq_count = 0;
+    static inline std::string _file_name = "";
     
     static bool active_transfer()
     {
@@ -36,7 +40,7 @@ struct FileTransferManager
         return DH::CountFilesInDirectory(COMMS_FOLDER) > 0;
     }
 
-    static EC PopulateMetadata(std::string_view file_name)
+    static EC populate_metadata(const std::string& file_name)
     {
         if (!is_there_available_file())
         {
@@ -54,8 +58,9 @@ struct FileTransferManager
         // Calculate the total number of packets needed for transfer
         {
             std::lock_guard<std::mutex> lock(FileTransferManager::_mtx);
-            _total_seq_count = static_cast<uint16_t>(std::ceil(static_cast<double>(file_size) / OUTGOING_PCKT_SIZE));
+            _total_seq_count = static_cast<uint16_t>(std::ceil(static_cast<double>(file_size) / Packet::OUTGOING_PCKT_SIZE));
             SPDLOG_INFO("Total packets needed for transfer: {}", _total_seq_count);
+            _file_name = file_name;
         }
 
         _active_transfer.store(true);

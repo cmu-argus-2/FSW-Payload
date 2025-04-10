@@ -8,9 +8,6 @@ static std::deque<EC> _error_code_buffer;
 constexpr std::size_t MAX_ERROR_CODE_BUFFER_SIZE = 10;
 static std::mutex _error_code_buffer_mtx;
 
-
-
-
 void LogError(EC error_code)
 {
     // Validate error code with a sentinel

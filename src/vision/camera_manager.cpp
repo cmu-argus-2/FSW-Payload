@@ -43,11 +43,11 @@ uint8_t CameraManager::SaveLatestFrames(bool only_earth)
         if (cameras[i].GetStatus() == CAM_STATUS::ACTIVE && cameras[i].IsNewFrameAvailable())
         {
             // TODO: make a single call to GetBufferFrame() to avoid memory changes between calls (had the explicit locking interface in the camera class)
-            DH::StoreRawImgToDisk(
-                cameras[i].GetBufferFrame().GetTimestamp(),
-                cameras[i].GetBufferFrame().GetCamID(),
-                cameras[i].GetBufferFrame().GetImg()
-            );
+            [[maybe_unused]] std::string img_path = DH::StoreRawImgToDisk(
+                                        cameras[i].GetBufferFrame().GetTimestamp(),
+                                        cameras[i].GetBufferFrame().GetCamID(),
+                                        cameras[i].GetBufferFrame().GetImg()
+                                                    );
             cameras[i].SetOffNewFrameFlag();
             save_count++;
         }  

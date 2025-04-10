@@ -5,6 +5,7 @@
 #include "telemetry/telemetry.hpp"
 #include "vision/dataset.hpp"
 #include "core/errors.hpp"
+#include "communication/comms.hpp"
 
 #include <array>
 
@@ -343,16 +344,29 @@ void request_image([[maybe_unused]] std::vector<uint8_t>& data)
     if (!res)
     {
         SPDLOG_ERROR("Couldn't get an image..");
-        std::shared_ptr<Message> msg = CreateErrorAckMessage(CommandID::REQUEST_IMAGE, 0x23); // TODO later
+        std::shared_ptr<Message> msg = CreateErrorAckMessage(CommandID::REQUEST_IMAGE, to_uint8(EC::IMAGE_NOT_AVAILABLE)); // TODO later
         sys::payload().TransmitMessage(msg);
         return;
     }
 
     // Follow the logic when a file is requested
     // Select the file to be used -> overwrite/copy it to comms buffer folder -> ACK the command (= I'm ready)
-    DH::CopyFrameToCommsFolder(frame);
+    std::string file_path = DH::CopyFrameToCommsFolder(frame);
 
 
+    // Set the file transfer manager
+    FileTransferManager::Reset();
+    EC err = FileTransferManager::PopulateMetadata(file_path);
+
+    if (err != EC::OK)
+    {
+        SPDLOG_ERROR("Failed to populate metadata for file transfer.");
+        std::shared_ptr<Message> msg = CreateErrorAckMessage(CommandID::REQUEST_IMAGE, 0x24); // TODO
+        sys::payload().TransmitMessage(msg);
+        return;
+    }
+
+    // Send the ACK message
     std::shared_ptr<Message> msg = CreateSuccessAckMessage(CommandID::REQUEST_IMAGE);
     sys::payload().TransmitMessage(msg);
 

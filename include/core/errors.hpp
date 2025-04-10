@@ -2,6 +2,7 @@
 #define ERRORS_HPP
 
 #include <deque>
+#include <cstdint>
 
 
 // Master list of all runtime error codes throughout the codebase 
@@ -9,11 +10,11 @@
 // Circular buffer 
 
 
+// TODO: constexpr
 enum class ErrorCode // Error codes  
 {
     // TODO must be extremely well documented 
-
-    OK, // Can't be logged
+    OK = 0, // Can't be logged
     PLACEHOLDER,
 
     // Divide per subsystem
@@ -22,7 +23,9 @@ enum class ErrorCode // Error codes
     // Thread pool 
     // Data handling
     FILE_DOES_NOT_EXIST,
+    FILE_NOT_FOUND,
     // Camera subsystem
+    IMAGE_NOT_AVAILABLE,
     // Telemetry
     // Communication
 
@@ -50,6 +53,12 @@ enum class ErrorCode // Error codes
 
 // Alias for readability
 using EC = ErrorCode;
+
+
+constexpr uint8_t to_uint8(ErrorCode ec) 
+{
+    return static_cast<uint8_t>(ec);
+}
 
 
 // Log any incoming error with their correspondign timestamp in the circular buffer 

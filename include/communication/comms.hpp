@@ -36,19 +36,19 @@ struct FileTransferManager
         return DH::CountFilesInDirectory(COMMS_FOLDER) > 0;
     }
 
-    static bool PopulateMetadata(std::string_view file_name)
+    static EC PopulateMetadata(std::string_view file_name)
     {
         if (!is_there_available_file())
         {
             SPDLOG_INFO("No files available for transfer.");
-            return false;
+            return EC::FILE_NOT_FOUND;
         }
 
         long file_size = DH::GetFileSize(file_name);
         if (file_size < 0)
         {
             SPDLOG_ERROR("Failed to get file size for {}.", file_name);
-            return false;
+            return EC::FILE_DOES_NOT_EXIST;
         }
 
         // Calculate the total number of packets needed for transfer
@@ -59,7 +59,7 @@ struct FileTransferManager
         }
 
         _active_transfer.store(true);
-        return true;
+        return EC::OK;
     }
 
     static void Reset()

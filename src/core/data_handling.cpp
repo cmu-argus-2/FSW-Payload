@@ -3,7 +3,6 @@
 #include <cmath>
 #include <cstdlib>  
 
-#include "core/errors.hpp"
 
 namespace DH // Data Handling
 {
@@ -33,7 +32,7 @@ bool MakeNewDirectory(std::string_view directory_path)
 }
 
 
-long GetFileSize(std::string_view file_path) 
+long GetFileSize(std::string_view file_path) // should maybe return a pair result / error
 {
     struct stat stat_buf;
     int rc = stat(std::string(file_path).c_str(), &stat_buf);
@@ -115,27 +114,29 @@ bool InitializeDataStorage()
     // TODO retry if failure
 }
 
-void StoreFrameToDisk(Frame& frame, std::string_view target_folder)
+std::string StoreFrameToDisk(Frame& frame, std::string_view target_folder)
 {
-    StoreRawImgToDisk(frame.GetTimestamp(), frame.GetCamID(), frame.GetImg(), target_folder);
+    return StoreRawImgToDisk(frame.GetTimestamp(), frame.GetCamID(), frame.GetImg(), target_folder);
 }
     
 
-void StoreRawImgToDisk(std::uint64_t timestamp, int cam_id, const cv::Mat& img, std::string_view target_folder)
+std::string StoreRawImgToDisk(std::uint64_t timestamp, int cam_id, const cv::Mat& img, std::string_view target_folder)
 {
     std::ostringstream oss;
     oss << target_folder << "raw" << DELIMITER << timestamp << DELIMITER << cam_id << ".png";
-    const std::string& file_path = oss.str();
+    std::string file_path = oss.str();
     cv::imwrite(file_path, img);
     SPDLOG_INFO("Saved img to disk: {}", file_path);
     SPDLOG_INFO("File size: {} bytes", GetFileSize(file_path));
     SPDLOG_DEBUG("Total size of folder {}: {} bytes", target_folder, GetDirectorySize(target_folder));
     SPDLOG_DEBUG("Number of files in folder {}: {}", target_folder, CountFilesInDirectory(target_folder));
+
+    return file_path; // return value optimized 
 }
 
 
 // Returns true if the latest file is found, false otherwise
-bool GetLatestRawImgPath(std::filesystem::directory_entry& latest_file)
+bool GetLatestRawFilePath(std::filesystem::directory_entry& latest_file)
 {
 
     bool found = false;    
@@ -188,7 +189,7 @@ bool ReadLatestStoredRawImg(Frame& frame)
 
     std::filesystem::directory_entry latest_file;
 
-    if (!GetLatestRawImgPath(latest_file)) 
+    if (!GetLatestRawFilePath(latest_file)) 
     {
         SPDLOG_WARN("No files found in the directory.");
         return false;
@@ -253,7 +254,7 @@ void EmptyCommsFolder()
     }
 }
 
-void CopyFrameToCommsFolder(Frame& frame)
+std::string CopyFrameToCommsFolder(Frame& frame)
 {
     if (CountFilesInDirectory(COMMS_FOLDER) > 0)
     {
@@ -261,8 +262,20 @@ void CopyFrameToCommsFolder(Frame& frame)
         EmptyCommsFolder();
     }
     // Store the image in the comms folder
-    StoreRawImgToDisk(frame.GetTimestamp(), frame.GetCamID(), frame.GetImg(), COMMS_FOLDER);
+    return StoreRawImgToDisk(frame.GetTimestamp(), frame.GetCamID(), frame.GetImg(), COMMS_FOLDER);
 }
 
+EC GetCommsFilePath(std::string& path_out) 
+{
+    std::filesystem::directory_entry latest_file;
+    if (!GetLatestRawFilePath(latest_file)) {
+        SPDLOG_WARN("No files found in the comms folder.");
+        LogError(EC::FILE_NOT_FOUND);
+        return EC::FILE_NOT_FOUND;
+    }
+
+    path_out = latest_file.path().string();
+    return EC::OK;
+}
 
 } // namespace DH

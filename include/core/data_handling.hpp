@@ -14,6 +14,8 @@ This file contains classes and functions providing file services and data handli
 #include "spdlog/spdlog.h"
 #include "vision/frame.hpp"
 
+#include "core/errors.hpp"
+
 #define ROOT_DISK "/"
 
 #define ROOT_DATA_FOLDER "data/"
@@ -54,8 +56,8 @@ namespace DH // Data Handling
 
 
     // raw_timestamp_camid.png 
-    void StoreFrameToDisk(Frame& frame, std::string_view target_folder = IMAGES_FOLDER);
-    void StoreRawImgToDisk(std::uint64_t timestamp, int cam_id, const cv::Mat& img, std::string_view target_folder = IMAGES_FOLDER);
+    std::string StoreFrameToDisk(Frame& frame, std::string_view target_folder = IMAGES_FOLDER);
+    std::string StoreRawImgToDisk(std::uint64_t timestamp, int cam_id, const cv::Mat& img, std::string_view target_folder = IMAGES_FOLDER);
 
     // Load in memory the latest img
     bool ReadLatestStoredRawImg(Frame& frame);
@@ -71,6 +73,10 @@ namespace DH // Data Handling
 
 
 
+    // Returns true if the latest file is found, false otherwise
+    bool GetLatestRawFilePath(std::filesystem::directory_entry& latest_file);
+
+
     /*
     Assumes the primary system disk is an NVMe drive as the main root partition (/)
     Returns the disk usage as a positive percentage. -1 in case of errors.
@@ -80,7 +86,8 @@ namespace DH // Data Handling
 
     // Communication related helper functions
     void EmptyCommsFolder();
-    void CopyFrameToCommsFolder(Frame& frame);
+    std::string CopyFrameToCommsFolder(Frame& frame);
+    EC GetCommsFilePath(std::string& path_out);
 
 
 

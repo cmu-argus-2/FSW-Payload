@@ -335,7 +335,7 @@ void DatasetManager::CollectionLoop()
             {   
                 for (auto frame : buffer_frames)
                 {
-                    DH::StoreFrameToDisk(frame, folder_path);
+                    [[maybe_unused]] std::string path = DH::StoreFrameToDisk(frame, folder_path);
                     saved_frames++;
                     progress.Update(saved_frames);
                     SPDLOG_WARN("Number of saved frames {}", saved_frames);

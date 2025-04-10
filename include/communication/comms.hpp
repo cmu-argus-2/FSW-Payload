@@ -15,9 +15,21 @@ static constexpr uint8_t INCOMING_PCKT_SIZE = 32;
 
 struct FileTransferManager
 {
-    static inline bool active_transfer = false;
-    static inline uint16_t total_seq_count = 0;
+    // going against all rules..
+    static inline std::mutex _mtx;
+    static inline std::atomic<bool> _active_transfer = false;
+    static inline uint16_t _total_seq_count = 0;
     
+    static bool active_transfer()
+    {
+        return _active_transfer.load();
+    }
+
+    static uint16_t total_seq_count()
+    {
+        std::lock_guard<std::mutex> lock(FileTransferManager::_mtx);
+        return _total_seq_count;
+    }
 
     static bool is_there_available_file()
     {
@@ -40,16 +52,23 @@ struct FileTransferManager
         }
 
         // Calculate the total number of packets needed for transfer
-        total_seq_count = static_cast<uint16_t>(std::ceil(static_cast<double>(file_size) / OUTGOING_PCKT_SIZE));
-        SPDLOG_INFO("Total packets needed for transfer: {}", total_seq_count);
-        active_transfer = true;
+        {
+            std::lock_guard<std::mutex> lock(FileTransferManager::_mtx);
+            _total_seq_count = static_cast<uint16_t>(std::ceil(static_cast<double>(file_size) / OUTGOING_PCKT_SIZE));
+            SPDLOG_INFO("Total packets needed for transfer: {}", _total_seq_count);
+        }
+
+        _active_transfer.store(true);
         return true;
     }
 
     static void Reset()
     {
-        active_transfer = false;
-        total_seq_count = 0;
+        _active_transfer.store(false);
+        {
+            std::lock_guard<std::mutex> lock(FileTransferManager::_mtx);
+            _total_seq_count = 0;
+        }
     }
 };
 

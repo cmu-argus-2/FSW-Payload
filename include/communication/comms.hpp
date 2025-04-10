@@ -14,6 +14,24 @@ namespace Packet
 {
     static constexpr uint8_t OUTGOING_PCKT_SIZE = 250;
     static constexpr uint8_t INCOMING_PCKT_SIZE = 32;
+
+    using Out = std::array<uint8_t, OUTGOING_PCKT_SIZE>;
+    using In = std::array<uint8_t, INCOMING_PCKT_SIZE>;
+
+    // TODO: Temporary conversion copying std::vector content into the array until I fully switch to this container
+    static inline Out ToOut(std::vector<uint8_t>&& vec) 
+    {
+        Out out{}; // zero-initialized
+        std::move(vec.begin(), vec.begin() + std::min(vec.size(), static_cast<size_t>(OUTGOING_PCKT_SIZE)), out.begin());
+        return out;
+    }
+
+    static inline In ToIn(std::vector<uint8_t>&& vec) 
+    {
+        In in{}; // zero-initialized
+        std::move(vec.begin(), vec.begin() + std::min(vec.size(), static_cast<size_t>(INCOMING_PCKT_SIZE)), in.begin());
+        return in;
+    }
 }
 
 struct FileTransferManager

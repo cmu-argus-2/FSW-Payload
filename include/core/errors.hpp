@@ -20,6 +20,8 @@ enum class ErrorCode // Error codes
 
     // Task execution and queue 
     // Thread pool 
+    // Data handling
+    FILE_DOES_NOT_EXIST,
     // Camera subsystem
     // Telemetry
     // Communication
@@ -36,7 +38,7 @@ enum class ErrorCode // Error codes
     
 
     // Commands
-    
+
 
 
     // Neural Engine 

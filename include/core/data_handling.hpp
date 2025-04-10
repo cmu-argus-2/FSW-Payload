@@ -48,7 +48,7 @@ namespace DH // Data Handling
 
 
     bool MakeNewDirectory(std::string_view directory_path);
-    long GetFileSize(std::string_view file_path);
+    long GetFileSize(std::string_view file_path); // in bytes
     long GetDirectorySize(std::string_view directory_path); 
     int CountFilesInDirectory(std::string_view directory_path);
 

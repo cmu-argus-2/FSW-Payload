@@ -3,6 +3,8 @@
 #include <cmath>
 #include <cstdlib>  
 
+#include "core/errors.hpp"
+
 namespace DH // Data Handling
 {
 
@@ -35,7 +37,15 @@ long GetFileSize(std::string_view file_path)
 {
     struct stat stat_buf;
     int rc = stat(std::string(file_path).c_str(), &stat_buf);
-    return rc == 0LL ? stat_buf.st_size : -1LL;
+
+    if (rc == -1) 
+    {
+        SPDLOG_ERROR("Failed to get file size for {}: {}", file_path, strerror(errno));
+        LogError(EC::FILE_DOES_NOT_EXIST);
+        return -1LL;
+    }
+
+    return stat_buf.st_size;
 }
 
 

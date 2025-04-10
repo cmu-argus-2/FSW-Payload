@@ -4,11 +4,54 @@
 #include <vector>
 #include <cstdint>
 #include <atomic>
+#include <string_view>
+
+#include "spdlog/spdlog.h"
+#include "core/data_handling.hpp"
 
 // Asymmetric sizes for send and receive buffers
 static constexpr uint8_t OUTGOING_PCKT_SIZE = 250;
 static constexpr uint8_t INCOMING_PCKT_SIZE = 32;
 
+struct FileTransferManager
+{
+    static inline bool active_transfer = false;
+    static inline uint16_t total_seq_count = 0;
+    
+
+    static bool is_there_available_file()
+    {
+        return DH::CountFilesInDirectory(COMMS_FOLDER) > 0;
+    }
+
+    static bool PopulateMetadata(std::string_view file_name)
+    {
+        if (!is_there_available_file())
+        {
+            SPDLOG_INFO("No files available for transfer.");
+            return false;
+        }
+
+        long file_size = DH::GetFileSize(file_name);
+        if (file_size < 0)
+        {
+            SPDLOG_ERROR("Failed to get file size for {}.", file_name);
+            return false;
+        }
+
+        // Calculate the total number of packets needed for transfer
+        total_seq_count = static_cast<uint16_t>(std::ceil(static_cast<double>(file_size) / OUTGOING_PCKT_SIZE));
+        SPDLOG_INFO("Total packets needed for transfer: {}", total_seq_count);
+        active_transfer = true;
+        return true;
+    }
+
+    static void Reset()
+    {
+        active_transfer = false;
+        total_seq_count = 0;
+    }
+};
 
 // Abstract class for communication interfaces
 class Communication

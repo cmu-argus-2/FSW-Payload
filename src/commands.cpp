@@ -356,7 +356,7 @@ void request_image([[maybe_unused]] std::vector<uint8_t>& data)
 
     // Set the file transfer manager
     FileTransferManager::Reset();
-    EC err = FileTransferManager::populate_metadata(file_path);
+    EC err = FileTransferManager::PopulateMetadata(file_path);
 
     if (err != EC::OK)
     {
@@ -387,7 +387,7 @@ void request_next_file_packet(std::vector<uint8_t>& data)
     }
 
     // check if a file has been readied -> NO_FILE_READY
-    if (!FileTransferManager::is_there_available_file() && FileTransferManager::active_transfer())
+    if (!FileTransferManager::IsThereAvailableFile() || !FileTransferManager::active_transfer())
     {
         SPDLOG_ERROR("No file available for transfer.");
         std::shared_ptr<Message> msg = CreateErrorAckMessage(CommandID::REQUEST_NEXT_FILE_PACKET, to_uint8(EC::NO_FILE_READY));
@@ -411,8 +411,18 @@ void request_next_file_packet(std::vector<uint8_t>& data)
     std::vector<uint8_t> transmit_data;
     transmit_data.reserve(Packet::OUTGOING_PCKT_SIZE);
 
+    // Grab the data from the file
+    EC err = FileTransferManager::GrabFileChunk(requested_packet_nb, transmit_data);
+    if (err != EC::OK)
+    {
+        SPDLOG_ERROR("Failed to grab file chunk.");
+        std::shared_ptr<Message> msg = CreateErrorAckMessage(CommandID::REQUEST_NEXT_FILE_PACKET, to_uint8(err)); 
+        sys::payload().TransmitMessage(msg);
+        return;
+    }
     
-    
+    std::shared_ptr<Message> msg = CreateMessage(CommandID::REQUEST_NEXT_FILE_PACKET, transmit_data);
+    sys::payload().TransmitMessage(msg);
 
 
     sys::payload().SetLastExecutedCmdID(CommandID::REQUEST_NEXT_FILE_PACKET);

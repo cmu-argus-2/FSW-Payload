@@ -62,6 +62,9 @@ namespace DH // Data Handling
     // Load in memory the latest img
     bool ReadLatestStoredRawImg(Frame& frame);
 
+    // Load in memory a chunk of data
+    EC ReadFileChunk(std::string_view file_path, uint32_t start_byte, uint32_t length, std::vector<uint8_t>& data_out);
+
     // count the number of images in the images folder
     int CountRawImgNumberOnDisk();
 

@@ -221,6 +221,31 @@ bool ReadLatestStoredRawImg(Frame& frame)
 
 }
 
+EC ReadFileChunk(std::string_view file_path, uint32_t start_byte, uint32_t length, std::vector<uint8_t>& data_out)
+{
+    data_out.resize(length, 0); 
+
+    std::ifstream file(file_path.data(), std::ios::binary);
+    if (!file.is_open()) 
+    {
+        LogError(EC::FILE_NOT_FOUND);
+        return EC::FILE_NOT_FOUND;
+    }
+        
+    // TODO: could add a check if start byte is > file size
+    if (start_byte >= GetFileSize(file_path)) 
+    {
+        SPDLOG_ERROR("Start byte {} is out of range for file {}", start_byte, file_path);
+        LogError(EC::START_BYTE_OUT_OF_RANGE);
+        return EC::START_BYTE_OUT_OF_RANGE;
+    }
+
+    file.seekg(start_byte, std::ios::beg);
+    file.read(reinterpret_cast<char*>(data_out.data()), length);
+    data_out.resize(static_cast<uint32_t>(file.gcount())); // trim to actual bytes read
+
+    return EC::OK;
+}
 
 int CountRawImgNumberOnDisk()
 {

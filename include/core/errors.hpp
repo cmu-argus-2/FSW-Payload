@@ -25,10 +25,13 @@ enum class ErrorCode // Error codes
     INVALID_COMMAND_ARGUMENTS,
     NO_FILE_READY,
     NO_MORE_PACKET_FOR_FILE,
+    FAIL_TO_READ_FILE,
 
     // Data handling
     FILE_DOES_NOT_EXIST,
     FILE_NOT_FOUND,
+    START_BYTE_OUT_OF_RANGE,
+    FAILED_TO_GRAB_FILE_CHUNK,
     
 
     // Task execution and queue 

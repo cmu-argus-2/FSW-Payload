@@ -34,7 +34,7 @@ void ReadResponses(const char* fifo_path_out)
         return;
     }
 
-    char buffer[512];
+    char buffer[1024];
 
     while (running.load()) 
     {
@@ -84,13 +84,31 @@ void ReadResponses(const char* fifo_path_out)
     close(fd);
 }
 
+static constexpr uint8_t CMD_PCKT_SIZE = 32;
 
+int main([[maybe_unused]] int argc, [[maybe_unused]] char* argv[])
+{   
+    uint8_t outgoing_packet_size = CMD_PCKT_SIZE; // Default packet size
+    if (argc > 1) 
+    {
+        try {
+            int size = std::stoi(argv[1]);
+            if (size > 0 && size <= 32) 
+            {
+                outgoing_packet_size = static_cast<uint8_t>(size);
+            } else {
+                std::cerr << "Invalid packet size. Must be between 1 and 255. Using default size: " 
+                          << static_cast<int>(CMD_PCKT_SIZE) << std::endl;
+            }
+        } catch (const std::exception& e) {
+            std::cerr << "Error parsing packet size: " << e.what() 
+                      << ". Using default size: " << static_cast<int>(CMD_PCKT_SIZE) << std::endl;
+        }
+    } else
+    {
+        std::cerr << "Using default cmd size: " << static_cast<int>(CMD_PCKT_SIZE) << std::endl;
+    }
 
-
-int main(int argc, char* argv[])
-{
-    (void)argc;
-    (void)argv;
 
     const char* fifo_path_in = IPC_FIFO_PATH_IN; // Payload reads from this fifo, external process is writing into it
     const char* fifo_path_out = IPC_FIFO_PATH_OUT; // Payload writes to this fifo, external process is reading from it
@@ -136,13 +154,28 @@ int main(int argc, char* argv[])
     char* input;
     while ((input = readline("PAYLOAD> ")) != nullptr) 
     {
-        if (*input) { add_history(input);  }
-            
-        std::string cmd(input);  
-        free(input);             // Executed regardless of whether input is empty or not
+        if (*input) { add_history(input); }
+
+        std::string cmd(input);
+        free(input); // Executed regardless of whether input is empty or not
+
+        // Ensure the command string is of size outgoing_packet_size (assumes we won't overflow)
+        if (cmd.size() < outgoing_packet_size && !cmd.empty()) 
+        {
+            size_t padding_needed = outgoing_packet_size - cmd.size();
+            for (size_t i = 0; i < padding_needed*2; ++i) 
+            {
+            cmd += (i % 2 == 0) ? ' ' : '0'; // Append space and zero alternately
+            }
+        } 
+
+        if (!cmd.empty()) 
+        {
+            std::cout << "Sending command: " << cmd << std::endl;
+        }
+
         pipe << cmd << std::endl; // Send command to FSW via the pipe
         pipe.flush(); // Ensure data is written immediately
-
     }
 
     running.store(false);

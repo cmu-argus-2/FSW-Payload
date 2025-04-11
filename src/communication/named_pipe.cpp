@@ -6,7 +6,7 @@
 #include "core/timing.hpp"
 
 // Buffers
-static Packet::In READ_BUF = {0};
+static std::array<uint8_t, Packet::INCOMING_PCKT_SIZE+1> READ_BUF = {0}; // specifically +1 for null termination
 static Packet::Out WRITE_BUF = {0};
 
 bool IsFifo(const char *path)
@@ -39,17 +39,18 @@ void Set_NonBlocking(int fd)
 bool ReadLineFromPipe(int fd, std::string& line) 
 {
     static std::string buffer; // Buffer to accumulate data
-    char chunk[1024];          // Temporary read buffer
 
     // Read data from the file descriptor
-    ssize_t bytes_read = read(fd, chunk, sizeof(chunk) - 1);
+    ssize_t bytes_read = read(fd, READ_BUF.data(), Packet::INCOMING_PCKT_SIZE);
     if (bytes_read <= 0) 
     {
         return false; // No data read or error
     }
     // Null-terminate and append to the buffer
-    chunk[bytes_read] = '\0';
-    buffer.append(chunk);
+    //chunk[bytes_read] = '\0';
+    //buffer.append(chunk);
+    READ_BUF[bytes_read] = '\0'; // Null-terminate the read buffer
+    buffer.append(reinterpret_cast<char*>(READ_BUF.data()), bytes_read); // Append the read data to the buffer
 
     // Find the first newline in the buffer
     size_t new_line_pos = buffer.find('\n');
@@ -150,6 +151,7 @@ void NamedPipe::Disconnect()
 bool NamedPipe::Receive(uint8_t& cmd_id, std::vector<uint8_t>& data) {
     std::string command;
     timing::SleepMs(50); // Obviously not the best way to do this and limits the data rate (also TX)
+    // Despite the named pipe setup, we should read a full 'In' packet.
     bool line_received = ReadLineFromPipe(pipe_fd_in, command); // Use custom getline
     // SPDLOG_INFO("Received command?: {}", LineReceived);
 

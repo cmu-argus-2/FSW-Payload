@@ -233,11 +233,16 @@ void start_capture_images_periodically([[maybe_unused]] std::vector<uint8_t>& da
     // 1 byte for type
     // 2 bytes period (for now)
     // 2 bytes nb_frames
-    if (data.size() < 5)
+    DatasetType dataset_type = static_cast<DatasetType>(data[0]);
+    double period = static_cast<double>((data[1] << 8) | data[2]);
+    uint16_t nb_frames = (data[3] << 8) | data[4];
+
+
+    if (period == 0.0 || nb_frames == 0)
     {
         // TODO: Send Error ACK
         uint8_t ERR_PERIODIC = 0x20; // TODO define elsewhere
-        SPDLOG_ERROR("Invalid data size for START_CAPTURE_IMAGES_PERIODICALLY command");
+        SPDLOG_ERROR("Invalid data for START_CAPTURE_IMAGES_PERIODICALLY command");
         std::shared_ptr<Message> msg = CreateErrorAckMessage(CommandID::START_CAPTURE_IMAGES_PERIODICALLY, 0x20);
         sys::payload().TransmitMessage(msg);
         return;
@@ -260,9 +265,6 @@ void start_capture_images_periodically([[maybe_unused]] std::vector<uint8_t>& da
     }
 
     // Create a new Dataset
-    DatasetType dataset_type = static_cast<DatasetType>(data[0]);
-    double period = static_cast<double>((data[1] << 8) | data[2]);
-    uint16_t nb_frames = (data[3] << 8) | data[4];
     SPDLOG_INFO("Starting dataset collection (type {}) for {} frames at a period of {} seconds.", static_cast<uint8_t>(dataset_type), nb_frames, period);
 
     try
@@ -376,10 +378,13 @@ void request_image([[maybe_unused]] std::vector<uint8_t>& data)
 void request_next_file_packet(std::vector<uint8_t>& data)
 {
     SPDLOG_INFO("Requesting next file packet..");
+    
+    uint16_t requested_packet_nb = (data[0] << 8) | data[1]; 
+    SPDLOG_INFO("Requested packet number: {}", requested_packet_nb);
 
-    if (data.size() < 2)
+    if (requested_packet_nb == 0)
     {
-        SPDLOG_ERROR("Invalid data size for REQUEST_NEXT_FILE_PACKET command");
+        SPDLOG_ERROR("Invalid data size (0) for REQUEST_NEXT_FILE_PACKET command");
         std::shared_ptr<Message> msg = CreateErrorAckMessage(CommandID::REQUEST_NEXT_FILE_PACKET, to_uint8(EC::INVALID_COMMAND_ARGUMENTS));
         sys::payload().TransmitMessage(msg);
         return;
@@ -393,9 +398,7 @@ void request_next_file_packet(std::vector<uint8_t>& data)
         sys::payload().TransmitMessage(msg);
         return;
     }
-
-    // Note that we soft ignore if there is additional arguments if there is more than needed. More graceful this way
-    uint16_t requested_packet_nb = (data[0] << 8) | data[1]; 
+    
 
     // check if requested seq number is valid -> NO_MORE_PACKET_FOR_FILE
     if (requested_packet_nb > FileTransferManager::total_seq_count())

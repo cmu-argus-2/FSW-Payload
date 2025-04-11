@@ -47,15 +47,41 @@ bool Message::VerifyPacketSerialization()
     return _serialized;
 }
 
-std::shared_ptr<Message> CreateMessage(CommandID::Type id, std::vector<uint8_t>& tx_data)
+std::shared_ptr<Message> CreateMessage(CommandID::Type id, std::vector<uint8_t>& tx_data, uint16_t seq_count)
 {
     auto msg = std::make_shared<Message>(id, tx_data.size());
     msg->AddToPacket(tx_data);
 
     assert(msg->VerifyPacketSerialization() && ("Packet serialization verification failed for CommandID: " + std::to_string(static_cast<int>(id))).c_str());
+    msg->_packet = Packet::ToOut(std::move(msg->packet));
     
     return msg;
 }
+
+std::shared_ptr<Message> CreateSuccessAckMessage(CommandID::Type id)
+{
+    auto msg = std::make_shared<Message>(id, 1);
+    msg->AddToPacket(ACK_SUCCESS);
+
+    assert(msg->VerifyPacketSerialization() && ("Packet serialization verification failed for CommandID: " + std::to_string(static_cast<int>(id))).c_str());
+    msg->_packet = Packet::ToOut(std::move(msg->packet));
+
+    return msg;
+}
+
+
+std::shared_ptr<Message> CreateErrorAckMessage(CommandID::Type id, uint8_t error_code)
+{
+    auto msg = std::make_shared<Message>(id, 2);
+    msg->AddToPacket(ACK_ERROR);
+    msg->AddToPacket(error_code);
+
+    assert(msg->VerifyPacketSerialization() && ("Packet serialization verification failed for CommandID: " + std::to_string(static_cast<int>(id))).c_str());
+    msg->_packet = Packet::ToOut(std::move(msg->packet));
+
+    return msg;
+}
+
 
 void SerializeToBytes(uint64_t value, std::vector<uint8_t>& output)
 {
@@ -81,26 +107,4 @@ void SerializeToBytes(uint16_t value, std::vector<uint8_t>& output)
 {
     output.push_back(static_cast<uint8_t>(value >> 8));
     output.push_back(static_cast<uint8_t>(value & 0xFF));
-}
-
-std::shared_ptr<Message> CreateSuccessAckMessage(CommandID::Type id)
-{
-    auto msg = std::make_shared<Message>(id, 1);
-    msg->AddToPacket(ACK_SUCCESS);
-
-    assert(msg->VerifyPacketSerialization() && ("Packet serialization verification failed for CommandID: " + std::to_string(static_cast<int>(id))).c_str());
-
-    return msg;
-}
-
-
-std::shared_ptr<Message> CreateErrorAckMessage(CommandID::Type id, uint8_t error_code)
-{
-    auto msg = std::make_shared<Message>(id, 2);
-    msg->AddToPacket(ACK_ERROR);
-    msg->AddToPacket(error_code);
-
-    assert(msg->VerifyPacketSerialization() && ("Packet serialization verification failed for CommandID: " + std::to_string(static_cast<int>(id))).c_str());
-
-    return msg;
 }

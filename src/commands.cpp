@@ -304,14 +304,13 @@ void stop_capture_images([[maybe_unused]] std::vector<uint8_t>& data)
         // Stop dataset process and remove from registry
         ds->StopDataset(DATASET_KEY_CMD);
 
-        // Create ACK message with stats
-        std::shared_ptr<Message> msg = CreateSuccessAckMessage(CommandID::STOP_CAPTURE_IMAGES);
-        std::vector<uint8_t> stats_output;
-        stats_output.push_back(completion);
-        SerializeToBytes(nb_frames, stats_output);
-        msg->AddToPacket(stats_output);
+        // Create success ACK message with stats
+        std::vector<uint8_t> transmit_data;
+        transmit_data.push_back(ACK_SUCCESS);
+        transmit_data.push_back(completion);
+        SerializeToBytes(nb_frames, transmit_data);
+        std::shared_ptr<Message> msg = CreateMessage(CommandID::STOP_CAPTURE_IMAGES, transmit_data);
         sys::payload().TransmitMessage(msg);
-
     }
     else
     {
@@ -421,7 +420,7 @@ void request_next_file_packet(std::vector<uint8_t>& data)
         return;
     }
     
-    std::shared_ptr<Message> msg = CreateMessage(CommandID::REQUEST_NEXT_FILE_PACKET, transmit_data);
+    std::shared_ptr<Message> msg = CreateMessage(CommandID::REQUEST_NEXT_FILE_PACKET, transmit_data, requested_packet_nb);
     sys::payload().TransmitMessage(msg);
 
 

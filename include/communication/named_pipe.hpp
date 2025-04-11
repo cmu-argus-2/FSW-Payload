@@ -19,7 +19,7 @@ public:
     bool Connect() override;
     void Disconnect() override;
     bool Receive(uint8_t& cmd_id, std::vector<uint8_t>& data) override;
-    bool Send(const std::vector<uint8_t>& data) override;
+    bool Send(const Packet::Out& data) override;
     void RunLoop() override;
     void StopLoop() override;
 
@@ -33,14 +33,5 @@ private:
     bool ParseCommand(const std::string& command, uint8_t& cmd_id, std::vector<uint8_t>& data);
 
 };
-
-
-
-
-
-
-
-
-
 
 #endif // NAMED_PIPE_HPP

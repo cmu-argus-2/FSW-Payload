@@ -83,7 +83,8 @@ TX_Queue::TX_Queue()
 void TX_Queue::AddMsg(std::shared_ptr<Message> msg) 
 {   
     std::lock_guard<std::mutex> lock(queue_mutex);
-    if (!paused) {
+    if (!paused) 
+    {
         msg_queue.push(msg);
         SPDLOG_INFO("Added TX message with ID: {}", msg->id);
     } else {
@@ -94,7 +95,8 @@ void TX_Queue::AddMsg(std::shared_ptr<Message> msg)
 std::shared_ptr<Message> TX_Queue::GetNextMsg() 
 {
     std::lock_guard<std::mutex> lock(queue_mutex);
-    if (msg_queue.empty()) {
+    if (msg_queue.empty()) 
+    {
         SPDLOG_WARN("Queue is empty");
         throw std::runtime_error("Queue is empty");
     }

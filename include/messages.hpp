@@ -6,6 +6,7 @@
 #include <chrono>
 #include <atomic>
 #include <memory>
+#include <communication/comms.hpp>
 #include "commands.hpp"
 
 // If seq_count > 1, priority is automatically set to 2
@@ -25,6 +26,7 @@ struct Message
     std::atomic<bool> _serialized = false; // Atomic flag for serialization status  
 
     std::vector<uint8_t> packet = {}; // Serialized packet buffer
+    Packet::Out _packet{}; // Serialized packet buffer - will switch soon to this one
     
     uint8_t priority = TX_PRIORITY_1;         // For the TX priority queue
     uint64_t created_at; // UNIX timestamp for when the task was created.
@@ -40,7 +42,7 @@ struct Message
 };
 
 
-std::shared_ptr<Message> CreateMessage(CommandID::Type id, std::vector<uint8_t>& tx_data);
+std::shared_ptr<Message> CreateMessage(CommandID::Type id, std::vector<uint8_t>& tx_data, uint16_t seq_count = 1);
 void SerializeToBytes(uint64_t value, std::vector<uint8_t>& output);
 void SerializeToBytes(uint32_t value, std::vector<uint8_t>& output);
 void SerializeToBytes(uint16_t value, std::vector<uint8_t>& output);

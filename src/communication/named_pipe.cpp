@@ -5,6 +5,9 @@
 #include "payload.hpp"
 #include "core/timing.hpp"
 
+// Buffers
+static Packet::In READ_BUF = {0};
+static Packet::Out WRITE_BUF = {0};
 
 bool IsFifo(const char *path)
 {
@@ -39,13 +42,13 @@ bool ReadLineFromPipe(int fd, std::string& line)
     char chunk[1024];          // Temporary read buffer
 
     // Read data from the file descriptor
-    ssize_t bytesRead = read(fd, chunk, sizeof(chunk) - 1);
-    if (bytesRead <= 0) 
+    ssize_t bytes_read = read(fd, chunk, sizeof(chunk) - 1);
+    if (bytes_read <= 0) 
     {
         return false; // No data read or error
     }
     // Null-terminate and append to the buffer
-    chunk[bytesRead] = '\0';
+    chunk[bytes_read] = '\0';
     buffer.append(chunk);
 
     // Find the first newline in the buffer
@@ -146,11 +149,11 @@ void NamedPipe::Disconnect()
 
 bool NamedPipe::Receive(uint8_t& cmd_id, std::vector<uint8_t>& data) {
     std::string command;
-    timing::SleepMs(40); // Obviously not the best way to do this and limits the data rate (also TX)
-    bool LineReceived = ReadLineFromPipe(pipe_fd_in, command); // Use custom getline
+    timing::SleepMs(50); // Obviously not the best way to do this and limits the data rate (also TX)
+    bool line_received = ReadLineFromPipe(pipe_fd_in, command); // Use custom getline
     // SPDLOG_INFO("Received command?: {}", LineReceived);
 
-    if (LineReceived) 
+    if (line_received) 
     {
         bool status = ParseCommand(command, cmd_id, data);
         return status;
@@ -165,15 +168,14 @@ bool NamedPipe::Receive(uint8_t& cmd_id, std::vector<uint8_t>& data) {
 
 
 
-bool NamedPipe::Send(const std::vector<uint8_t>& data)
+bool NamedPipe::Send(const Packet::Out& data)
 {
     if (pipe_fd_out < 0) 
     {
         SPDLOG_ERROR("Write FIFO is not open, cannot send data.");
         return false;
     }
-
-
+    
     // Convert data to a space-separated string
     std::ostringstream oss;
     for (uint8_t byte : data) 
@@ -240,7 +242,7 @@ void NamedPipe::RunLoop()
             if (pfds[1].revents & POLLOUT && !sys::payload().GetTxQueue().IsEmpty()) 
             {
                 std::shared_ptr<Message> msg = sys::payload().GetTxQueue().GetNextMsg();
-                bool succ = Send(msg->packet);
+                bool succ = Send(msg->_packet);
                 if (succ)
                 {
                     SPDLOG_INFO("Transmitted message with ID: {}", msg->id);

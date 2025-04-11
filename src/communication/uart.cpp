@@ -11,8 +11,8 @@
 #include "spdlog/spdlog.h"
 
 
-static std::array<uint8_t, Packet::INCOMING_PCKT_SIZE> READ_BUF = {0};
-static std::array<uint8_t, Packet::OUTGOING_PCKT_SIZE> WRITE_BUF = {0};
+static Packet::In READ_BUF = {0};
+static Packet::Out WRITE_BUF = {0};
 
 
 UART::UART()
@@ -156,7 +156,7 @@ bool UART::FillWriteBuffer(const std::vector<uint8_t>& data)
 }
 
 
-bool UART::Send(const std::vector<uint8_t>& data)
+bool UART::Send(const Packet::Out& data)
 {
     if (!port_opened)
     {
@@ -165,12 +165,13 @@ bool UART::Send(const std::vector<uint8_t>& data)
         return false;
     }
 
-    if (!FillWriteBuffer(data))
+    /*if (!FillWriteBuffer(data))
     {
         return false;
     }
 
-    ssize_t bytes_written = write(serial_port_fd, WRITE_BUF.data(), Packet::OUTGOING_PCKT_SIZE);
+    ssize_t bytes_written = write(serial_port_fd, WRITE_BUF.data(), Packet::OUTGOING_PCKT_SIZE);*/
+    ssize_t bytes_written = write(serial_port_fd, data.data(), Packet::OUTGOING_PCKT_SIZE);
 
     if (bytes_written == -1 || bytes_written != Packet::OUTGOING_PCKT_SIZE) 
     {
@@ -231,7 +232,7 @@ void UART::RunLoop()
         if (!sys::payload().GetTxQueue().IsEmpty())
         {
             std::shared_ptr<Message> msg = sys::payload().GetTxQueue().GetNextMsg();
-            bool succ = Send(msg->packet);
+            bool succ = Send(msg->_packet);
             if (succ)
             {
                 SPDLOG_INFO("Transmitted message with ID: {}", msg->id);

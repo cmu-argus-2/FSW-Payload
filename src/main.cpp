@@ -18,20 +18,7 @@ Author: Ibrahima Sory Sow
 #include "communication/named_pipe.hpp"
 #include "communication/uart.hpp"
 #include "core/timing.hpp"
-
-
-void SetupLogger()
-{
-    // Set the log pattern
-
-    // %Y-%m-%d %H:%M:%S.%f: timestamp
-    // %t: thread id
-    // %l: log level
-    // %s: source filename
-    // %#: source line number
-    // %v: the actual text to log
-    spdlog::set_pattern("[%Y-%m-%d %H:%M:%S.%e][%^%l%$][thread:%t][%s:%#] %v");
-}
+#include "logger.hpp"
 
 int main(int argc, char** argv)
 {
@@ -39,9 +26,8 @@ int main(int argc, char** argv)
     // Set the reference time
     timing::InitializeBootTime();
     
-    
-    SetupLogger();
-    // spdlog::set_level(spdlog::level::warn);
+    LoggerManager::PromptLogSeverity(); 
+    LoggerManager::SetupLogger("test_log.log"); // change this line to a file name
 
 
     ////// LOADING CONFIGURATION

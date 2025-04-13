@@ -45,7 +45,7 @@ Build the project using the helper script:
 
 ```bash
 ./build.sh [Debug|Release] [disable-nn]
-./bin/PAYLOAD [optional: <communication-interface: [UART, CLI]>]
+./bin/PAYLOAD [optional: <communication-interface: [UART, CLI]>] [optional: <log-severity: [TRACE, DEBUG, INFO, WARN, ERROR, CRITICAL, OFF]>]
 ```
 
 All binaries will appear in the bin folder.

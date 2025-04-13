@@ -10,11 +10,12 @@ Author: Ibrahima Sory Sow
 
 import time
 
-from definitions import CommandID, ErrorCodes, ExternalRequest, PayloadTM, FileTransfer, FileTransferType, ODStatus
+from definitions import CommandID, ErrorCodes, ExternalRequest, FileTransfer, FileTransferType, ODStatus, PayloadTM
 from protocol import Decoder, Encoder
 
-_PING_RESP_VALUE = 0x60 # DO NOT CHANGE THIS VALUE
+_PING_RESP_VALUE = 0x60  # DO NOT CHANGE THIS VALUE
 _TELEMETRY_FREQUENCY = 0.1  # seconds
+
 
 class PayloadState:  # Only from the host perspective
     OFF = 0  # Fully powered down
@@ -28,6 +29,7 @@ class PayloadController:
 
     # Bi-directional communication interface
     communication_interface = None
+    interface_injected = False
 
     # State of the Payload from the host perspective
     state = PayloadState.OFF
@@ -43,7 +45,7 @@ class PayloadController:
 
     # Boot variables
     time_we_started_booting = 0
-    TIMEOUT_BOOT = 120 # seconds
+    TIMEOUT_BOOT = 120  # seconds
 
     # Timeout for the shutdown process
     TIMEOUT_SHUTDOWN = 10  # 10 seconds
@@ -56,7 +58,7 @@ class PayloadController:
     # Last telemetry received
     _prev_tm_time = time.monotonic()
     _now = time.monotonic()
-    telemetry_period = 1 / _TELEMETRY_FREQUENCY # seconds
+    telemetry_period = 1 / _TELEMETRY_FREQUENCY  # seconds
 
     # File transfer
     no_more_file_packet_to_receive = False
@@ -66,9 +68,16 @@ class PayloadController:
     od_status: ODStatus = None
 
     @classmethod
-    def initialize(cls, communication_interface):
+    def inject_communication_interface(cls, communication_interface):
         cls.communication_interface = communication_interface
-        cls.communication_interface.connect()
+        cls.interface_injected = True
+
+    @classmethod
+    def initialize(cls):
+        if not cls.interface_injected:
+            print("[ERROR] Communication interface not injected. Cannot initialize controller.")
+            return False
+        return cls.communication_interface.connect()
 
     @classmethod
     def deinitialize(cls):
@@ -78,7 +87,7 @@ class PayloadController:
     def _did_we_send_a_command(cls):
         return len(cls.last_cmds_sent) > 0
 
-    @classmethod 
+    @classmethod
     def add_request(cls, request: ExternalRequest) -> bool:
         if not isinstance(request, int) or request < ExternalRequest.NO_ACTION or request >= ExternalRequest.INVALID:
             # Invalid request
@@ -89,23 +98,23 @@ class PayloadController:
         cls.timestamp_request = time.monotonic()
         return True
 
-    @classmethod 
+    @classmethod
     def _clear_request(cls):
         cls.current_request = ExternalRequest.NO_ACTION
         cls.timestamp_request = 0
-    
+
     @classmethod
     def cancel_current_request(cls):
         if cls.state != PayloadState.READY:
             cls.current_request = ExternalRequest.NO_ACTION
             cls.timestamp_request = 0
             # TODO: need to add a specific logic to cancel the request
-            # This should be used only when the payload is is not READY. If in READY, it would have already been executing the request
+            # This should be used only when the payload is is not READY.
+            # If in READY, it would have already been executing the request
             return True
         else:
-            # Log 
+            # Log
             return False
-
 
     @classmethod
     def handle_external_requests(cls):
@@ -137,7 +146,6 @@ class PayloadController:
             cls.turn_off_power()
             cls._switch_to_state(PayloadState.OFF)
 
-
     @classmethod
     def _switch_to_state(cls, new_state: PayloadState):
         if new_state != cls.state:
@@ -163,22 +171,31 @@ class PayloadController:
             if cls.time_we_started_booting == 0:
                 cls.time_we_started_booting = cls._now
 
-            # The serial link will be purged by the payload when it opens its channel
-            # so we ping to check until it is ready, i.e. the ping response is received
-            if cls.ping():
-                cls._switch_to_state(PayloadState.READY)
-                print(f"[INFO] Payload is ready. Full boot in  {cls._now - cls.time_we_started_booting} seconds.")
-                cls.time_we_started_booting = 0 # Reset the boot time
-            elif cls._now - cls.time_we_started_booting > cls.TIMEOUT_BOOT:
-                pass
-            else: # we failed
-                cls.turn_off_power() # turn off the power line, just in case
-                cls.last_error = ErrorCodes.TIMEOUT_BOOT # Log error
-                cls.time_we_started_booting = 0 # Reset the boot time
-                # CDH / HAL notification
-                
+            if not cls.communication_interface.is_connected():
+                if cls.injected_communication_interface:
+                    # Initialize the communication interface
+                    cls.communication_interface.initialize()
+                else:
+                    print("[ERROR] Communication interface not injected yet.")
+            else:
+                print("[INFO] Communication interface is connected.")
+
+                # The serial link will be purged by the payload when it opens its channel
+                # so we ping to check until it is ready, i.e. the ping response is received
+                if cls.ping():
+                    cls._switch_to_state(PayloadState.READY)
+                    print(f"[INFO] Payload is ready. Full boot in  {cls._now - cls.time_we_started_booting} seconds.")
+                    cls.time_we_started_booting = 0  # Reset the boot time
+                elif cls._now - cls.time_we_started_booting > cls.TIMEOUT_BOOT:
+                    pass
+                else:  # we failed
+                    cls.turn_off_power()  # turn off the power line, just in case
+                    cls.last_error = ErrorCodes.TIMEOUT_BOOT  # Log error
+                    cls.time_we_started_booting = 0  # Reset the boot time
+                    # CDH / HAL notification
+
         elif cls.state == PayloadState.READY:
-            
+
             # Check for telemetry
             if cls._now - cls._prev_tm_time > cls.telemetry_period:
                 # Request telemetry
@@ -190,19 +207,17 @@ class PayloadController:
                     PayloadTM.print()
                     cls._prev_tm_time = cls._now
 
-
-            # Continue any file transfer 
+            # Continue any file transfer
             res_ft = cls._continue_file_transfer_logic()
             if res_ft:
                 # Log in DH. Data is in Resp_RequestNextFilePacket.received_data
                 pass
-            
-            # Check OD states 
+
+            # Check OD states
             # For now, just ping the OD status
 
-            # Fault management 
+            # Fault management
             # TODO
-
 
         elif cls.state == PayloadState.SHUTTING_DOWN:
             # Wait for the Payload to shutdown
@@ -229,8 +244,8 @@ class PayloadController:
     @classmethod
     def ping(cls):
         cls.communication_interface.send(Encoder.encode_ping())
-        resp = cls.communication_interface.receive() 
-        if resp: # a ping is immediate so if we don't receive a response, we assume it is not connected
+        resp = cls.communication_interface.receive()
+        if resp:  # a ping is immediate so if we don't receive a response, we assume it is not connected
             return Decoder.decode(resp) == _PING_RESP_VALUE
         return False
 
@@ -264,7 +279,7 @@ class PayloadController:
         cls.no_more_file_packet_to_receive = False
         return True
 
-    @classmethod 
+    @classmethod
     def _continue_file_transfer_logic(cls):
         if FileTransfer.in_progress:
             # TODO
@@ -279,8 +294,8 @@ class PayloadController:
                 cls.just_requested_file_packet = False
                 decoded_resp = Decoder.decode(resp)
                 if decoded_resp == ErrorCodes.OK:
-                    # grab the data and store 
-                    FileTransfer.ack_packet() # increment the counter
+                    # grab the data and store
+                    FileTransfer.ack_packet()  # increment the counter
                     # Data is in Resp_RequestNextFilePacket.received_data
                     return True
                 elif decoded_resp == ErrorCodes.NO_MORE_FILE_PACKET:
@@ -297,7 +312,7 @@ class PayloadController:
     @classmethod
     def turn_on_power(cls):
         # This should enable the power line
-        # If the function is called again and the power line is already on, it SHOULD do nothing 
+        # If the function is called again and the power line is already on, it SHOULD do nothing
         # This will be called multiple times in a row
         pass
 

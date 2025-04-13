@@ -28,7 +28,7 @@ class PayloadIPC(PayloadCommunicationInterface):  # needed for local testing and
     def connect(cls):
         """Establishes a connection using named pipes (FIFO)."""
         if cls._connected:
-            return
+            return True
 
         # Ensure FIFOs exist
         for fifo in [FIFO_IN, FIFO_OUT]:
@@ -37,7 +37,7 @@ class PayloadIPC(PayloadCommunicationInterface):  # needed for local testing and
                     os.mkfifo(fifo, 0o666)
                 except OSError as e:
                     print(f"Error creating FIFO {fifo}: {e}")
-                    return
+                    return False
 
         # Open FIFOs
         try:
@@ -45,9 +45,11 @@ class PayloadIPC(PayloadCommunicationInterface):  # needed for local testing and
             cls._pipe_out = os.open(FIFO_OUT, os.O_RDONLY | os.O_NONBLOCK)  # Non-blocking read
             cls._connected = True
             print("[INFO] PayloadIPC connected.")
+            return True
         except OSError as e:
             print(f"[ERROR] Failed to open FIFOs: {e}")
             cls.disconnect()
+            return False
 
     @classmethod
     def disconnect(cls):

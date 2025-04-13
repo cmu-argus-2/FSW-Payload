@@ -10,7 +10,8 @@ if __name__ == '__main__':
 
     ipc = PayloadIPC
     controller = PayloadController
-    controller.initialize(ipc)
+    controller.inject_communication_interface(ipc)
+    controller.initialize()
 
     # make sure the connection is established
     resp = controller.communication_interface.is_connected()

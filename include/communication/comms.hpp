@@ -15,6 +15,8 @@ namespace Packet
     static constexpr uint8_t OUTGOING_PCKT_SIZE = 250;
     static constexpr uint8_t INCOMING_PCKT_SIZE = 32;
 
+    static constexpr uint8_t MAX_DATA_LENGTH = OUTGOING_PCKT_SIZE - 4; // 4 bytes for header (ID, seq count, data length)
+
     using Out = std::array<uint8_t, OUTGOING_PCKT_SIZE>;
     using In = std::array<uint8_t, INCOMING_PCKT_SIZE>;
 
@@ -104,7 +106,7 @@ struct FileTransferManager
         }
 
         // Read the file chunk
-        EC err = DH::ReadFileChunk(_file_path, seq_number * Packet::OUTGOING_PCKT_SIZE, Packet::OUTGOING_PCKT_SIZE, data);
+        EC err = DH::ReadFileChunk(_file_path, seq_number * Packet::MAX_DATA_LENGTH, Packet::MAX_DATA_LENGTH, data);
         if (err != EC::OK)
         {
             LogError(EC::FAILED_TO_GRAB_FILE_CHUNK);

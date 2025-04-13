@@ -411,7 +411,7 @@ void request_next_file_packet(std::vector<uint8_t>& data)
 
     // Take the corresponding chunk of data, load it to ram, and send it 
     std::vector<uint8_t> transmit_data;
-    transmit_data.reserve(Packet::OUTGOING_PCKT_SIZE);
+    transmit_data.reserve(Packet::MAX_DATA_LENGTH);
 
     // Grab the data from the file
     EC err = FileTransferManager::GrabFileChunk(requested_packet_nb, transmit_data);

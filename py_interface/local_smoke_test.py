@@ -52,7 +52,7 @@ if __name__ == '__main__':
     time.sleep(0.2)
     resp = controller.receive_response()
     if resp:
-        print(f"[INFO] {Resp_DisableCameras.num_deactivated_cameras} cameras disabled.")
+        print(f"[INFO] {Resp_DisableCameras.num_cam_deactivated} cameras disabled.")
 
     time.sleep(1) 
 
@@ -61,7 +61,7 @@ if __name__ == '__main__':
     time.sleep(0.2)
     resp = controller.receive_response()
     if resp:
-        print(f"[INFO] {Resp_EnableCameras.num_activated_cameras} cameras enabled.")
+        print(f"[INFO] {Resp_EnableCameras.num_cam_activated} cameras enabled.")
 
     time.sleep(1)
 

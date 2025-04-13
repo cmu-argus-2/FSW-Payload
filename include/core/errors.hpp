@@ -16,16 +16,12 @@ enum class ErrorCode // Error codes
     // TODO must be extremely well documented 
     OK = 0, // Can't be logged
     PLACEHOLDER = 1,
-
-    // Divide per subsystem
-
-
     // Commands
     INVALID_COMMAND_ID,
     INVALID_COMMAND_ARGUMENTS,
     NO_FILE_READY,
-    NO_MORE_PACKET_FOR_FILE,
-    FAIL_TO_READ_FILE,
+    NO_MORE_PACKET_FOR_FILE, 
+    FAIL_TO_READ_FILE, // DO NOT CHANGE ALL ABOVE
 
     // Data handling
     FILE_DOES_NOT_EXIST,

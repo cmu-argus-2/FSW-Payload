@@ -100,6 +100,7 @@ void request_telemetry([[maybe_unused]] std::vector<uint8_t>& data)
     {
         transmit_data.push_back(tm.CAM_STATUS[i]);
     }
+    transmit_data.push_back(tm.IMU_STATUS);
     transmit_data.push_back(tm.TASKS_IN_EXECUTION);
     transmit_data.push_back(tm.DISK_USAGE);
     transmit_data.push_back(tm.LATEST_ERROR);
@@ -345,7 +346,7 @@ void request_image([[maybe_unused]] std::vector<uint8_t>& data)
     if (!res)
     {
         SPDLOG_ERROR("Couldn't get an image..");
-        std::shared_ptr<Message> msg = CreateErrorAckMessage(CommandID::REQUEST_IMAGE, to_uint8(EC::IMAGE_NOT_AVAILABLE)); // TODO later
+        std::shared_ptr<Message> msg = CreateErrorAckMessage(CommandID::REQUEST_IMAGE, to_uint8(EC::FILE_NOT_AVAILABLE));
         sys::payload().TransmitMessage(msg);
         return;
     }
@@ -362,7 +363,7 @@ void request_image([[maybe_unused]] std::vector<uint8_t>& data)
     if (err != EC::OK)
     {
         SPDLOG_ERROR("Failed to populate metadata for file transfer.");
-        std::shared_ptr<Message> msg = CreateErrorAckMessage(CommandID::REQUEST_IMAGE, 0x24); // TODO
+        std::shared_ptr<Message> msg = CreateErrorAckMessage(CommandID::REQUEST_IMAGE, to_uint8(EC::FILE_NOT_AVAILABLE));
         sys::payload().TransmitMessage(msg);
         return;
     }

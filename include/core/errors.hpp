@@ -21,7 +21,8 @@ enum class ErrorCode // Error codes
     INVALID_COMMAND_ARGUMENTS,
     NO_FILE_READY,
     NO_MORE_PACKET_FOR_FILE, 
-    FAIL_TO_READ_FILE, // DO NOT CHANGE ALL ABOVE
+    FAIL_TO_READ_FILE, 
+    FILE_NOT_AVAILABLE, // DO NOT CHANGE ALL ABOVE
 
     // Data handling
     FILE_DOES_NOT_EXIST,
@@ -34,7 +35,7 @@ enum class ErrorCode // Error codes
     // Thread pool 
 
     // Camera subsystem
-    IMAGE_NOT_AVAILABLE,
+
     // Telemetry
 
 

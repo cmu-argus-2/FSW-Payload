@@ -6,6 +6,8 @@ from definitions import PayloadTM, Resp_EnableCameras, Resp_DisableCameras
 
 if __name__ == '__main__':
 
+    TIMEOUT = 1 # seconds
+
     ipc = PayloadIPC()
     controller = PayloadController()
     controller.initialize(ipc)
@@ -33,13 +35,14 @@ if __name__ == '__main__':
         else:
             print("[ERROR] Ping failed.")
 
-        time.sleep(0.5)
+        time.sleep(0.25)
         print(f"[INFO] {counter}/{i} ping(s) succeeded.")
 
     # Testing telemetry request
     print("[INFO] Requesting telemetry...")
     controller.request_telemetry()
 
+    time.sleep(0.1)
     resp = controller.receive_response()
     print(resp)
     if resp:
@@ -58,14 +61,14 @@ if __name__ == '__main__':
 
     print("[INFO] Enabling cameras...")
     controller.enable_cameras()
-    time.sleep(0.2)
+    time.sleep(0.2) # Takes time to enable the cameras
     resp = controller.receive_response()
     if resp:
         print(f"[INFO] {Resp_EnableCameras.num_cam_activated} cameras enabled.")
 
     time.sleep(1)
 
-    controller.shutdown()
+    #controller.shutdown()
 
     print("[INFO] Done.")
     controller.deinitialize()

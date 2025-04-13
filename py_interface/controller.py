@@ -141,6 +141,7 @@ class PayloadController:
     @classmethod
     def receive_response(cls):
         resp = cls.communication_interface.receive()
+        print(resp)
         if resp:
             return Decoder.decode(resp)
         return ErrorCodes.NO_RESPONSE
@@ -181,8 +182,7 @@ class PayloadController:
     @classmethod 
     def _file_transfer_logic(cls):
         if FileTransfer.in_progress:
-
-
+            # TODO
             cls.communication_interface.send(Encoder.encode_request_next_file_packet(FileTransfer.packet_nb))
             resp = cls.communication_interface.receive()
             if resp:
@@ -194,12 +194,6 @@ class PayloadController:
                     pass
                 else: # Error 
                     pass
-                    
-
-                
-
-
-
 
     @classmethod
     def turn_on_power(cls):

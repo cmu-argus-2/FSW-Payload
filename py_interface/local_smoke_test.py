@@ -1,5 +1,5 @@
 import time 
-from controller import PayloadController
+from controller import PayloadController, PayloadState
 from ipc_comms import PayloadIPC
 from definitions import PayloadTM, Resp_EnableCameras, Resp_DisableCameras, FileTransfer, FileTransferType
 
@@ -8,8 +8,8 @@ if __name__ == '__main__':
 
     TIMEOUT = 1 # seconds
 
-    ipc = PayloadIPC()
-    controller = PayloadController()
+    ipc = PayloadIPC
+    controller = PayloadController
     controller.initialize(ipc)
 
     # make sure the connection is established
@@ -37,6 +37,11 @@ if __name__ == '__main__':
 
         time.sleep(0.2)
         print(f"[INFO] {counter}/{i} ping(s) succeeded.")
+
+
+    # SPOOF the payload as READY for now
+    controller.state = PayloadState.READY
+
 
     # Testing telemetry request
     print("[INFO] Requesting telemetry...")
@@ -68,18 +73,16 @@ if __name__ == '__main__':
 
     time.sleep(1)
 
-
     ## Testing image transfer
-
     print("[INFO] Requesting image transfer...")
     controller.request_image_transfer()
 
     time.sleep(0.5)
     resp = controller.receive_response()
+    print(resp)
     if resp:
         print("[INFO] Image transfer started.")
         FileTransfer.start_transfer(FileTransferType.IMAGE)
-
 
         MAX_PACKETS = 25000
 
@@ -96,7 +99,7 @@ if __name__ == '__main__':
 
             # to skip packets (avoid waiting)
             if FileTransfer.packet_nb == 5:
-                FileTransfer.packet_nb = (94 << 8) | 240
+                FileTransfer.packet_nb = (93 << 8) | 240
 
     else:
         print("[ERROR] Image transfer request failed.")

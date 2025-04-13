@@ -180,7 +180,7 @@ class PayloadController:
         cls.communication_interface.send(Encoder.encode_request_image())
 
     @classmethod 
-    def _file_transfer_logic(cls):
+    def _continue_file_transfer_logic(cls):
         if FileTransfer.in_progress:
             # TODO
             cls.communication_interface.send(Encoder.encode_request_next_file_packet(FileTransfer.packet_nb))
@@ -194,6 +194,8 @@ class PayloadController:
                     pass
                 else: # Error 
                     pass
+        else:
+            return
 
     @classmethod
     def turn_on_power(cls):

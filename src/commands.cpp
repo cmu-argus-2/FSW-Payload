@@ -383,6 +383,7 @@ void request_next_file_packet(std::vector<uint8_t>& data)
     uint16_t requested_packet_nb = (data[0] << 8) | data[1]; 
     SPDLOG_INFO("Requested packet number: {}", requested_packet_nb);
 
+    // NEED TO START BY 1 so we can filter invalid commands from random commands filled with zeros
     if (requested_packet_nb == 0)
     {
         SPDLOG_ERROR("Invalid data size (0) for REQUEST_NEXT_FILE_PACKET command");

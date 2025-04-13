@@ -1,7 +1,7 @@
 import time 
 from controller import PayloadController
 from ipc_comms import PayloadIPC
-from definitions import PayloadTM, Resp_EnableCameras, Resp_DisableCameras
+from definitions import PayloadTM, Resp_EnableCameras, Resp_DisableCameras, FileTransfer, FileTransferType
 
 
 if __name__ == '__main__':
@@ -35,7 +35,7 @@ if __name__ == '__main__':
         else:
             print("[ERROR] Ping failed.")
 
-        time.sleep(0.25)
+        time.sleep(0.2)
         print(f"[INFO] {counter}/{i} ping(s) succeeded.")
 
     # Testing telemetry request
@@ -52,7 +52,7 @@ if __name__ == '__main__':
     # Testing camera disable and renable 
     print("[INFO] Disabling cameras...")
     controller.disable_cameras()
-    time.sleep(0.2)
+    time.sleep(0.5)
     resp = controller.receive_response()
     if resp:
         print(f"[INFO] {Resp_DisableCameras.num_cam_deactivated} cameras disabled.")
@@ -61,12 +61,46 @@ if __name__ == '__main__':
 
     print("[INFO] Enabling cameras...")
     controller.enable_cameras()
-    time.sleep(0.2) # Takes time to enable the cameras
+    time.sleep(0.5) # Takes time to enable the cameras
     resp = controller.receive_response()
     if resp:
         print(f"[INFO] {Resp_EnableCameras.num_cam_activated} cameras enabled.")
 
     time.sleep(1)
+
+
+    ## Testing image transfer
+
+    print("[INFO] Requesting image transfer...")
+    controller.request_image_transfer()
+
+    time.sleep(0.5)
+    resp = controller.receive_response()
+    if resp:
+        print("[INFO] Image transfer started.")
+        FileTransfer.start_transfer(FileTransferType.IMAGE)
+
+
+        MAX_PACKETS = 25000
+
+        while FileTransfer.packet_nb < MAX_PACKETS:
+            
+            res = controller._continue_file_transfer_logic()
+
+            if res:
+                print(f"[INFO] {FileTransfer.packet_nb} packets received.")
+
+            if controller.no_more_file_packet_to_receive:
+                print("[INFO] No more packets to receive. We're done here.")
+                break
+
+            # to skip packets (avoid waiting)
+            if FileTransfer.packet_nb == 5:
+                FileTransfer.packet_nb = (94 << 8) | 240
+
+    else:
+        print("[ERROR] Image transfer request failed.")
+
 
     #controller.shutdown()
 

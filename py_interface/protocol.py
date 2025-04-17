@@ -385,7 +385,7 @@ class Decoder:
 
         Resp_RequestNextFilePacket.reset()
 
-        if cls._curr_data_length <= 1:
+        if cls._curr_data_length < 1:
             return ErrorCodes.INVALID_PACKET
 
         if (int(cls._recv_buffer[cls._data_idx][0]) == ACK.ERROR):

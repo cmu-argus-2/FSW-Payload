@@ -30,11 +30,15 @@ enum class ErrorCode // Error codes
     START_BYTE_OUT_OF_RANGE,
     FAILED_TO_GRAB_FILE_CHUNK,
     
+    // Camera subsystem
+    CAMERA_CAPTURE_FAILED,
+    CAMERA_INITIALIZATION_FAILED,
+
 
     // Task execution and queue 
     // Thread pool 
 
-    // Camera subsystem
+
 
     // Telemetry
 

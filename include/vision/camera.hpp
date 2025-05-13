@@ -6,6 +6,7 @@
 #include <shared_mutex>
 #include "frame.hpp"
 #include <opencv2/opencv.hpp>
+#include "core/errors.hpp"
 
 #define DEFAULT_CAMERA_FPS 10
 #define MAX_CONSECUTIVE_ERROR_COUNT 3 
@@ -69,6 +70,7 @@ private:
     CAM_ERROR last_error;
     int consecutive_error_count;
     void HandleErrors(CAM_ERROR error);
+    EC MapError(CAM_ERROR cam_error);
     
     
     int cam_id;

@@ -5,7 +5,7 @@
 
 // Circular buffer as a deque
 static std::deque<EC> _error_code_buffer;
-constexpr std::size_t MAX_ERROR_CODE_BUFFER_SIZE = 10;
+constexpr std::size_t MAX_ERROR_CODE_BUFFER_SIZE = 20;
 static std::mutex _error_code_buffer_mtx;
 
 void LogError(EC error_code)

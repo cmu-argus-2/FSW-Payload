@@ -39,7 +39,7 @@ namespace RegionMapping
         return (it != region_to_id.end()) ? it->second : 0; // 0 = Invalid
     }
 
-    std::string GetRegionString(RegionID id) 
+    std::string GetRegionString(RegionID id)
     {
         auto it = id_to_region.find(id);
         return (it != id_to_region.end()) ? it->second : "UNKNOWN";

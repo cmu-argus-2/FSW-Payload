@@ -2,7 +2,7 @@
 #define RC_HPP
 
 /*
-Currently supported regions:
+Currently supported regions (V1):
     '10S': 'California',
     '10T': 'Washington / Oregon',
     '11R': 'Baja California, Mexico',
@@ -43,6 +43,9 @@ namespace RegionMapping
 
 
 #if NN_ENABLED
+
+// TODO: Will need to move this stack to runtimes and new compilation
+
 bool DetectGPU();
 
 // Verify there is only one model file in the given directory

@@ -13,27 +13,27 @@ enum class BatchOptimizationState {
     FAILED = 3
 };
 
-enum class LandmarkMeasurementIdx : uint8_t {
-    TIMESTAMP = 0,
+enum LandmarkMeasurementIdx {
+    LANDMARK_TIMESTAMP = 0,
     BEARING_VEC_X = 1,
     BEARING_VEC_Y = 2,
     BEARING_VEC_Z = 3,
     LANDMARK_POS_X = 4,
     LANDMARK_POS_Y = 5,
     LANDMARK_POS_Z = 6,
-    COUNT = 7
+    LANDMARK_COUNT = 7
 };
 
-enum class GyroMeasurementIdx : uint8_t {
-    TIMESTAMP = 0,
+enum GyroMeasurementIdx {
+    GYRO_MEAS_TIMESTAMP = 0,
     ANG_VEL_X = 1,
     ANG_VEL_Y = 2,
     ANG_VEL_Z = 3,
-    COUNT = 4
+    GYRO_MEAS_COUNT = 4
 };
 
-enum class StateEstimateIdx : uint8_t {
-    TIMESTAMP = 0,
+enum StateEstimateIdx {
+    STATE_ESTIMATE_TIMESTAMP = 0,
     POS_X = 1,
     POS_Y = 2,
     POS_Z = 3,
@@ -44,16 +44,16 @@ enum class StateEstimateIdx : uint8_t {
     QUAT_Y = 8,
     QUAT_Z = 9,
     QUAT_W = 10,
-    ANG_VEL_X = 11,
-    ANG_VEL_Y = 12,
-    ANG_VEL_Z = 13,
-    COUNT = 14
+    GYRO_BIAS_X = 11,
+    GYRO_BIAS_Y = 12,
+    GYRO_BIAS_Z = 13,
+    STATE_ESTIMATE_COUNT = 14
 };
 
-using LandmarkMeasurements = Eigen::Matrix<double, Eigen::Dynamic, LandmarkMeasurementIdx::COUNT, Eigen::RowMajor>;
+using LandmarkMeasurements = Eigen::Matrix<double, Eigen::Dynamic, LandmarkMeasurementIdx::LANDMARK_COUNT, Eigen::RowMajor>;
 using LandmarkGroupStarts = Eigen::Matrix<bool, Eigen::Dynamic, 1, Eigen::RowMajor>;
-using GyroMeasurements = Eigen::Matrix<double, Eigen::Dynamic, GyroMeasurementIdx::COUNT, Eigen::RowMajor>;
-using StateEstimates = Eigen::Matrix<double, Eigen::Dynamic, StateEstimateIdx::COUNT, Eigen::RowMajor>;
+using GyroMeasurements = Eigen::Matrix<double, Eigen::Dynamic, GyroMeasurementIdx::GYRO_MEAS_COUNT, Eigen::RowMajor>;
+using StateEstimates = Eigen::Matrix<double, Eigen::Dynamic, StateEstimateIdx::STATE_ESTIMATE_COUNT, Eigen::RowMajor>;
 
 /**
  * @brief Solves the batched nonlinear least squares optimization problem for orbit determination using Ceres Solver.
@@ -80,7 +80,9 @@ using StateEstimates = Eigen::Matrix<double, Eigen::Dynamic, StateEstimateIdx::C
  *         - An Eigen vector containing the estimated gyro bias in the body frame.
  */
 
-std::pair <StateEstimates, Eigen::Vector3d>
+// std::pair <StateEstimates, Eigen::Vector3d>
+// TODO: Figure out what the correct return type should be.
+StateEstimates
 solve_ceres_batch_opt(const LandmarkMeasurements& landmark_measurements,
                       const LandmarkGroupStarts& landmark_group_starts,
                       const GyroMeasurements& gyro_measurements,

@@ -2,7 +2,8 @@
 
 #include <ceres/ceres.h>
 #include <ceres/manifold.h>
-#include <ceres/eigen.h>
+// Is there some symlink in place that makes ceres/eigen work by default?
+#include <ceres/internal/eigen.h>
 
 #include <algorithm>
 #include <cassert>
@@ -30,11 +31,11 @@ public:
         const Eigen::Map<const Eigen::Matrix<T, 3, 1>> r1(pos_next);
         const Eigen::Map<const Eigen::Matrix<T, 3, 1>> v1(vel_next);
 
-        const Eigen::Map <Eigen::Matrix<T, 3, 1>> r_res(residuals);
-        const Eigen::Map <Eigen::Matrix<T, 3, 1>> v_res(residuals + 3);
+        Eigen::Map <Eigen::Matrix<T, 3, 1>> r_res(residuals);
+        Eigen::Map <Eigen::Matrix<T, 3, 1>> v_res(residuals + 3);
 
-        const double r0_norm_squared = r0.squaredNorm();
-        const double r0_norm_cubed = r0_norm_squared * std::sqrt(r0_norm_squared);
+        const T r0_norm_squared = r0.squaredNorm();
+        const T r0_norm_cubed = r0_norm_squared * ceres::sqrt(r0_norm_squared);
         r_res = r1 - (r0 + v0 * dt);
         v_res = v1 - (v0 - GM_EARTH * r0 / r0_norm_cubed * dt);
         return true;
@@ -53,20 +54,20 @@ public:
                     const T* const ang_vel_curr,
                     const T* const quat_next,
                     const T* const ang_vel_next,
-                    T* const residuals)() const {
+                    T* const residuals) const {
         const Eigen::Map<const Eigen::Quaternion <T>> q0(quat_curr);
         const Eigen::Map<const Eigen::Matrix<T, 3, 1>> w0(ang_vel_curr);
         const Eigen::Map<const Eigen::Quaternion <T>> q1(quat_next);
         const Eigen::Map<const Eigen::Matrix<T, 3, 1>> w1(ang_vel_next);
 
-        const Eigen::Map <Eigen::Matrix<T, 3, 1>> q_res(residuals);  // in axis-angle form
-        const Eigen::Map <Eigen::Matrix<T, 3, 1>> w_res(residuals + 3);
+        Eigen::Map <Eigen::Matrix<T, 3, 1>> q_res(residuals);  // in axis-angle form
+        Eigen::Map <Eigen::Matrix<T, 3, 1>> w_res(residuals + 3);
 
         const T half_dt = T(0.5) * T(dt);
         const Eigen::Quaternion <T> dq = Eigen::Quaternion<T>(
                 Eigen::AngleAxis<T>(w0.norm() * half_dt, w0.normalized()));
         const Eigen::Quaternion <T> q_pred = q0 * dq;
-        const Eigen::AxisAngle <T> q_error = Eigen::AxisAngle<T>(q_pred.conjugate() * q1);
+        const Eigen::AngleAxis <T> q_error = Eigen::AngleAxis<T>(q_pred.conjugate() * q1);
         q_res = q_error.angle() * q_error.axis();
         w_res = w1 - w0;
         return true;
@@ -79,7 +80,7 @@ private:
 struct GyroCostFunctor {
 public:
     GyroCostFunctor(const double* const gyro_row) :
-            gyro_ang_vel(gyro_row + GyroMeasurementIdx::ANG_VEL_X) {}
+            gyro_ang_vel(gyro_row + static_cast<int>(GyroMeasurementIdx::ANG_VEL_X)) {}
 
     template<typename T>
     bool operator()(const T* const ang_vel,
@@ -88,7 +89,7 @@ public:
         const Eigen::Map<const Eigen::Matrix<T, 3, 1>> w(ang_vel);
         const Eigen::Map<const Eigen::Matrix<T, 3, 1>> b(gyro_bias);
 
-        const Eigen::Map <Eigen::Matrix<T, 3, 1>> w_res(residuals);
+        Eigen::Map <Eigen::Matrix<T, 3, 1>> w_res(residuals);
 
         w_res = w - gyro_ang_vel.cast<T>() - b;
         return true;
@@ -111,10 +112,13 @@ public:
         const Eigen::Map<const Eigen::Matrix<T, 3, 1>> r(pos);
         const Eigen::Map<const Eigen::Quaternion <T>> q(quat);
 
-        const Eigen::Map <Eigen::Matrix<T, 3, 1>> r_res(residuals);
+        const Eigen::Matrix<T, 3, 1> landmark_pos_T   = landmark_pos.template cast<T>();
+        const Eigen::Matrix<T, 3, 1> bearing_vec_T    = bearing_vec.template cast<T>();
 
-        const Eigen::Matrix<T, 3, 1> predicted_bearing = (landmark_pos - r).normalized();
-        r_res = predicted_bearing - q * bearing_vec;
+        Eigen::Map <Eigen::Matrix<T, 3, 1>> r_res(residuals);
+
+        const Eigen::Matrix<T, 3, 1> predicted_bearing = (landmark_pos_T - r).normalized();
+        r_res = predicted_bearing - q * bearing_vec_T;
         return true;
     }
 
@@ -207,8 +211,8 @@ get_state_timestamps(const LandmarkMeasurements& landmark_measurements,
         if (next_landmark_idx_valid && next_gyro_idx_valid) {
             assert(landmark_group_starts(next_landmark_idx, 0));
             const double& landmark_timestamp = landmark_measurements(next_landmark_idx,
-                                                                     LandmarkMeasurementIdx::TIMESTAMP);
-            const double& gyro_timestamp = gyro_measurements(next_gyro_idx, GyroMeasurementIdx::TIMESTAMP);
+                                                                     LandmarkMeasurementIdx::LANDMARK_TIMESTAMP);
+            const double& gyro_timestamp = gyro_measurements(next_gyro_idx, GyroMeasurementIdx::GYRO_MEAS_TIMESTAMP);
             if (landmark_timestamp <= gyro_timestamp) {
                 append_landmark_timestamp(landmark_timestamp);
             } else {
@@ -216,9 +220,9 @@ get_state_timestamps(const LandmarkMeasurements& landmark_measurements,
             }
         } else if (next_landmark_idx_valid) {
             assert(landmark_group_starts(next_landmark_idx, 0));
-            append_landmark_timestamp(landmark_measurements(next_landmark_idx, LandmarkMeasurementIdx::TIMESTAMP));
+            append_landmark_timestamp(landmark_measurements(next_landmark_idx, LandmarkMeasurementIdx::LANDMARK_TIMESTAMP));
         } else if (next_gyro_idx_valid) {
-            append_gyro_timestamp(gyro_measurements(next_gyro_idx, GyroMeasurementIdx::TIMESTAMP));
+            append_gyro_timestamp(gyro_measurements(next_gyro_idx, GyroMeasurementIdx::GYRO_MEAS_TIMESTAMP));
         } else {
             break;
         }
@@ -273,9 +277,9 @@ StateEstimates solve_ceres_batch_opt(const LandmarkMeasurements& landmark_measur
             max_dt,
             num_groups);
 
-    StateEstimates state_estimates(state_timestamps.size(), StateEstimateIdx::COUNT);
+    StateEstimates state_estimates(state_timestamps.size(), StateEstimateIdx::STATE_ESTIMATE_COUNT);
     Eigen::Vector3d gyro_bias = Eigen::Vector3d::Zero();
-    const auto quaternion_manifold = EigenQuaternionManifold{};
+    ceres::EigenQuaternionManifold quaternion_manifold = ceres::EigenQuaternionManifold{};
 
     ceres::Problem::Options problem_options;
     problem_options.manifold_ownership = ceres::DO_NOT_TAKE_OWNERSHIP;
@@ -283,27 +287,27 @@ StateEstimates solve_ceres_batch_opt(const LandmarkMeasurements& landmark_measur
     ceres::Problem problem(problem_options);
     problem.AddParameterBlock(gyro_bias.data(), 3);
     for (idx_t i = 0; i < state_timestamps.size(); ++i) {
-        state_estimates(i, StateEstimateIdx::TIMESTAMP) = state_timestamps[i];
-        const double* const row_start = state_estimates.data() + i * StateEstimateIdx::COUNT;
+        state_estimates(i, StateEstimateIdx::STATE_ESTIMATE_TIMESTAMP) = state_timestamps[i];
+        double* const row_start = state_estimates.data() + i * StateEstimateIdx::STATE_ESTIMATE_COUNT;
 
         problem.AddParameterBlock(row_start + StateEstimateIdx::POS_X,
                                   StateEstimateIdx::VEL_X - StateEstimateIdx::POS_X);
         problem.AddParameterBlock(row_start + StateEstimateIdx::VEL_X,
                                   StateEstimateIdx::QUAT_X - StateEstimateIdx::VEL_X);
         problem.AddParameterBlock(row_start + StateEstimateIdx::QUAT_X,
-                                  StateEstimateIdx::ANG_VEL_X - StateEstimateIdx::QUAT_X,
+                                  GyroMeasurementIdx::ANG_VEL_X - StateEstimateIdx::QUAT_X,
                                   &quaternion_manifold);
-        problem.AddParameterBlock(row_start + StateEstimateIdx::ANG_VEL_X,
-                                  StateEstimateIdx::GYRO_BIAS_X - StateEstimateIdx::ANG_VEL_X);
+        problem.AddParameterBlock(row_start + GyroMeasurementIdx::ANG_VEL_X,
+                                  StateEstimateIdx::GYRO_BIAS_X - GyroMeasurementIdx::ANG_VEL_X);
         problem.AddParameterBlock(row_start + StateEstimateIdx::GYRO_BIAS_X,
-                                  StateEstimateIdx::COUNT - StateEstimateIdx::GYRO_BIAS_X);
+                                  StateEstimateIdx::STATE_ESTIMATE_COUNT - StateEstimateIdx::GYRO_BIAS_X);
     }
 
     // Dynamics costs
     for (idx_t i = 0; i < state_timestamps.size() - 1; ++i) {
         const double dt = state_timestamps[i + 1] - state_timestamps[i];
-        const double* const curr_row_start = state_estimates.data() + i * StateEstimateIdx::COUNT;
-        const double* const next_row_start = state_estimates.data() + (i + 1) * StateEstimateIdx::COUNT;
+        double* const curr_row_start = state_estimates.data() + i * StateEstimateIdx::STATE_ESTIMATE_COUNT;
+        double* const next_row_start = state_estimates.data() + (i + 1) * StateEstimateIdx::STATE_ESTIMATE_COUNT;
 
         problem.AddResidualBlock(
                 new ceres::AutoDiffCostFunction<LinearDynamicsCostFunctor, 6, 3, 3, 3, 3>(
@@ -318,9 +322,9 @@ StateEstimates solve_ceres_batch_opt(const LandmarkMeasurements& landmark_measur
                         new AngularDynamicsCostFunctor{dt}),
                 nullptr,
                 curr_row_start + StateEstimateIdx::QUAT_X,
-                curr_row_start + StateEstimateIdx::ANG_VEL_X,
+                curr_row_start + GyroMeasurementIdx::ANG_VEL_X,
                 next_row_start + StateEstimateIdx::QUAT_X,
-                next_row_start + StateEstimateIdx::ANG_VEL_X);
+                next_row_start + GyroMeasurementIdx::ANG_VEL_X);
     }
 
     idx_t gyro_idx = 0;
@@ -328,12 +332,12 @@ StateEstimates solve_ceres_batch_opt(const LandmarkMeasurements& landmark_measur
         const idx_t& gyro_measurement_idx = gyro_measurement_indices[i];
         assert(gyro_measurement_idx < state_timestamps.size());
 
-        const double* const gyro_row = gyro_measurements.data() + gyro_measurement_idx * GyroMeasurementIdx::COUNT;
-        const double* const state_estimate_row = state_estimates.data() + gyro_measurement_idx * StateEstimateIdx::COUNT;
+        auto* gyro_row = gyro_measurements.data() + gyro_measurement_idx * GyroMeasurementIdx::GYRO_MEAS_COUNT;
+        auto* state_estimate_row = state_estimates.data() + gyro_measurement_idx * StateEstimateIdx::STATE_ESTIMATE_COUNT;
         problem.AddResidualBlock(
                 new ceres::AutoDiffCostFunction<GyroCostFunctor, 3, 3, 3>(new GyroCostFunctor{gyro_row}),
                 nullptr,
-                state_estimate_row + StateEstimateIdx::ANG_VEL_X,
+                state_estimate_row + GyroMeasurementIdx::ANG_VEL_X,
                 gyro_bias.data());
     }
 
@@ -342,14 +346,14 @@ StateEstimates solve_ceres_batch_opt(const LandmarkMeasurements& landmark_measur
     for (const auto& landmark_group_index : landmark_group_indices) {
         assert(landmark_idx < landmark_group_starts.rows());
 
-        const double* const state_estimate_row =
-                state_estimates.data() + landmark_group_index * StateEstimateIdx::COUNT;
-        const double* const pos_estimate = state_estimate_row + StateEstimateIdx::POS_X;
-        const double* const quat_estimate = state_estimate_row + StateEstimateIdx::QUAT_X;
+        double* const state_estimate_row =
+                state_estimates.data() + landmark_group_index * StateEstimateIdx::STATE_ESTIMATE_COUNT;
+        double* const pos_estimate = state_estimate_row + StateEstimateIdx::POS_X;
+        double* const quat_estimate = state_estimate_row + StateEstimateIdx::QUAT_X;
 
         do {
-            const double* const landmark_row =
-                    landmark_measurements.data() + landmark_idx * LandmarkMeasurementIdx::COUNT;
+            auto* landmark_row =
+                    landmark_measurements.data() + landmark_idx * LandmarkMeasurementIdx::LANDMARK_COUNT;
             problem.AddResidualBlock(
                     // Ceres will automatically take ownership of the cost function and cost functor
                     new ceres::AutoDiffCostFunction<LandmarkCostFunctor, 3, 3, 4>(

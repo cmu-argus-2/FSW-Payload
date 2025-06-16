@@ -32,6 +32,7 @@ set(CMAKE_RUNTIME_OUTPUT_DIRECTORY ${CMAKE_SOURCE_DIR}/bin/)
 set(SPDLOG_FMT_EXTERNAL OFF)
 find_package(spdlog REQUIRED)
 find_package(Eigen3 3.3 REQUIRED NO_MODULE)
+find_package(Ceres REQUIRED)
 find_package(OpenCV REQUIRED)
 find_package(GTest REQUIRED)
 
@@ -65,6 +66,7 @@ if(NN_ENABLED)
 endif()
 
 add_executable(${PROJECT_NAME} src/main.cpp)
+add_library(my_solver src/navigation/batch_optimization.cpp)
 
 target_link_libraries(${PROJECT_NAME}
     PRIVATE
@@ -73,6 +75,13 @@ target_link_libraries(${PROJECT_NAME}
     ${OpenCV_LIBS}
     ${PAYLOAD_CONDITIONAL_LIBS}
 )
+
+target_link_libraries(my_solver
+  PRIVATE
+    Ceres::ceres
+    Eigen3::Eigen
+)
+
 message(STATUS "NN_ENABLED: ${NN_ENABLED}")
 target_compile_definitions(${PROJECT_NAME} PRIVATE NN_ENABLED=${NN_ENABLED})
 

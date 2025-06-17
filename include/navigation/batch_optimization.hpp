@@ -80,8 +80,8 @@ using StateEstimates = Eigen::Matrix<double, Eigen::Dynamic, StateEstimateIdx::S
  *         - An Eigen vector containing the estimated gyro bias in the body frame.
  */
 
-// std::pair <StateEstimates, Eigen::Vector3d>
 // TODO: Figure out what the correct return type should be.
+// std::pair <StateEstimates, Eigen::Vector3d>
 StateEstimates
 solve_ceres_batch_opt(const LandmarkMeasurements& landmark_measurements,
                       const LandmarkGroupStarts& landmark_group_starts,

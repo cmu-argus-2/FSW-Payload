@@ -80,7 +80,7 @@ private:
 struct GyroCostFunctor {
 public:
     GyroCostFunctor(const double* const gyro_row) :
-            gyro_ang_vel(gyro_row + static_cast<int>(GyroMeasurementIdx::ANG_VEL_X)) {}
+            gyro_ang_vel(gyro_row + GyroMeasurementIdx::ANG_VEL_X) {}
 
     template<typename T>
     bool operator()(const T* const ang_vel,

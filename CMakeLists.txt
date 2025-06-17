@@ -66,7 +66,6 @@ if(NN_ENABLED)
 endif()
 
 add_executable(${PROJECT_NAME} src/main.cpp)
-add_library(my_solver src/navigation/batch_optimization.cpp)
 
 target_link_libraries(${PROJECT_NAME}
     PRIVATE
@@ -74,12 +73,6 @@ target_link_libraries(${PROJECT_NAME}
     PAYLOAD_LIB
     ${OpenCV_LIBS}
     ${PAYLOAD_CONDITIONAL_LIBS}
-)
-
-target_link_libraries(my_solver
-  PRIVATE
-    Ceres::ceres
-    Eigen3::Eigen
 )
 
 message(STATUS "NN_ENABLED: ${NN_ENABLED}")

@@ -57,6 +57,20 @@ enum class ErrorCode // Error codes
 
 
     // Neural Engine 
+    NN_FAILED_TO_OPEN_ENGINE_FILE,
+    NN_FAILED_TO_CREATE_RUNTIME,
+    NN_FAILED_TO_CREATE_ENGINE,
+    NN_FAILED_TO_CREATE_EXECUTION_CONTEXT,
+    NN_FAILED_TO_LOAD_ENGINE,
+
+
+
+
+
+
+
+
+
     // OD
 
 

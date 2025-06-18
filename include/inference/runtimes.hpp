@@ -1,12 +1,19 @@
 #ifndef RUNTIMES_HPP
 #define RUNTIMES_HPP
 
+#include <string> 
+
 #include <NvInfer.h>
 #include <cuda_runtime_api.h>
 
 #include "spdlog/spdlog.h"
 
 #include "inference/structures.hpp"
+#include "core/errors.hpp"
+
+namespace Inference
+{
+
 
 using namespace nvinfer1;
 
@@ -34,6 +41,38 @@ class Logger : public ILogger
     }
 };
 
+class RCNet
+{
 
+public:
+
+    RCNet();
+    ~RCNet();
+
+    EC LoadEngine(const std::string& engine_path);
+    void FeedInput(const void* input_data, size_t input_size);
+    void Infer();
+    void GetCurrentOutput();
+
+
+private:
+
+    // Logger for TensorRT
+    Logger logger;
+
+    // Inference buffer 
+    InferenceBuffer inference_buffer_;
+
+    // Model deserialization >> executable engine
+    std::unique_ptr<IRuntime> runtime_ = nullptr;
+    // Executable engine for inference (contains optimized computation graph)
+    std::unique_ptr<ICudaEngine> engine_ = nullptr;
+    // To execute the inference on a specific batch of inputs (binds to inputs/outputs buffers)
+    std::unique_ptr<IExecutionContext> context_ = nullptr;
+
+};
+
+
+} // namespace Inference
 
 #endif // RUNTIMES_HPP

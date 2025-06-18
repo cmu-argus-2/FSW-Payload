@@ -3,6 +3,9 @@
 
 #include <cuda_runtime_api.h>
 
+namespace Inference
+{
+
 static constexpr int FULL_RES_WIDTH = 4608;
 static constexpr int FULL_RES_HEIGHT = 2592;
 static constexpr int DOWNSCALED_RES_WIDTH = 224;
@@ -26,6 +29,7 @@ struct InferenceBuffer
 
     void allocate()
     {
+        // Will need to be carefull for x86 vs Tegra
         cudaMalloc(&input_data, input_size);
         cudaMalloc(&output_data, output_size);
     }
@@ -44,5 +48,8 @@ struct InferenceBuffer
         }
     }
 };
+
+
+} // namespace Inference
 
 #endif // STRUCTURES_HPP

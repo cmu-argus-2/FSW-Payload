@@ -295,14 +295,13 @@ StateEstimates solve_ceres_batch_opt(const LandmarkMeasurements& landmark_measur
         problem.AddParameterBlock(row_start + StateEstimateIdx::VEL_X,
                                   StateEstimateIdx::QUAT_X - StateEstimateIdx::VEL_X);
         problem.AddParameterBlock(row_start + StateEstimateIdx::QUAT_X,
-                                  GyroMeasurementIdx::ANG_VEL_X - StateEstimateIdx::QUAT_X,
+                                  StateEstimateIdx::GYRO_BIAS_X - StateEstimateIdx::QUAT_X,
                                   &quaternion_manifold);
-        problem.AddParameterBlock(row_start + GyroMeasurementIdx::ANG_VEL_X,
-                                  StateEstimateIdx::GYRO_BIAS_X - GyroMeasurementIdx::ANG_VEL_X);
+        // problem.AddParameterBlock(row_start + GyroMeasurementIdx::ANG_VEL_X,
+        //                           StateEstimateIdx::GYRO_BIAS_X - GyroMeasurementIdx::ANG_VEL_X);
         problem.AddParameterBlock(row_start + StateEstimateIdx::GYRO_BIAS_X,
                                   StateEstimateIdx::STATE_ESTIMATE_COUNT - StateEstimateIdx::GYRO_BIAS_X);
     }
-
     // Dynamics costs
     for (idx_t i = 0; i < state_timestamps.size() - 1; ++i) {
         const double dt = state_timestamps[i + 1] - state_timestamps[i];
@@ -365,6 +364,18 @@ StateEstimates solve_ceres_batch_opt(const LandmarkMeasurements& landmark_measur
         } while (landmark_idx < landmark_group_starts.rows() && !landmark_group_starts(landmark_idx, 0));
     }
     assert(landmark_idx == landmark_group_starts.rows());
+
+
+    ceres::Solver::Options solver_options;
+    solver_options.max_num_iterations = 100;
+    solver_options.linear_solver_type = ceres::SPARSE_NORMAL_CHOLESKY;
+    solver_options.minimizer_progress_to_stdout = true;
+
+    ceres::Solver::Summary summary;
+    ceres::Solve(solver_options, &problem, &summary);
+
+    // Now `summary` holds convergence info and your parameter blocks are updated.
+    std::cout << summary.BriefReport() << "\n";
 
     return state_estimates;
 }

@@ -51,7 +51,7 @@ enum StateEstimateIdx {
 };
 
 using LandmarkMeasurements = Eigen::Matrix<double, Eigen::Dynamic, LandmarkMeasurementIdx::LANDMARK_COUNT, Eigen::RowMajor>;
-using LandmarkGroupStarts = Eigen::Matrix<bool, Eigen::Dynamic, 1, Eigen::RowMajor>;
+using LandmarkGroupStarts = Eigen::Matrix<bool, Eigen::Dynamic, 1, Eigen::ColMajor>;
 using GyroMeasurements = Eigen::Matrix<double, Eigen::Dynamic, GyroMeasurementIdx::GYRO_MEAS_COUNT, Eigen::RowMajor>;
 using StateEstimates = Eigen::Matrix<double, Eigen::Dynamic, StateEstimateIdx::STATE_ESTIMATE_COUNT, Eigen::RowMajor>;
 

@@ -13,6 +13,7 @@ set(CMAKE_CXX_COMPILER_LAUNCHER ccache)
 
 ##### COMPILE DEFINITIONS
 # Executable directory
+set(CMAKE_EXPORT_COMPILE_COMMANDS ON)
 set(CMAKE_RUNTIME_OUTPUT_DIRECTORY ${CMAKE_SOURCE_DIR}/bin/)
 add_compile_definitions(EXECUTABLE_DIR=\"${CMAKE_RUNTIME_OUTPUT_DIRECTORY}\")
 # Preprocessor definition for the path of the inter-process fifo 
@@ -34,7 +35,12 @@ find_package(spdlog REQUIRED)
 find_package(Eigen3 3.3 REQUIRED NO_MODULE)
 find_package(Ceres REQUIRED)
 find_package(OpenCV REQUIRED)
-find_package(GTest REQUIRED)
+
+enable_language(C)
+find_package(HDF5 REQUIRED COMPONENTS C CXX HL)
+find_package(HighFive REQUIRED)
+
+
 
 
 # Include OpenCV directories
@@ -66,6 +72,10 @@ if(NN_ENABLED)
 endif()
 
 add_executable(${PROJECT_NAME} src/main.cpp)
+add_executable(run_batch_opt
+    src/navigation/run_batch_opt.cpp
+    src/navigation/batch_optimization.cpp
+)
 
 target_link_libraries(${PROJECT_NAME}
     PRIVATE
@@ -74,6 +84,16 @@ target_link_libraries(${PROJECT_NAME}
     ${OpenCV_LIBS}
     ${PAYLOAD_CONDITIONAL_LIBS}
 )
+
+target_link_libraries(run_batch_opt
+    PRIVATE
+    spdlog::spdlog
+    PAYLOAD_LIB
+    HDF5::HDF5           
+    HighFive::HighFive
+    Ceres::ceres
+)
+
 
 message(STATUS "NN_ENABLED: ${NN_ENABLED}")
 target_compile_definitions(${PROJECT_NAME} PRIVATE NN_ENABLED=${NN_ENABLED})

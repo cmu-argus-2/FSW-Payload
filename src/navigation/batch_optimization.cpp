@@ -14,7 +14,7 @@
 
 using idx_t = Eigen::Index;
 
-static constexpr double GM_EARTH = 3.9860044188e14;  // m^3/s^2
+static constexpr double GM_EARTH = 3.9860044188e5;  // km^3/s^2
 
 struct LinearDynamicsCostFunctor {
 public:
@@ -34,10 +34,14 @@ public:
         Eigen::Map <Eigen::Matrix<T, 3, 1>> r_res(residuals);
         Eigen::Map <Eigen::Matrix<T, 3, 1>> v_res(residuals + 3);
 
+        const T eps = T(1e-8);
         const T r0_norm_squared = r0.squaredNorm();
-        const T r0_norm_cubed = r0_norm_squared * ceres::sqrt(r0_norm_squared);
+        const T denom = r0_norm_squared > eps
+                    ? r0_norm_squared * ceres::sqrt(r0_norm_squared)
+                    : eps;
+
         r_res = r1 - (r0 + v0 * dt);
-        v_res = v1 - (v0 - GM_EARTH * r0 / r0_norm_cubed * dt);
+        v_res = v1 - (v0 - (GM_EARTH * r0 / denom) * dt);
         return true;
     }
 
@@ -53,29 +57,38 @@ public:
     bool operator()(const T* const quat_curr,
                     const T* const ang_vel_curr,
                     const T* const quat_next,
-                    const T* const ang_vel_next,
                     T* const residuals) const {
         const Eigen::Map<const Eigen::Quaternion <T>> q0(quat_curr);
         const Eigen::Map<const Eigen::Matrix<T, 3, 1>> w0(ang_vel_curr);
         const Eigen::Map<const Eigen::Quaternion <T>> q1(quat_next);
-        const Eigen::Map<const Eigen::Matrix<T, 3, 1>> w1(ang_vel_next);
 
         Eigen::Map <Eigen::Matrix<T, 3, 1>> q_res(residuals);  // in axis-angle form
-        Eigen::Map <Eigen::Matrix<T, 3, 1>> w_res(residuals + 3);
+        
+        // Halving not needed because Eigen Quaternion base handles half angle
+        // https://github.com/libigl/eigen/blob/1f05f51517ec4fd91eed711e0f89e97a7c028c0e/Eigen/src/Geometry/Quaternion.h#L505
 
-        const T half_dt = T(0.5) * T(dt);
+        // const T half_dt = T(0.5) * T(dt);
+
+        //Safe normalization of w0
+        const T w_norm_sq = w0.squaredNorm();
+        const T eps = T(1e-8);
+        const T inv_w_norm = T(1.0) / ceres::sqrt(w_norm_sq + eps);
+
         const Eigen::Quaternion <T> dq = Eigen::Quaternion<T>(
-                Eigen::AngleAxis<T>(w0.norm() * half_dt, w0.normalized()));
+                Eigen::AngleAxis<T>(w0.norm() * T(dt), w0 * inv_w_norm));
         const Eigen::Quaternion <T> q_pred = q0 * dq;
         const Eigen::AngleAxis <T> q_error = Eigen::AngleAxis<T>(q_pred.conjugate() * q1);
         q_res = q_error.angle() * q_error.axis();
-        w_res = w1 - w0;
         return true;
     }
 
 private:
     const double& dt;
 };
+
+// TODO: Fix this measurement model.
+// The correct measurement should take the gyro measurement and compare that
+// to the calculated rotational velocity based on the change in attitude state over time + bias
 
 struct GyroCostFunctor {
 public:
@@ -117,7 +130,14 @@ public:
 
         Eigen::Map <Eigen::Matrix<T, 3, 1>> r_res(residuals);
 
-        const Eigen::Matrix<T, 3, 1> predicted_bearing = (landmark_pos_T - r).normalized();
+        // const Eigen::Matrix<T, 3, 1> predicted_bearing = (landmark_pos_T - r).normalized();
+        const Eigen::Matrix<T, 3, 1> diff = (landmark_pos_T - r);
+        const T norm_sq = diff.squaredNorm();
+        const T eps = T(1e-6);
+        const T inv_norm = T(1.0) / ceres::sqrt(norm_sq + eps);
+        const Eigen::Matrix<T,3,1> predicted_bearing = diff * inv_norm;
+
+        // std::cout << "predicted_bearing: " << predicted_bearing.transpose() << std::endl;
         r_res = predicted_bearing - q * bearing_vec_T;
         return true;
     }
@@ -285,61 +305,81 @@ StateEstimates solve_ceres_batch_opt(const LandmarkMeasurements& landmark_measur
     problem_options.manifold_ownership = ceres::DO_NOT_TAKE_OWNERSHIP;
 
     ceres::Problem problem(problem_options);
-    problem.AddParameterBlock(gyro_bias.data(), 3);
+    // problem.AddParameterBlock(gyro_bias.data(), 3);
     for (idx_t i = 0; i < state_timestamps.size(); ++i) {
         state_estimates(i, StateEstimateIdx::STATE_ESTIMATE_TIMESTAMP) = state_timestamps[i];
         double* const row_start = state_estimates.data() + i * StateEstimateIdx::STATE_ESTIMATE_COUNT;
 
+        // Position parameter block
         problem.AddParameterBlock(row_start + StateEstimateIdx::POS_X,
-                                  StateEstimateIdx::VEL_X - StateEstimateIdx::POS_X);
+                                    StateEstimateIdx::VEL_X - StateEstimateIdx::POS_X);
+        // Velocity parameter block
         problem.AddParameterBlock(row_start + StateEstimateIdx::VEL_X,
-                                  StateEstimateIdx::QUAT_X - StateEstimateIdx::VEL_X);
+                                    StateEstimateIdx::QUAT_X - StateEstimateIdx::VEL_X);
+        // Quaternion parameter block
         problem.AddParameterBlock(row_start + StateEstimateIdx::QUAT_X,
-                                  StateEstimateIdx::GYRO_BIAS_X - StateEstimateIdx::QUAT_X,
-                                  &quaternion_manifold);
-        // problem.AddParameterBlock(row_start + GyroMeasurementIdx::ANG_VEL_X,
-        //                           StateEstimateIdx::GYRO_BIAS_X - GyroMeasurementIdx::ANG_VEL_X);
+                                    StateEstimateIdx::GYRO_BIAS_X - StateEstimateIdx::QUAT_X,
+                                    &quaternion_manifold);
+        // Gyro bias parameter block
         problem.AddParameterBlock(row_start + StateEstimateIdx::GYRO_BIAS_X,
-                                  StateEstimateIdx::STATE_ESTIMATE_COUNT - StateEstimateIdx::GYRO_BIAS_X);
-    }
+            StateEstimateIdx::STATE_ESTIMATE_COUNT - StateEstimateIdx::GYRO_BIAS_X);
+        }
+
     // Dynamics costs
-    for (idx_t i = 0; i < state_timestamps.size() - 1; ++i) {
+    for (idx_t i = 0; i+1 < state_timestamps.size(); ++i) {
+        // In the last timestep it seems to show dt 60 
+        // seems to be because of the condition of requiring every timestamp to have an additional timestamp after it
         const double dt = state_timestamps[i + 1] - state_timestamps[i];
         double* const curr_row_start = state_estimates.data() + i * StateEstimateIdx::STATE_ESTIMATE_COUNT;
         double* const next_row_start = state_estimates.data() + (i + 1) * StateEstimateIdx::STATE_ESTIMATE_COUNT;
 
+        
+        double* p_r0 = &state_estimates(i, StateEstimateIdx::POS_X);
+        double* p_v0 = &state_estimates(i, StateEstimateIdx::VEL_X);
+        double* p_r1 = &state_estimates(i+1, StateEstimateIdx::POS_X);
+        double* p_v1 = &state_estimates(i+1, StateEstimateIdx::VEL_X);
+
         problem.AddResidualBlock(
-                new ceres::AutoDiffCostFunction<LinearDynamicsCostFunctor, 6, 3, 3, 3, 3>(
-                        new LinearDynamicsCostFunctor{dt}),
+            new ceres::AutoDiffCostFunction<LinearDynamicsCostFunctor, 6, 3, 3, 3, 3>(
+                new LinearDynamicsCostFunctor{dt}),
                 nullptr,
-                curr_row_start + StateEstimateIdx::POS_X,
-                curr_row_start + StateEstimateIdx::VEL_X,
-                next_row_start + StateEstimateIdx::POS_X,
-                next_row_start + StateEstimateIdx::VEL_X);
+                p_r0,
+                p_v0,
+                p_r1,
+                p_v1);
+    
+        // TODO: Check the indexing for the GyroMeasurementIdx::ANG_VEL_X. Not sure this is correct.
+        // INDEXING IS DEFINITELY NOT CORRECT NEED TO ENSURE THAT GYRO MEASUREMENTS ARE OF SAME DIM AS STATE ESTIMATES
+        // AND THEN CHANGE THE CURR_ROW_START AND NEXT_ROW_START FOR THE GYRO MEASUREMENTS
+
+        const idx_t& gyro_measurement_idx = gyro_measurement_indices[i];
+        assert(gyro_measurement_idx < state_timestamps.size());
+        
         problem.AddResidualBlock(
-                new ceres::AutoDiffCostFunction<AngularDynamicsCostFunctor, 6, 4, 3, 4, 3>(
-                        new AngularDynamicsCostFunctor{dt}),
-                nullptr,
-                curr_row_start + StateEstimateIdx::QUAT_X,
-                curr_row_start + GyroMeasurementIdx::ANG_VEL_X,
-                next_row_start + StateEstimateIdx::QUAT_X,
-                next_row_start + GyroMeasurementIdx::ANG_VEL_X);
+        new ceres::AutoDiffCostFunction<AngularDynamicsCostFunctor, 3, 4, 3, 4>(
+                new AngularDynamicsCostFunctor{dt}),
+        nullptr,
+        curr_row_start + StateEstimateIdx::QUAT_X,
+        curr_row_start + GyroMeasurementIdx::ANG_VEL_X,
+        next_row_start + StateEstimateIdx::QUAT_X);
     }
 
+    // TODO: Fix gyro cost functor to use the correct measurement model
     idx_t gyro_idx = 0;
     for (idx_t i = 0; i < gyro_measurement_indices.size(); ++i) {
         const idx_t& gyro_measurement_idx = gyro_measurement_indices[i];
         assert(gyro_measurement_idx < state_timestamps.size());
 
-        auto* gyro_row = gyro_measurements.data() + gyro_measurement_idx * GyroMeasurementIdx::GYRO_MEAS_COUNT;
+        auto*  gyro_row = gyro_measurements.data() + i * GyroMeasurementIdx::GYRO_MEAS_COUNT;
         auto* state_estimate_row = state_estimates.data() + gyro_measurement_idx * StateEstimateIdx::STATE_ESTIMATE_COUNT;
-        problem.AddResidualBlock(
-                new ceres::AutoDiffCostFunction<GyroCostFunctor, 3, 3, 3>(new GyroCostFunctor{gyro_row}),
-                nullptr,
-                state_estimate_row + GyroMeasurementIdx::ANG_VEL_X,
-                gyro_bias.data());
+        // problem.AddResidualBlock(
+        //         new ceres::AutoDiffCostFunction<GyroCostFunctor, 3, 3, 3>(new GyroCostFunctor{gyro_row}),
+        //         nullptr,
+        //         gyro_row + GyroMeasurementIdx::ANG_VEL_X, //TODO: Check this indexing
+        //         gyro_bias.data());
     }
 
+    // TODO: Figure out why the gradient check fails for the landmark cost function
     // Landmark costs
     idx_t landmark_idx = 0;
     for (const auto& landmark_group_index : landmark_group_indices) {
@@ -370,6 +410,9 @@ StateEstimates solve_ceres_batch_opt(const LandmarkMeasurements& landmark_measur
     solver_options.max_num_iterations = 100;
     solver_options.linear_solver_type = ceres::SPARSE_NORMAL_CHOLESKY;
     solver_options.minimizer_progress_to_stdout = true;
+    solver_options.check_gradients = true;
+    solver_options.gradient_check_relative_precision = 1e-6;
+    solver_options.logging_type = ceres::LoggingType::PER_MINIMIZER_ITERATION;
 
     ceres::Solver::Summary summary;
     ceres::Solve(solver_options, &problem, &summary);

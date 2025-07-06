@@ -50,18 +50,16 @@ public:
     ~RCNet();
 
     EC LoadEngine(const std::string& engine_path);
-    void FeedInput(const void* input_data, size_t input_size);
-    void Infer();
-    void GetCurrentOutput();
+    void Infer(const void* input_data, void* output);
 
 
 private:
 
     // Logger for TensorRT
-    Logger logger;
+    Logger trt_logger_;
 
     // Inference buffer 
-    InferenceBuffer inference_buffer_;
+    InferenceBuffer buffer_;
 
     // Model deserialization >> executable engine
     std::unique_ptr<IRuntime> runtime_ = nullptr;
@@ -69,6 +67,9 @@ private:
     std::unique_ptr<ICudaEngine> engine_ = nullptr;
     // To execute the inference on a specific batch of inputs (binds to inputs/outputs buffers)
     std::unique_ptr<IExecutionContext> context_ = nullptr;
+
+    // CUDA stream
+    cudaStream_t stream_ = nullptr;
 
 };
 

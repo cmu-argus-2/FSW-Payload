@@ -21,6 +21,7 @@ public:
 // Inference buffer struct to be reused for all runtimes
 struct InferenceBuffer
 {
+    // GPU buffers
     void* input_data = nullptr;
     void* output_data = nullptr;
 
@@ -29,7 +30,7 @@ struct InferenceBuffer
 
     void allocate()
     {
-        // Will need to be carefull for x86 vs Tegra
+        // Will need to be careful for x86 vs Tegra
         cudaMalloc(&input_data, input_size);
         cudaMalloc(&output_data, output_size);
     }

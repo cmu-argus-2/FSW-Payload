@@ -50,16 +50,19 @@ public:
     ~RCNet();
 
     EC LoadEngine(const std::string& engine_path);
-    void Infer(const void* input_data, void* output);
+    bool IsInitialized() const { return initialized_; }
+    EC Infer(const void* input_data, void* output);
 
 
 private:
+
+    bool initialized_ = false; 
 
     // Logger for TensorRT
     Logger trt_logger_;
 
     // Inference buffer 
-    InferenceBuffer buffer_;
+    InferenceBuffer buffers_;
 
     // Model deserialization >> executable engine
     std::unique_ptr<IRuntime> runtime_ = nullptr;

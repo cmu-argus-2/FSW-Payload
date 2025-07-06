@@ -25,6 +25,10 @@ RCNet::RCNet()
 
 RCNet::~RCNet()
 {
+    cudaStreamDestroy(stream_);
+
+    buffers_.free();
+    
     if (context_) 
     {
         context_.reset();
@@ -82,35 +86,43 @@ EC RCNet::LoadEngine(const std::string& engine_path)
     context_->setInputShape(input_name, nvinfer1::Dims4{BATCH_SIZE, INPUT_CHANNELS, INPUT_HEIGHT, INPUT_WIDTH});
 
     // Allocate GPU memory for input and output
-    buffer_.input_size = BATCH_SIZE * INPUT_CHANNELS * INPUT_HEIGHT * INPUT_WIDTH * sizeof(float);
-    buffer_.output_size = NUM_CLASSES * sizeof(float);
-    buffer_.allocate();
+    buffers_.input_size = BATCH_SIZE * INPUT_CHANNELS * INPUT_HEIGHT * INPUT_WIDTH * sizeof(float);
+    buffers_.output_size = NUM_CLASSES * sizeof(float);
+    buffers_.allocate();
 
     // Bind input and output memory (ok for RC)
-    context_->setTensorAddress(input_name, buffer_.input_data);
-    context_->setTensorAddress(output_name, buffer_.output_data);
+    context_->setTensorAddress(input_name, buffers_.input_data);
+    context_->setTensorAddress(output_name, buffers_.output_data);
 
     // Creating CUDA stream for asynchronous execution
     cudaStreamCreate(&stream_); 
 
+    initialized_ = true;
+
     return EC::OK;
 }
 
-void RCNet::Infer(const void* input_data, void* output)
+EC RCNet::Infer(const void* input_data, void* output)
 {
     
-    if (!context_ || !stream_ || !input_data || !output) 
+    if (!initialized_) 
     {
-        spdlog::error("Inference called with null context, stream, or buffers.");
-        return;
+        spdlog::error("RCNet is not initialized. Call LoadEngine first.");
+        return EC::NN_ENGINE_NOT_INITIALIZED;
+    }
+
+    if (!input_data || !output) 
+    {
+        spdlog::error("Input data or output buffer is null.");
+        return EC::NN_POINTER_NULL;
     }
 
     // copy input data to GPU
-    cudaError_t err = cudaMemcpy(buffer_.input_data, input_data, buffer_.input_size, cudaMemcpyHostToDevice);
+    cudaError_t err = cudaMemcpy(buffers_.input_data, input_data, buffers_.input_size, cudaMemcpyHostToDevice);
     if (err != cudaSuccess) 
     {
         spdlog::error("cudaMemcpyAsync (input) failed.");
-        return;
+        return EC::NN_CUDA_MEMCPY_FAILED;
     }
 
     // Run asynchronous inference 
@@ -118,17 +130,18 @@ void RCNet::Infer(const void* input_data, void* output)
     if (!status)
     {
         spdlog::error("Failed to enqueue inference.");
-        return;
+        return EC::NN_INFERENCE_FAILED;
     }
 
-    err = cudaMemcpyAsync(output, buffer_.output_data, buffer_.output_size, cudaMemcpyDeviceToHost, stream_); // Copy output back to CPU
+    err = cudaMemcpyAsync(output, buffers_.output_data, buffers_.output_size, cudaMemcpyDeviceToHost, stream_); // Copy output back to CPU
     if (err != cudaSuccess) 
     {
         spdlog::error("cudaMemcpyAsync output failed.");
-        return;
+        return EC::NN_CUDA_MEMCPY_FAILED;
     }
 
     cudaStreamSynchronize(stream_);  
+    return EC::OK;
 }
 
 

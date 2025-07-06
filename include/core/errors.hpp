@@ -62,12 +62,10 @@ enum class ErrorCode // Error codes
     NN_FAILED_TO_CREATE_ENGINE,
     NN_FAILED_TO_CREATE_EXECUTION_CONTEXT,
     NN_FAILED_TO_LOAD_ENGINE,
-
-
-
-
-
-
+    NN_ENGINE_NOT_INITIALIZED, // Runtime not initialized
+    NN_CUDA_MEMCPY_FAILED, 
+    NN_POINTER_NULL, 
+    NN_INFERENCE_FAILED, 
 
 
 

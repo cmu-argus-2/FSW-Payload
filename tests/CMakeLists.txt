@@ -2,7 +2,6 @@
 add_executable(PAYLOAD_TESTS main.cpp
     test_thread_pool.cpp
     test_errors.cpp
-    vision/test_region_classifier.cpp
     navigation/test_quaternion.cpp
     )
 

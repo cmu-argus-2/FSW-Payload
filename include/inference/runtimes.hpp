@@ -14,7 +14,6 @@
 namespace Inference
 {
 
-
 using namespace nvinfer1;
 
 // Logger for TensorRT
@@ -75,7 +74,6 @@ private:
     cudaStream_t stream_ = nullptr;
 
 };
-
 
 } // namespace Inference
 

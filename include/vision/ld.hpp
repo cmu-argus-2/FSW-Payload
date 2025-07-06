@@ -14,9 +14,4 @@ struct Landmark
 };
 
 
-
-
-
-
-
 #endif // LD_HPP

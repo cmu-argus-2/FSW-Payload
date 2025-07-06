@@ -4,6 +4,7 @@
 
 namespace RegionMapping 
 {
+    
     // Static mappings
     const std::unordered_map<std::string, RegionID> region_to_id = 
     {
@@ -21,18 +22,6 @@ namespace RegionMapping
         {13, "52S"}, {14, "53S"}, {15, "54S"}, {16, "54T"}
     };
 
-    const std::unordered_map<RegionID, std::string> id_to_location = 
-    {
-        {1, "California"}, {2, "Washington / Oregon"}, {3, "Baja California, Mexico"},
-        {4, "Sonora, Mexico"}, {5, "Minnesota / Wisconsin / Iowa / Illinois"},
-        {6, "Florida"}, {7, "Toronto, Canada / Michigan / OH / PA"},
-        {8, "New Jersey / Washington DC"}, {9, "Tunisia (North Africa near Tyrrhenian Sea)"},
-        {10, "Switzerland / Italy / Tyrrhenian Sea"}, {11, "Sicilia, Italy"},
-        {12, "Italy / Adriatic Sea"}, {13, "Korea / Kumamoto, Japan"},
-        {14, "Hiroshima to Nagoya, Japan"}, {15, "Tokyo to Hachinohe, Japan"},
-        {16, "Sapporo, Japan"}
-    };
-
     RegionID GetRegionID(const std::string& region) 
     {
         auto it = region_to_id.find(region);
@@ -47,64 +36,26 @@ namespace RegionMapping
 
     std::string GetRegionLocation(RegionID id) 
     {
-        auto it = id_to_location.find(id);
-        return (it != id_to_location.end()) ? it->second : "UNKNOWN";
-    }
-}
-
-#if NN_ENABLED
-bool DetectGPU() {
-    return torch::cuda::is_available();
-}
-
-bool VerifySingleRcModel(const std::string& directory) {
-    namespace fs = std::filesystem;
-
-    size_t count = 0;
-
-    for (const auto& entry : fs::directory_iterator(directory)) {
-        if (entry.is_regular_file()) {
-            ++count;
+        switch (id) 
+        {
+            case 1: return "California";
+            case 2: return "Washington / Oregon";
+            case 3: return "Baja California, Mexico";
+            case 4: return "Sonora, Mexico";
+            case 5: return "Minnesota / Wisconsin / Iowa / Illinois";
+            case 6: return "Florida";
+            case 7: return "Toronto, Canada / Michigan / OH / PA";
+            case 8: return "New Jersey / Washington DC";
+            case 9: return "Tunisia (North Africa near Tyrrhenian Sea)";
+            case 10: return "Switzerland / Italy / Tyrrhenian Sea";
+            case 11: return "Sicilia, Italy";
+            case 12: return "Italy / Adriatic Sea";
+            case 13: return "Korea / Kumamoto, Japan";
+            case 14: return "Hiroshima to Nagoya, Japan";
+            case 15: return "Tokyo to Hachinohe, Japan";
+            case 16: return "Sapporo, Japan";
+            default: return "UNKNOWN";
         }
     }
-    // Return true if there is exactly one file in the directory
-    return count == 1;
 }
 
-
-RegionClassifierModel::RegionClassifierModel(const std::string& model_path) 
-: device(torch::kCPU) 
-{
-    load_model(model_path);
-    set_device();
-}
-
-void RegionClassifierModel::load_model(const std::string& model_path) 
-{
-    try {
-        model = torch::jit::load(model_path);
-        SPDLOG_INFO("Model loaded successfully from {}", model_path);
-    } catch (const c10::Error& e) {
-        SPDLOG_ERROR("Error loading model: {}", e.what_without_backtrace());
-        // TODO: Add error handling
-        throw;
-    }
-}
-
-void RegionClassifierModel::set_device() {
-    if (torch::cuda::is_available()) {
-        device = torch::Device(torch::kCUDA);
-        SPDLOG_INFO("Using GPU CUDA");
-    } else {
-        device = torch::Device(torch::kCPU);
-        SPDLOG_INFO("Using CPU");
-    }
-    model.to(device);
-}
-
-torch::Tensor RegionClassifierModel::run_inference(torch::Tensor input) {
-    input = input.to(device);  
-    return model.forward({input}).toTensor();
-}
-
-#endif // NN_ENABLED

@@ -20,10 +20,6 @@ Currently supported regions (V1):
     '54S': 'Tokyo to Hachinohe, Japan',
     '54T': 'Sapporo, Japan'
 */
-#if NN_ENABLED
-#include <torch/script.h> 
-#include <torch/torch.h>
-#endif // NN_ENABLED
 
 #include <string>
 
@@ -35,36 +31,9 @@ typedef uint8_t RegionID;
 namespace RegionMapping 
 {
     // Static mappings
-    // TODO: align mapping to class ID
     RegionID GetRegionID(const std::string& region);
     std::string GetRegionString(RegionID id);
     std::string GetRegionLocation(RegionID id);
 }
-
-
-#if NN_ENABLED
-
-// TODO: Will need to move this stack to runtimes and new compilation
-
-bool DetectGPU();
-
-// Verify there is only one model file in the given directory
-bool VerifySingleRcModel(const std::string& directory);
-
-
-class RegionClassifierModel 
-{
-public:
-    RegionClassifierModel(const std::string& model_path);
-    torch::Tensor run_inference(torch::Tensor input);
-
-private:
-    torch::jit::script::Module model;
-    torch::Device device;
-
-    void load_model(const std::string& model_path);
-    void set_device();
-};
-#endif // NN_ENABLED
 
 #endif // RC_HPP

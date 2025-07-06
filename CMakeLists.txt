@@ -48,7 +48,9 @@ add_subdirectory(src)
 
 ##### MAIN FLIGHT SOFTWARE PROCESS
 
+#[[
 set(PAYLOAD_CONDITIONAL_LIBS "")
+
 
 if(NN_ENABLED)
     # Check if LIBTORCH_PATH is set in the environment
@@ -63,6 +65,7 @@ if(NN_ENABLED)
 
     list(APPEND PAYLOAD_CONDITIONAL_LIBS ${TORCH_LIBRARIES})
 endif()
+=]]
 
 add_executable(${PROJECT_NAME} src/main.cpp)
 
@@ -71,10 +74,10 @@ target_link_libraries(${PROJECT_NAME}
     spdlog::spdlog
     PAYLOAD_LIB
     ${OpenCV_LIBS}
-    ${PAYLOAD_CONDITIONAL_LIBS}
+    # ${PAYLOAD_CONDITIONAL_LIBS}
 )
-message(STATUS "NN_ENABLED: ${NN_ENABLED}")
-target_compile_definitions(${PROJECT_NAME} PRIVATE NN_ENABLED=${NN_ENABLED})
+# message(STATUS "NN_ENABLED: ${NN_ENABLED}")
+# target_compile_definitions(${PROJECT_NAME} PRIVATE NN_ENABLED=${NN_ENABLED})
 
 
 ##### COMMAND-LINE INTERFACE

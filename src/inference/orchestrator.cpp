@@ -43,29 +43,39 @@ void Orchestrator::GrabNewImage(std::shared_ptr<Frame> frame)
 void Orchestrator::ExecFullInference()
 {
 
+    if (!current_frame_) 
+    {
+        spdlog::error("No frame to process");
+        return;
+    }
+
+
     if (num_inference_performed_on_current_frame_ > 0) 
     {
         spdlog::warn("Inference already performed on the current frame. This will overwrite.");
         // TODO: clear
     }
 
+    cv::Mat img = current_frame_->GetImg();
+
+    // Preprocess the image
+
+
+    // Run the RC net 
+
+    // Populate the RC ID
 
 
 
+    // TODO: LD selection
 
+    // TODO: LD inference 
 
-
+    // TODO: Populate landmarks
 
 
     num_inference_performed_on_current_frame_++;
 }
-
-
-
-
-
-
-
 
 
 } // namespace Inference

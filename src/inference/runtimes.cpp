@@ -145,5 +145,4 @@ EC RCNet::Infer(const void* input_data, void* output)
 }
 
 
-
 } // namespace Inference

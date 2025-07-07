@@ -39,6 +39,14 @@ void Orchestrator::GrabNewImage(std::shared_ptr<Frame> frame)
     num_inference_performed_on_current_frame_ = 0; // Reset the inference count for the new frame
 }
 
+size_t Orchestrator::GetMemorySize(const nvinfer1::Dims& dims, size_t element_size)
+{
+    size_t size = element_size;
+    for (int i = 0; i < dims.nbDims; ++i) {
+        size *= dims.d[i];
+    }
+    return size;
+}
 
 void Orchestrator::ExecFullInference()
 {

@@ -20,6 +20,9 @@ public:
     void GrabNewImage(std::shared_ptr<Frame> frame);
 
     void ExecFullInference();
+
+
+    static size_t GetMemorySize(const nvinfer1::Dims& dims, size_t element_size);
  
 
 

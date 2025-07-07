@@ -11,13 +11,6 @@ using namespace nvinfer1;
 static constexpr const char* input_name = "l_x_";
 static constexpr const char* output_name = "sigmoid_1";
 
-static constexpr int BATCH_SIZE = 1; // Batch size for inference
-static constexpr int INPUT_CHANNELS = 3; // Number of input channels (RGB)
-static constexpr int INPUT_HEIGHT = 224; // Input height
-static constexpr int INPUT_WIDTH = 224; // Input width
-static constexpr int NUM_CLASSES = 16; // Number of classes in the output
-
-
 
 RCNet::RCNet()
 {

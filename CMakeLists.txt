@@ -34,6 +34,9 @@ find_package(spdlog REQUIRED)
 find_package(Eigen3 3.3 REQUIRED NO_MODULE)
 find_package(OpenCV REQUIRED)
 find_package(GTest REQUIRED)
+find_package(CUDA REQUIRED)
+find_library(CUDART_LIBRARY cudart REQUIRED)
+find_library(NVINFER_LIBRARY nvinfer REQUIRED)
 
 
 # Include OpenCV directories

@@ -15,14 +15,14 @@ Orchestrator::Orchestrator()
 
 }
 
-
-void Orchestrator::Initialize()
+void Orchestrator::Initialize(const std::string& rc_engine_path)
 {
     // Initialize the RCNet runtime
-    EC rc_net_status = rc_net_.LoadEngine("path_to_.trt");
+    EC rc_net_status = rc_net_.LoadEngine(rc_engine_path);
     if (rc_net_status != EC::OK) 
     {
         spdlog::error("Failed to load RC Net engine.");
+        return; // could have fallback in which we still run the LDs but that is out of scope for now
     }
 
     // TODO: Initialize the LDs runtimes
@@ -62,6 +62,7 @@ void Orchestrator::PreprocessImg(cv::Mat img, cv::Mat& out_chw_img)
     cv::resize(img, img, cv::Size(224, 224), 0, 0, cv::INTER_AREA); 
     // Note: cv::INTER_AREA is the best one I found closest to torchvision.transforms.Resize (which uses PIL resize's default)
     // Ideally, we would want to avoid that because it has *slight* pixel differences due to their implementation
+    // spdlog::info("Image resized to 224x224, current shape: {}x{}x{}", img.rows, img.cols, img.channels());
 
     // 2. ToTensor (Convert to float and scale to [0, 1]) 
     // Convert from uint8 [0, 255] to float32 [0, 1]
@@ -81,7 +82,11 @@ void Orchestrator::PreprocessImg(cv::Mat img, cv::Mat& out_chw_img)
     }
 
     // Stack back to CHW
+    // spdlog::info("Stacking channels to CHW format, current shape: {}x{}x{}", channels[0].rows, channels[0].cols, channels.size());
+
+    // spdlog::info("Size of out_chw_img before: {}x{}x{}", out_chw_img.rows, out_chw_img.cols, out_chw_img.channels());
     cv::vconcat(channels, out_chw_img);  // Stack channels vertically (CHW format)
+    // spdlog::info("Size of out_chw_img after: {}x{}x{}", out_chw_img.rows, out_chw_img.cols, out_chw_img.channels());
 }
 
 
@@ -155,9 +160,11 @@ EC Orchestrator::ExecFullInference()
 
     // Preprocess the image
     PreprocessImg(img_buff_, chw_img);
+    spdlog::info("Image preprocessed to CHW format with shape: {}x{}x{}", chw_img.rows, chw_img.cols, chw_img.channels());
 
     // Run the RC net 
     void* output;
+    spdlog::info("Right before Infer");
     EC rc_inference_status = rc_net_.Infer(chw_img.data, output);
     if (rc_inference_status != EC::OK) 
     {
@@ -167,7 +174,17 @@ EC Orchestrator::ExecFullInference()
     }
 
     // Populate the RC ID
+    std::unique_ptr<float[]> current_output(static_cast<float*>(output));
+    static constexpr float RC_THRESHOLD = 0.5f; // Threshold for region classification
 
+    for (uint8_t i = 0; i < NUM_CLASSES; i++) 
+    {
+        if (current_output[i] > RC_THRESHOLD) 
+        {
+            // Add the region ID to the frame
+            current_frame_->AddRegion(static_cast<RegionID>(i));
+        }
+    }
 
 
     // TODO: LD selection

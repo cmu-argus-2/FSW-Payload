@@ -1,4 +1,4 @@
-# Create an executable for the region classifier test
+# Create an executable for the tests
 add_executable(PAYLOAD_TESTS main.cpp
     test_thread_pool.cpp
     test_errors.cpp
@@ -11,9 +11,14 @@ target_link_libraries(PAYLOAD_TESTS
         GTest::gtest 
         GTest::gtest_main 
         PAYLOAD_LIB
-        ${TORCH_LIBRARIES}
 )
 
-
-
 add_test(NAME PAYLOAD_TESTS COMMAND PAYLOAD_TESTS)
+
+# Create an executable for inference test
+add_executable(RUN_INFERENCE run_inference.cpp)
+
+target_link_libraries(RUN_INFERENCE
+    PRIVATE
+    PAYLOAD_LIB
+)

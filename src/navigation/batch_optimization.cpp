@@ -18,7 +18,7 @@ static constexpr double GM_EARTH = 3.9860044188e5;  // km^3/s^2
 
 struct LinearDynamicsCostFunctor {
 public:
-    LinearDynamicsCostFunctor(const double& dt) : dt(dt) {}
+    LinearDynamicsCostFunctor(const double dt) : dt(dt) {}
 
     template<typename T>
     bool operator()(const T* const pos_curr,
@@ -44,7 +44,7 @@ public:
     }
 
 private:
-    const double& dt;
+    const double dt;
 };
 
 struct AngularDynamicsCostFunctor {
@@ -89,7 +89,7 @@ private:
 
 struct GyroCostFunctor {
 public:
-    GyroCostFunctor(const double* const gyro_row, double dt) :
+    GyroCostFunctor(const double* const gyro_row, const double dt) :
             gyro_ang_vel(gyro_row + GyroMeasurementIdx::ANG_VEL_X), dt(dt) {}
 
     template<typename T>
@@ -126,7 +126,7 @@ public:
 
 private:
     const Eigen::Map<const Eigen::Vector3d> gyro_ang_vel;
-    const double& dt;
+    const double dt;
 };
 
 struct LandmarkCostFunctor {
@@ -469,12 +469,12 @@ StateEstimates solve_ceres_batch_opt(const LandmarkMeasurements& landmark_measur
     std::cout << summary.BriefReport() << "\n";
 
     // Print state estimates
-    for (idx_t i = 0; i < state_estimates.rows(); ++i) {
-        double* const state_estimate_row = state_estimates.data() + i * StateEstimateIdx::STATE_ESTIMATE_COUNT;
-        std::cout << "State estimate " << i << ": ";
-        for (idx_t j = 0; j < StateEstimateIdx::STATE_ESTIMATE_COUNT; ++j) {
-            std::cout << state_estimate_row[j] << " ";
-        }
+    for (idx_t i = 0; i < state_estimates.rows(); i+=100){
+            double* const state_estimate_row = state_estimates.data() + i * StateEstimateIdx::STATE_ESTIMATE_COUNT;
+            std::cout << "State estimate " << i << ": ";
+            for (idx_t j = 0; j < StateEstimateIdx::STATE_ESTIMATE_COUNT; ++j) {
+                std::cout << state_estimate_row[j] << " ";
+            }
         std::cout << "\n";
     }
 

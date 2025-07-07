@@ -30,6 +30,13 @@ int main() {
       assert(gs.rows()   == lm.rows());
 
       std::cout << "Loaded measurements from HDF5 file." << std::endl;
+
+      //Print first few rows of each measurement
+      std::cout << "Landmark Measurements (first 5 rows):\n" <<
+          lm.topRows(5) << std::endl;
+      std::cout << "Gyro Measurements (first 5 rows):\n" <<
+          gm.topRows(5) << std::endl;
+          
       // Run Ceres batch optimization
       StateEstimates state_estimates = solve_ceres_batch_opt(lm, gs, gm, 60.0);
     return 0;

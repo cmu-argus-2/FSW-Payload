@@ -15,11 +15,3 @@ tolerance_solver = 0.05 # placeholder
 max_iterations = 10000 # iterations
 # TODO
 
-[TRACKING] 
-# INT or floating
-gyro_update_frequency = 10.0
-# INT or floating
-img_update_frequency = 1.0 
-# TODO
-
-

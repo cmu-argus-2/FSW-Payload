@@ -17,7 +17,6 @@ enum class OD_STATE : uint8_t
     IDLE = 0, // No operation, waiting for command to start
     INIT = 1, // Initialize the OD process by periodically capturing and storing frames. Each frame is being filtered for regions of interest and landmarks are identified.
     BATCH_OPT = 2, // Perform batch optimization on the stored landmarks
-    TRACKING = 3 // Once a good initial state is obtained, the system will continue tracking in real-time landmarks from frames and perform state updates.
 };
 
 
@@ -39,20 +38,10 @@ struct BATCH_OPT_config
     BATCH_OPT_config();
 };
 
-struct TRACKING_config
-{
-    double gyro_update_frequency;
-    double img_update_frequency;
-
-    TRACKING_config();
-};
-
-
 struct OD_Config
 {
     INIT_config init;
     BATCH_OPT_config batch_opt;
-    TRACKING_config tracking;
 
     OD_Config();
 };
@@ -111,12 +100,8 @@ private:
     // Main running steps for each stages
     void _DoInit();
     void _DoBatchOptimization();
-    void _DoTracking();
 
 
-
-
-    
 };
 
 

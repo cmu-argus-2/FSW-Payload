@@ -66,6 +66,7 @@ enum class ErrorCode // Error codes
     NN_CUDA_MEMCPY_FAILED, 
     NN_POINTER_NULL, 
     NN_INFERENCE_FAILED, 
+    NN_NO_FRAME_AVAILABLE, // No frame available for inference
 
 
 

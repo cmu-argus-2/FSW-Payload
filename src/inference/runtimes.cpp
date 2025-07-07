@@ -63,12 +63,14 @@ EC RCNet::LoadEngine(const std::string& engine_path)
     runtime_ = std::unique_ptr<IRuntime>(nvinfer1::createInferRuntime(trt_logger_));
     if (!runtime_) {
         spdlog::error("Error: Failed to create runtime");
+        LogError(EC::NN_FAILED_TO_CREATE_RUNTIME);
         return EC::NN_FAILED_TO_CREATE_RUNTIME;
     }
 
     engine_ = std::unique_ptr<ICudaEngine>(runtime_->deserializeCudaEngine(engine_data.data(), engine_data.size()));
     if (!engine_) {
         spdlog::error("Error: Failed to create CUDA engine");
+        LogError(EC::NN_FAILED_TO_CREATE_ENGINE);
         return EC::NN_FAILED_TO_CREATE_ENGINE;
     }
 
@@ -77,6 +79,7 @@ EC RCNet::LoadEngine(const std::string& engine_path)
     if (!context_) 
     {
         spdlog::error("Error: Failed to create execution context");
+        LogError(EC::NN_FAILED_TO_CREATE_EXECUTION_CONTEXT);
         return EC::NN_FAILED_TO_CREATE_EXECUTION_CONTEXT;
     }
 
@@ -114,6 +117,7 @@ EC RCNet::Infer(const void* input_data, void* output)
     if (!input_data || !output) 
     {
         spdlog::error("Input data or output buffer is null.");
+        LogError(EC::NN_POINTER_NULL);
         return EC::NN_POINTER_NULL;
     }
 
@@ -130,6 +134,7 @@ EC RCNet::Infer(const void* input_data, void* output)
     if (!status)
     {
         spdlog::error("Failed to enqueue inference.");
+        LogError(EC::NN_INFERENCE_FAILED);
         return EC::NN_INFERENCE_FAILED;
     }
 
@@ -137,6 +142,7 @@ EC RCNet::Infer(const void* input_data, void* output)
     if (err != cudaSuccess) 
     {
         spdlog::error("cudaMemcpyAsync output failed.");
+        LogError(EC::NN_CUDA_MEMCPY_FAILED);
         return EC::NN_CUDA_MEMCPY_FAILED;
     }
 

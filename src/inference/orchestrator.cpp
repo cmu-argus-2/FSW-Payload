@@ -22,7 +22,6 @@ void Orchestrator::Initialize()
     EC rc_net_status = rc_net_.LoadEngine("path_to_.trt");
     if (rc_net_status != EC::OK) 
     {
-        LogError(rc_net_status);
         spdlog::error("Failed to load RC Net engine.");
     }
 
@@ -128,15 +127,22 @@ void Orchestrator::PreprocessImgGPU(const cv::Mat& img, cv::Mat& out_chw)
 }
 */
 
-void Orchestrator::ExecFullInference()
+EC Orchestrator::ExecFullInference()
 {
 
     if (!current_frame_) 
     {
         spdlog::error("No frame to process");
-        return;
+        LogError(EC::NN_NO_FRAME_AVAILABLE);
+        return EC::NN_NO_FRAME_AVAILABLE;
     }
 
+    if (!rc_net_.IsInitialized()) 
+    {
+        spdlog::error("RCNet is not initialized. Cannot perform inference.");
+        LogError(EC::NN_ENGINE_NOT_INITIALIZED);
+        return EC::NN_ENGINE_NOT_INITIALIZED;
+    }
 
     if (num_inference_performed_on_current_frame_ > 0) 
     {
@@ -150,8 +156,15 @@ void Orchestrator::ExecFullInference()
     // Preprocess the image
     PreprocessImg(img_buff_, chw_img);
 
-
     // Run the RC net 
+    void* output;
+    EC rc_inference_status = rc_net_.Infer(chw_img.data, output);
+    if (rc_inference_status != EC::OK) 
+    {
+        spdlog::error("RCNet inference failed with error code: {}", to_uint8(rc_inference_status));
+        LogError(rc_inference_status);
+        return rc_inference_status;
+    }
 
     // Populate the RC ID
 
@@ -165,6 +178,8 @@ void Orchestrator::ExecFullInference()
 
 
     num_inference_performed_on_current_frame_++;
+
+    return EC::OK;
 }
 
 

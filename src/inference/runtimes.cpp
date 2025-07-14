@@ -83,7 +83,7 @@ EC RCNet::LoadEngine(const std::string& engine_path)
 
     // Allocate GPU memory for input and output
     buffers_.input_size = BATCH_SIZE * INPUT_CHANNELS * INPUT_HEIGHT * INPUT_WIDTH * sizeof(float);
-    buffers_.output_size = NUM_CLASSES * sizeof(float);
+    buffers_.output_size = RC_NUM_CLASSES * sizeof(float);
     buffers_.allocate();
 
     // Bind input and output memory (ok for RC)
@@ -115,6 +115,7 @@ EC RCNet::Infer(const void* input_data, void* output)
     }
 
     // copy input data to GPU
+    // spdlog::info("Copying input data to GPU memory.");
     cudaError_t err = cudaMemcpy(buffers_.input_data, input_data, buffers_.input_size, cudaMemcpyHostToDevice);
     if (err != cudaSuccess) 
     {
@@ -122,8 +123,8 @@ EC RCNet::Infer(const void* input_data, void* output)
         return EC::NN_CUDA_MEMCPY_FAILED;
     }
 
-    // Run asynchronous inference 
-    bool status = context_->enqueueV3(stream_);
+    // Run asynchronous inference with enqueueV3 (async by design)
+    bool status = context_->enqueueV3(stream_); // could use the default stream with enqueueV3(0) adn then no need to sync
     if (!status)
     {
         spdlog::error("Failed to enqueue inference.");
@@ -138,7 +139,7 @@ EC RCNet::Infer(const void* input_data, void* output)
         LogError(EC::NN_CUDA_MEMCPY_FAILED);
         return EC::NN_CUDA_MEMCPY_FAILED;
     }
-
+    // spdlog::info("Inference enqueued successfully. Waiting for completion...");
     cudaStreamSynchronize(stream_);  
     return EC::OK;
 }

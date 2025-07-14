@@ -37,8 +37,8 @@ void Orchestrator::GrabNewImage(std::shared_ptr<Frame> frame)
         return;
     }
 
-    // actual copy here
-    current_frame_ = std::make_shared<Frame>(*frame);
+    original_frame_ = frame; 
+    current_frame_ = std::make_shared<Frame>(*frame); // deep copy
     num_inference_performed_on_current_frame_ = 0; // Reset the inference count for the new frame
 }
 
@@ -87,6 +87,7 @@ void Orchestrator::PreprocessImg(cv::Mat img, cv::Mat& out_chw_img)
     // spdlog::info("Size of out_chw_img before: {}x{}x{}", out_chw_img.rows, out_chw_img.cols, out_chw_img.channels());
     cv::vconcat(channels, out_chw_img);  // Stack channels vertically (CHW format)
     // spdlog::info("Size of out_chw_img after: {}x{}x{}", out_chw_img.rows, out_chw_img.cols, out_chw_img.channels());
+    // TODO: preprocessing leads to wrong dimensions
 }
 
 
@@ -163,9 +164,8 @@ EC Orchestrator::ExecFullInference()
     spdlog::info("Image preprocessed to CHW format with shape: {}x{}x{}", chw_img.rows, chw_img.cols, chw_img.channels());
 
     // Run the RC net 
-    void* output;
-    spdlog::info("Right before Infer");
-    EC rc_inference_status = rc_net_.Infer(chw_img.data, output);
+    auto host_output = std::unique_ptr<float[]>{new float[RC_NUM_CLASSES]};
+    EC rc_inference_status = rc_net_.Infer(chw_img.data, host_output.get());
     if (rc_inference_status != EC::OK) 
     {
         spdlog::error("RCNet inference failed with error code: {}", to_uint8(rc_inference_status));
@@ -173,18 +173,17 @@ EC Orchestrator::ExecFullInference()
         return rc_inference_status;
     }
 
-    // Populate the RC ID
-    std::unique_ptr<float[]> current_output(static_cast<float*>(output));
+    // Populate the RC ID to original frame
     static constexpr float RC_THRESHOLD = 0.5f; // Threshold for region classification
-
-    for (uint8_t i = 0; i < NUM_CLASSES; i++) 
+    for (uint8_t i = 0; i < RC_NUM_CLASSES; i++) 
     {
-        if (current_output[i] > RC_THRESHOLD) 
+        spdlog::info("RC output for class {}: {:.3f}", i, host_output[i]);
+        if (host_output[i] > RC_THRESHOLD) 
         {
-            // Add the region ID to the frame
-            current_frame_->AddRegion(static_cast<RegionID>(i));
+            original_frame_->AddRegion(static_cast<RegionID>(i)); 
         }
     }
+
 
 
     // TODO: LD selection

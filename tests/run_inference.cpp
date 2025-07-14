@@ -28,7 +28,9 @@ int main(int argc, char** argv)
     Frame frame; // empty frame 
     DH::ReadImageFromDisk(sample_image_path, frame); 
 
-    orchestrator.GrabNewImage(std::make_shared<Frame>(frame)); 
+    std::shared_ptr<Frame> frame_ptr = std::make_shared<Frame>(frame);
+
+    orchestrator.GrabNewImage(frame_ptr); 
     spdlog::info("Running inference on the frame...");
     EC status = orchestrator.ExecFullInference();
     if (status != EC::OK)
@@ -37,9 +39,9 @@ int main(int argc, char** argv)
         return 1;
     }
     spdlog::info("Inference completed successfully.");
-    spdlog::info("Regions found: {}", frame.GetRegionIDs().size());
+    spdlog::info("Regions found: {}", frame_ptr->GetRegionIDs().size());
 
-    for (const auto& region_id : frame.GetRegionIDs())
+    for (const auto& region_id : frame_ptr->GetRegionIDs())
     {
         spdlog::info("Region ID: {}", GetRegionString(region_id));
     }

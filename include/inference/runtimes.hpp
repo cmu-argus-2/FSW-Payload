@@ -44,7 +44,7 @@ static constexpr int BATCH_SIZE = 1; // Batch size for inference
 static constexpr int INPUT_CHANNELS = 3; // Number of input channels (RGB)
 static constexpr int INPUT_HEIGHT = 224; // Input height
 static constexpr int INPUT_WIDTH = 224; // Input width
-static constexpr int NUM_CLASSES = 16; // Number of classes in the output
+static constexpr int RC_NUM_CLASSES = 16; // Number of classes in the output
 
 class RCNet
 {

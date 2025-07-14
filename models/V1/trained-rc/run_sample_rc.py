@@ -89,13 +89,13 @@ if __name__ == "__main__":
     files = os.listdir(folder_name)
     results = {}
 
-
     for file in files:
         img = Image.open(os.path.join(folder_name, file)).convert("RGB")
+        # img = Image.open("tests/sample_data/inference/l9_32S_00001.png").convert("RGB")
         img = transformations(img).unsqueeze(0).to(device)
 
+        print(img.shape)
 
-        # what's the input tensor shape?
         print(f"Input tensor shape: {img.shape}")
         outputs = model(img)
 
@@ -104,3 +104,4 @@ if __name__ == "__main__":
         results[file] = [idx_mapping[p] for p in predicted]
         print(f"{file} - prediction: {results[file]}")
         print("----------")
+

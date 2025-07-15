@@ -91,17 +91,22 @@ if __name__ == "__main__":
 
     for file in files:
         img = Image.open(os.path.join(folder_name, file)).convert("RGB")
-        # img = Image.open("tests/sample_data/inference/l9_32S_00001.png").convert("RGB")
+        #img = Image.open("tests/sample_data/inference/l9_32S_00001.png").convert("RGB")
+        img = Image.open("tests/sample_data/inference/l9_10T_00021.png").convert("RGB")
         img = transformations(img).unsqueeze(0).to(device)
 
         print(img.shape)
 
         print(f"Input tensor shape: {img.shape}")
+        #print("First 10 pixels of the input tensor:")
+        #print(img[0, :, :10, :10])
         outputs = model(img)
-
-        predicted = torch.where(outputs > 0.55)[1]
+        print(f"Output tensor: {[f'{v:.3f}' for v in outputs.detach().cpu().numpy().flatten()]}")
+        predicted = torch.where(outputs > 0.5)[1]
 
         results[file] = [idx_mapping[p] for p in predicted]
-        print(f"{file} - prediction: {results[file]}")
+        #print(f"{file}")
+        print(f"prediction: {results[file]}")
         print("----------")
+        exit()
 

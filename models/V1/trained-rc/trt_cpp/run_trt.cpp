@@ -149,7 +149,8 @@ int main(int argc, char** argv)
     }
     /* PREPROCESSING */
     cv::Mat chw_img = Preprocess(image);
-
+    std::cout << "Image preprocessed to CHW format with shape: " 
+              << chw_img.rows << "x" << chw_img.cols << "x" << chw_img.channels() << std::endl;
     
     // Load the TensorRT engine
     std::vector<char> engine_data = LoadEngine(model_path);

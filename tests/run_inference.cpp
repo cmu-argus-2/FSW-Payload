@@ -26,7 +26,11 @@ int main(int argc, char** argv)
     orchestrator.Initialize(trt_file_path);
 
     Frame frame; // empty frame 
-    DH::ReadImageFromDisk(sample_image_path, frame); 
+    if (!DH::ReadImageFromDisk(sample_image_path, frame))
+    {
+        spdlog::error("Failed to read image from disk: {}", sample_image_path);
+        return 1;
+    }
 
     std::shared_ptr<Frame> frame_ptr = std::make_shared<Frame>(frame);
 

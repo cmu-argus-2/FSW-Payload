@@ -87,7 +87,11 @@ void Orchestrator::PreprocessImg(cv::Mat img, cv::Mat& out_chw_img)
     // spdlog::info("Size of out_chw_img before: {}x{}x{}", out_chw_img.rows, out_chw_img.cols, out_chw_img.channels());
     cv::vconcat(channels, out_chw_img);  // Stack channels vertically (CHW format)
     // spdlog::info("Size of out_chw_img after: {}x{}x{}", out_chw_img.rows, out_chw_img.cols, out_chw_img.channels());
-    // TODO: preprocessing leads to wrong dimensions
+    // Print the first 10 pixels of the preprocessed image
+    /*spdlog::info("First 10 pixels of the preprocessed image:");
+    for (int i = 0; i < std::min(10, out_chw_img.rows); ++i) {
+        spdlog::info("Pixel {}: {}", i, out_chw_img.at<float>(i));
+    }*/
 }
 
 

@@ -28,7 +28,6 @@ Currently supported regions (V1):
 
 enum class RegionID : uint8_t 
 {
-    UNKNOWN,
     R_10S,
     R_10T,
     R_11R,
@@ -44,7 +43,8 @@ enum class RegionID : uint8_t
     R_52S,
     R_53S,
     R_54S,
-    R_54T
+    R_54T,
+    UNKNOWN, // Placing at the end as a sentinel value instead of beginning to avoid mistakes when reading from GPU
 };
 
 // String → ID

@@ -23,7 +23,7 @@ sudo apt install -y \
   clang \
   libopencv-dev \
   libeigen3-dev \
-  libreadline-dev
+  libreadline-dev \
   libnvinfer-dev
 
 # Uncomment this line if you get ccache related issues

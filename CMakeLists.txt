@@ -35,7 +35,8 @@ find_package(Eigen3 3.3 REQUIRED NO_MODULE)
 find_package(OpenCV REQUIRED)
 find_package(GTest REQUIRED)
 find_package(CUDA REQUIRED)
-find_library(CUDART_LIBRARY cudart REQUIRED)
+# find_library(CUDART_LIBRARY cudart REQUIRED)
+find_library(CUDART_LIBRARY cudart HINTS ENV CUDART_LIBRARY ${CUDA_TOOLKIT_ROOT_DIR}/lib64)
 find_library(NVINFER_LIBRARY nvinfer REQUIRED)
 
 
@@ -44,6 +45,7 @@ include_directories(SYSTEM ${OpenCV_INCLUDE_DIRS})
 # Include the directories for header files
 include_directories(${PROJECT_SOURCE_DIR}/include)
 include_directories(SYSTEM ${PROJECT_SOURCE_DIR}/external) # ignore warnings from external libraries
+include_directories(${CUDA_HOME}/include)
 # Add the source files subdirectory
 set(CMAKE_POSITION_INDEPENDENT_CODE ON)
 add_subdirectory(src)

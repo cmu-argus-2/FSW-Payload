@@ -18,35 +18,24 @@ Author: Ibrahima Sory Sow
 #include "communication/named_pipe.hpp"
 #include "communication/uart.hpp"
 #include "core/timing.hpp"
+#include "logger.hpp"
 #include <cstdlib>
-
-
-void SetupLogger()
-{
-    // Set the log pattern
-
-    // %Y-%m-%d %H:%M:%S.%f: timestamp
-    // %t: thread id
-    // %l: log level
-    // %s: source filename
-    // %#: source line number
-    // %v: the actual text to log
-    spdlog::set_pattern("[%Y-%m-%d %H:%M:%S.%e][%^%l%$][thread:%t][%s:%#] %v");
-    std::atexit([]() {
-        spdlog::shutdown();
-    });
-
-}
 
 int main(int argc, char** argv)
 {
 
     // Set the reference time
     timing::InitializeBootTime();
-    
-    
-    SetupLogger();
-    // spdlog::set_level(spdlog::level::warn);
+
+    ////// SET UP LOGGER
+    if (argc > 2) {
+        std::string level = argv[2];
+        LoggerManager::SetupLogger(level);
+    }
+    else {
+        // if no argument is provided then default to info
+        LoggerManager::SetupLogger("INFO");
+    }
 
 
     ////// LOADING CONFIGURATION

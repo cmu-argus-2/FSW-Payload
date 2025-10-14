@@ -13,6 +13,7 @@ add_library(PAYLOAD_LIB SHARED
     payload.cpp
     queues.cpp
     configuration.cpp
+    image_sender.cpp
 )
 
 # Link libraries to PAYLOAD_LIB

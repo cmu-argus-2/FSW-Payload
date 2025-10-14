@@ -60,7 +60,9 @@ bool UART::Connect()
     OpenPort();
     ConfigurePort();
 
-    _connected = true;
+    if (port_opened) {
+        _connected = true;
+    }
     return _connected;
 }
 
@@ -254,4 +256,33 @@ void UART::StopLoop()
     {
         close(serial_port_fd);
     }
+}
+
+// ADDED DISCONNECT
+void UART::Disconnect()
+{
+    if (!_connected) {
+        SPDLOG_WARN("UART is already disconnected.");
+        return;
+    }
+
+    // Perform any clean-up actions before disconnecting
+    if (serial_port_fd != -1) {
+        // Close the UART port
+        if (close(serial_port_fd) == -1) {
+            SPDLOG_ERROR("Failed to close UART port {}: {}", PORT_NAME, strerror(errno));
+            LogError(EC::UART_CLOSE_FAILED);
+        } else {
+            SPDLOG_INFO("UART port {} disconnected successfully.", PORT_NAME);
+        }
+        serial_port_fd = -1;  // Reset file descriptor
+    }
+
+    // Reset the connected state
+    _connected = false;
+
+    // Perform any other necessary state resets
+    port_opened = false;
+
+    SPDLOG_INFO("UART disconnected.");
 }

@@ -19,6 +19,7 @@ Author: Ibrahima Sory Sow
 #include "communication/uart.hpp"
 #include "core/timing.hpp"
 #include <cstdlib>
+#include "image_sender.hpp"
 
 
 void SetupLogger()
@@ -83,7 +84,7 @@ int main(int argc, char** argv)
         } 
         else 
         {
-            SPDLOG_ERROR("Invalid communication interface: {}. Use 'UART' or 'CLI'.", choice_interface);
+            SPDLOG_ERROR("Invalid communication interface: {}. Use ' UART' or 'CLI'.", choice_interface);
             return 1;
         }
         
@@ -94,10 +95,13 @@ int main(int argc, char** argv)
         // comms_interface = std::make_unique<UARTCommunication>();
     }
     
-    Payload& payload = Payload::CreateInstance(std::move(config), std::move(comms_interface));
-    payload.Initialize();
-    payload.Run(); // Starts the main loop
+    // Payload& payload = Payload::CreateInstance(std::move(config), std::move(comms_interface));
+    // payload.Initialize();
+    // payload.Run(); // Starts the main loop
 
-
+    ImageSender sender;
+    
+    sender.RunImageTransfer();
+    
     return 0;
 }

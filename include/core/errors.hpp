@@ -28,7 +28,7 @@ enum class ErrorCode // Error codes
     FILE_DOES_NOT_EXIST,
     FILE_NOT_FOUND,
     START_BYTE_OUT_OF_RANGE,
-    FAILED_TO_GRAB_FILE_CHUNK,
+    FAILED_TO_GRAB_FILE_CHUNK, 
     
     // Camera subsystem
     CAMERA_CAPTURE_FAILED,
@@ -45,7 +45,9 @@ enum class ErrorCode // Error codes
 
     // UART
     UART_OPEN_FAILED,
+    UART_CLOSE_FAILED,
     UART_OPEN_FAILED_AFTER_RETRY,
+    UART_CLOSE_FAILED_AFTER_RETRY,
     UART_NOT_OPEN,
     UART_GETATTR_FAILED,
     UART_SETATTR_FAILED,

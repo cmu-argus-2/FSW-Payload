@@ -189,6 +189,7 @@ uint32_t ImageSender::HandshakeWithMainboard()
         // bytes_received = true;
 
         if (bytes_received) {
+            SPDLOG_INFO("Received : {}", bytes_received);
             // std::string received_msg(reinterpret_cast<char* >(data), strlen(reinterpret_cast<char*>(data)));
             std::string received_msg(data.begin(), data.end());
             if (received_msg == start_msg) {
@@ -201,7 +202,7 @@ uint32_t ImageSender::HandshakeWithMainboard()
                 SPDLOG_WARN("Received unexpected message: {}", received_msg);
             }
         } else {
-            SPDLOG_WARN("No message received from mainboard, retrying...");
+            // SPDLOG_WARN("No message received from mainboard, retrying...");
             if (timing::GetCurrentTimeMs() - start_time > 30000) {
                 return 2;
             }

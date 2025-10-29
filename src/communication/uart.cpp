@@ -58,6 +58,13 @@ bool UART::Connect()
     }
 
     OpenPort();
+
+    if (!port_opened)
+    {
+        SPDLOG_ERROR("UART Connect: port not opened");
+        return false;
+    }
+
     ConfigurePort();
 
     _connected = true;
@@ -66,6 +73,13 @@ bool UART::Connect()
 
 void UART::ConfigurePort()
 {
+
+    if (serial_port_fd == -1)
+    {
+        SPDLOG_ERROR("ConfigurePort called but serial fd is invalid");
+        LogError(EC::UART_NOT_OPEN);
+        return;
+    }
 
     for (int i = 0; i < 3; i++)
     {
@@ -96,9 +110,9 @@ void UART::ConfigurePort()
         tty.c_cflag &= ~CSIZE; // clear data size
         tty.c_cflag |= CS8; // 8 bits per byte
 
-        // set control flags
-        tty.c_cflag |= ~CRTSCTS; // no hardware flow control
-        tty.c_cflag |= CREAD | CLOCAL; // enable receiver, ignore modem control lines
+    // set control flags
+    tty.c_cflag &= ~CRTSCTS; // no hardware flow control (clear the flag)
+    tty.c_cflag |= CREAD | CLOCAL; // enable receiver, ignore modem control lines
 
         // set local moes
         tty.c_lflag &= ~(ICANON | ECHO | ECHOE | ISIG); // non-canonical mode (raw data)
@@ -117,6 +131,7 @@ void UART::ConfigurePort()
         // VMIN = 0, VTIME = 0: Non-blocking read.
         tty.c_cc[VTIME] = 10; // timeout in deciseconds
         tty.c_cc[VMIN] = 0;
+
 
         if (tcsetattr(serial_port_fd, TCSANOW, &tty)) // apply changes
         {
@@ -186,6 +201,11 @@ bool UART::Send(const Packet::Out& data)
 
 bool UART::Receive(uint8_t& cmd_id, std::vector<uint8_t>& data)
 {
+    if (serial_port_fd == -1)
+    {
+        return false;
+    }
+
     // Non-blocking 
     ssize_t bytes_read = read(serial_port_fd, READ_BUF.data(), Packet::INCOMING_PCKT_SIZE);
 
@@ -210,10 +230,14 @@ void UART::RunLoop()
 {
     _running_loop.store(true);
 
-
-    if (_connected)
+    if (!_connected)
     {
-        Connect();
+        if (!Connect())
+        {
+            SPDLOG_ERROR("UART RunLoop: failed to Connect(), aborting loop");
+            _running_loop.store(false);
+            return;
+        }
     }
 
     while (_running_loop.load() && _connected)
@@ -222,10 +246,12 @@ void UART::RunLoop()
         
         uint8_t cmd_id;
         std::vector<uint8_t> data;
-        Receive(cmd_id, data);
-        if (!data.empty())
+        if (Receive(cmd_id, data))
         {
-            sys::payload().AddCommand(cmd_id, data);
+            if (!data.empty())
+            {
+                sys::payload().AddCommand(cmd_id, data);
+            }
         }
 
         // transmit if there is data to send
@@ -254,4 +280,23 @@ void UART::StopLoop()
     {
         close(serial_port_fd);
     }
+}
+
+void UART::Disconnect()
+{
+    if (!_connected)
+    {
+        return;
+    }
+
+    _connected = false;
+    StopLoop();
+
+    if (serial_port_fd != -1)
+    {
+        close(serial_port_fd);
+        serial_port_fd = -1;
+    }
+
+    port_opened = false;
 }

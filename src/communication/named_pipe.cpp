@@ -170,7 +170,7 @@ bool NamedPipe::Receive(uint8_t& cmd_id, std::vector<uint8_t>& data) {
 
 
 
-bool NamedPipe::Send(const Packet::Out& data, uint8_t packet_size)
+bool NamedPipe::Send(const Packet::Out& data)
 {
     if (pipe_fd_out < 0) 
     {
@@ -244,7 +244,7 @@ void NamedPipe::RunLoop()
             if (pfds[1].revents & POLLOUT && !sys::payload().GetTxQueue().IsEmpty()) 
             {
                 std::shared_ptr<Message> msg = sys::payload().GetTxQueue().GetNextMsg();
-                bool succ = Send(msg->_packet, msg->_packet.size());
+                bool succ = Send(msg->_packet);
                 if (succ)
                 {
                     SPDLOG_INFO("Transmitted message with ID: {}", msg->id);

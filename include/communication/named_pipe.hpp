@@ -19,7 +19,7 @@ public:
     bool Connect() override;
     void Disconnect() override;
     bool Receive(uint8_t& cmd_id, std::vector<uint8_t>& data) override;
-    bool Send(const Packet::Out& data, uint8_t packet_size) override;
+    bool Send(const Packet::Out& data) override;
     void RunLoop() override;
     void StopLoop() override;
 

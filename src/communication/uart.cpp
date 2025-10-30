@@ -121,7 +121,7 @@ void UART::ConfigurePort()
         tty.c_iflag &= ~(IGNBRK|BRKINT|PARMRK|ISTRIP|INLCR|IGNCR|ICRNL); // Disable any special handling of received bytes
 
         // set output flags
-        // tty.c_oflag &= ~c    (OPOST | ONLCR); // raw output
+        // tty.c_oflag &= ~(OPOST | ONLCR); // raw output
         tty.c_oflag = 0;
 
         // VMIN = 0, VTIME > 0: Read returns when timeout occurs or data is available.
@@ -169,7 +169,7 @@ bool UART::FillWriteBuffer(const std::vector<uint8_t>& data)
 }
 
 
-bool UART::Send(const Packet::Out& data, uint8_t packet_size)
+bool UART::Send(const Packet::Out& data)
 {
     // if (!port_opened)
     // {
@@ -185,9 +185,9 @@ bool UART::Send(const Packet::Out& data, uint8_t packet_size)
 
 
     ssize_t bytes_written = write(serial_port_fd, WRITE_BUF.data(), Packet::OUTGOING_PCKT_SIZE); */ 
-
-
-    ssize_t bytes_written = write(serial_port_fd, data.data(), packet_size);
+   
+   
+    ssize_t bytes_written = write(serial_port_fd, data.data(), Packet::OUTGOING_PCKT_SIZE);
 
     if (bytes_written == -1) // || bytes_written != Packet::OUTGOING_PCKT_SIZE) 
     {
@@ -251,7 +251,7 @@ void UART::RunLoop()
         if (!sys::payload().GetTxQueue().IsEmpty())
         {
             std::shared_ptr<Message> msg = sys::payload().GetTxQueue().GetNextMsg();
-            bool succ = Send(msg->_packet, msg->packet.size());
+            bool succ = Send(msg->_packet);
             if (succ)
             {
                 SPDLOG_INFO("Transmitted message with ID: {}", msg->id);

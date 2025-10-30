@@ -195,7 +195,7 @@ uint32_t ImageSender::HandshakeWithMainboard()
             if (received_msg == start_msg) {
                 SPDLOG_INFO("Received START message from mainboard");
                 shake_received = true;
-                // uart.Send(Packet::ToOut(std::vector<uint8_t>{'S','E','N','D','I','N','G'}));
+                uart.Send(Packet::ToOut(std::vector<uint8_t>{'S','E','N','D','I','N','G'}));
                 usleep(100000); // wait 100ms
                 break;
             } else {
@@ -272,11 +272,11 @@ uint32_t ImageSender::SendImageOverUart(const std::string& image_path)
         }
         Packet::Out packet = CreateImagePacket(packet_id, image_data.data() + bytes_sent, chunk_size);
         
-        // while (!uart.Send(packet)) {
-        //     SPDLOG_INFO("Retrying sending image packet");
-        //     // SPDLOG_ERROR("Failed to send image data chunk over UART");
-        //     // return 0;
-        // }
+        while (!uart.Send(packet)) {
+            SPDLOG_INFO("Retrying sending image packet");
+            // SPDLOG_ERROR("Failed to send image data chunk over UART");
+            // return 0;
+        }
         bytes_sent += chunk_size;
         // wait for ACK before continuing
         bool ack_received = false;
@@ -292,7 +292,7 @@ uint32_t ImageSender::SendImageOverUart(const std::string& image_path)
                     ack_received = true;
                 } 
                 else if (response == "NACK") {
-                    // uart.Send(packet); // Retry sending packet until ack is received
+                    uart.Send(packet); // Retry sending packet until ack is received
                 }
             } else if (timing::GetCurrentTimeMs() - start_time > 10000) { // 10 seconds timeout
                 SPDLOG_ERROR("Timeout: No ACK received for packet ID: {}", packet_id);
@@ -330,14 +330,7 @@ uint32_t ImageSender::SendImageOverUart(const std::string& image_path)
 
 
 
-void message_to_packet(char msg[], Packet::Out& packet, uint8_t& packet_size){
-    uint8_t msg_len= strlen(msg);
-    std::vector<uint8_t> byte_array(reinterpret_cast<const uint8_t*>(msg), 
-                                     reinterpret_cast<const uint8_t*>(msg) + msg_len);
 
-    packet = Packet::ToOut(&byte_array);
-    packet_size = msg_len;
-}
 
 void ImageSender::RunImageTransfer() {
     UART uart_curr; //  "/dev/ttyTHS0", 115200??
@@ -348,14 +341,7 @@ void ImageSender::RunImageTransfer() {
         return;
     }
     while (true){
-        uint8_t packet_size;
-        char message[] = "Hello from Orin!";
-        Packet::Out packet;
-        message_to_packet(message, packet, &packet_size);
-        SPDLOG_INFO("Sending message: {}", message);
-        SPDLOG_INFO("Packet size: {}", packet_size);
-
-        uart_curr.Send(packet, packet_size);
+        uart_curr.Send(Packet::ToOut(std::vector<uint8_t>{'N', 'I', 'C', 'E'}));
         usleep(1000000); // wait 1s
     }
     uart_curr.Disconnect();

@@ -10,7 +10,7 @@
 
 #include "spdlog/spdlog.h"
 
-/*
+
 static Packet::In READ_BUF = {0};
 static Packet::Out WRITE_BUF = {0};
 
@@ -26,6 +26,8 @@ void UART::OpenPort()
     for (int i = 0; i < 3; i++)
     {
         serial_port_fd = open(PORT_NAME, O_RDWR | O_NOCTTY | O_NONBLOCK);
+
+        SPDLOG_INFO("***********File descriptor openport: {}", serial_port_fd);
         if (serial_port_fd == -1) 
         {
             SPDLOG_ERROR("Failed to open UART port {}: {}", PORT_NAME, strerror(errno));
@@ -34,6 +36,7 @@ void UART::OpenPort()
         }
         else
         {
+            SPDLOG_INFO("UART port {} opened successfully.", PORT_NAME);
             port_opened = true;
             break;
         }
@@ -63,11 +66,15 @@ bool UART::Connect()
     if (port_opened) {
         _connected = true;
     }
+    SPDLOG_INFO("***********File descriptor uart connect {}", serial_port_fd);
+
     return _connected;
 }
 
 void UART::ConfigurePort()
 {
+    SPDLOG_INFO("***********File descriptor xconfigure port 1: {}", serial_port_fd);
+
 
     for (int i = 0; i < 3; i++)
     {
@@ -99,11 +106,14 @@ void UART::ConfigurePort()
         tty.c_cflag |= CS8; // 8 bits per byte
 
         // set control flags
-        tty.c_cflag |= ~CRTSCTS; // no hardware flow control
+        tty.c_cflag &= ~CRTSCTS; // no hardware flow control
         tty.c_cflag |= CREAD | CLOCAL; // enable receiver, ignore modem control lines
 
         // set local moes
-        tty.c_lflag &= ~(ICANON | ECHO | ECHOE | ISIG); // non-canonical mode (raw data)
+        // tty.c_lflag &= ~(ICANON | ECHO | ECHOE | ISIG); // non-canonical mode (raw data)
+        tty.c_lflag = 0;
+
+      
 
 
         // set input flags
@@ -111,7 +121,8 @@ void UART::ConfigurePort()
         tty.c_iflag &= ~(IGNBRK|BRKINT|PARMRK|ISTRIP|INLCR|IGNCR|ICRNL); // Disable any special handling of received bytes
 
         // set output flags
-        tty.c_oflag &= ~(OPOST | ONLCR); // raw output
+        // tty.c_oflag &= ~c    (OPOST | ONLCR); // raw output
+        tty.c_oflag = 0;
 
         // VMIN = 0, VTIME > 0: Read returns when timeout occurs or data is available.
         // VMIN > 0, VTIME = 0: Read blocks until VMIN bytes received.
@@ -158,25 +169,31 @@ bool UART::FillWriteBuffer(const std::vector<uint8_t>& data)
 }
 
 
-bool UART::Send(const Packet::Out& data)
+bool UART::Send(const Packet::Out& data, uint8_t packet_size)
 {
-    if (!port_opened)
-    {
-        SPDLOG_ERROR("UART port is not open, cannot send data.");
-        LogError(EC::UART_NOT_OPEN);
-        return false;
-    }
+    // if (!port_opened)
+    // {
+    //     SPDLOG_ERROR("UART port is not open, cannot send data.");
+    //     LogError(EC::UART_NOT_OPEN);
+    //     return false;
+    // }
 
     /*if (!FillWriteBuffer(data))
     {
         return false;
     }
 
-    ssize_t bytes_written = write(serial_port_fd, WRITE_BUF.data(), Packet::OUTGOING_PCKT_SIZE); TODEO add * / here
-    ssize_t bytes_written = write(serial_port_fd, data.data(), Packet::OUTGOING_PCKT_SIZE);
 
-    if (bytes_written == -1 || bytes_written != Packet::OUTGOING_PCKT_SIZE) 
+    ssize_t bytes_written = write(serial_port_fd, WRITE_BUF.data(), Packet::OUTGOING_PCKT_SIZE); */ 
+
+
+    ssize_t bytes_written = write(serial_port_fd, data.data(), packet_size);
+
+    if (bytes_written == -1) // || bytes_written != Packet::OUTGOING_PCKT_SIZE) 
     {
+        // SPDLOG_INFO("Data size to write: {}", data.size());
+        // SPDLOG_INFO("Attempted to write {} bytes.", Packet::OUTGOING_PCKT_SIZE);
+        // SPDLOG_INFO("File descriptor: {}", serial_port_fd);
         SPDLOG_ERROR("Failed to write to UART port {}: {}", PORT_NAME, strerror(errno));
         LogError(EC::UART_FAILED_WRITE);
         return false;
@@ -234,7 +251,7 @@ void UART::RunLoop()
         if (!sys::payload().GetTxQueue().IsEmpty())
         {
             std::shared_ptr<Message> msg = sys::payload().GetTxQueue().GetNextMsg();
-            bool succ = Send(msg->_packet);
+            bool succ = Send(msg->_packet, msg->packet.size());
             if (succ)
             {
                 SPDLOG_INFO("Transmitted message with ID: {}", msg->id);
@@ -287,7 +304,6 @@ void UART::Disconnect()
     SPDLOG_INFO("UART disconnected.");
 }
 
-*/
 
 
 
@@ -297,120 +313,121 @@ void UART::Disconnect()
 
 
 
-// #CHAOS BEYOND
 
-#include <termios.h>
-#include <fcntl.h>
-#include <unistd.h>
-#include <stdio.h>
-#include <string.h>
-#include <errno.h>
-#include <stdint.h>
+// // #CHAOS BEYOND
 
-#define UART_DEVICE "/dev/ttyTHS1"
-#define UART_BAUDRATE B115200
+// #include <termios.h>
+// #include <fcntl.h>
+// #include <unistd.h>
+// #include <stdio.h>
+// #include <string.h>
+// #include <errno.h>
+// #include <stdint.h>
 
-// -------------------------------
-// UART Setup
-// -------------------------------
-int uart_setup(const char *device, speed_t baud)
-{
-    int fd = open(device, O_RDWR | O_NOCTTY | O_SYNC);
-    if (fd < 0) {
-        SPDLOG_ERROR("open");
-        return -1;
-    }
-
-    struct termios tty;
-    if (tcgetattr(fd, &tty) != 0) {
-        SPDLOG_ERROR("tcgetattr");
-        close(fd);
-        return -1;
-    }
-
-    // Set input/output baud rates
-    cfsetospeed(&tty, baud);
-    cfsetispeed(&tty, baud);
-
-    // Configure 8N1, no flow control
-    tty.c_cflag = (tty.c_cflag & ~CSIZE) | CS8;   // 8 data bits
-    tty.c_cflag &= ~(PARENB | CSTOPB | CRTSCTS);  // no parity, 1 stop bit, no hw flow
-    tty.c_cflag |= (CLOCAL | CREAD);               // enable receiver
-
-    tty.c_lflag = 0;                               // raw input mode
-    tty.c_oflag = 0;                               // raw output
-    tty.c_iflag &= ~(IXON | IXOFF | IXANY);        // no sw flow control
-
-    tty.c_cc[VMIN]  = 1;                           // block until 1 byte
-    tty.c_cc[VTIME] = 0;                           // no inter-byte timeout
-
-    if (tcsetattr(fd, TCSANOW, &tty) != 0) {
-        SPDLOG_ERROR("tcsetattr");
-        close(fd);
-        return -1;
-    }
-
-    tcflush(fd, TCIOFLUSH);
-    return fd;
-}
-
-// -------------------------------
-// UART Send
-// -------------------------------
-ssize_t uart_send(int fd, const uint8_t *data, size_t len)
-{
-    ssize_t written = write(fd, data, len);
-    if (written < 0) SPDLOG_ERROR("uart_send: write");
-    tcdrain(fd);  // wait for all data to transmit
-    return written;
-}
-
-// -------------------------------
-// UART Receive (blocking read)
-// -------------------------------
-ssize_t uart_receive(int fd, uint8_t *buf, size_t len)
-{
-    ssize_t n = read(fd, buf, len);
-    if (n < 0) SPDLOG_ERROR("uart_receive: read");
-    return n;
-}
-
-// -------------------------------
-// UART Close
-// -------------------------------
-void uart_close(int fd)
-{
-    if (fd >= 0)
-        close(fd);
-}
+// #define UART_DEVICE "/dev/ttyTHS1"
+// #define UART_BAUDRATE B115200
 
 // // -------------------------------
-// // Example Main
+// // UART Setup
 // // -------------------------------
-// int main(void)
+// int uart_setup(const char *device, speed_t baud)
 // {
-//     int fd = uart_setup(UART_DEVICE, UART_BAUDRATE);
+//     int fd = open(device, O_RDWR | O_NOCTTY | O_SYNC);
 //     if (fd < 0) {
-//         fprintf(stderr, "Failed to open UART\n");
-//         return 1;
+//         SPDLOG_ERROR("open");
+//         return -1;
 //     }
 
-//     printf("UART opened successfully on %s\n", UART_DEVICE);
-
-//     // Example send
-//     const char *msg = "Hello from Jetson!\n";
-//     uart_send(fd, (const uint8_t *)msg, strlen(msg));
-
-//     // Example receive
-//     uint8_t buf[128];
-//     ssize_t n = uart_receive(fd, buf, sizeof(buf));
-//     if (n > 0) {
-//         printf("Received %zd bytes: ", n);
-//         fwrite(buf, 1, n, stdout);
-//         printf("\n");
+//     struct termios tty;
+//     if (tcgetattr(fd, &tty) != 0) {
+//         SPDLOG_ERROR("tcgetattr");
+//         close(fd);
+//         return -1;
 //     }
 
-//     uart_close(fd);
-//     return 0;
+//     // Set input/output baud rates
+//     cfsetospeed(&tty, baud);
+//     cfsetispeed(&tty, baud);
+
+//     // Configure 8N1, no flow control
+//     tty.c_cflag = (tty.c_cflag & ~CSIZE) | CS8;   // 8 data bits
+//     tty.c_cflag &= ~(PARENB | CSTOPB | CRTSCTS);  // no parity, 1 stop bit, no hw flow
+//     tty.c_cflag |= (CLOCAL | CREAD);               // enable receiver
+
+//     tty.c_lflag = 0;                               // raw input mode
+//     tty.c_oflag = 0;                               // raw output
+//     tty.c_iflag &= ~(IXON | IXOFF | IXANY);        // no sw flow control
+
+//     tty.c_cc[VMIN]  = 1;                           // block until 1 byte
+//     tty.c_cc[VTIME] = 0;                           // no inter-byte timeout
+
+//     if (tcsetattr(fd, TCSANOW, &tty) != 0) {
+//         SPDLOG_ERROR("tcsetattr");
+//         close(fd);
+//         return -1;
+//     }
+
+//     tcflush(fd, TCIOFLUSH);
+//     return fd;
 // }
+
+// // -------------------------------
+// // UART Send
+// // -------------------------------
+// ssize_t uart_send(int fd, const uint8_t *data, size_t len)
+// {
+//     ssize_t written = write(fd, data, len);
+//     if (written < 0) SPDLOG_ERROR("uart_send: write");
+//     tcdrain(fd);  // wait for all data to transmit
+//     return written;
+// }
+
+// // -------------------------------
+// // UART Receive (blocking read)
+// // -------------------------------
+// ssize_t uart_receive(int fd, uint8_t *buf, size_t len)
+// {
+//     ssize_t n = read(fd, buf, len);
+//     if (n < 0) SPDLOG_ERROR("uart_receive: read");
+//     return n;
+// }
+
+// // -------------------------------
+// // UART Close
+// // -------------------------------
+// void uart_close(int fd)
+// {
+//     if (fd >= 0)
+//         close(fd);
+// }
+
+// // // -------------------------------
+// // // Example Main
+// // // -------------------------------
+// // int main(void)
+// // {
+// //     int fd = uart_setup(UART_DEVICE, UART_BAUDRATE);
+// //     if (fd < 0) {
+// //         fprintf(stderr, "Failed to open UART\n");
+// //         return 1;
+// //     }
+
+// //     printf("UART opened successfully on %s\n", UART_DEVICE);
+
+// //     // Example send
+// //     const char *msg = "Hello from Jetson!\n";
+// //     uart_send(fd, (const uint8_t *)msg, strlen(msg));
+
+// //     // Example receive
+// //     uint8_t buf[128];
+// //     ssize_t n = uart_receive(fd, buf, sizeof(buf));
+// //     if (n > 0) {
+// //         printf("Received %zd bytes: ", n);
+// //         fwrite(buf, 1, n, stdout);
+// //         printf("\n");
+// //     }
+
+// // //     uart_close(fd);
+// // //     return 0;
+// // // }
 

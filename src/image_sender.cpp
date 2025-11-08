@@ -62,7 +62,7 @@ inline uint8_t calculate_crc5(const uint8_t* data, size_t length)
 }
 
 // Serialize image packet for transmission
-Packet::Out ImageSender::CreateImagePacket(uint32_t packet_id, const uint8_t* data, uint32_t data_length)
+Packet::Out ImageSender::CreateImagePacket(uint32_t image_id, const uint8_t* data, uint32_t data_length)
 {
     if (data_length == 0 || data_length > MAX_PAYLOAD_SIZE) {
         // std::cerr << "Error: Data chunk size is invalid (0 or > MAX_PAYLOAD_SIZE)." << std::endl;
@@ -71,7 +71,7 @@ Packet::Out ImageSender::CreateImagePacket(uint32_t packet_id, const uint8_t* da
     
     // Prepare the in-memory packet structure (for CRC calculation)
     ImagePacket packet;
-    packet.id = packet_id;
+    packet.id = image_id;
     packet.length = data_length; 
     std::memcpy(packet.data, data, data_length);
 
@@ -112,6 +112,14 @@ Packet::Out ImageSender::CreateImagePacket(uint32_t packet_id, const uint8_t* da
     return output;
 }
 
+// void message_to_packet(char msg[], Packet::Out& packet, uint8_t& packet_size){
+//     uint8_t msg_len= strlen(msg);
+//     std::vector<uint8_t> byte_array(reinterpret_cast<const uint8_t*>(msg), 
+//                                      reinterpret_cast<const uint8_t*>(msg) + msg_len);
+
+//     packet = Packet::ToOut(&byte_array);
+//     packet_size = msg_len;
+// }
 
 ImageSender::ImageSender()
     : uart(), is_initialized(false)
@@ -195,6 +203,7 @@ uint32_t ImageSender::HandshakeWithMainboard()
             if (received_msg == start_msg) {
                 SPDLOG_INFO("Received START message from mainboard");
                 shake_received = true;
+                usleep(1000000); // wait 100ms
                 uart.Send(Packet::ToOut(std::vector<uint8_t>{'S','E','N','D','I','N','G'}));
                 usleep(100000); // wait 100ms
                 break;
@@ -260,17 +269,17 @@ uint32_t ImageSender::SendImageOverUart(const std::string& image_path)
 
     // Send image data over UART
     uint32_t bytes_sent = 0;
-    uint32_t packet_id = 0;
+    uint32_t image_id = 0;
     size_t image_data_size = image_data.size();
     uint64_t start_time;
 
     while (bytes_sent < image_data_size) {
         size_t chunk_size = std::min<size_t>(image_data_size - bytes_sent, MAX_PAYLOAD_SIZE);
-        packet_id = bytes_sent / MAX_PAYLOAD_SIZE + 1;
+        image_id = bytes_sent / MAX_PAYLOAD_SIZE + 1;
         if (bytes_sent + chunk_size >= image_data_size){
-            packet_id = 0; //last packet indicator 
+            image_id = 0; //last packet indicator 
         }
-        Packet::Out packet = CreateImagePacket(packet_id, image_data.data() + bytes_sent, chunk_size);
+        Packet::Out packet = CreateImagePacket(image_id, image_data.data() + bytes_sent, chunk_size);
         
         while (!uart.Send(packet)) {
             SPDLOG_INFO("Retrying sending image packet");
@@ -288,14 +297,14 @@ uint32_t ImageSender::SendImageOverUart(const std::string& image_path)
             if (bytes_received) {
                 std::string response(cmd_id, bytes_received);
                 if (response == "ACK") {
-                    SPDLOG_INFO("Received ACK for packet ID: {}", packet_id);
+                    SPDLOG_INFO("Received ACK for packet ID: {}", image_id);
                     ack_received = true;
                 } 
                 else if (response == "NACK") {
                     uart.Send(packet); // Retry sending packet until ack is received
                 }
             } else if (timing::GetCurrentTimeMs() - start_time > 10000) { // 10 seconds timeout
-                SPDLOG_ERROR("Timeout: No ACK received for packet ID: {}", packet_id);
+                SPDLOG_ERROR("Timeout: No ACK received for packet ID: {}", image_id);
                 return 0;
             }
         }
@@ -307,45 +316,45 @@ uint32_t ImageSender::SendImageOverUart(const std::string& image_path)
 
 
 
-// void ImageSender::RunImageTransfer() {
-//     ImageSender sender; //  "/dev/ttyTHS0", 115200??
-//     if (!sender.Initialize()) {
-//         SPDLOG_ERROR("Failed to initialize ImageSender");
-//         sender.Close();
-        
-//         return;
-//     }
-//     // if (sender.HandshakeWithMainboard() != 1){
-//     //     SPDLOG_ERROR("Failed: Handshake not successful");
-//     //     sender.Close();
-
-//     //     return;
-//     // }
-//     if (!sender.SendImage("/home/argus/Documents/FSW-Payload/src/dog.jpeg")) {
-//         SPDLOG_ERROR("Failed to send image");
-//     }
-
-//     sender.Close();
-// }
-
-
-
-
-
 void ImageSender::RunImageTransfer() {
-    UART uart_curr; //  "/dev/ttyTHS0", 115200??
-    if (!uart_curr.Connect()) {
+    ImageSender sender; //  "/dev/ttyTHS0", 115200??
+    if (!sender.Initialize()) {
         SPDLOG_ERROR("Failed to initialize ImageSender");
-        uart_curr.Disconnect();
-
+        sender.Close();
+        
         return;
     }
-    while (true){
-        uart_curr.Send(Packet::ToOut(std::vector<uint8_t>{'N', 'I', 'C', 'E'}));
-        usleep(1000000); // wait 1s
+    // if (sender.HandshakeWithMainboard() != 1){
+    //     SPDLOG_ERROR("Failed: Handshake not successful");
+    //     sender.Close();
+
+    //     return;
+    // }
+    if (!sender.SendImage("/home/argus/Documents/FSW-Payload/src/dog.jpeg")) {
+        SPDLOG_ERROR("Failed to send image");
     }
-    uart_curr.Disconnect();
+
+    sender.Close();
 }
+
+
+
+
+
+// void ImageSender::RunImageTransfer() {
+//     UART uart_curr; //  "/dev/ttyTHS0", 115200??
+//     if (!uart_curr.Connect()) {
+//         SPDLOG_ERROR("Failed to initialize ImageSender");
+//         uart_curr.Disconnect();
+
+//         return;
+//     }
+//     while (true){
+//         uart_curr.Send(Packet::ToOut(std::vector<uint8_t>{'N', 'I', 'C', 'E'}));
+//         usleep(1000000); // wait 1s
+//     }
+//     uart_curr.Disconnect();
+// }
 
 // void ImageSender::RunImageTransfer() {
 //     ImageSender sender; //  "/dev/ttyTHS0", 115200??

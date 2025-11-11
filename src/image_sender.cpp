@@ -16,11 +16,10 @@
 // #include "communication_base.h" // Includes the Communication interface
 #include <iostream>
 #include <fstream>
-#include <vector>
 #include <string>
 #include <ctime>
-
-
+#include <map>
+#include <any>
 
 
 // --- Checksum Implementation (CRC-5: x^5 + x^2 + 1, Init 0x1F) ---
@@ -61,54 +60,10 @@ inline uint8_t calculate_crc5(const uint8_t* data, size_t length)
     return crc;
 }
 
-// Serialize image packet for transmission
-Packet::Out ImageSender::CreateImagePacket(uint32_t packet_id, const uint8_t* data, uint32_t data_length)
-{
-    if (data_length == 0 || data_length > MAX_PAYLOAD_SIZE) {
-        // std::cerr << "Error: Data chunk size is invalid (0 or > MAX_PAYLOAD_SIZE)." << std::endl;
-        return {}; 
-    }
-    
-    // Prepare the in-memory packet structure (for CRC calculation)
-    ImagePacket packet;
-    packet.id = packet_id;
-    packet.length = data_length; 
-    std::memcpy(packet.data, data, data_length);
-
-    // CRC is calculated over: ID (1) + Length (1) + Data (N)
-    
-    std::vector<uint8_t> crc_input;
-    crc_input.reserve(sizeof(packet.id) + sizeof(packet.length) + data_length);
-    
-    crc_input.push_back(packet.id);
-    
-    crc_input.push_back(packet.length);
-    
-    crc_input.insert(crc_input.end(), packet.data, packet.data + data_length);
-
-    packet.crc = calculate_crc5(crc_input.data(), crc_input.size());
-
-    // Size = ID (1) + Length (1) + Data (N) + CRC (1)
-    size_t final_packet_size = sizeof(packet.id) + sizeof(packet.length) + data_length + sizeof(packet.crc);
-    
-    // Serialize into the output vector (ImagePacket::Out)
+//TODO: MAKE SURE THIS WORKS
+Packet::Out convert_image_packet_to_packet_out(std::vector<uint8_t> &image_packet_bytes) {
     Packet::Out output {};
-    // output.bytes.resize(final_packet_size);
-    uint8_t* buffer_ptr = output.data();
-    
-    // Copy fields to output buffer in order
-    // 4 byte for ID
-    std::memcpy(buffer_ptr, &packet.id, sizeof(packet.id));
-    buffer_ptr += sizeof(packet.id);
-    // 4 bytes for length
-    std::memcpy(buffer_ptr, &packet.length, sizeof(packet.length));
-    buffer_ptr += sizeof(packet.length);
-    // N bytes for data
-    std::memcpy(buffer_ptr, packet.data, data_length);
-    buffer_ptr += data_length;
-    //1byte for crc
-    std::memcpy(buffer_ptr, &packet.crc, sizeof(packet.crc));
-
+    std::copy(image_packet_bytes.begin(), image_packet_bytes.end(), output.data());
     return output;
 }
 
@@ -168,38 +123,160 @@ bool ImageSender::SendImage(const std::string& image_path)
     SPDLOG_INFO("Image sent successfully.");
     return true;
 }
+std::vector<uint8_t> create_packet(
+    uint8_t packet_id,
+    uint8_t requested_packet = 0,
+    const std::string& str_data = "",
+    uint32_t chunk_id = 0,
+    uint32_t data_length = 0,
+    uint8_t last_packet = 0
+) {
+    std::vector<uint8_t> result;
+    std::vector<uint8_t> data;
 
+    if (!str_data.empty()) {
+        data.assign(str_data.begin(), str_data.end());
+        data_length = static_cast<uint32_t>(data.size());
+    }
+
+    if (packet_id == CMD_HANDSHAKE_REQUEST) {
+        if (requested_packet == CMD_IMAGE_REQUEST) {
+            result = {packet_id, requested_packet};
+            result.resize(PACKET_SIZE, 0);
+        }
+    }
+    else if (packet_id == CMD_DATA_CHUNK) {
+        result.reserve(1 + 4 + 4 + data_length + 1);
+        result.push_back(packet_id);
+
+        // chunk_id (4 bytes, big endian)
+        for (int i = 3; i >= 0; --i)
+            result.push_back((chunk_id >> (8 * i)) & 0xFF);
+
+        // data_length (4 bytes)
+        for (int i = 3; i >= 0; --i)
+            result.push_back((data_length >> (8 * i)) & 0xFF);
+
+        // data
+        result.insert(result.end(), data.begin(), data.end());
+
+        // last_packet flag
+        result.push_back(last_packet);
+
+        uint8_t crc_result = create_crc5_packet(result, result.size());
+        crc_result.resize(PACKET_SIZE, 0);
+        result = crc_result;
+    }
+    else if (packet_id == CMD_ACK_OK || packet_id == CMD_NACK_CORRUPT) {
+        result = {packet_id};
+        for (int i = 3; i >= 0; --i)
+            result.push_back((chunk_id >> (8 * i)) & 0xFF);
+        result.resize(PACKET_SIZE, 0);
+    }
+    else if (packet_id == CMD_ACK_READY) {
+        result = {packet_id, requested_packet};
+        result.resize(PACKET_SIZE, 0);
+    }
+
+    return result;
+}
+
+
+std::map<std::string, std::any> read_packet(const std::vector<uint8_t>& bytes) {
+    std::map<std::string, std::any> result;
+    if (bytes.empty()) return result;
+
+    uint8_t packet_id = bytes[0];
+    result["packet_id"] = packet_id;
+
+    if (packet_id == CMD_HANDSHAKE_REQUEST) {
+        if (bytes.size() >= 2) {
+            uint8_t requested_packet = bytes[1];
+            std::string info(bytes.begin() + 2, bytes.end());
+            // trim nulls
+            info.erase(info.find_last_not_of('\0') + 1);
+            result["requested_packet"] = requested_packet;
+            result["data"] = info;
+        }
+    }
+
+    else if (packet_id == CMD_DATA_CHUNK) {
+        if (bytes.size() < 11) return result;  // 1 + 4 + 4 + 1 + 1 min size
+
+        uint32_t chunk_id = (bytes[1] << 24) | (bytes[2] << 16) | (bytes[3] << 8) | bytes[4];
+        uint32_t data_length = (bytes[5] << 24) | (bytes[6] << 16) | (bytes[7] << 8) | bytes[8];
+
+        if (bytes.size() < 9 + data_length + 2) return result; // avoid overflow
+
+        std::vector<uint8_t> data(bytes.begin() + 9, bytes.begin() + 9 + data_length);
+        uint8_t last_packet = bytes[9 + data_length];
+        uint8_t crc = bytes[10 + data_length];
+
+        bool crc_valid = verify_crc5_packet(bytes);
+
+        result["chunk_id"] = chunk_id;
+        result["data_length"] = data_length;
+        result["data"] = data;
+        result["last_packet"] = last_packet;
+        result["crc"] = crc;
+        result["crc_valid"] = crc_valid;
+    }
+
+    else if (packet_id == CMD_ACK_READY) {
+        if (bytes.size() >= 2) {
+            uint8_t ready_packet_id = bytes[1];
+            result["ready_packet_id"] = ready_packet_id;
+        }
+    }
+
+    else if (packet_id == CMD_ACK_OK) {
+        if (bytes.size() >= 5) {
+            uint32_t acked_chunk_id =
+                (bytes[1] << 24) | (bytes[2] << 16) | (bytes[3] << 8) | bytes[4];
+            result["acked_chunk_id"] = acked_chunk_id;
+        }
+    }
+
+    else if (packet_id == CMD_NACK_CORRUPT) {
+        if (bytes.size() >= 5) {
+            uint32_t failed_chunk_id =
+                (bytes[1] << 24) | (bytes[2] << 16) | (bytes[3] << 8) | bytes[4];
+            result["failed_chunk_id"] = failed_chunk_id;
+        }
+    }
+
+    return result;
+}
 
 uint32_t ImageSender::HandshakeWithMainboard()
 {
-    // The main board initiates the handshake by sending a "START" message, and waits for an "SENDING" response.
-    // then the orin sends an 'ACK' to confirm readiness.
-    //After that, we start sending data image one by one, with each packet requiring an ACK from the main board 
-    // before sending the next. if timeout, we get a nack and resend the packet.
-
-    // Wait for "START" message from mainboard
-    const std::string start_msg = "START";
-    
     uint64_t start_time = timing::GetCurrentTimeMs();
+    uint8_t requested_pck_id;
+    uint8_t received_pck_id;
+
     while (!shake_received){
-        uint8_t cmd_id = static_cast<uint8_t>(CMD_HANDSHAKE_REQUEST); // Cast to uint8_t
+        uint8_t cmd_id; // should be a buffer input will be stored in
         std::vector<uint8_t> data;
 
         bool bytes_received = uart.Receive(cmd_id, data);
-        // bytes_received = true;
+        
+        std::map<std::string, std::any> read_output = read_packet(data);
 
         if (bytes_received) {
             SPDLOG_INFO("Received : {}", bytes_received);
             // std::string received_msg(reinterpret_cast<char* >(data), strlen(reinterpret_cast<char*>(data)));
-            std::string received_msg(data.begin(), data.end());
-            if (received_msg == start_msg) {
-                SPDLOG_INFO("Received START message from mainboard");
+            received_pck_id = std::any_cast<uint8_t>(read_output["packet_id"]);
+
+            if (received_pck_id == CMD_HANDSHAKE_REQUEST) {
+                requested_pck_id = std::any_cast<uint8_t>(read_output["requested_packet"]);
+                SPDLOG_INFO("Received START message from mainboard {}", received_pck_id);
                 shake_received = true;
-                uart.Send(Packet::ToOut(std::vector<uint8_t>{'S','E','N','D','I','N','G'}));
-                usleep(100000); // wait 100ms
+                ack_ready_to_send = create_packet(CMD_ACK_READY, CMD_IMAGE_REQUEST);
+                uart.Send(Packet::ToOut(ack_ready_to_send));
+                // usleep(100000); // wait 100ms
                 break;
             } else {
-                SPDLOG_WARN("Received unexpected message: {}", received_msg);
+                SPDLOG_WARN("Received unexpected message: {}", received_pck_id);
             }
         } else {
             // SPDLOG_WARN("No message received from mainboard, retrying...");
@@ -208,17 +285,21 @@ uint32_t ImageSender::HandshakeWithMainboard()
             }
         }
     }
-
+    received_pck_id = 0;
     start_time = timing::GetCurrentTimeMs();
     const int MAX_HANDSHAKE_RETRIES = 5;
     while (!sending_ack_rec){
-        uint8_t cmd_id = static_cast<uint8_t>(CMD_ACK_READY); // Cast to uint8_t
+        uint8_t cmd_id; 
         std::vector<uint8_t> data;
-        size_t bytes_received = uart.Receive(cmd_id, data); // 5 seconds timeout
-        if (bytes_received > 0) {
-            std::string response(data.begin(), data.end());
-            if (response == "ACK") {
-                SPDLOG_INFO("Handshake successful with mainboard");
+        bool bytes_received = uart.Receive(cmd_id, data); // 5 seconds timeout
+        std::map<std::string, std::any> read_output = read_packet(data);
+
+        if (bytes_received) {
+            received_pck_id = std::any_cast<uint8_t>(read_output["packet_id"]);
+
+            if (received_pck_id == CMD_ACK_READY) {
+                requested_pck_id = std::any_cast<uint8_t>(read_output["ready_packet_id"]);
+                SPDLOG_INFO("Handshake successful with mainboard going to send packet {}", requested_pck_id);
                 sending_ack_rec = true;
             } 
         } else if (timing::GetCurrentTimeMs() - start_time > 30000) { // 30 seconds timeout
@@ -230,23 +311,6 @@ uint32_t ImageSender::HandshakeWithMainboard()
     // read image file and construct and send packets while waiting for ACKs
     return 1; // Handshake successful
 }
-
-// Function to convert ImagePacket to Packet::Out
-static inline Packet::Out convertToOut(const ImagePacket& packet) {
-    Packet::Out out{};  // Zero-initialized std::array<uint8_t, 250>
-
-    // Serialize the ImagePacket into a vector of bytes and then copy it into out
-    size_t index = 0;
-    out[index++] = static_cast<uint8_t>(packet.id);  // Add id as a byte
-    out[index++] = static_cast<uint8_t>(packet.length); // Add length as a byte
-    std::memcpy(out.data() + index, packet.data, packet.length); // Copy data[]
-    index += packet.length;
-    out[index] = packet.crc; // Add crc byte
-
-    return out;
-}
-
-
 
 uint32_t ImageSender::SendImageOverUart(const std::string& image_path)
 {
@@ -260,42 +324,58 @@ uint32_t ImageSender::SendImageOverUart(const std::string& image_path)
 
     // Send image data over UART
     uint32_t bytes_sent = 0;
-    uint32_t packet_id = 0;
+    uint32_t chunk_id = 0;
     size_t image_data_size = image_data.size();
     uint64_t start_time;
+    uint8_t last_packet = 0;
 
     while (bytes_sent < image_data_size) {
         size_t chunk_size = std::min<size_t>(image_data_size - bytes_sent, MAX_PAYLOAD_SIZE);
-        packet_id = bytes_sent / MAX_PAYLOAD_SIZE + 1;
+        chunk_id = bytes_sent / MAX_PAYLOAD_SIZE + 1;
         if (bytes_sent + chunk_size >= image_data_size){
-            packet_id = 0; //last packet indicator 
+            last_packet = 1; //last packet indicator 
         }
-        Packet::Out packet = CreateImagePacket(packet_id, image_data.data() + bytes_sent, chunk_size);
-        
-        while (!uart.Send(packet)) {
+        std::vector<uint8_t> image_packet_out = create_packet(
+            CMD_DATA_CHUNK,
+            0,
+            "",
+            chunk_id,
+            static_cast<uint32_t>(chunk_size),
+            last_packet
+        );
+
+        Packet::Out img_packet_send = convert_image_packet_to_packet_out(image_packet_out);
+        uint64_t image_send_timeout = timing::GetCurrentTimeMs();
+        while (!uart.Send(img_packet_send)) {
             SPDLOG_INFO("Retrying sending image packet");
-            // SPDLOG_ERROR("Failed to send image data chunk over UART");
-            // return 0;
+            if (timing::GetCurrentTimeMs() - image_send_timeout > 10000) { // 10 seconds timeout
+                SPDLOG_ERROR("Timeout: Failed to send image data chunk over UART");
+                return 0;
+            }
         }
         bytes_sent += chunk_size;
         // wait for ACK before continuing
         bool ack_received = false;
         start_time = timing::GetCurrentTimeMs();
+        std::map<std::string, std::any> read_output;
+
         while (!ack_received){
-            uint8_t cmd_id = static_cast<uint8_t>(CMD_ACK_OK); // Cast to uint8_t
+            uint8_t cmd_id;
             std::vector<uint8_t> data;
             bool bytes_received = uart.Receive(cmd_id, data); // 5 seconds timeout
             if (bytes_received) {
-                std::string response(cmd_id, bytes_received);
-                if (response == "ACK") {
-                    SPDLOG_INFO("Received ACK for packet ID: {}", packet_id);
+                read_output = read_packet(data);
+                uint8_t packet_id = std::any_cast<uint8_t>(read_output["packet_id"]);
+                uint32_t acked_chunk_id = std::any_cast<uint32_t>(read_output["acked_chunk_id"]);
+                if (packet_id == CMD_ACK_OK && acked_chunk_id == chunk_id) {
+                    SPDLOG_INFO("Received ACK for chunk ID: {}", acked_chunk_id);
                     ack_received = true;
                 } 
-                else if (response == "NACK") {
-                    uart.Send(packet); // Retry sending packet until ack is received
+                else if (packet_id == CMD_ACK_NACK_CORRUPT) {
+                    uart.Send(img_packet_send); // Retry sending packet until ack is received
                 }
             } else if (timing::GetCurrentTimeMs() - start_time > 10000) { // 10 seconds timeout
-                SPDLOG_ERROR("Timeout: No ACK received for packet ID: {}", packet_id);
+                SPDLOG_ERROR("Timeout: No ACK received for chunk ID: {}", chunk_id);
                 return 0;
             }
         }
@@ -386,3 +466,4 @@ void ImageSender::RunImageTransfer() {
 //     }
 //     sender.Close();
 // }
+

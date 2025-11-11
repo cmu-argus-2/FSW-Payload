@@ -9,16 +9,17 @@
 #include <unistd.h> 
 #include <array>
 
-// --- Protocol Definitions ---
-// The maximum payload size for a data chunk (image data).
-constexpr size_t MAX_PAYLOAD_SIZE = 246;
+#define CMD_HANDSHAKE_REQUEST   0x01
+#define CMD_DATA_CHUNK          0x02
+#define CMD_ACK_READY           0x10
+#define CMD_ACK_OK              0x11
+#define CMD_NACK_CORRUPT        0x20
+#define CMD_NACK_LOST           0x21
+#define CMD_IMAGE_REQUEST       0x06
 
-// Header (ID + Length) + CRC (1)
-constexpr size_t PACKET_OVERHEAD = 4 + 4 + 1; 
-
-// Total maximum size of any packet (255 bytes)
-constexpr size_t TOTAL_PACKET_SIZE = MAX_PAYLOAD_SIZE + PACKET_OVERHEAD;
-
+#define MAX_PAYLOAD_SIZE  239  // Max data size per packet: Packetsize(250) - chunk_ID(4) - data_length(4) - last_packet(1) - crc5(1) - packet_id(1)
+#define PACKET_SIZE     250
+#define CRC5_SIZE       1
 
 
 // Data struct for image packets
@@ -32,14 +33,6 @@ struct ImagePacket
     struct Out {
         std::vector<uint8_t> bytes;
     };
-};
-enum img_packet_cmd__id : uint8_t {
-    CMD_HANDSHAKE_REQUEST = 0x01, 
-    CMD_DATA_CHUNK = 0x02, 
-    CMD_ACK_READY = 0x10,
-    CMD_ACK_OK = 0x11,
-    CMD_NACK_CORRUPT = 0x20, 
-    CMD_NACK_LOST = 0x21
 };
 
 class ImageSender {

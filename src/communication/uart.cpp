@@ -220,7 +220,7 @@ bool UART::Receive(uint8_t& cmd_id, std::vector<uint8_t>& data)
     // }
 
     cmd_id = READ_BUF[0];
-    data.assign(READ_BUF.begin() + 1, READ_BUF.begin() + bytes_read);
+    data.assign(READ_BUF.begin() , READ_BUF.begin() + bytes_read); // Got rid of readbuf.begin() +1 because of the way I'm reading currently 
     return true;
 }
 

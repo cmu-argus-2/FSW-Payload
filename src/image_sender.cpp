@@ -67,6 +67,14 @@ Packet::Out convert_image_packet_to_packet_out(std::vector<uint8_t> &image_packe
     return output;
 }
 
+// void message_to_packet(char msg[], Packet::Out& packet, uint8_t& packet_size){
+//     uint8_t msg_len= strlen(msg);
+//     std::vector<uint8_t> byte_array(reinterpret_cast<const uint8_t*>(msg), 
+//                                      reinterpret_cast<const uint8_t*>(msg) + msg_len);
+
+//     packet = Packet::ToOut(&byte_array);
+//     packet_size = msg_len;
+// }
 
 ImageSender::ImageSender()
     : uart(), is_initialized(false)
@@ -387,45 +395,45 @@ uint32_t ImageSender::SendImageOverUart(const std::string& image_path)
 
 
 
-// void ImageSender::RunImageTransfer() {
-//     ImageSender sender; //  "/dev/ttyTHS0", 115200??
-//     if (!sender.Initialize()) {
-//         SPDLOG_ERROR("Failed to initialize ImageSender");
-//         sender.Close();
-        
-//         return;
-//     }
-//     // if (sender.HandshakeWithMainboard() != 1){
-//     //     SPDLOG_ERROR("Failed: Handshake not successful");
-//     //     sender.Close();
-
-//     //     return;
-//     // }
-//     if (!sender.SendImage("/home/argus/Documents/FSW-Payload/src/dog.jpeg")) {
-//         SPDLOG_ERROR("Failed to send image");
-//     }
-
-//     sender.Close();
-// }
-
-
-
-
-
 void ImageSender::RunImageTransfer() {
-    UART uart_curr; //  "/dev/ttyTHS0", 115200??
-    if (!uart_curr.Connect()) {
+    ImageSender sender; //  "/dev/ttyTHS0", 115200??
+    if (!sender.Initialize()) {
         SPDLOG_ERROR("Failed to initialize ImageSender");
-        uart_curr.Disconnect();
-
+        sender.Close();
+        
         return;
     }
-    while (true){
-        uart_curr.Send(Packet::ToOut(std::vector<uint8_t>{'N', 'I', 'C', 'E'}));
-        usleep(1000000); // wait 1s
+    // if (sender.HandshakeWithMainboard() != 1){
+    //     SPDLOG_ERROR("Failed: Handshake not successful");
+    //     sender.Close();
+
+    //     return;
+    // }
+    if (!sender.SendImage("/home/argus/Documents/FSW-Payload/src/dog.jpeg")) {
+        SPDLOG_ERROR("Failed to send image");
     }
-    uart_curr.Disconnect();
+
+    sender.Close();
 }
+
+
+
+
+
+// void ImageSender::RunImageTransfer() {
+//     UART uart_curr; //  "/dev/ttyTHS0", 115200??
+//     if (!uart_curr.Connect()) {
+//         SPDLOG_ERROR("Failed to initialize ImageSender");
+//         uart_curr.Disconnect();
+
+//         return;
+//     }
+//     while (true){
+//         uart_curr.Send(Packet::ToOut(std::vector<uint8_t>{'N', 'I', 'C', 'E'}));
+//         usleep(1000000); // wait 1s
+//     }
+//     uart_curr.Disconnect();
+// }
 
 // void ImageSender::RunImageTransfer() {
 //     ImageSender sender; //  "/dev/ttyTHS0", 115200??

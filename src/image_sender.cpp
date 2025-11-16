@@ -22,43 +22,68 @@
 #include <any>
 
 
-// --- Checksum Implementation (CRC-5: x^5 + x^2 + 1, Init 0x1F) ---
-inline uint8_t calculate_crc5(const uint8_t* data, size_t length)
-{
-    // Polynomial: 0x05 (0b00101)
-    const uint8_t polynomial = 0x05; 
-    
-    // Initial CRC value: 0x1F (0b11111)
-    uint8_t crc = 0x1F;
-    
-    // Process the input buffer byte-by-byte
-    for (size_t i = 0; i < length; ++i) {
-        uint8_t byte = data[i];
 
-        // Process 8 bits of the current byte (MSB first)
-        for (int j = 0; j < 8; ++j) {
-            
-            // 1. Determine if the MSB of the CRC (bit 4, value 0x10) is set.
-            uint8_t msb_of_crc = crc & 0x10;
-            
-            // 2. Determine the incoming data bit (MSB first) and position it at bit 4 (0x10).
-            uint8_t data_bit_at_msb_pos = (byte >> (7 - j)) & 0x01;
-            data_bit_at_msb_pos <<= 4;
+// Function to calculate CRC5 for a full block of data (e.g., 8 bytes)
+uint8_t calculate_crc5(const std::vector<uint8_t>& data_bytes, size_t length) {
+    const uint8_t polynomial = 0x05;  // CRC5 polynomial (x^5 + x^2 + 1)
+    uint8_t crc = 0x1F;  // Initial CRC value (0x1F)
 
-            // 3. Shift CRC left by 1 bit, masked to 5 bits.
-            crc = (crc << 1) & 0x1F; 
-
-            // 4. Check if the XOR of the MSB of the *original* CRC and the data bit is 1.
-            if (msb_of_crc ^ data_bit_at_msb_pos) {
-                // If the check bit is 1, XOR the 5-bit CRC register with the polynomial.
-                crc ^= polynomial;
-            }
-        }
+    // Convert the data bytes to an integer (big-endian)
+    uint64_t data_int = 0;
+    for (size_t i = 0; i < data_bytes.size(); ++i) {
+        data_int = (data_int << 8) | data_bytes[i];
     }
 
-    // The result is the final 5-bit CRC value (0x00 to 0x1F)
+    // Perform CRC5 calculation
+    size_t num_bits = data_bytes.size() * 8;  // Total bits in the data
+    for (size_t i = 0; i < num_bits; ++i) {
+        if ((crc & 0x10) ^ (data_int & (1ULL << (num_bits - 1)))) {
+            crc = ((crc << 1) ^ polynomial) & 0x1F;  // XOR with polynomial
+        } else {
+            crc = (crc << 1) & 0x1F;  // Just shift CRC
+        }
+        data_int <<= 1;  // Shift the data left
+    }
     return crc;
 }
+
+// // CRC-5: x^5 + x^2 + 1, Init 0x1F
+// inline uint8_t calculate_crc5(const std::vector<uint8_t>& data, size_t length)
+// {
+//     // Polynomial: 0x05 (0b00101)
+//     const uint8_t polynomial = 0x05; 
+    
+//     // Initial CRC value: 0x1F (0b11111)
+//     uint8_t crc = 0x1F;
+    
+//     // Process the input buffer byte-by-byte
+//     for (size_t i = 0; i < length; ++i) {
+//         uint8_t byte = data[i];
+
+//         // Process 8 bits of the current byte (MSB first)
+//         for (int j = 0; j < 8; ++j) {
+            
+//             // 1. Determine if the MSB of the CRC (bit 4, value 0x10) is set.
+//             uint8_t msb_of_crc = crc & 0x10;
+            
+//             // 2. Determine the incoming data bit (MSB first) and position it at bit 4 (0x10).
+//             uint8_t data_bit_at_msb_pos = (byte >> (7 - j)) & 0x01;
+//             data_bit_at_msb_pos <<= 4;
+
+//             // 3. Shift CRC left by 1 bit, masked to 5 bits.
+//             crc = (crc << 1) & 0x1F; 
+
+//             // 4. Check if the XOR of the MSB of the *original* CRC and the data bit is 1.
+//             if (msb_of_crc ^ data_bit_at_msb_pos) {
+//                 // If the check bit is 1, XOR the 5-bit CRC register with the polynomial.
+//                 crc ^= polynomial;
+//             }
+//         }
+//     }
+
+//     // The result is the final 5-bit CRC value (0x00 to 0x1F)
+//     return crc;
+// }
 
 //TODO: MAKE SURE THIS WORKS
 Packet::Out convert_image_packet_to_packet_out(std::vector<uint8_t> &image_packet_bytes) {
@@ -131,6 +156,16 @@ bool ImageSender::SendImage(const std::string& image_path)
     SPDLOG_INFO("Image sent successfully.");
     return true;
 }
+void write_result_to_file(const std::vector<uint8_t>& data, const std::string& filename) {
+    std::ofstream outfile(filename, std::ios::binary);
+    if (!outfile) {
+        SPDLOG_ERROR("Failed to open file {} for writing.", filename);
+        return;
+    }
+    outfile.write(reinterpret_cast<const char*>(data.data()), data.size());
+    outfile.close();
+}
+
 std::vector<uint8_t> create_packet(
     uint8_t packet_id,
     uint8_t requested_packet = 0,
@@ -154,7 +189,7 @@ std::vector<uint8_t> create_packet(
         }
     }
     else if (packet_id == CMD_DATA_CHUNK) {
-        result.reserve(1 + 4 + 4 + data_length + 1);
+        result.reserve(1 + 4 + 4 + data_length + 1); // packet_id + chunk_id + data_length + data + last_packet + crc5  
         result.push_back(packet_id);
 
         // chunk_id (4 bytes, big endian)
@@ -170,10 +205,13 @@ std::vector<uint8_t> create_packet(
 
         // last_packet flag
         result.push_back(last_packet);
+        
+        uint8_t crc_result = calculate_crc5(result, result.size());
+        result.push_back(crc_result);
+        // SPDLOG_WARN("RESULT constructed: {}", result);
+        result.resize(PACKET_SIZE, 0);
+        // SPDLOG_WARN("RESULT finAL constructed: {}", result);
 
-        uint8_t crc_result = create_crc5_packet(result, result.size());
-        crc_result.resize(PACKET_SIZE, 0);
-        result = crc_result;
     }
     else if (packet_id == CMD_ACK_OK || packet_id == CMD_NACK_CORRUPT) {
         result = {packet_id};
@@ -220,7 +258,7 @@ std::map<std::string, std::any> read_packet(const std::vector<uint8_t>& bytes) {
         uint8_t last_packet = bytes[9 + data_length];
         uint8_t crc = bytes[10 + data_length];
 
-        bool crc_valid = verify_crc5_packet(bytes);
+        bool crc_valid = (crc == calculate_crc5(bytes, 10 + data_length));
 
         result["chunk_id"] = chunk_id;
         result["data_length"] = data_length;
@@ -279,8 +317,8 @@ uint32_t ImageSender::HandshakeWithMainboard()
                 requested_pck_id = std::any_cast<uint8_t>(read_output["requested_packet"]);
                 SPDLOG_INFO("Received START message from mainboard {}", received_pck_id);
                 shake_received = true;
-                ack_ready_to_send = create_packet(CMD_ACK_READY, CMD_IMAGE_REQUEST);
-                uart.Send(Packet::ToOut(ack_ready_to_send));
+                std::vector<uint8_t> ack_ready_to_send = create_packet(CMD_ACK_READY, CMD_IMAGE_REQUEST);
+                uart.Send(Packet::ToOut(std::move(ack_ready_to_send)));
                 // usleep(100000); // wait 100ms
                 break;
             } else {
@@ -320,16 +358,55 @@ uint32_t ImageSender::HandshakeWithMainboard()
     return 1; // Handshake successful
 }
 
+std::vector<uint8_t> read_jpeg_to_bytes(const std::string& filename) {
+    // Open the JPEG file in binary mode
+    std::ifstream file(filename, std::ios::binary);
+    
+    // if (!file.is_open()) {
+    //     std::cerr << "Error opening file: " << filename << std::endl;
+    //     return {};
+    // }
+
+    // Read the file into a vector
+    std::vector<uint8_t> file_bytes((std::istreambuf_iterator<char>(file)),
+                                     std::istreambuf_iterator<char>());
+    
+    return file_bytes;
+}
+
+std::vector<uint8_t> read_binary_file(const std::string& filename) {
+    // Open the binary file for reading
+    std::ifstream file(filename, std::ios::binary);
+
+    // if (!file.is_open()) {
+    //     std::cerr << "Error opening file for reading." << std::endl;
+    //     return {};
+    // }
+
+    // Read the file into a vector of bytes
+    std::vector<uint8_t> data((std::istreambuf_iterator<char>(file)),
+                               std::istreambuf_iterator<char>());
+    file.close();
+    return data;
+}
+
 uint32_t ImageSender::SendImageOverUart(const std::string& image_path)
 {
-    std::vector<uint8_t> image_data;
-    EC read_status = DH::ReadFileChunk(image_path, 0, DH::GetFileSize(image_path), image_data);
+    // std::vector<uint8_t> image_data = read_jpeg_to_bytes(image_path);
+    // if (image_data.empty()) {
+    //     SPDLOG_ERROR("Failed to read image file: {}", image_path);
+    //     return 0;
+    // }
 
-    if (read_status != EC::OK) {
+    // if (read_status != EC::OK) {
+    //     SPDLOG_ERROR("Failed to read image file: {}", image_path);
+    //     return 0;
+    // }
+    std::vector<uint8_t> image_data = read_binary_file(image_path);
+    if (image_data.empty()) {
         SPDLOG_ERROR("Failed to read image file: {}", image_path);
         return 0;
     }
-
     // Send image data over UART
     uint32_t bytes_sent = 0;
     uint32_t chunk_id = 0;
@@ -343,10 +420,11 @@ uint32_t ImageSender::SendImageOverUart(const std::string& image_path)
         if (bytes_sent + chunk_size >= image_data_size){
             last_packet = 1; //last packet indicator 
         }
+        SPDLOG_WARN("Sending chunk ID: {}, size: {}, last_packet: {}", chunk_id, chunk_size, last_packet);
         std::vector<uint8_t> image_packet_out = create_packet(
             CMD_DATA_CHUNK,
             0,
-            "",
+            std::string(image_data.begin() + bytes_sent, image_data.begin() + bytes_sent + chunk_size),
             chunk_id,
             static_cast<uint32_t>(chunk_size),
             last_packet
@@ -373,13 +451,17 @@ uint32_t ImageSender::SendImageOverUart(const std::string& image_path)
             bool bytes_received = uart.Receive(cmd_id, data); // 5 seconds timeout
             if (bytes_received) {
                 read_output = read_packet(data);
+                SPDLOG_INFO("Received ACK/NACK for chunk ID: {}", chunk_id);
                 uint8_t packet_id = std::any_cast<uint8_t>(read_output["packet_id"]);
-                uint32_t acked_chunk_id = std::any_cast<uint32_t>(read_output["acked_chunk_id"]);
-                if (packet_id == CMD_ACK_OK && acked_chunk_id == chunk_id) {
+                if (packet_id == CMD_ACK_OK){
+                    SPDLOG_INFO("Packet ID: {}", packet_id);
+                    uint32_t acked_chunk_id = std::any_cast<uint32_t>(read_output["acked_chunk_id"]);
                     SPDLOG_INFO("Received ACK for chunk ID: {}", acked_chunk_id);
                     ack_received = true;
-                } 
-                else if (packet_id == CMD_ACK_NACK_CORRUPT) {
+                }else if (packet_id == CMD_NACK_CORRUPT) {
+                    uint32_t failed_chunk_id = std::any_cast<uint32_t>(read_output["failed_chunk_id"]);
+                    SPDLOG_WARN("RECEIVED NACK FOR CHUNK ID: {}", failed_chunk_id);
+
                     uart.Send(img_packet_send); // Retry sending packet until ack is received
                 }
             } else if (timing::GetCurrentTimeMs() - start_time > 10000) { // 10 seconds timeout
@@ -409,8 +491,14 @@ void ImageSender::RunImageTransfer() {
 
     //     return;
     // }
-    if (!sender.SendImage("/home/argus/Documents/FSW-Payload/src/dog.jpeg")) {
-        SPDLOG_ERROR("Failed to send image");
+
+    // if (!sender.SendImage("/home/argus/Desktop/image_transfer/FSW-Payload/src/dog.jpeg")) {
+    //     SPDLOG_ERROR("Failed to send image");
+    // }
+    if (sender.SendImage("/home/argus/Desktop/image_transfer/FSW-Payload/src/test.bin")) {
+        SPDLOG_INFO("BIN transfer completed successfully.");
+    } else {
+        SPDLOG_ERROR("BIN transfer failed.");
     }
 
     sender.Close();

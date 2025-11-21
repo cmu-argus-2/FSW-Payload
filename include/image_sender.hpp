@@ -16,8 +16,10 @@
 #define CMD_NACK_CORRUPT        0x20
 #define CMD_NACK_LOST           0x21
 #define CMD_IMAGE_REQUEST       0x06
+#define CMD_IMAGE_RECEIVED      0x07
 
-#define MAX_PAYLOAD_SIZE  239  // Max data size per packet: Packetsize(250) - chunk_ID(4) - data_length(4) - last_packet(1) - crc5(1) - packet_id(1)
+
+#define MAX_PAYLOAD_SIZE  239 // Max data size per packet: Packetsize(250) - chunk_ID(4) - data_length(4) - last_packet(1) - crc5(1) - packet_id(1)
 #define PACKET_SIZE     250
 #define CRC5_SIZE       1
 
@@ -41,6 +43,7 @@ public:
 
     bool Initialize();
     void Close();
+    std::map<uint32_t, std::vector<uint8_t>> create_packet_dict(const std::string& image_path);
 
     Packet::Out CreateImagePacket(uint32_t packet_id, const uint8_t* data, uint32_t data_length);
     bool SendImage(const std::string& image_path);

@@ -27,24 +27,37 @@
 uint8_t calculate_crc5(const std::vector<uint8_t>& data_bytes, size_t length) {
     const uint8_t polynomial = 0x05;  // CRC5 polynomial (x^5 + x^2 + 1)
     uint8_t crc = 0x1F;  // Initial CRC value (0x1F)
+    uint8_t num_bytes = PACKET_SIZE; // Total bytes in the packet
+    uint8_t num_bits = num_bytes * 8; // Total bits in the packet
 
-    // Convert the data bytes to an integer (big-endian)
-    uint64_t data_int = 0;
+    // Process each byte in the data array
     for (size_t i = 0; i < data_bytes.size(); ++i) {
-        data_int = (data_int << 8) | data_bytes[i];
+        uint8_t byte = data_bytes[i];
+        
+        // Process each bit in the byte
+        for (int bit = 7; bit >= 0; --bit) {
+            // XOR the MSB of crc with the current bit of the byte
+            if ((crc & 0x10) ^ ((byte >> bit) & 0x01)) {
+                crc = (crc << 1) ^ polynomial;  // XOR with polynomial
+            } else {
+                crc = (crc << 1);  // Just shift CRC
+            }
+            crc &= 0x1F;  // Keep CRC 5 bits
+        }
     }
 
-    // Perform CRC5 calculation
-    size_t num_bits = data_bytes.size() * 8;  // Total bits in the data
-    for (size_t i = 0; i < num_bits; ++i) {
-        if ((crc & 0x10) ^ (data_int & (1ULL << (num_bits - 1)))) {
-            crc = ((crc << 1) ^ polynomial) & 0x1F;  // XOR with polynomial
-        } else {
-            crc = (crc << 1) & 0x1F;  // Just shift CRC
-        }
-        data_int <<= 1;  // Shift the data left
-    }
     return crc;
+    // Perform CRC5 calculation
+    // // size_t num_bits = data_bytes.size() * 8;  // Total bits in the data
+    // for (size_t i = 0; i < num_bits; i++) {
+    //     if ((crc & 0x10) ^ (data_int & (1ULL << (num_bits - 1)))) {
+    //         crc = ((crc << 1) ^ polynomial) & 0x1F;  // XOR with polynomial
+    //     } else {
+    //         crc = (crc << 1) & 0x1F;  // Just shift CRC
+    //     }
+    //     data_int <<= 1;  // Shift the data left
+    // }
+    // return crc;
 }
 
 // // CRC-5: x^5 + x^2 + 1, Init 0x1F
@@ -207,6 +220,7 @@ std::vector<uint8_t> create_packet(
         result.push_back(last_packet);
         
         uint8_t crc_result = calculate_crc5(result, result.size());
+        SPDLOG_WARN("chunkid: {}   CRC calculated: {}", chunk_id, crc_result);
         result.push_back(crc_result);
         // SPDLOG_WARN("RESULT constructed: {}", result);
         result.resize(PACKET_SIZE, 0);
@@ -390,37 +404,24 @@ std::vector<uint8_t> read_binary_file(const std::string& filename) {
     return data;
 }
 
-uint32_t ImageSender::SendImageOverUart(const std::string& image_path)
-{
-    // std::vector<uint8_t> image_data = read_jpeg_to_bytes(image_path);
-    // if (image_data.empty()) {
-    //     SPDLOG_ERROR("Failed to read image file: {}", image_path);
-    //     return 0;
-    // }
-
-    // if (read_status != EC::OK) {
-    //     SPDLOG_ERROR("Failed to read image file: {}", image_path);
-    //     return 0;
-    // }
+// Create a dictionary of data packets for a requested image binary file
+std::map<uint32_t, std::vector<uint8_t>> ImageSender::create_packet_dict(const std::string& image_path) {
+    std::map<uint32_t, std::vector<uint8_t>> packet_dict;
     std::vector<uint8_t> image_data = read_binary_file(image_path);
     if (image_data.empty()) {
         SPDLOG_ERROR("Failed to read image file: {}", image_path);
-        return 0;
-    }
-    // Send image data over UART
+        return packet_dict;
+    }   
     uint32_t bytes_sent = 0;
     uint32_t chunk_id = 0;
     size_t image_data_size = image_data.size();
-    uint64_t start_time;
     uint8_t last_packet = 0;
-
     while (bytes_sent < image_data_size) {
         size_t chunk_size = std::min<size_t>(image_data_size - bytes_sent, MAX_PAYLOAD_SIZE);
         chunk_id = bytes_sent / MAX_PAYLOAD_SIZE + 1;
         if (bytes_sent + chunk_size >= image_data_size){
             last_packet = 1; //last packet indicator 
         }
-        SPDLOG_WARN("Sending chunk ID: {}, size: {}, last_packet: {}", chunk_id, chunk_size, last_packet);
         std::vector<uint8_t> image_packet_out = create_packet(
             CMD_DATA_CHUNK,
             0,
@@ -430,7 +431,25 @@ uint32_t ImageSender::SendImageOverUart(const std::string& image_path)
             last_packet
         );
 
-        Packet::Out img_packet_send = convert_image_packet_to_packet_out(image_packet_out);
+        packet_dict[chunk_id] = image_packet_out;
+        bytes_sent += chunk_size;
+    }
+    return packet_dict;
+}
+
+
+uint32_t ImageSender::SendImageOverUart(const std::string& image_path)
+{
+    // Send image data over UART
+    uint32_t bytes_sent = 0;
+    uint32_t chunk_id = 0;
+    uint64_t start_time;
+    std::map<uint32_t, std::vector<uint8_t>> packet_dict = create_packet_dict(image_path);
+    
+    // Loop throught the packet dict and send each packet: Wait for ack before sending next packet if nack resend
+    for (const auto& [chunk_id, image_packet_out] : packet_dict) {
+        SPDLOG_WARN("Sending chunk ID: {}, size: {}", chunk_id, image_packet_out.size());
+        Packet::Out img_packet_send = convert_image_packet_to_packet_out(const_cast<std::vector<uint8_t>&>(image_packet_out));
         uint64_t image_send_timeout = timing::GetCurrentTimeMs();
         while (!uart.Send(img_packet_send)) {
             SPDLOG_INFO("Retrying sending image packet");
@@ -439,7 +458,6 @@ uint32_t ImageSender::SendImageOverUart(const std::string& image_path)
                 return 0;
             }
         }
-        bytes_sent += chunk_size;
         // wait for ACK before continuing
         bool ack_received = false;
         start_time = timing::GetCurrentTimeMs();
@@ -451,7 +469,6 @@ uint32_t ImageSender::SendImageOverUart(const std::string& image_path)
             bool bytes_received = uart.Receive(cmd_id, data); // 5 seconds timeout
             if (bytes_received) {
                 read_output = read_packet(data);
-                SPDLOG_INFO("Received ACK/NACK for chunk ID: {}", chunk_id);
                 uint8_t packet_id = std::any_cast<uint8_t>(read_output["packet_id"]);
                 if (packet_id == CMD_ACK_OK){
                     SPDLOG_INFO("Packet ID: {}", packet_id);
@@ -495,7 +512,7 @@ void ImageSender::RunImageTransfer() {
     // if (!sender.SendImage("/home/argus/Desktop/image_transfer/FSW-Payload/src/dog.jpeg")) {
     //     SPDLOG_ERROR("Failed to send image");
     // }
-    if (sender.SendImage("/home/argus/Desktop/image_transfer/FSW-Payload/src/test.bin")) {
+    if (sender.SendImage("/home/argus/Desktop/image_transfer/FSW-Payload/src/image_radio_file.bin")) {
         SPDLOG_INFO("BIN transfer completed successfully.");
     } else {
         SPDLOG_ERROR("BIN transfer failed.");

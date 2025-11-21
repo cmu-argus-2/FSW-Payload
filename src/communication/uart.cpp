@@ -199,7 +199,7 @@ bool UART::Send(const Packet::Out& data)
         return false;
     }
 
-    SPDLOG_INFO("Sent data of size {} !", bytes_written);
+     SPDLOG_INFO("Sent data of size {} !", bytes_written);
     return true;
 }
 

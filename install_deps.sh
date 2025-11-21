@@ -23,7 +23,9 @@ sudo apt install -y \
   clang \
   libopencv-dev \
   libeigen3-dev \
-  libreadline-dev
+  libreadline-dev \
+  libnvinfer-dev \
+  ccache
 
 # Uncomment this line if you get ccache related issues
 # sudo apt-get install --reinstall -y ccache
@@ -54,12 +56,21 @@ cd ../..
 cd ..
 
 
+# Detect CUDA path
+CUDA_PATH=$(dirname $(dirname $(which nvcc)))
+export CUDA_HOME=$CUDA_PATH
+export CUDART_LIBRARY=$CUDA_HOME/lib64/libcudart.so
+export LD_LIBRARY_PATH=$CUDA_HOME/lib64:$LD_LIBRARY_PATH
+export CPLUS_INCLUDE_PATH=$CUDA_HOME/include:$CPLUS_INCLUDE_PATH
+
+
+# Check cudart exists
+if [ ! -f "$CUDART_LIBRARY" ]; then
+  echo "Error: libcudart.so not found in $CUDA_HOME/lib64"
+  exit 1
+fi
+
+
 # TODO: IMX708 sensor 
 
 
-
-# TODO: first build 
-
-
-
-# TODO: run unit tests

@@ -39,6 +39,10 @@ find_package(OpenCV REQUIRED)
 enable_language(C)
 find_package(HDF5 REQUIRED COMPONENTS C CXX HL)
 find_package(HighFive REQUIRED)
+find_package(CUDA REQUIRED)
+# find_library(CUDART_LIBRARY cudart REQUIRED)
+find_library(CUDART_LIBRARY cudart HINTS ENV CUDART_LIBRARY ${CUDA_TOOLKIT_ROOT_DIR}/lib64)
+find_library(NVINFER_LIBRARY nvinfer REQUIRED)
 
 
 
@@ -48,6 +52,7 @@ include_directories(SYSTEM ${OpenCV_INCLUDE_DIRS})
 # Include the directories for header files
 include_directories(${PROJECT_SOURCE_DIR}/include)
 include_directories(SYSTEM ${PROJECT_SOURCE_DIR}/external) # ignore warnings from external libraries
+include_directories(${CUDA_HOME}/include)
 # Add the source files subdirectory
 set(CMAKE_POSITION_INDEPENDENT_CODE ON)
 add_subdirectory(src)
@@ -55,7 +60,9 @@ add_subdirectory(src)
 
 ##### MAIN FLIGHT SOFTWARE PROCESS
 
+#[[
 set(PAYLOAD_CONDITIONAL_LIBS "")
+
 
 if(NN_ENABLED)
     # Check if LIBTORCH_PATH is set in the environment
@@ -70,6 +77,7 @@ if(NN_ENABLED)
 
     list(APPEND PAYLOAD_CONDITIONAL_LIBS ${TORCH_LIBRARIES})
 endif()
+=]]
 
 add_executable(${PROJECT_NAME} src/main.cpp)
 add_executable(run_batch_opt
@@ -82,9 +90,9 @@ target_link_libraries(${PROJECT_NAME}
     spdlog::spdlog
     PAYLOAD_LIB
     ${OpenCV_LIBS}
-    ${PAYLOAD_CONDITIONAL_LIBS}
+    # ${PAYLOAD_CONDITIONAL_LIBS}
 )
-
+# 
 target_link_libraries(run_batch_opt
     PRIVATE
     spdlog::spdlog

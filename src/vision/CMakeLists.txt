@@ -5,7 +5,6 @@ add_library(vision
     camera.cpp
     camera_manager.cpp
     dataset.cpp
-    rc.cpp
     ld.cpp
 )
 

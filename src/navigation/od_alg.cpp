@@ -1,6 +1,5 @@
 #include "navigation/od.hpp"
 #include "navigation/batch_optimization.hpp"
-#include "navigation/tracking.hpp"
 
 
 void OD::_DoInit()
@@ -31,14 +30,6 @@ void OD::_DoBatchOptimization()
     // Minimum require to perform an estimation? 
     // If not, need to redo an INIT phase..
     // Set up optimization problem
-   SwitchState(OD_STATE::TRACKING);
-}
-
-
-void OD::_DoTracking()
-{
-    // Perform tracking
-    // TODO
     SwitchState(OD_STATE::IDLE);
 }
 

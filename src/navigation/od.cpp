@@ -20,13 +20,6 @@ max_iterations(10000)
 {
 }
 
-TRACKING_config::TRACKING_config()
-: 
-gyro_update_frequency(10.0f),
-img_update_frequency(1.0f)
-{
-}
-
 OD_Config::OD_Config()
 {
 }
@@ -41,8 +34,6 @@ dataset_collector(nullptr)
     SPDLOG_INFO("Will read OD configuration file...");
     ReadConfig(config_path);
 }
-
-
 
 
 void OD::RunLoop()
@@ -81,13 +72,6 @@ void OD::RunLoop()
             {
                 SPDLOG_INFO("OD: BATCH_OPT");
                 _DoBatchOptimization();
-                break;
-            }
-
-            case OD_STATE::TRACKING:
-            {
-                SPDLOG_INFO("OD: TRACKING");
-                _DoTracking();
                 break;
             }
 
@@ -169,11 +153,6 @@ void OD::ReadConfig(const std::string& config_path)
     config.batch_opt.tolerance_solver = get_param_as_double(BATCH_OPT_params, "tolerance_solver", config.batch_opt.tolerance_solver);
     config.batch_opt.max_iterations = BATCH_OPT_params->get_as<int64_t>("max_iterations")->value_or(config.batch_opt.max_iterations);
 
-    // TRACKING
-    auto TRACKING_params = params["TRACKING"].as_table();
-    config.tracking.gyro_update_frequency = get_param_as_double(TRACKING_params, "gyro_update_frequency", config.tracking.gyro_update_frequency);
-    config.tracking.img_update_frequency = get_param_as_double(TRACKING_params, "img_update_frequency", config.tracking.img_update_frequency);
-
     // TODO: safe value checking on each params
     
     LogConfig();
@@ -194,9 +173,6 @@ void OD::LogConfig()
     SPDLOG_INFO("  tolerance_solver: {}", config.batch_opt.tolerance_solver);
     SPDLOG_INFO("  max_iterations: {}", config.batch_opt.max_iterations);
 
-    SPDLOG_INFO("TRACKING_config:");
-    SPDLOG_INFO("  gyro_update_frequency: {}", config.tracking.gyro_update_frequency);
-    SPDLOG_INFO("  img_update_frequency: {}", config.tracking.img_update_frequency);
 } 
 
 bool OD::PingRunningStatus()
@@ -230,12 +206,6 @@ bool OD::HandleStop()
                 break;
             }
 
-            case OD_STATE::TRACKING:
-            {
-                SPDLOG_INFO("Stopping in TRACKING");
-                // Ensure all data has been written
-                break;
-            }   
 
         }
     }

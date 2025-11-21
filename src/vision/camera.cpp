@@ -154,9 +154,25 @@ bool Camera::IsNewFrameAvailable() const
     return _new_frame_flag.load();
 }
 
+EC Camera::MapError(CAM_ERROR cam_error)
+{
+    switch (cam_error)
+    {
+        case CAM_ERROR::NO_ERROR:
+            return EC::OK;
+        case CAM_ERROR::CAPTURE_FAILED:
+            return EC::CAMERA_CAPTURE_FAILED;
+        case CAM_ERROR::INITIALIZATION_FAILED:
+            return EC::CAMERA_INITIALIZATION_FAILED;  
+    }
+
+    return EC::OK;
+}
+
 void Camera::HandleErrors(CAM_ERROR error)
 {
     last_error = error;
+    LogError(MapError(error));
 
     if (last_error == CAM_ERROR::NO_ERROR) {
         consecutive_error_count = 0;

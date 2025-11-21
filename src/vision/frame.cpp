@@ -102,7 +102,7 @@ void Frame::ClearLandmarks()
 
 bool Frame::IsBlurred()
 {
-    // the more an image is blurred, the less edges there is 
+    // the more an image is blurred, the less edges there are
     // need to lock in there, since the buffer is shared 
 
     static std::vector<uint8_t> grey_buffer(FULL_RES_PIXEL_SIZE);

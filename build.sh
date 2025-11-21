@@ -13,7 +13,7 @@ for arg in "$@"; do
     ENABLE_VISION_NN=0
   else
     echo "Unknown option: $arg"
-    echo "Usage: ./build.sh [Debug|Release] [disable-nn]"
+    echo "Usage: ./build.sh [Debug|Release]" # [disable-nn]"
     exit 1
   fi
 done

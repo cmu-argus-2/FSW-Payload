@@ -222,6 +222,24 @@ bool ReadLatestStoredRawImg(Frame& frame)
 
 }
 
+bool ReadImageFromDisk(const std::string& file_path, Frame& frame_out)
+{
+    // Load the image into memory
+    cv::Mat img = cv::imread(file_path, cv::IMREAD_COLOR); // Load the image from the file
+    if (img.empty()) 
+    {
+        SPDLOG_ERROR("Failed to load image from disk: {}", file_path);
+        LogError(EC::FILE_NOT_FOUND);
+        return false;
+    }
+
+    // TODO: optional metadata extraction
+    frame_out.Update(-1, img, 0);
+
+    SPDLOG_INFO("Image loaded successfully from disk: {}", file_path);
+    return true;
+}
+
 EC ReadFileChunk(std::string_view file_path, uint32_t start_byte, uint32_t length, std::vector<uint8_t>& data_out)
 {
     data_out.resize(length, 0); 

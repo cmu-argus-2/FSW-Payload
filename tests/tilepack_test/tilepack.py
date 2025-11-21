@@ -6,17 +6,22 @@ Loads an image from disk, resizes to VGA, tiles it, compresses each tile
 as JPEG, and builds a single binary "radio file" that the SAT can
 downlink to GS.
 
-Radio file format (image_radio_file.bin):
+Output file:
+  - image_radio_file.bin: Binary file containing all packets (header + payload)
 
-  record[0] | record[1] | ... | record[N-1]
+Packet format:
+  Each packet has variable length (≤ 240 bytes) with layout:
 
-Each record has fixed size RECORD_BYTES and layout:
+  [payload_size_bytes (u16)][page_id (u16)][tile_idx (u16)][frag_idx (u8)]
+  [jpeg_fragment...] → 7 bytes header + payload
 
-  [page_id (u16)][tile_idx (u16)][frag_idx (u8)][frag_cnt (u8)]
-  [jpeg_fragment...][0x00 padding...] → RECORD_BYTES bytes total
+Constraints:
+  - Header: 7 bytes (fixed)
+  - Max payload per packet: 233 bytes (to stay within 240 byte limit)
+  - Total packet size: header + payload ≤ 240 bytes
 
-RECORD_BYTES MUST MATCH the _FILE_PKTSIZE constant on the SATELLITE_RADIO
-side (currently 240).
+The payload_size_bytes field allows proper reconstruction of the JPEG image
+by concatenating fragments for each tile based on their tile_idx and frag_idx.
 """
 
 import io
@@ -30,7 +35,7 @@ from typing import List, Tuple
 from PIL import Image
 
 # Settings
-INPUT_IMAGE   = "/home/argus/RidgeRun_test.jpg"  # Path to image on Jetson
+INPUT_IMAGE   = "test_image.jpg"  # Path to image on Jetson
 OUTPUT_DIR    = "tilepack"                       # Output directory (created if needed)
 
 PAGE_ID       = 1                                # Image/page ID
@@ -40,25 +45,25 @@ TARGET_HEIGHT = 480                              # Resize height (VGA)
 TILE_W        = 64                               # Tile width   (pixels)
 TILE_H        = 32                               # Tile height  (pixels)
 JPEG_QUALITY  = 10                               # JPEG quality (1–95)
-RECORD_BYTES  = 240                              # MUST MATCH _FILE_PKTSIZE on the SAT mainboard
+MAX_PACKET_SIZE = 240                            # Maximum packet size (header + payload)
 
 # ============================================================
 
-# Per-record header (6 bytes)
+# Per-record header (7 bytes)
 @dataclass
 class PacketHeader:
-    page_id: int
-    tile_idx: int
-    frag_idx: int
-    frag_cnt: int
+    payload_size_bytes: int  # u16: actual payload size in this fragment
+    page_id: int            # u16: image/page ID
+    tile_idx: int           # u16: tile index
+    frag_idx: int           # u8: fragment index within tile
 
     def to_bytes(self) -> bytes:
-        # >HHBB = big-endian: u16, u16, u8, u8
-        return struct.pack(">HHBB", self.page_id, self.tile_idx, self.frag_idx, self.frag_cnt)
+        # >HHHB = big-endian: u16, u16, u16, u8
+        return struct.pack(">HHHB", self.payload_size_bytes, self.page_id, self.tile_idx, self.frag_idx)
 
     @staticmethod
     def size_bytes() -> int:
-        return 6
+        return 7
 
 
 @dataclass
@@ -105,21 +110,26 @@ def compress_tile_jpeg(tile: Image.Image, jpeg_quality: int) -> bytes:
 
 def packetize_tile(page_id: int, tile_idx: int, tile_bytes: bytes) -> List[Packet]:
     """
-    Fragment compressed tile bytes into a list of Packets, where each Packet
-    will later become one fixed-size record in the radio file.
-
-    payload size per Packet = RECORD_BYTES - header_size (6 bytes).
+    Fragment compressed tile bytes into a list of Packets.
+    Each packet contains header with payload size + metadata for reconstruction.
+    
+    Each complete packet (header + payload) must not exceed MAX_PACKET_SIZE (240 bytes).
+    Header is 7 bytes, so max payload per packet is 233 bytes.
     """
     hdr_sz = PacketHeader.size_bytes()
-    max_payload = max(1, RECORD_BYTES - hdr_sz)
-
-    # Split tile_bytes into chunks that fit into one record's payload space
-    frags = [tile_bytes[i : i + max_payload] for i in range(0, len(tile_bytes), max_payload)]
-    frag_cnt = len(frags)
+    max_payload_per_packet = MAX_PACKET_SIZE - hdr_sz  # 240 - 7 = 233 bytes
+    
+    # Split tile_bytes into chunks that fit within max_payload_per_packet
+    frags = [tile_bytes[i : i + max_payload_per_packet] for i in range(0, len(tile_bytes), max_payload_per_packet)]
 
     packets: List[Packet] = []
     for i, frag in enumerate(frags):
-        header = PacketHeader(page_id=page_id, tile_idx=tile_idx, frag_idx=i, frag_cnt=frag_cnt)
+        header = PacketHeader(
+            payload_size_bytes=len(frag),
+            page_id=page_id,
+            tile_idx=tile_idx,
+            frag_idx=i
+        )
         packets.append(Packet(header=header, payload=frag))
 
     return packets
@@ -173,25 +183,26 @@ def main():
     with open(meta_path, "wb") as mf:
         mf.write(meta_blob)
 
-    # 7) Build and write the RADIO FILE with fixed-size records
+    # 7) Build and write the radio file with all packets
     radio_file_path = os.path.join(OUTPUT_DIR, "image_radio_file.bin")
     hdr_sz = PacketHeader.size_bytes()
+    max_payload_per_packet = MAX_PACKET_SIZE - hdr_sz
 
     # Manifest is optional but nice for debugging
     manifest_csv_path = os.path.join(OUTPUT_DIR, "packets_manifest.csv")
 
-    with open(radio_file_path, "wb") as rf, open(manifest_csv_path, "w", newline="") as mf:
+    with open(radio_file_path, "wb") as rf, \
+         open(manifest_csv_path, "w", newline="") as mf:
         writer = csv.writer(mf)
         writer.writerow(
             [
-                "record_idx",
-                "record_size_bytes",
+                "packet_idx",
+                "packet_size_bytes",
                 "header_size_bytes",
                 "payload_size_bytes",
                 "page_id",
                 "tile_idx",
                 "frag_idx",
-                "frag_cnt",
             ]
         )
 
@@ -199,39 +210,38 @@ def main():
             header = p.header.to_bytes()
             payload = p.payload
 
-            # Build the record: header + payload
-            record = bytearray(header + payload)
+            # Build the packet: header + payload
+            packet = header + payload
+            packet_size = len(packet)
 
-            if len(record) > RECORD_BYTES:
+            # Verify packet size constraint
+            if packet_size > MAX_PACKET_SIZE:
                 raise RuntimeError(
-                    f"Record {i} exceeds RECORD_BYTES={RECORD_BYTES} (got {len(record)} bytes). "
-                    "Increase RECORD_BYTES or reduce JPEG_QUALITY / tile size."
+                    f"Packet {i} exceeds MAX_PACKET_SIZE={MAX_PACKET_SIZE} (got {packet_size} bytes). "
+                    "This should not happen - check packetize_tile logic."
                 )
 
-            # Pad with zeros up to RECORD_BYTES
-            pad_len = RECORD_BYTES - len(record)
-            record += b"\x00" * pad_len
-
-            # Write this fixed-size record to the radio file
-            rf.write(record)
+            # Write packet to radio file
+            rf.write(packet)
 
             # Manifest row for debugging
             writer.writerow(
                 [
                     i,
-                    RECORD_BYTES,
+                    packet_size,
                     hdr_sz,
                     len(payload),
                     p.header.page_id,
                     p.header.tile_idx,
                     p.header.frag_idx,
-                    p.header.frag_cnt,
                 ]
             )
 
     # 8) Print summary
     comp_total = sum(len(c) for c in comp_tiles)
-    max_payload = max(1, RECORD_BYTES - hdr_sz)
+    total_file_bytes = sum(len(p.header.to_bytes()) + len(p.payload) for p in packets)
+    avg_packet_size = total_file_bytes / len(packets) if packets else 0
+    max_payload_per_packet = MAX_PACKET_SIZE - hdr_sz
 
     print("=== TILEPACK HW → RADIO FILE BUILDER ===")
     print(f"Input:            {INPUT_IMAGE}  resized={TARGET_WIDTH}x{TARGET_HEIGHT}")
@@ -239,8 +249,10 @@ def main():
     print(f"JPEG quality:     {JPEG_QUALITY}")
     print(f"Compressed total: {comp_total/1024:.1f} kB")
     print(f"Header bytes:     {hdr_sz}")
-    print(f"Record bytes:     {RECORD_BYTES} (max payload per record ≈ {max_payload})")
-    print(f"Total records:    {len(packets)}")
+    print(f"Max packet size:  {MAX_PACKET_SIZE} bytes (header {hdr_sz} + max payload {max_payload_per_packet})")
+    print(f"Avg packet size:  {avg_packet_size:.1f} bytes")
+    print(f"Total packets:    {len(packets)}")
+    print(f"Total file size:  {total_file_bytes/1024:.1f} kB")
     print(f"Saved resized:    {src_png}")
     print(f"Saved tiles:      {tiles_dir}/tile_00000.jpg ..")
     print(f"Saved meta:       {meta_path}")

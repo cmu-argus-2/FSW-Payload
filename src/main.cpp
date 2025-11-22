@@ -18,6 +18,7 @@ Author: Ibrahima Sory Sow
 #include "communication/named_pipe.hpp"
 #include "communication/uart.hpp"
 #include "core/timing.hpp"
+#include <cstdlib>
 
 
 void SetupLogger()
@@ -31,6 +32,10 @@ void SetupLogger()
     // %#: source line number
     // %v: the actual text to log
     spdlog::set_pattern("[%Y-%m-%d %H:%M:%S.%e][%^%l%$][thread:%t][%s:%#] %v");
+    std::atexit([]() {
+        spdlog::shutdown();
+    });
+
 }
 
 int main(int argc, char** argv)

@@ -30,11 +30,15 @@ enum class ErrorCode // Error codes
     START_BYTE_OUT_OF_RANGE,
     FAILED_TO_GRAB_FILE_CHUNK,
     
+    // Camera subsystem
+    CAMERA_CAPTURE_FAILED,
+    CAMERA_INITIALIZATION_FAILED,
+
 
     // Task execution and queue 
     // Thread pool 
 
-    // Camera subsystem
+
 
     // Telemetry
 
@@ -53,6 +57,19 @@ enum class ErrorCode // Error codes
 
 
     // Neural Engine 
+    NN_FAILED_TO_OPEN_ENGINE_FILE,
+    NN_FAILED_TO_CREATE_RUNTIME,
+    NN_FAILED_TO_CREATE_ENGINE,
+    NN_FAILED_TO_CREATE_EXECUTION_CONTEXT,
+    NN_FAILED_TO_LOAD_ENGINE,
+    NN_ENGINE_NOT_INITIALIZED, // Runtime not initialized
+    NN_CUDA_MEMCPY_FAILED, 
+    NN_POINTER_NULL, 
+    NN_INFERENCE_FAILED, 
+    NN_NO_FRAME_AVAILABLE, // No frame available for inference
+
+
+
     // OD
 
 

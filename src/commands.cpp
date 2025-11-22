@@ -483,10 +483,6 @@ void ping_od_status([[maybe_unused]] std::vector<uint8_t>& data)
         {
             break;
         }
-        case OD_STATE::TRACKING:
-        {
-            break;
-        }
     }
 
     std::shared_ptr<Message> msg = CreateMessage(CommandID::PING_OD_STATUS, transmit_data);

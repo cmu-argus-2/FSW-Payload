@@ -1,4 +1,4 @@
-cmake_minimum_required(VERSION 3.11)
+cmake_minimum_required(VERSION 3.16)
 set(CMAKE_CXX_STANDARD 17)
 
 project(PAYLOAD VERSION 1.0 LANGUAGES CXX)
@@ -33,11 +33,14 @@ set(CMAKE_RUNTIME_OUTPUT_DIRECTORY ${CMAKE_SOURCE_DIR}/bin/)
 set(SPDLOG_FMT_EXTERNAL OFF)
 find_package(spdlog REQUIRED)
 find_package(Eigen3 3.3 REQUIRED NO_MODULE)
-find_package(Ceres REQUIRED)
+include_directories(${EIGEN_INCLUDE_DIR})
+link_directories(${EIGEN_LIBRARY_DIRS})
+find_package(Ceres 2.2.0 REQUIRED)
 find_package(OpenCV REQUIRED)
 
 enable_language(C)
 find_package(HDF5 REQUIRED COMPONENTS C CXX HL)
+list(APPEND CMAKE_PREFIX_PATH "${PWD}/depsbuild/install")
 find_package(HighFive REQUIRED)
 find_package(CUDA REQUIRED)
 # find_library(CUDART_LIBRARY cudart REQUIRED)
@@ -100,6 +103,7 @@ target_link_libraries(run_batch_opt
     HDF5::HDF5           
     HighFive::HighFive
     Ceres::ceres
+    Eigen3::Eigen
 )
 
 

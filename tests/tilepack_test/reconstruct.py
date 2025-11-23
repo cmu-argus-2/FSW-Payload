@@ -7,11 +7,10 @@ from typing import List, Dict, Tuple
 from collections import defaultdict
 from PIL import Image
 
-# Settings
 INPUT_BIN     = "tilepack/image_radio_file.bin"   
 INPUT_META    = "tilepack/image_meta.bin"         
-OUTPUT_IMAGE  = "tilepack/reconstructed.jpg"  
-JPEG_QUALITY  = 10                              
+OUTPUT_IMAGE_PNG  = "tilepack/reconstructed.png"     
+TILES_OUTPUT_DIR  = "tilepack/reconstructed_tiles"   
 
 # ============================================================
 
@@ -106,32 +105,75 @@ def group_fragments_by_tile(packets: List[Packet]) -> Dict[int, List[Tuple[int, 
     return tiles
 
 
-def reconstruct_tile_jpeg(fragments: List[Tuple[int, bytes]]) -> bytes:
+def reconstruct_tile_jpeg(fragments: List[Tuple[int, bytes]], tile_w: int, tile_h: int, tile_idx: int = -1) -> Tuple[bytes, str]:
+    """
+    Reconstruct a tile JPEG from fragments.
+    Returns (jpeg_bytes, status) where status is:
+      'complete' - all fragments present
+      'partial' - some fragments missing, JPEG may be corrupted but decodable
+      'missing' - no fragments, black tile created
+    """
+    if not fragments:
+        # No fragments, create a black tile
+        black_tile = Image.new("RGB", (tile_w, tile_h), (0, 0, 0))
+        bio = io.BytesIO()
+        black_tile.save(bio, format="JPEG", quality=50)
+        return bio.getvalue(), 'missing'
+    
     fragments_sorted = sorted(fragments, key=lambda x: x[0])
     
-    jpeg_bytes = b"".join(payload for _, payload in fragments_sorted)
+    # Check if fragments are consecutive (complete)
+    expected_indices = list(range(len(fragments_sorted)))
+    actual_indices = [frag[0] for frag in fragments_sorted]
     
-    return jpeg_bytes
+    # Check for missing fragments in the sequence
+    max_frag_idx = max(actual_indices) if actual_indices else 0
+    all_expected = list(range(max_frag_idx + 1))
+    missing_frags = set(all_expected) - set(actual_indices)
+    
+    if missing_frags:
+        # Partial fragments - concatenate what we have
+        # The JPEG decoder might still decode partial data
+        jpeg_bytes = b"".join(payload for _, payload in fragments_sorted)
+        status = 'partial'
+        if tile_idx >= 0:
+            print(f"    [WARNING] Tile {tile_idx} missing fragments {sorted(missing_frags)}, JPEG may be corrupted")
+    else:
+        # All fragments present
+        jpeg_bytes = b"".join(payload for _, payload in fragments_sorted)
+        status = 'complete'
+    
+    return jpeg_bytes, status
 
 
 def reconstruct_image(tiles_dict: Dict[int, bytes], tiles_x: int, tiles_y: int, 
                      tile_w: int, tile_h: int, target_width: int, target_height: int) -> Image.Image:
     canvas = Image.new("RGB", (target_width, target_height), (0, 0, 0))
     
-    for tile_idx, jpeg_bytes in sorted(tiles_dict.items()):
-        try:
-            tile_img = Image.open(io.BytesIO(jpeg_bytes))
-        except Exception as e:
-            print(f"[WARNING] Failed to decode tile {tile_idx}: {e}", file=sys.stderr)
-            continue
-        
+    expected_tiles = tiles_x * tiles_y
+    failed_decode_tiles = []
+    decoded_tiles = 0
+    
+    for tile_idx in range(expected_tiles):
         tx = tile_idx % tiles_x
         ty = tile_idx // tiles_x
-        
         x = tx * tile_w
         y = ty * tile_h
         
-        canvas.paste(tile_img, (x, y))
+        if tile_idx in tiles_dict:
+            jpeg_bytes = tiles_dict[tile_idx]
+            try:
+                tile_img = Image.open(io.BytesIO(jpeg_bytes))
+                canvas.paste(tile_img, (x, y))
+                decoded_tiles += 1
+            except Exception as e:
+                print(f"[WARNING] Failed to decode tile {tile_idx}: {e}", file=sys.stderr)
+                failed_decode_tiles.append(tile_idx)
+    
+    if failed_decode_tiles:
+        print(f"[WARNING] {len(failed_decode_tiles)} tiles failed to decode (corrupted): {failed_decode_tiles[:10]}{'...' if len(failed_decode_tiles) > 10 else ''}")
+    
+    print(f"Successfully decoded and placed {decoded_tiles}/{expected_tiles} tiles in final image")
     
     return canvas
 
@@ -166,11 +208,63 @@ def main():
     tiles_fragments = group_fragments_by_tile(packets)
     print(f"Found {len(tiles_fragments)} unique tiles")
     
+    if metadata is None:
+        if tiles_fragments:
+            first_fragments = tiles_fragments[min(tiles_fragments.keys())]
+            first_jpeg, _ = reconstruct_tile_jpeg(first_fragments, 64, 32)  # Temp guess
+            first_tile = Image.open(io.BytesIO(first_jpeg))
+            tile_w, tile_h = first_tile.size
+        else:
+            tile_w, tile_h = 64, 32  # Default fallback
+    else:
+        tile_w = metadata.tile_w
+        tile_h = metadata.tile_h
+    
+    # Reconstruct all tiles (fill missing with black, attempt partial reconstruction)
+    if metadata:
+        expected_tiles = metadata.tiles_x * metadata.tiles_y
+    else:
+        # Estimate based on what we have
+        expected_tiles = max(tiles_fragments.keys()) + 1 if tiles_fragments else 0
+    
     tiles_jpeg = {}
-    for tile_idx, fragments in tiles_fragments.items():
-        jpeg_bytes = reconstruct_tile_jpeg(fragments)
+    missing_tile_count = 0
+    partial_tile_count = 0
+    complete_tile_count = 0
+    
+    for tile_idx in range(expected_tiles):
+        if tile_idx in tiles_fragments:
+            jpeg_bytes, status = reconstruct_tile_jpeg(tiles_fragments[tile_idx], tile_w, tile_h, tile_idx)
+            
+            if status == 'complete':
+                complete_tile_count += 1
+                print(f"  Tile {tile_idx}: {len(tiles_fragments[tile_idx])} fragments -> {len(jpeg_bytes)} bytes [COMPLETE]")
+            elif status == 'partial':
+                partial_tile_count += 1
+                print(f"  Tile {tile_idx}: {len(tiles_fragments[tile_idx])} fragments -> {len(jpeg_bytes)} bytes [PARTIAL - may be corrupted]")
+            else:  # missing (shouldn't happen here but handle it)
+                missing_tile_count += 1
+                print(f"  Tile {tile_idx}: MISSING (filled with black)")
+        else:
+            # Missing tile - create black JPEG
+            jpeg_bytes, _ = reconstruct_tile_jpeg([], tile_w, tile_h, tile_idx)
+            missing_tile_count += 1
+            print(f"  Tile {tile_idx}: MISSING (filled with black)")
+        
         tiles_jpeg[tile_idx] = jpeg_bytes
-        print(f"  Tile {tile_idx}: {len(fragments)} fragments -> {len(jpeg_bytes)} bytes")
+    
+    print(f"\nTile reconstruction statistics:")
+    print(f"  Complete tiles: {complete_tile_count}/{expected_tiles}")
+    print(f"  Partial tiles (some fragments missing): {partial_tile_count}/{expected_tiles}")
+    print(f"  Missing tiles (filled with black): {missing_tile_count}/{expected_tiles}")
+    
+    # Save individual tile JPEGs
+    os.makedirs(TILES_OUTPUT_DIR, exist_ok=True)
+    for tile_idx, jpeg_bytes in tiles_jpeg.items():
+        tile_path = os.path.join(TILES_OUTPUT_DIR, f"tile_{tile_idx:05d}.jpg")
+        with open(tile_path, "wb") as f:
+            f.write(jpeg_bytes)
+    print(f"Saved {len(tiles_jpeg)} individual tile JPEGs to {TILES_OUTPUT_DIR}/")
     
     if metadata is None:
         # Guess based on common tile sizes
@@ -200,15 +294,20 @@ def main():
         target_width = metadata.target_width
         target_height = metadata.target_height
     
+    print(f"Reconstructing image ({target_width}x{target_height})...")
     img = reconstruct_image(tiles_jpeg, tiles_x, tiles_y, tile_w, tile_h, target_width, target_height)
     
-    os.makedirs(os.path.dirname(OUTPUT_IMAGE) if os.path.dirname(OUTPUT_IMAGE) else ".", exist_ok=True)
+    os.makedirs(os.path.dirname(OUTPUT_IMAGE_PNG) if os.path.dirname(OUTPUT_IMAGE_PNG) else ".", exist_ok=True)
     
-    # Use quality from metadata if available, otherwise use reasonable default
-    jpeg_quality = metadata.jpeg_quality if metadata else JPEG_QUALITY
-    img.save(OUTPUT_IMAGE, format="JPEG", quality=jpeg_quality, optimize=True)
+    total_tile_bytes = sum(len(jpeg_data) for jpeg_data in tiles_jpeg.values())
+    print(f"\nReconstruction summary:")
+    print(f"  Total tile JPEGs: {total_tile_bytes} bytes ({total_tile_bytes/1024:.1f} kB)")
     
-    print(f"Saved reconstructed image: {OUTPUT_IMAGE}")
+    img.save(OUTPUT_IMAGE_PNG, format="PNG")
+    png_size = os.path.getsize(OUTPUT_IMAGE_PNG)
+    print(f"  Reconstructed PNG: {png_size} bytes ({png_size/1024:.1f} kB)")
+    print(f"  Saved: {OUTPUT_IMAGE_PNG}")
+    print(f"      Individual tiles saved to: {TILES_OUTPUT_DIR}/")
     print(f"Image size: {img.size[0]}x{img.size[1]}")
 
 

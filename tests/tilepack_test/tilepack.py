@@ -44,7 +44,7 @@ TARGET_HEIGHT = 480                              # Resize height (VGA)
 
 TILE_W        = 64                               # Tile width   (pixels)
 TILE_H        = 32                               # Tile height  (pixels)
-JPEG_QUALITY  = 10                               # JPEG quality (1–95)
+JPEG_QUALITY  = 30                               # JPEG quality (1–95)
 MAX_PACKET_SIZE = 240                            # Maximum packet size (header + payload)
 
 # ============================================================

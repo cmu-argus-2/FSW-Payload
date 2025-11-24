@@ -1,4 +1,4 @@
-#include "tilepack.hpp"
+#include "communication/tilepack.hpp"
 #include <fstream>
 #include <algorithm>
 #include <map>
@@ -11,10 +11,6 @@
 #include <opencv2/imgproc.hpp>
 
 namespace tilepack {
-
-// ============================================================
-// PacketHeader Implementation
-// ============================================================
 
 std::vector<uint8_t> PacketHeader::to_bytes() const {
     std::vector<uint8_t> bytes(PACKET_HEADER_SIZE);
@@ -43,10 +39,6 @@ PacketHeader PacketHeader::from_bytes(const uint8_t* data, size_t len) {
     
     return header;
 }
-
-// ============================================================
-// ImageMetadata Implementation
-// ============================================================
 
 std::vector<uint8_t> ImageMetadata::to_bytes() const {
     std::vector<uint8_t> bytes(15);
@@ -89,10 +81,6 @@ ImageMetadata ImageMetadata::from_bytes(const uint8_t* data, size_t len) {
     return meta;
 }
 
-// ============================================================
-// TilepackEncoder Implementation
-// ============================================================
-
 TilepackEncoder::TilepackEncoder(uint16_t page_id,
                                  uint16_t target_width,
                                  uint16_t target_height,
@@ -106,7 +94,6 @@ TilepackEncoder::TilepackEncoder(uint16_t page_id,
       tile_h_(tile_h),
       jpeg_quality_(jpeg_quality) {
     
-    // Initialize metadata
     metadata_.page_id = page_id;
     metadata_.tile_w = tile_w;
     metadata_.tile_h = tile_h;
@@ -119,7 +106,6 @@ TilepackEncoder::~TilepackEncoder() {
 }
 
 bool TilepackEncoder::load_image(const std::string& image_path) {
-    // Load image using OpenCV
     cv::Mat img = cv::imread(image_path, cv::IMREAD_COLOR);
     if (img.empty()) {
         std::cerr << "Failed to load image: " << image_path << std::endl;
@@ -128,18 +114,15 @@ bool TilepackEncoder::load_image(const std::string& image_path) {
     
     std::cout << "Loaded image: " << img.cols << "x" << img.rows << std::endl;
     
-    // Resize to target dimensions
     cv::Mat resized;
     cv::resize(img, resized, cv::Size(target_width_, target_height_), 0, 0, cv::INTER_LINEAR);
     
     std::cout << "Resized to: " << resized.cols << "x" << resized.rows << std::endl;
     
-    // Tile the image
     if (!tile_image(resized)) {
         return false;
     }
     
-    // Packetize all tiles
     packetize_tiles();
     
     std::cout << "Generated " << tiles_.size() << " tiles" << std::endl;
@@ -154,14 +137,12 @@ bool TilepackEncoder::tile_image(const cv::Mat& image) {
     int width = image.cols;
     int height = image.rows;
     
-    // Calculate number of tiles
     int tiles_x = static_cast<int>(std::ceil(static_cast<double>(width) / tile_w_));
     int tiles_y = static_cast<int>(std::ceil(static_cast<double>(height) / tile_h_));
     
     metadata_.tiles_x = static_cast<uint16_t>(tiles_x);
     metadata_.tiles_y = static_cast<uint16_t>(tiles_y);
     
-    // Pad image if necessary
     cv::Mat padded_img;
     int padded_width = tiles_x * tile_w_;
     int padded_height = tiles_y * tile_h_;
@@ -173,15 +154,12 @@ bool TilepackEncoder::tile_image(const cv::Mat& image) {
         padded_img = image.clone();
     }
     
-    // Extract tiles
     uint16_t tile_idx = 0;
     for (int ty = 0; ty < tiles_y; ty++) {
         for (int tx = 0; tx < tiles_x; tx++) {
-            // Extract tile region
             cv::Rect roi(tx * tile_w_, ty * tile_h_, tile_w_, tile_h_);
             cv::Mat tile = padded_img(roi);
             
-            // Compress tile as JPEG
             std::vector<uint8_t> jpeg_data;
             if (!compress_tile_jpeg(tile, jpeg_data)) {
                 std::cerr << "Failed to compress tile " << tile_idx << std::endl;
@@ -201,14 +179,12 @@ bool TilepackEncoder::tile_image(const cv::Mat& image) {
 }
 
 bool TilepackEncoder::compress_tile_jpeg(const cv::Mat& tile, std::vector<uint8_t>& jpeg_out) {
-    // JPEG compression parameters
     std::vector<int> params;
     params.push_back(cv::IMWRITE_JPEG_QUALITY);
     params.push_back(jpeg_quality_);
     params.push_back(cv::IMWRITE_JPEG_OPTIMIZE);
     params.push_back(1);
     
-    // Encode as JPEG
     if (!cv::imencode(".jpg", tile, jpeg_out, params)) {
         std::cerr << "Failed to encode tile as JPEG" << std::endl;
         return false;
@@ -230,7 +206,6 @@ std::vector<Packet> TilepackEncoder::packetize_tile(uint16_t tile_idx,
                                                      const std::vector<uint8_t>& tile_bytes) {
     std::vector<Packet> packets;
     
-    // Split tile_bytes into fragments that fit within MAX_PAYLOAD_PER_PACKET
     size_t offset = 0;
     uint8_t frag_idx = 0;
     
@@ -264,14 +239,11 @@ bool TilepackEncoder::write_radio_file(const std::string& output_path) const {
     }
     
     for (const auto& pkt : packets_) {
-        // Write header
         auto header_bytes = pkt.header.to_bytes();
         file.write(reinterpret_cast<const char*>(header_bytes.data()), header_bytes.size());
         
-        // Write payload
         file.write(reinterpret_cast<const char*>(pkt.payload.data()), pkt.payload.size());
         
-        // Verify packet size
         if (pkt.total_size() > MAX_PACKET_SIZE) {
             std::cerr << "Warning: Packet exceeds MAX_PACKET_SIZE" << std::endl;
         }

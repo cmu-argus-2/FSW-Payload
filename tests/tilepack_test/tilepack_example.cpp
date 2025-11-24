@@ -1,14 +1,3 @@
-/**
- * Example usage of tilepack encoder
- * 
- * This demonstrates how to use the C++ tilepack library to:
- * 1. Encode an image into packets
- * 2. Write packets to binary file
- * 3. Write metadata file
- * 
- * For decoding, use the Python reconstruct.py script.
- */
-
 #include "tilepack.hpp"
 #include <iostream>
 

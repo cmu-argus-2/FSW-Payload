@@ -45,7 +45,8 @@ include_directories(SYSTEM ${OpenCV_INCLUDE_DIRS})
 # Include the directories for header files
 include_directories(${PROJECT_SOURCE_DIR}/include)
 include_directories(SYSTEM ${PROJECT_SOURCE_DIR}/external) # ignore warnings from external libraries
-include_directories(${CUDA_HOME}/include)
+# Include CUDA directories
+include_directories(SYSTEM ${CUDA_INCLUDE_DIRS})
 # Add the source files subdirectory
 set(CMAKE_POSITION_INDEPENDENT_CODE ON)
 add_subdirectory(src)

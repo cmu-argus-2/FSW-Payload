@@ -95,6 +95,10 @@ else()
     message(FATAL_ERROR "Readline library not found. Please install libreadline-dev.")
 endif()
 
+##### IMU
+
+add_executable(imu_test_gyro src/imu/test_imu_gyro.cpp src/imu/bmx160.cpp)
+
 
 ##### TESTS
 

@@ -35,14 +35,8 @@ bool Camera::Enable()
     {
         SPDLOG_INFO("CAM{}: Attempting to open camera at {}", cam_id, cam_path);
 
-        // Try opening with default backend first 
-        cap.open(cam_path);
-        
-        // If that fails, try with explicit V4L2 backend
-        if (!cap.isOpened()) {
-            SPDLOG_WARN("CAM{}: Default backend failed, trying V4L2", cam_id);
-            cap.open(cam_path, cv::CAP_V4L2);
-        }
+        // Use V4L2 backend directly to avoid GStreamer issues
+        cap.open(cam_path, cv::CAP_V4L2);
 
         // Check if the camera is opened successfully
         if (!cap.isOpened()) {

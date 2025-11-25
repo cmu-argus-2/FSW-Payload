@@ -26,9 +26,9 @@
 // Function to calculate CRC5 for a full block of data (e.g., 8 bytes)
 uint8_t calculate_crc5(const std::vector<uint8_t>& data_bytes, size_t length) {
     const uint8_t polynomial = 0x05;  // CRC5 polynomial (x^5 + x^2 + 1)
-    uint8_t crc = 0x1F;  // Initial CRC value (0x1F)
-    uint8_t num_bytes = PACKET_SIZE; // Total bytes in the packet
-    uint8_t num_bits = num_bytes * 8; // Total bits in the packet
+    uint8_t crc = 0x1F; 
+    uint8_t num_bytes = PACKET_SIZE; 
+    uint8_t num_bits = num_bytes * 8; 
 
     // Process each byte in the data array
     for (size_t i = 0; i < data_bytes.size(); ++i) {
@@ -36,91 +36,31 @@ uint8_t calculate_crc5(const std::vector<uint8_t>& data_bytes, size_t length) {
         
         // Process each bit in the byte
         for (int bit = 7; bit >= 0; --bit) {
-            // XOR the MSB of crc with the current bit of the byte
             if ((crc & 0x10) ^ ((byte >> bit) & 0x01)) {
-                crc = (crc << 1) ^ polynomial;  // XOR with polynomial
+                crc = (crc << 1) ^ polynomial;
             } else {
-                crc = (crc << 1);  // Just shift CRC
+                crc = (crc << 1);
             }
-            crc &= 0x1F;  // Keep CRC 5 bits
+            crc &= 0x1F;
         }
     }
 
     return crc;
-    // Perform CRC5 calculation
-    // // size_t num_bits = data_bytes.size() * 8;  // Total bits in the data
-    // for (size_t i = 0; i < num_bits; i++) {
-    //     if ((crc & 0x10) ^ (data_int & (1ULL << (num_bits - 1)))) {
-    //         crc = ((crc << 1) ^ polynomial) & 0x1F;  // XOR with polynomial
-    //     } else {
-    //         crc = (crc << 1) & 0x1F;  // Just shift CRC
-    //     }
-    //     data_int <<= 1;  // Shift the data left
-    // }
-    // return crc;
 }
 
-// // CRC-5: x^5 + x^2 + 1, Init 0x1F
-// inline uint8_t calculate_crc5(const std::vector<uint8_t>& data, size_t length)
-// {
-//     // Polynomial: 0x05 (0b00101)
-//     const uint8_t polynomial = 0x05; 
-    
-//     // Initial CRC value: 0x1F (0b11111)
-//     uint8_t crc = 0x1F;
-    
-//     // Process the input buffer byte-by-byte
-//     for (size_t i = 0; i < length; ++i) {
-//         uint8_t byte = data[i];
-
-//         // Process 8 bits of the current byte (MSB first)
-//         for (int j = 0; j < 8; ++j) {
-            
-//             // 1. Determine if the MSB of the CRC (bit 4, value 0x10) is set.
-//             uint8_t msb_of_crc = crc & 0x10;
-            
-//             // 2. Determine the incoming data bit (MSB first) and position it at bit 4 (0x10).
-//             uint8_t data_bit_at_msb_pos = (byte >> (7 - j)) & 0x01;
-//             data_bit_at_msb_pos <<= 4;
-
-//             // 3. Shift CRC left by 1 bit, masked to 5 bits.
-//             crc = (crc << 1) & 0x1F; 
-
-//             // 4. Check if the XOR of the MSB of the *original* CRC and the data bit is 1.
-//             if (msb_of_crc ^ data_bit_at_msb_pos) {
-//                 // If the check bit is 1, XOR the 5-bit CRC register with the polynomial.
-//                 crc ^= polynomial;
-//             }
-//         }
-//     }
-
-//     // The result is the final 5-bit CRC value (0x00 to 0x1F)
-//     return crc;
-// }
-
-//TODO: MAKE SURE THIS WORKS
+// Convert image packet vector to Packet::Out
 Packet::Out convert_image_packet_to_packet_out(std::vector<uint8_t> &image_packet_bytes) {
     Packet::Out output {};
     std::copy(image_packet_bytes.begin(), image_packet_bytes.end(), output.data());
     return output;
 }
 
-// void message_to_packet(char msg[], Packet::Out& packet, uint8_t& packet_size){
-//     uint8_t msg_len= strlen(msg);
-//     std::vector<uint8_t> byte_array(reinterpret_cast<const uint8_t*>(msg), 
-//                                      reinterpret_cast<const uint8_t*>(msg) + msg_len);
-
-//     packet = Packet::ToOut(&byte_array);
-//     packet_size = msg_len;
-// }
 
 ImageSender::ImageSender()
     : uart(), is_initialized(false)
 {
-    // Initialize UART with given port and baud rate
-    // uart = UART(uart_port.c_str(), baud_rate); // Uncomment and implement constructor in UART class
-}
 
+}
 
 bool ImageSender::Initialize()
 {
@@ -220,12 +160,9 @@ std::vector<uint8_t> create_packet(
         result.push_back(last_packet);
         
         uint8_t crc_result = calculate_crc5(result, result.size());
-        SPDLOG_WARN("chunkid: {}   CRC calculated: {}", chunk_id, crc_result);
+        // SPDLOG_WARN("chunkid: {}   CRC calculated: {}", chunk_id, crc_result);
         result.push_back(crc_result);
-        // SPDLOG_WARN("RESULT constructed: {}", result);
         result.resize(PACKET_SIZE, 0);
-        // SPDLOG_WARN("RESULT finAL constructed: {}", result);
-
     }
     else if (packet_id == CMD_ACK_OK || packet_id == CMD_NACK_CORRUPT) {
         result = {packet_id};
@@ -376,11 +313,6 @@ std::vector<uint8_t> read_jpeg_to_bytes(const std::string& filename) {
     // Open the JPEG file in binary mode
     std::ifstream file(filename, std::ios::binary);
     
-    // if (!file.is_open()) {
-    //     std::cerr << "Error opening file: " << filename << std::endl;
-    //     return {};
-    // }
-
     // Read the file into a vector
     std::vector<uint8_t> file_bytes((std::istreambuf_iterator<char>(file)),
                                      std::istreambuf_iterator<char>());
@@ -391,11 +323,6 @@ std::vector<uint8_t> read_jpeg_to_bytes(const std::string& filename) {
 std::vector<uint8_t> read_binary_file(const std::string& filename) {
     // Open the binary file for reading
     std::ifstream file(filename, std::ios::binary);
-
-    // if (!file.is_open()) {
-    //     std::cerr << "Error opening file for reading." << std::endl;
-    //     return {};
-    // }
 
     // Read the file into a vector of bytes
     std::vector<uint8_t> data((std::istreambuf_iterator<char>(file)),
@@ -502,16 +429,6 @@ void ImageSender::RunImageTransfer() {
         
         return;
     }
-    // if (sender.HandshakeWithMainboard() != 1){
-    //     SPDLOG_ERROR("Failed: Handshake not successful");
-    //     sender.Close();
-
-    //     return;
-    // }
-
-    // if (!sender.SendImage("/home/argus/Desktop/image_transfer/FSW-Payload/src/dog.jpeg")) {
-    //     SPDLOG_ERROR("Failed to send image");
-    // }
     if (sender.SendImage("/home/argus/Desktop/image_transfer/FSW-Payload/src/image_radio_file.bin")) {
         SPDLOG_INFO("BIN transfer completed successfully.");
     } else {
@@ -520,63 +437,4 @@ void ImageSender::RunImageTransfer() {
 
     sender.Close();
 }
-
-
-
-
-
-// void ImageSender::RunImageTransfer() {
-//     UART uart_curr; //  "/dev/ttyTHS0", 115200??
-//     if (!uart_curr.Connect()) {
-//         SPDLOG_ERROR("Failed to initialize ImageSender");
-//         uart_curr.Disconnect();
-
-//         return;
-//     }
-//     while (true){
-//         uart_curr.Send(Packet::ToOut(std::vector<uint8_t>{'N', 'I', 'C', 'E'}));
-//         usleep(1000000); // wait 1s
-//     }
-//     uart_curr.Disconnect();
-// }
-
-// void ImageSender::RunImageTransfer() {
-//     ImageSender sender; //  "/dev/ttyTHS0", 115200??
-//     if (!sender.Initialize()) {
-//         SPDLOG_ERROR("Failed to initialize ImageSender");
-//         sender.Close();
-        
-//         return;
-//     }
-//     while (true){
-            
-//         // uint8_t cmd_id = static_cast<uint8_t>(CMD_HANDSHAKE_REQUEST); // Cast to uint8_t
-//         uint8_t & cmd_id; // should be a buffer input will be stored in
-//         std::vector<uint8_t> data;
-
-//         bool bytes_received = uart.Receive(cmd_id, data);
-//         // bytes_received = true;
-
-//         if (bytes_received) {
-//             SPDLOG_INFO("Received : {}", bytes_received);
-//             // std::string received_msg(reinterpret_cast<char* >(data), strlen(reinterpret_cast<char*>(data)));
-//             std::string received_msg(data.begin(), data.end());
-//             if (received_msg == start_msg) {
-//                 SPDLOG_INFO("Received START message from mainboard");
-//                 shake_received = true;
-//                 uart.Send(Packet::ToOut(std::vector<uint8_t>{'S','E','N','D','I','N','G'}));
-//                 usleep(100000); // wait 100ms
-//                 break;
-//             } else {
-//                 SPDLOG_WARN("Received unexpected message: {}", received_msg);
-//             }
-//         } else {
-//             // SPDLOG_WARN("No message received from mainboard, retrying...");
-//             if (timing::GetCurrentTimeMs() - start_time > 30000) {
-//                 return 2;
-//             }
-//         }
-//     }
-//     sender.Close();
-// }
 

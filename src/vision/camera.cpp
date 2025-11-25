@@ -35,24 +35,26 @@ bool Camera::Enable()
     {
         SPDLOG_INFO("CAM{}: Attempting to open camera at {}", cam_id, cam_path);
 
-        // Use V4L2 backend directly to avoid GStreamer issues
-        cap.open(cam_path, cv::CAP_V4L2);
+        std::string gst_pipeline = "nvarguscamerasrc sensor-id=" + std::to_string(cam_id) + 
+                                   " ! video/x-raw(memory:NVMM),width=" + std::to_string(width) + 
+                                   ",height=" + std::to_string(height) + 
+                                   ",framerate=" + std::to_string(DEFAULT_CAMERA_FPS) + "/1" +
+                                   ",format=NV12 ! nvvidconv ! video/x-raw,format=BGRx ! videoconvert ! video/x-raw,format=BGR ! appsink";
+        
+        SPDLOG_INFO("CAM{}: GStreamer pipeline: {}", cam_id, gst_pipeline);
+        
+        cap.open(gst_pipeline, cv::CAP_GSTREAMER);
 
         // Check if the camera is opened successfully
         if (!cap.isOpened()) {
-            SPDLOG_WARN("CAM{}: Unable to open the camera at {}", cam_id, cam_path);
+            SPDLOG_WARN("CAM{}: Unable to open the camera with GStreamer pipeline", cam_id);
             throw std::runtime_error("Unable to open the camera");
         }
 
         SPDLOG_INFO("CAM{}: Camera opened successfully", cam_id);
 
-        // Set the camera resolution - remove by reading confif file
-        cap.set(cv::CAP_PROP_FRAME_WIDTH, width);
-        cap.set(cv::CAP_PROP_FRAME_HEIGHT, height);
-        cap.set(cv::CAP_PROP_FPS, DEFAULT_CAMERA_FPS);
-        cap.set(cv::CAP_PROP_BUFFERSIZE, 3); 
-        // cap.set(cv::CAP_PROP_GAIN, 10000); // Set gain to maximum - OpenCV will clamp it to the maximum value
-        SPDLOG_INFO("CAM{}: Camera gain set to {}", cam_id, cap.get(cv::CAP_PROP_GAIN));
+        // Note: Resolution and FPS are set in the GStreamer pipeline, not via cap.set()
+        SPDLOG_INFO("CAM{}: Camera configured for {}x{} @ {} fps", cam_id, width, height, DEFAULT_CAMERA_FPS);
 
         // Warm up camera by reading several frames and verify they're valid
         cv::Mat dummy_frame;

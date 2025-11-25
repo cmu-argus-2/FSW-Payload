@@ -36,16 +36,21 @@ bool Camera::Enable()
         SPDLOG_INFO("CAM{}: Attempting to open camera at {}", cam_id, cam_path);
 
         std::string gst_pipeline = "nvarguscamerasrc sensor-id=" + std::to_string(cam_id) + 
+                                   " num-buffers=1" +  
                                    " ! video/x-raw(memory:NVMM),width=" + std::to_string(width) + 
                                    ",height=" + std::to_string(height) + 
                                    ",framerate=" + std::to_string(DEFAULT_CAMERA_FPS) + "/1" +
-                                   ",format=NV12 ! nvvidconv ! video/x-raw,format=BGRx ! videoconvert ! video/x-raw,format=BGR ! appsink";
+                                   ",format=NV12" +
+                                   " ! nvvidconv" +
+                                   " ! video/x-raw,format=BGRx" +
+                                   " ! videoconvert" + 
+                                   " ! video/x-raw,format=BGR" +
+                                   " ! appsink drop=true max-buffers=1";  
         
         SPDLOG_INFO("CAM{}: GStreamer pipeline: {}", cam_id, gst_pipeline);
         
         cap.open(gst_pipeline, cv::CAP_GSTREAMER);
 
-        // Check if the camera is opened successfully
         if (!cap.isOpened()) {
             SPDLOG_WARN("CAM{}: Unable to open the camera with GStreamer pipeline", cam_id);
             throw std::runtime_error("Unable to open the camera");
@@ -56,20 +61,20 @@ bool Camera::Enable()
         // Note: Resolution and FPS are set in the GStreamer pipeline, not via cap.set()
         SPDLOG_INFO("CAM{}: Camera configured for {}x{} @ {} fps", cam_id, width, height, DEFAULT_CAMERA_FPS);
 
-        // Warm up camera by reading several frames and verify they're valid
+        // grab a few frames to initialize
         cv::Mat dummy_frame;
         int valid_frames = 0;
-        for (int i = 0; i < 20; i++) {
+        for (int i = 0; i < 5; i++) {  
             cap >> dummy_frame;
             if (!dummy_frame.empty()) {
                 valid_frames++;
-                SPDLOG_DEBUG("CAM{}: Warmup frame {}/20 - valid ({}x{})", cam_id, i+1, dummy_frame.cols, dummy_frame.rows);
+                SPDLOG_DEBUG("CAM{}: Warmup frame {}/5 - valid ({}x{})", cam_id, i+1, dummy_frame.cols, dummy_frame.rows);
             } else {
-                SPDLOG_DEBUG("CAM{}: Warmup frame {}/20 - empty", cam_id, i+1);
+                SPDLOG_DEBUG("CAM{}: Warmup frame {}/5 - empty", cam_id, i+1);
             }
-            std::this_thread::sleep_for(std::chrono::milliseconds(50)); // Give camera time between frames
+            std::this_thread::sleep_for(std::chrono::milliseconds(30)); // Reduced delay
         }
-        SPDLOG_INFO("CAM{}: Camera warmup complete - {}/20 valid frames", cam_id, valid_frames);
+        SPDLOG_INFO("CAM{}: Camera warmup complete - {}/5 valid frames", cam_id, valid_frames);
         
         if (valid_frames == 0) {
             SPDLOG_ERROR("CAM{}: No valid frames captured during warmup", cam_id);

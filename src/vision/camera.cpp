@@ -33,6 +33,7 @@ bool Camera::Enable()
 
     try 
     {
+        SPDLOG_INFO("CAM{}: Attempting to open camera at {}", cam_id, cam_path);
 
         // Try opening with default backend first 
         cap.open(cam_path);
@@ -45,9 +46,11 @@ bool Camera::Enable()
 
         // Check if the camera is opened successfully
         if (!cap.isOpened()) {
-            SPDLOG_WARN("Unable to open the camera");
+            SPDLOG_WARN("CAM{}: Unable to open the camera at {}", cam_id, cam_path);
             throw std::runtime_error("Unable to open the camera");
         }
+
+        SPDLOG_INFO("CAM{}: Camera opened successfully", cam_id);
 
         // Set the camera resolution - remove by reading confif file
         cap.set(cv::CAP_PROP_FRAME_WIDTH, width);
@@ -75,7 +78,7 @@ bool Camera::Enable()
     } 
     catch (const std::exception& e) 
     {
-        SPDLOG_WARN("Exception occurred: {}", e.what());
+        SPDLOG_WARN("CAM{}: Exception occurred: {}", cam_id, e.what());
 
 
         HandleErrors(CAM_ERROR::INITIALIZATION_FAILED);

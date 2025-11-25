@@ -34,7 +34,14 @@ bool Camera::Enable()
     try 
     {
 
-        cap.open(cam_path, cv::CAP_V4L2);
+        // Try opening with default backend first 
+        cap.open(cam_path);
+        
+        // If that fails, try with explicit V4L2 backend
+        if (!cap.isOpened()) {
+            SPDLOG_WARN("CAM{}: Default backend failed, trying V4L2", cam_id);
+            cap.open(cam_path, cv::CAP_V4L2);
+        }
 
         // Check if the camera is opened successfully
         if (!cap.isOpened()) {
@@ -49,6 +56,13 @@ bool Camera::Enable()
         cap.set(cv::CAP_PROP_BUFFERSIZE, 3); 
         // cap.set(cv::CAP_PROP_GAIN, 10000); // Set gain to maximum - OpenCV will clamp it to the maximum value
         SPDLOG_INFO("CAM{}: Camera gain set to {}", cam_id, cap.get(cv::CAP_PROP_GAIN));
+
+        // Warm up camera by reading several frames 
+        cv::Mat dummy_frame;
+        for (int i = 0; i < 10; i++) {
+            cap >> dummy_frame;
+        }
+        SPDLOG_INFO("CAM{}: Camera warmup complete", cam_id);
 
         // Start capture loop
         cam_status = CAM_STATUS::ACTIVE;

@@ -186,12 +186,13 @@ EC Camera::MapError(CAM_ERROR cam_error)
 void Camera::HandleErrors(CAM_ERROR error)
 {
     last_error = error;
-    LogError(MapError(error));
-
+    
     if (last_error == CAM_ERROR::NO_ERROR) {
         consecutive_error_count = 0;
         return;
     }
+    
+    LogError(MapError(error));
 
     consecutive_error_count++;
     SPDLOG_ERROR("CAM{}: Error occurred: {}", cam_id, static_cast<uint8_t>(last_error));

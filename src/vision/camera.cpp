@@ -36,7 +36,6 @@ bool Camera::Enable()
         SPDLOG_INFO("CAM{}: Attempting to open camera at {}", cam_id, cam_path);
 
         std::string gst_pipeline = "nvarguscamerasrc sensor-id=" + std::to_string(cam_id) + 
-                                   " num-buffers=1" +  
                                    " ! video/x-raw(memory:NVMM),width=" + std::to_string(width) + 
                                    ",height=" + std::to_string(height) + 
                                    ",framerate=" + std::to_string(DEFAULT_CAMERA_FPS) + "/1" +
@@ -45,7 +44,7 @@ bool Camera::Enable()
                                    " ! video/x-raw,format=BGRx" +
                                    " ! videoconvert" + 
                                    " ! video/x-raw,format=BGR" +
-                                   " ! appsink drop=true max-buffers=1";  
+                                   " ! appsink drop=true max-buffers=2";  
         
         SPDLOG_INFO("CAM{}: GStreamer pipeline: {}", cam_id, gst_pipeline);
         

@@ -20,15 +20,23 @@ int main(int argc, char** argv)
     int count = cam_manager.EnableCameras(activated);
     spdlog::info("Cameras enabled: {}", count);
 
-    spdlog::info("Capturing frames");
+    spdlog::info("Waiting for cameras to stabilize...");
+    std::this_thread::sleep_for(std::chrono::milliseconds(500));
+
+    spdlog::info("Capturing single frame per camera");
     cam_manager.CaptureFrames();
 
-    std::this_thread::sleep_for(std::chrono::milliseconds(300));
+    spdlog::info("Waiting for frame capture to complete...");
+    std::this_thread::sleep_for(std::chrono::milliseconds(200));
 
-    spdlog::info("Saving latest frames...");
+    spdlog::info("Saving frames...");
     uint8_t saved = cam_manager.SaveLatestFrames();
-
     spdlog::info("Saved {} frame(s).", saved);
+
+    spdlog::info("Disabling cameras...");
+    std::array<bool, NUM_CAMERAS> disabled;
+    int disabled_count = cam_manager.DisableCameras(disabled);
+    spdlog::info("Cameras disabled: {}", disabled_count);
 
     return 0;
 }

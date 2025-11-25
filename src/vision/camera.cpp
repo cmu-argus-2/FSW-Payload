@@ -54,12 +54,25 @@ bool Camera::Enable()
         // cap.set(cv::CAP_PROP_GAIN, 10000); // Set gain to maximum - OpenCV will clamp it to the maximum value
         SPDLOG_INFO("CAM{}: Camera gain set to {}", cam_id, cap.get(cv::CAP_PROP_GAIN));
 
-        // Warm up camera by reading several frames 
+        // Warm up camera by reading several frames and verify they're valid
         cv::Mat dummy_frame;
-        for (int i = 0; i < 10; i++) {
+        int valid_frames = 0;
+        for (int i = 0; i < 20; i++) {
             cap >> dummy_frame;
+            if (!dummy_frame.empty()) {
+                valid_frames++;
+                SPDLOG_DEBUG("CAM{}: Warmup frame {}/20 - valid ({}x{})", cam_id, i+1, dummy_frame.cols, dummy_frame.rows);
+            } else {
+                SPDLOG_DEBUG("CAM{}: Warmup frame {}/20 - empty", cam_id, i+1);
+            }
+            std::this_thread::sleep_for(std::chrono::milliseconds(50)); // Give camera time between frames
         }
-        SPDLOG_INFO("CAM{}: Camera warmup complete", cam_id);
+        SPDLOG_INFO("CAM{}: Camera warmup complete - {}/20 valid frames", cam_id, valid_frames);
+        
+        if (valid_frames == 0) {
+            SPDLOG_ERROR("CAM{}: No valid frames captured during warmup", cam_id);
+            throw std::runtime_error("Camera not producing valid frames");
+        }
 
         // Start capture loop
         cam_status = CAM_STATUS::ACTIVE;
@@ -139,10 +152,12 @@ void Camera::CaptureFrame()
         std::lock_guard<std::shared_mutex> lock(frame_mutex);
         _new_frame_flag.store(false);
         // local_buffer_img = cv::Mat::zeros(height, width, CV_8UC3);
-        SPDLOG_ERROR("Unable to capture frame");
+        SPDLOG_ERROR("CAM{}: Unable to capture frame - empty image returned", cam_id);
         HandleErrors(CAM_ERROR::CAPTURE_FAILED);
         return;
     }
+
+    SPDLOG_DEBUG("CAM{}: Frame captured successfully ({}x{})", cam_id, local_buffer_img.cols, local_buffer_img.rows);
 
     // Lock only for modifying shared resources
     {

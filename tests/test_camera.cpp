@@ -9,11 +9,8 @@ int main(int argc, char** argv)
     spdlog::info("Initializing camera test");
 
     auto config = std::make_unique<Configuration>();
-    if (!config->LoadConfig())
-    {
-        spdlog::error("Failed to load configuration.");
-        return 1;
-    }
+    config->LoadConfiguration("config/config.toml");
+    
 
     const auto& cam_configs = config->GetCameraConfigs();
     CameraManager cam_manager(cam_configs);

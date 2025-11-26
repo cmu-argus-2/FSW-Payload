@@ -6,6 +6,7 @@ add_library(vision
     camera_manager.cpp
     dataset.cpp
     ld.cpp
+    prefiltering.cpp
 )
 
 

@@ -7,14 +7,16 @@ from typing import List, Dict, Tuple
 from collections import defaultdict
 from PIL import Image
 
-INPUT_BIN     = "tilepack/image_radio_file.bin"   
-INPUT_META    = "tilepack/image_meta.bin"         
-OUTPUT_IMAGE_PNG  = "tilepack/reconstructed.png"     
-TILES_OUTPUT_DIR  = "tilepack/reconstructed_tiles"   
+INPUT_BIN     = "img_0.bin"
+INPUT_META    = "img_0.meta"   
+OUTPUT_IMAGE_PNG  = "tilepack/gs_reconstructed.png"     
+TILES_OUTPUT_DIR  = "tilepack/gs_reconstructed_tiles"   
 
-# ============================================================
+ASPECT_RATIO_WIDTH = 4
+ASPECT_RATIO_HEIGHT = 3
+DEFAULT_TILE_WIDTH = 64
+DEFAULT_TILE_HEIGHT = 32
 
-@dataclass
 class PacketHeader:
     payload_size_bytes: int  
     page_id: int            
@@ -211,11 +213,11 @@ def main():
     if metadata is None:
         if tiles_fragments:
             first_fragments = tiles_fragments[min(tiles_fragments.keys())]
-            first_jpeg, _ = reconstruct_tile_jpeg(first_fragments, 64, 32)  # Temp guess
+            first_jpeg, _ = reconstruct_tile_jpeg(first_fragments, DEFAULT_TILE_WIDTH, DEFAULT_TILE_HEIGHT)  
             first_tile = Image.open(io.BytesIO(first_jpeg))
             tile_w, tile_h = first_tile.size
         else:
-            tile_w, tile_h = 64, 32  # Default fallback
+            tile_w, tile_h = DEFAULT_TILE_WIDTH, DEFAULT_TILE_HEIGHT  # Default fallback
     else:
         tile_w = metadata.tile_w
         tile_h = metadata.tile_h
@@ -278,7 +280,7 @@ def main():
         first_tile = Image.open(io.BytesIO(tiles_jpeg[0]))
         tile_w, tile_h = first_tile.size
         
-        tiles_x = int((num_tiles * 4 / 3) ** 0.5 * 3 / 4)
+        tiles_x = int((num_tiles * ASPECT_RATIO_WIDTH / ASPECT_RATIO_HEIGHT) ** 0.5 * ASPECT_RATIO_HEIGHT / ASPECT_RATIO_WIDTH)
         tiles_y = (num_tiles + tiles_x - 1) // tiles_x
         
         target_width = tiles_x * tile_w

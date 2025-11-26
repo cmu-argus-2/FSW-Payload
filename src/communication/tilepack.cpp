@@ -99,7 +99,7 @@ TilepackEncoder::TilepackEncoder(uint16_t page_id,
     metadata_.tile_h = tile_h;
     metadata_.target_width = target_width;
     metadata_.target_height = target_height;
-    metadata_.jpeg_quality = static_cast<uint8_t>(std::max(0, std::min(255, jpeg_quality)));
+    metadata_.jpeg_quality = static_cast<uint8_t>(std::max(0, std::min(100, jpeg_quality)));
 }
 
 TilepackEncoder::~TilepackEncoder() {

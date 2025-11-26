@@ -75,7 +75,7 @@ int main(int argc, char** argv)
         if (choice_interface == "UART") 
         {
             SPDLOG_INFO("Using UART communication interface");
-            // comms_interface = std::make_unique<UARTCommunication>();
+            comms_interface = std::make_unique<UARTCommunication>();
         } 
         else if (choice_interface == "CLI") 
         {

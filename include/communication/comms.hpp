@@ -12,10 +12,10 @@
 // Asymmetric sizes for send and receive buffers
 namespace Packet
 {
-    static constexpr uint8_t OUTGOING_PCKT_SIZE = 250;
+    static constexpr uint8_t OUTGOING_PCKT_SIZE = 246;  // 1B cmd_id + 2B seq_count + 1B data_len + 240B data + 2B CRC16
     static constexpr uint8_t INCOMING_PCKT_SIZE = 32;
 
-    static constexpr uint8_t MAX_DATA_LENGTH = OUTGOING_PCKT_SIZE - 4; // 4 bytes for header (ID, seq count, data length)
+    static constexpr uint8_t MAX_DATA_LENGTH = 240;  // Maximum payload data (before CRC16)
 
     using Out = std::array<uint8_t, OUTGOING_PCKT_SIZE>;
     using In = std::array<uint8_t, INCOMING_PCKT_SIZE>;
@@ -78,7 +78,7 @@ struct FileTransferManager
         // Calculate the total number of packets needed for transfer
         {
             std::lock_guard<std::mutex> lock(FileTransferManager::_mtx);
-            _total_seq_count = static_cast<uint16_t>(std::ceil(static_cast<double>(file_size) / Packet::OUTGOING_PCKT_SIZE));
+            _total_seq_count = static_cast<uint16_t>(std::ceil(static_cast<double>(file_size) / Packet::MAX_DATA_LENGTH));
             SPDLOG_INFO("Total packets needed for transfer: {}", _total_seq_count);
             _file_path = file_path;
         }

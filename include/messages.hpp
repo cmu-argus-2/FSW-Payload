@@ -50,5 +50,9 @@ void SerializeToBytes(uint16_t value, std::vector<uint8_t>& output);
 std::shared_ptr<Message> CreateSuccessAckMessage(CommandID::Type id);
 std::shared_ptr<Message> CreateErrorAckMessage(CommandID::Type id, uint8_t error_code);
 
+// CRC16-CCITT functions
+uint16_t calculate_crc16(const uint8_t* data, size_t length);
+bool verify_crc16(const uint8_t* data, size_t length);
+
 
 #endif // MESSAGES_HPP

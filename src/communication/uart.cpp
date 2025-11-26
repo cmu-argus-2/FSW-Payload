@@ -7,6 +7,7 @@
 
 #include "payload.hpp"
 #include "core/errors.hpp"
+#include "messages.hpp"  // For CRC16 verification
 
 #include "spdlog/spdlog.h"
 
@@ -244,6 +245,8 @@ void UART::RunLoop()
         Receive(cmd_id, data);
         if (!data.empty())
         {
+            // Incoming commands from mainboard are small (32 bytes max) and have NO CRC
+            // CRC16 is only used for outgoing large packets (246 bytes) from Jetson to mainboard
             sys::payload().AddCommand(cmd_id, data);
         }
 

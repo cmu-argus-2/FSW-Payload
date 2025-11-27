@@ -76,13 +76,8 @@ std::shared_ptr<Message> CreateSuccessAckMessage(CommandID::Type id)
     auto msg = std::make_shared<Message>(id, 1);
     msg->AddToPacket(ACK_SUCCESS);
 
-    // ACKs are small: just header + data + CRC (no padding)
-    // Total: 4 (header) + 1 (data) + 2 (CRC) = 7 bytes
-
-    // Calculate CRC16 over [header + data]
-    uint16_t crc = calculate_crc16(msg->packet.data(), msg->packet.size());
-    msg->packet.push_back(static_cast<uint8_t>(crc >> 8));    // CRC16 high byte
-    msg->packet.push_back(static_cast<uint8_t>(crc & 0xFF));  // CRC16 low byte
+    // ACKs are small: 4 (header) + 1 (status) = 5 bytes total
+    // NO CRC for ACKs - they're simple status indicators
     
     return msg;
 }
@@ -90,17 +85,11 @@ std::shared_ptr<Message> CreateSuccessAckMessage(CommandID::Type id)
 
 std::shared_ptr<Message> CreateErrorAckMessage(CommandID::Type id, uint8_t error_code)
 {
-    auto msg = std::make_shared<Message>(id, 2);
-    msg->AddToPacket(ACK_ERROR);
-    msg->AddToPacket(error_code);
+    auto msg = std::make_shared<Message>(id, 1);  // data_length = 1 (just the error code)
+    msg->AddToPacket(error_code);  // Error code is the status byte
 
-    // ACKs are small: just header + data + CRC (no padding)
-    // Total: 4 (header) + 2 (data) + 2 (CRC) = 8 bytes
-
-    // Calculate CRC16 over [header + data]
-    uint16_t crc = calculate_crc16(msg->packet.data(), msg->packet.size());
-    msg->packet.push_back(static_cast<uint8_t>(crc >> 8));    // CRC16 high byte
-    msg->packet.push_back(static_cast<uint8_t>(crc & 0xFF));  // CRC16 low byte
+    // NACKs are same size as ACKs: 4 (header) + 1 (error code) = 5 bytes total
+    // NO CRC for NACKs either
     
     return msg;
 }

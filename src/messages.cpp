@@ -69,21 +69,20 @@ std::shared_ptr<Message> CreateSuccessAckMessage(CommandID::Type id)
     auto msg = std::make_shared<Message>(id, 1);
     msg->AddToPacket(ACK_SUCCESS);
 
-    // Calculate and append CRC16 over [header + data]
+    // Pad to 244 bytes (header + data = 4 + 240 bytes) before adding CRC
+    // Current size: 4 (header) + 1 (data) = 5 bytes
+    // Need to pad to: 244 bytes
+    size_t current_size = msg->packet.size();
+    size_t target_size = 244; // Everything before CRC
+    
+    if (current_size < target_size) {
+        msg->packet.resize(target_size, 0); // Pad with zeros
+    }
+
+    // Calculate and append CRC16 over [header + padded data]
     uint16_t crc = calculate_crc16(msg->packet.data(), msg->packet.size());
     msg->packet.push_back(static_cast<uint8_t>(crc >> 8));    // CRC16 high byte
     msg->packet.push_back(static_cast<uint8_t>(crc & 0xFF));  // CRC16 low byte
-
-    SPDLOG_INFO("CreateSuccessAckMessage: packet size={}, CRC={:#06x}", msg->packet.size(), crc);
-    
-    // Print first 10 bytes
-    std::string hex_str;
-    for (size_t i = 0; i < std::min(msg->packet.size(), size_t(10)); i++) {
-        char buf[10];
-        snprintf(buf, sizeof(buf), "%02x ", msg->packet[i]);
-        hex_str += buf;
-    }
-    SPDLOG_INFO("Packet bytes (first 10): {}", hex_str);
 
     assert(msg->VerifyPacketSerialization() && ("Packet serialization verification failed for CommandID: " + std::to_string(static_cast<int>(id))).c_str());
     msg->_packet = Packet::ToOut(std::move(msg->packet));

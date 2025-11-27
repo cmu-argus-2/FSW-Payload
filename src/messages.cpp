@@ -43,8 +43,8 @@ void Message::AddToPacket(uint8_t data)
 
 bool Message::VerifyPacketSerialization()
 {
-    // Packet size should be: 4 bytes header + data_length + 2 bytes CRC16
-    _serialized = (packet.size() == data_length + 4 + 2);
+    // Packet size should always be 246 bytes: 4 header + 240 data (padded) + 2 CRC16
+    _serialized = (packet.size() == 246);
     return _serialized;
 }
 

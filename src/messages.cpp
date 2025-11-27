@@ -74,6 +74,9 @@ std::shared_ptr<Message> CreateSuccessAckMessage(CommandID::Type id)
     msg->packet.push_back(static_cast<uint8_t>(crc >> 8));    // CRC16 high byte
     msg->packet.push_back(static_cast<uint8_t>(crc & 0xFF));  // CRC16 low byte
 
+    SPDLOG_INFO("CreateSuccessAckMessage: packet size={}, CRC={:#06x}", msg->packet.size(), crc);
+    SPDLOG_INFO("Packet bytes: {:02x}", spdlog::to_hex(msg->packet));
+
     assert(msg->VerifyPacketSerialization() && ("Packet serialization verification failed for CommandID: " + std::to_string(static_cast<int>(id))).c_str());
     msg->_packet = Packet::ToOut(std::move(msg->packet));
 

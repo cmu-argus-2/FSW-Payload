@@ -248,7 +248,7 @@ bool UART::Send(const std::vector<uint8_t>& data)
     SPDLOG_DEBUG("UART read {} bytes: cmd_id={:#x}", bytes_read, READ_BUF[0]);
     
     cmd_id = READ_BUF[0];
-    data.assign(READ_BUF.begin() , READ_BUF.begin() + bytes_read); // Got rid of readbuf.begin() +1 because of the way I'm reading currently 
+    data.assign(READ_BUF.begin() + 1, READ_BUF.begin() + bytes_read); // Got rid of readbuf.begin() +1 because of the way I'm reading currently 
     return true;
 }
 

@@ -195,8 +195,13 @@ bool UART::Send(const std::vector<uint8_t>& data)
 
     SPDLOG_INFO("[SEND DEBUG] About to write {} bytes to UART", data.size());
     if (data.size() >= 20) {
-        SPDLOG_INFO("[SEND DEBUG] First 20 bytes being sent: {:02x}", 
-            spdlog::to_hex(data.begin(), data.begin() + 20));
+        std::string hex_str;
+        for (int i = 0; i < 20; i++) {
+            char buf[4];
+            snprintf(buf, sizeof(buf), "%02x ", data[i]);
+            hex_str += buf;
+        }
+        SPDLOG_INFO("[SEND DEBUG] First 20 bytes being sent: {}", hex_str);
     }
 
     ssize_t bytes_written = write(serial_port_fd, data.data(), data.size());
@@ -283,7 +288,13 @@ void UART::RunLoop()
             // DEBUG: Log packet details before sending
             SPDLOG_INFO("[TX DEBUG] Message ID: {}, packet.size(): {}", msg->id, msg->packet.size());
             if (msg->packet.size() >= 20) {
-                SPDLOG_INFO("[TX DEBUG] First 20 bytes: {:02x}", spdlog::to_hex(msg->packet.begin(), msg->packet.begin() + 20));
+                std::string hex_str;
+                for (int i = 0; i < 20; i++) {
+                    char buf[4];
+                    snprintf(buf, sizeof(buf), "%02x ", msg->packet[i]);
+                    hex_str += buf;
+                }
+                SPDLOG_INFO("[TX DEBUG] First 20 bytes: {}", hex_str);
             }
             
             bool succ = Send(msg->packet);  // Use vector directly for variable-length packets

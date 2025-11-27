@@ -193,6 +193,12 @@ bool UART::Send(const std::vector<uint8_t>& data)
         return false;
     }
 
+    SPDLOG_INFO("[SEND DEBUG] About to write {} bytes to UART", data.size());
+    if (data.size() >= 20) {
+        SPDLOG_INFO("[SEND DEBUG] First 20 bytes being sent: {:02x}", 
+            spdlog::to_hex(data.begin(), data.begin() + 20));
+    }
+
     ssize_t bytes_written = write(serial_port_fd, data.data(), data.size());
 
     if (bytes_written == -1) 
@@ -202,7 +208,12 @@ bool UART::Send(const std::vector<uint8_t>& data)
         return false;
     }
 
-    SPDLOG_INFO("Sent packet of {} bytes", bytes_written);
+    SPDLOG_INFO("Sent packet of {} bytes (wrote {} bytes)", data.size(), bytes_written);
+    
+    if (bytes_written != static_cast<ssize_t>(data.size())) {
+        SPDLOG_WARN("Partial write! Expected {} bytes, only wrote {}", data.size(), bytes_written);
+    }
+    
     return true;
 }bool UART::Receive(uint8_t& cmd_id, std::vector<uint8_t>& data)
 {
@@ -268,6 +279,13 @@ void UART::RunLoop()
         if (!sys::payload().GetTxQueue().IsEmpty())
         {
             std::shared_ptr<Message> msg = sys::payload().GetTxQueue().GetNextMsg();
+            
+            // DEBUG: Log packet details before sending
+            SPDLOG_INFO("[TX DEBUG] Message ID: {}, packet.size(): {}", msg->id, msg->packet.size());
+            if (msg->packet.size() >= 20) {
+                SPDLOG_INFO("[TX DEBUG] First 20 bytes: {:02x}", spdlog::to_hex(msg->packet.begin(), msg->packet.begin() + 20));
+            }
+            
             bool succ = Send(msg->packet);  // Use vector directly for variable-length packets
             if (succ)
             {

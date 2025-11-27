@@ -8,6 +8,8 @@
 #include "communication/comms.hpp"
 
 #include <array>
+#include <chrono>
+#include <thread>
 
 #define DATASET_KEY_CMD "CMD"
 
@@ -646,6 +648,12 @@ void request_next_file_packets(std::vector<uint8_t>& data)
             CommandID::REQUEST_NEXT_FILE_PACKETS, transmit_data, current_packet
         );
         sys::payload().TransmitMessage(msg);
+        
+        // Add small delay between packets to prevent UART buffer overflow on mainboard
+        if (i < count - 1)  // Don't delay after last packet
+        {
+            std::this_thread::sleep_for(std::chrono::milliseconds(8));
+        }
     }
 
     sys::payload().SetLastExecutedCmdID(CommandID::REQUEST_NEXT_FILE_PACKETS);

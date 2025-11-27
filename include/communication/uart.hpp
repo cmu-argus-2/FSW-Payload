@@ -67,7 +67,9 @@ public:
 
 private:
 
-    speed_t BAUD_RATE = B115200; // changed from 115200 - change back to 57600
+    // Increased to 460800 for 4x faster image transfer (was B115200)
+    // Mainboard must match this baud rate
+    speed_t BAUD_RATE = B460800;
     const char* PORT_NAME = "/dev/ttyTHS1"; // TODO: CONFIG File - was  0 but 0 doesn't exist  in list of devices
     struct termios tty;
     int serial_port_fd = -1;

@@ -64,6 +64,10 @@ namespace DH // Data Handling
     // Load an image from disk by its path
     bool ReadImageFromDisk(const std::string& file_path, Frame& frame_out);
 
+    // Load the latest binary image file with packet header (img_<timestamp>_<camera_id>.bin)
+    // Returns the file path if found, empty string otherwise
+    std::string GetLatestImgBinPath();
+    
     // Load in memory a chunk of data
     EC ReadFileChunk(std::string_view file_path, uint32_t start_byte, uint32_t length, std::vector<uint8_t>& data_out);
 

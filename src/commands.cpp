@@ -338,27 +338,35 @@ void request_image([[maybe_unused]] std::vector<uint8_t>& data)
 {
     SPDLOG_INFO("Requesting last image..");
 
-    // Back-end for images will change soon. However, this is sufficient for now
-    Frame frame;
-    bool res = DH::ReadLatestStoredRawImg(frame);
+    // Get the latest binary image file (img_<timestamp>_<camera_id>.bin)
+    // This file contains multiple packets, each with 7-byte header + payload
+    std::string bin_file_path = DH::GetLatestImgBinPath();
 
     // If no image available, return an error ACK
-    if (!res)
+    if (bin_file_path.empty())
     {
-        SPDLOG_ERROR("Couldn't get an image..");
+        SPDLOG_ERROR("Couldn't get a binary image file..");
         std::shared_ptr<Message> msg = CreateErrorAckMessage(CommandID::REQUEST_IMAGE, to_uint8(EC::FILE_NOT_AVAILABLE));
         sys::payload().TransmitMessage(msg);
         return;
     }
 
-    // Follow the logic when a file is requested
-    // Select the file to be used -> overwrite/copy it to comms buffer folder -> ACK the command (= I'm ready)
-    std::string file_path = DH::CopyFrameToCommsFolder(frame);
+    // Get file size to log info
+    long file_size = DH::GetFileSize(bin_file_path);
+    if (file_size < 0)
+    {
+        SPDLOG_ERROR("Failed to get file size for: {}", bin_file_path);
+        std::shared_ptr<Message> msg = CreateErrorAckMessage(CommandID::REQUEST_IMAGE, to_uint8(EC::FILE_NOT_FOUND));
+        sys::payload().TransmitMessage(msg);
+        return;
+    }
 
+    SPDLOG_INFO("Binary image file: {} ({} bytes)", bin_file_path, file_size);
 
-    // Set the file transfer manager
+    // Set the file transfer manager to transfer the binary file directly
+    // FileTransferManager will read it in 240-byte chunks (which will include headers + payloads from the binary file)
     FileTransferManager::Reset();
-    EC err = FileTransferManager::PopulateMetadata(file_path);
+    EC err = FileTransferManager::PopulateMetadata(bin_file_path);
 
     if (err != EC::OK)
     {
@@ -371,7 +379,6 @@ void request_image([[maybe_unused]] std::vector<uint8_t>& data)
     // Send the ACK message
     std::shared_ptr<Message> msg = CreateSuccessAckMessage(CommandID::REQUEST_IMAGE);
     sys::payload().TransmitMessage(msg);
-
 
     sys::payload().SetLastExecutedCmdID(CommandID::REQUEST_IMAGE);
 }

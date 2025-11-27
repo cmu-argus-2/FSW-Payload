@@ -219,6 +219,43 @@ bool ReadLatestStoredRawImg(Frame& frame)
 
     SPDLOG_INFO("Image loaded successfully.");
     return true;
+}
+
+
+// New function to get the latest binary image file path (img_<timestamp>_<camera_id>.bin)
+std::string GetLatestImgBinPath()
+{
+    std::filesystem::directory_entry latest_file;
+    bool found = false;
+    
+    // Look for img_*_*.bin files in IMAGES_FOLDER
+    for (const auto& entry : std::filesystem::directory_iterator(IMAGES_FOLDER)) 
+    {
+        if (entry.is_regular_file()) 
+        {
+            std::string filename = entry.path().filename().string();
+            
+            // Check if it matches img_*_*.bin pattern (img_<timestamp>_<camera_id>.bin)
+            if (filename.rfind("img_", 0) == 0 && filename.substr(filename.length() - 4) == ".bin")
+            {
+                if (!found || entry.last_write_time() > latest_file.last_write_time()) 
+                {
+                    latest_file = entry;
+                    found = true;
+                }
+            }
+        }
+    }
+
+    if (!found)
+    {
+        SPDLOG_WARN("No binary image files (img_*_*.bin) found in {}", IMAGES_FOLDER);
+        return "";
+    }
+
+    std::string file_path = latest_file.path().string();
+    SPDLOG_INFO("Latest binary image file: {}", file_path);
+    return file_path;
 
 }
 

@@ -37,7 +37,8 @@ namespace CommandID {
         SYNCHRONIZE_TIME = 15,
         FULL_RESET = 16,
         DEBUG_DISPLAY_CAMERA = 17,
-        DEBUG_STOP_DISPLAY = 18
+        DEBUG_STOP_DISPLAY = 18,
+        REQUEST_NEXT_FILE_PACKETS = 19  
     };
 }
 
@@ -62,7 +63,8 @@ inline constexpr CommandID::Type ALL_COMMAND_IDS[] =
     CommandID::SYNCHRONIZE_TIME,
     CommandID::FULL_RESET,
     CommandID::DEBUG_DISPLAY_CAMERA,
-    CommandID::DEBUG_STOP_DISPLAY
+    CommandID::DEBUG_STOP_DISPLAY,
+    CommandID::REQUEST_NEXT_FILE_PACKETS
 };
 
 constexpr uint8_t COMMAND_NUMBER = sizeof(ALL_COMMAND_IDS) / sizeof(ALL_COMMAND_IDS[0]);
@@ -87,6 +89,7 @@ void synchronize_time(std::vector<uint8_t>& data);
 void full_reset(std::vector<uint8_t>& data);
 void debug_display_camera(std::vector<uint8_t>& data);
 void debug_stop_display(std::vector<uint8_t>& data);
+void request_next_file_packets(std::vector<uint8_t>& data);
 
 
 // Array mapping CommandID to corresponding functions

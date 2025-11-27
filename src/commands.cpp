@@ -32,7 +32,8 @@ std::array<CommandFunction, COMMAND_NUMBER> COMMAND_FUNCTIONS =
     synchronize_time, // SYNCHRONIZE_TIME
     full_reset, // FULL_RESET (no implementation provided)
     debug_display_camera, // DEBUG_DISPLAY_CAMERA
-    debug_stop_display // DEBUG_STOP_DISPLAY
+    debug_stop_display, // DEBUG_STOP_DISPLAY
+    request_next_file_packets // REQUEST_NEXT_FILE_PACKETS
 };
 
 // Define the array of strings mapping CommandID to command names
@@ -55,7 +56,8 @@ std::array<std::string_view, COMMAND_NUMBER> COMMAND_NAMES = {
     "SYNCHRONIZE_TIME",
     "FULL_RESET",
     "DEBUG_DISPLAY_CAMERA",
-    "DEBUG_STOP_DISPLAY"
+    "DEBUG_STOP_DISPLAY",
+    "REQUEST_NEXT_FILE_PACKETS"
 };
 
 void ping_ack([[maybe_unused]] std::vector<uint8_t>& data)
@@ -568,4 +570,83 @@ void debug_stop_display([[maybe_unused]] std::vector<uint8_t>& data)
     sys::payload().TransmitMessage(msg);
 
     sys::payload().SetLastExecutedCmdID(CommandID::DEBUG_STOP_DISPLAY);
+}
+void request_next_file_packets(std::vector<uint8_t>& data)
+{
+    SPDLOG_INFO("Requesting next file packets (batch)..");
+    
+    if (data.size() < 3)
+    {
+        SPDLOG_ERROR("Invalid data size for REQUEST_NEXT_FILE_PACKETS command");
+        std::shared_ptr<Message> msg = CreateErrorAckMessage(
+            CommandID::REQUEST_NEXT_FILE_PACKETS, to_uint8(EC::INVALID_COMMAND_ARGUMENTS)
+        );
+        sys::payload().TransmitMessage(msg);
+        return;
+    }
+
+    uint16_t start_packet_nb = (data[0] << 8) | data[1];
+    uint8_t count = data[2];
+    
+    SPDLOG_INFO("Requested batch: start packet={}, count={}", start_packet_nb, count);
+
+    // NEED TO START BY 1 so we can filter invalid commands from random commands filled with zeros
+    if (start_packet_nb == 0)
+    {
+        SPDLOG_ERROR("Invalid start packet number (0) for REQUEST_NEXT_FILE_PACKETS command");
+        std::shared_ptr<Message> msg = CreateErrorAckMessage(
+            CommandID::REQUEST_NEXT_FILE_PACKETS, to_uint8(EC::INVALID_COMMAND_ARGUMENTS)
+        );
+        sys::payload().TransmitMessage(msg);
+        return;
+    }
+
+    // check if a file has been readied -> NO_FILE_READY
+    if (!FileTransferManager::active_transfer())
+    {
+        SPDLOG_ERROR("No file available for transfer.");
+        std::shared_ptr<Message> msg = CreateErrorAckMessage(
+            CommandID::REQUEST_NEXT_FILE_PACKETS, to_uint8(EC::NO_FILE_READY)
+        );
+        sys::payload().TransmitMessage(msg);
+        return;
+    }
+
+    uint16_t total_packets = FileTransferManager::total_seq_count();
+    
+    for (uint8_t i = 0; i < count; i++)
+    {
+        uint16_t current_packet = start_packet_nb + i;
+        
+        if (current_packet > total_packets)
+        {
+            SPDLOG_INFO("Reached end of file at packet {}", current_packet);
+            std::shared_ptr<Message> msg = CreateErrorAckMessage(
+                CommandID::REQUEST_NEXT_FILE_PACKETS, to_uint8(EC::NO_MORE_PACKET_FOR_FILE)
+            );
+            sys::payload().TransmitMessage(msg);
+            return;
+        }
+
+        std::vector<uint8_t> transmit_data;
+        transmit_data.reserve(Packet::MAX_DATA_LENGTH);
+
+        EC err = FileTransferManager::GrabFileChunk(current_packet, transmit_data);
+        if (err != EC::OK)
+        {
+            SPDLOG_ERROR("Failed to grab file chunk for packet {}", current_packet);
+            std::shared_ptr<Message> msg = CreateErrorAckMessage(
+                CommandID::REQUEST_NEXT_FILE_PACKETS, to_uint8(err)
+            );
+            sys::payload().TransmitMessage(msg);
+            return;
+        }
+
+        std::shared_ptr<Message> msg = CreateMessage(
+            CommandID::REQUEST_NEXT_FILE_PACKETS, transmit_data, current_packet
+        );
+        sys::payload().TransmitMessage(msg);
+    }
+
+    sys::payload().SetLastExecutedCmdID(CommandID::REQUEST_NEXT_FILE_PACKETS);
 }

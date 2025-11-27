@@ -172,39 +172,39 @@ bool UART::FillWriteBuffer(const std::vector<uint8_t>& data)
 
 bool UART::Send(const Packet::Out& data)
 {
-    // if (!port_opened)
-    // {
-    //     SPDLOG_ERROR("UART port is not open, cannot send data.");
-    //     LogError(EC::UART_NOT_OPEN);
-    //     return false;
-    // }
-
-    /*if (!FillWriteBuffer(data))
-    {
-        return false;
-    }
-
-
-    ssize_t bytes_written = write(serial_port_fd, WRITE_BUF.data(), Packet::OUTGOING_PCKT_SIZE); */ 
-   
-   
     ssize_t bytes_written = write(serial_port_fd, data.data(), Packet::OUTGOING_PCKT_SIZE);
 
-    if (bytes_written == -1) // || bytes_written != Packet::OUTGOING_PCKT_SIZE) 
+    if (bytes_written == -1) 
     {
-        // SPDLOG_INFO("Data size to write: {}", data.size());
-        // SPDLOG_INFO("Attempted to write {} bytes.", Packet::OUTGOING_PCKT_SIZE);
-        // SPDLOG_INFO("File descriptor: {}", serial_port_fd);
         SPDLOG_ERROR("Failed to write to UART port {}: {}", PORT_NAME, strerror(errno));
         LogError(EC::UART_FAILED_WRITE);
         return false;
     }
 
-     SPDLOG_INFO("Sent data of size {} !", bytes_written);
+    SPDLOG_INFO("Sent data of size {} !", bytes_written);
     return true;
 }
 
-bool UART::Receive(uint8_t& cmd_id, std::vector<uint8_t>& data)
+bool UART::Send(const std::vector<uint8_t>& data)
+{
+    if (data.empty())
+    {
+        SPDLOG_ERROR("Cannot send empty packet.");
+        return false;
+    }
+
+    ssize_t bytes_written = write(serial_port_fd, data.data(), data.size());
+
+    if (bytes_written == -1) 
+    {
+        SPDLOG_ERROR("Failed to write to UART port {}: {}", PORT_NAME, strerror(errno));
+        LogError(EC::UART_FAILED_WRITE);
+        return false;
+    }
+
+    SPDLOG_INFO("Sent packet of {} bytes", bytes_written);
+    return true;
+}bool UART::Receive(uint8_t& cmd_id, std::vector<uint8_t>& data)
 {
     // Non-blocking 
     ssize_t bytes_read = read(serial_port_fd, READ_BUF.data(), Packet::INCOMING_PCKT_SIZE);
@@ -268,7 +268,7 @@ void UART::RunLoop()
         if (!sys::payload().GetTxQueue().IsEmpty())
         {
             std::shared_ptr<Message> msg = sys::payload().GetTxQueue().GetNextMsg();
-            bool succ = Send(msg->_packet);
+            bool succ = Send(msg->packet);  // Use vector directly for variable-length packets
             if (succ)
             {
                 SPDLOG_INFO("Transmitted message with ID: {}", msg->id);

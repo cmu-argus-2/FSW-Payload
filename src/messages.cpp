@@ -43,8 +43,8 @@ void Message::AddToPacket(uint8_t data)
 
 bool Message::VerifyPacketSerialization()
 {
-    // Packet size should always be 246 bytes: 4 header + 240 data (padded) + 2 CRC16
-    _serialized = (packet.size() == 246);
+    // Packet size should be: 4 bytes header + data_length + 2 bytes CRC16
+    _serialized = (packet.size() == data_length + 4 + 2);
     return _serialized;
 }
 
@@ -53,21 +53,12 @@ std::shared_ptr<Message> CreateMessage(CommandID::Type id, std::vector<uint8_t>&
     auto msg = std::make_shared<Message>(id, tx_data.size(), seq_count);
     msg->AddToPacket(tx_data);
 
-    // Pad to 244 bytes (header + data = 4 + 240 bytes) before adding CRC
-    size_t current_size = msg->packet.size();
-    size_t target_size = 244;
-    
-    if (current_size < target_size) {
-        msg->packet.resize(target_size, 0);
-    }
-
-    // Calculate and append CRC16 over [header + padded data]
+    // Calculate CRC16 over [header + actual data] (variable length)
     uint16_t crc = calculate_crc16(msg->packet.data(), msg->packet.size());
     msg->packet.push_back(static_cast<uint8_t>(crc >> 8));    // CRC16 high byte
     msg->packet.push_back(static_cast<uint8_t>(crc & 0xFF));  // CRC16 low byte
 
     assert(msg->VerifyPacketSerialization() && ("Packet serialization verification failed for CommandID: " + std::to_string(static_cast<int>(id))).c_str());
-    msg->_packet = Packet::ToOut(std::move(msg->packet));
     
     return msg;
 }
@@ -77,24 +68,13 @@ std::shared_ptr<Message> CreateSuccessAckMessage(CommandID::Type id)
     auto msg = std::make_shared<Message>(id, 1);
     msg->AddToPacket(ACK_SUCCESS);
 
-    // Pad to 244 bytes (header + data = 4 + 240 bytes) before adding CRC
-    // Current size: 4 (header) + 1 (data) = 5 bytes
-    // Need to pad to: 244 bytes
-    size_t current_size = msg->packet.size();
-    size_t target_size = 244; // Everything before CRC
-    
-    if (current_size < target_size) {
-        msg->packet.resize(target_size, 0); // Pad with zeros
-    }
-
-    // Calculate and append CRC16 over [header + padded data]
+    // Calculate CRC16 over [header + actual data] (variable length)
     uint16_t crc = calculate_crc16(msg->packet.data(), msg->packet.size());
     msg->packet.push_back(static_cast<uint8_t>(crc >> 8));    // CRC16 high byte
     msg->packet.push_back(static_cast<uint8_t>(crc & 0xFF));  // CRC16 low byte
 
     assert(msg->VerifyPacketSerialization() && ("Packet serialization verification failed for CommandID: " + std::to_string(static_cast<int>(id))).c_str());
-    msg->_packet = Packet::ToOut(std::move(msg->packet));
-
+    
     return msg;
 }
 
@@ -105,22 +85,13 @@ std::shared_ptr<Message> CreateErrorAckMessage(CommandID::Type id, uint8_t error
     msg->AddToPacket(ACK_ERROR);
     msg->AddToPacket(error_code);
 
-    // Pad to 244 bytes (header + data = 4 + 240 bytes) before adding CRC
-    size_t current_size = msg->packet.size();
-    size_t target_size = 244;
-    
-    if (current_size < target_size) {
-        msg->packet.resize(target_size, 0);
-    }
-
-    // Calculate and append CRC16 over [header + padded data]
+    // Calculate CRC16 over [header + actual data] (variable length)
     uint16_t crc = calculate_crc16(msg->packet.data(), msg->packet.size());
     msg->packet.push_back(static_cast<uint8_t>(crc >> 8));    // CRC16 high byte
     msg->packet.push_back(static_cast<uint8_t>(crc & 0xFF));  // CRC16 low byte
 
     assert(msg->VerifyPacketSerialization() && ("Packet serialization verification failed for CommandID: " + std::to_string(static_cast<int>(id))).c_str());
-    msg->_packet = Packet::ToOut(std::move(msg->packet));
-
+    
     return msg;
 }
 

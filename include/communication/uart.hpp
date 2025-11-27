@@ -61,6 +61,7 @@ public:
     void Disconnect() override;
     bool Receive(uint8_t& cmd_id, std::vector<uint8_t>& data) override;
     bool Send(const Packet::Out& data) override;
+    bool Send(const std::vector<uint8_t>& data);  // Send variable-length packet
     void RunLoop() override;
     void StopLoop() override;
 

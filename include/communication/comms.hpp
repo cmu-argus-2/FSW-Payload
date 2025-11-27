@@ -5,6 +5,7 @@
 #include <cstdint>
 #include <atomic>
 #include <string_view>
+#include <fstream>
 
 #include "spdlog/spdlog.h"
 #include "core/data_handling.hpp"

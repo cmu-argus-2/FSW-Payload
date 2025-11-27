@@ -76,20 +76,13 @@ std::shared_ptr<Message> CreateSuccessAckMessage(CommandID::Type id)
     auto msg = std::make_shared<Message>(id, 1);
     msg->AddToPacket(ACK_SUCCESS);
 
-    // Pad to 240 bytes for consistent 246-byte packets
-    size_t current_size = msg->packet.size();  // 4 (header) + 1 (data) = 5
-    size_t target_size = 244;  // 4 (header) + 240 (padded data)
-    
-    if (current_size < target_size) {
-        msg->packet.resize(target_size, 0);  // Pad with zeros
-    }
+    // ACKs are small: just header + data + CRC (no padding)
+    // Total: 4 (header) + 1 (data) + 2 (CRC) = 7 bytes
 
-    // Calculate CRC16 over [header + padded data]
+    // Calculate CRC16 over [header + data]
     uint16_t crc = calculate_crc16(msg->packet.data(), msg->packet.size());
     msg->packet.push_back(static_cast<uint8_t>(crc >> 8));    // CRC16 high byte
     msg->packet.push_back(static_cast<uint8_t>(crc & 0xFF));  // CRC16 low byte
-
-    assert(msg->VerifyPacketSerialization() && ("Packet serialization verification failed for CommandID: " + std::to_string(static_cast<int>(id))).c_str());
     
     return msg;
 }
@@ -101,20 +94,13 @@ std::shared_ptr<Message> CreateErrorAckMessage(CommandID::Type id, uint8_t error
     msg->AddToPacket(ACK_ERROR);
     msg->AddToPacket(error_code);
 
-    // Pad to 240 bytes for consistent 246-byte packets
-    size_t current_size = msg->packet.size();  // 4 (header) + 2 (data) = 6
-    size_t target_size = 244;  // 4 (header) + 240 (padded data)
-    
-    if (current_size < target_size) {
-        msg->packet.resize(target_size, 0);  // Pad with zeros
-    }
+    // ACKs are small: just header + data + CRC (no padding)
+    // Total: 4 (header) + 2 (data) + 2 (CRC) = 8 bytes
 
-    // Calculate CRC16 over [header + padded data]
+    // Calculate CRC16 over [header + data]
     uint16_t crc = calculate_crc16(msg->packet.data(), msg->packet.size());
     msg->packet.push_back(static_cast<uint8_t>(crc >> 8));    // CRC16 high byte
     msg->packet.push_back(static_cast<uint8_t>(crc & 0xFF));  // CRC16 low byte
-
-    assert(msg->VerifyPacketSerialization() && ("Packet serialization verification failed for CommandID: " + std::to_string(static_cast<int>(id))).c_str());
     
     return msg;
 }

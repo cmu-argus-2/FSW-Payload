@@ -213,6 +213,9 @@ bool UART::Send(const std::vector<uint8_t>& data)
         return false;
     }
 
+    // Flush the output to ensure data is actually transmitted
+    tcdrain(serial_port_fd);
+
     SPDLOG_INFO("Sent packet of {} bytes (wrote {} bytes)", data.size(), bytes_written);
     
     if (bytes_written != static_cast<ssize_t>(data.size())) {

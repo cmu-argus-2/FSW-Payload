@@ -209,7 +209,16 @@ bool UART::Receive(uint8_t& cmd_id, std::vector<uint8_t>& data)
     // Non-blocking 
     ssize_t bytes_read = read(serial_port_fd, READ_BUF.data(), Packet::INCOMING_PCKT_SIZE);
 
-    if (bytes_read <= 0) // No data or error
+    if (bytes_read < 0) // Error
+    {
+        if (errno != EAGAIN && errno != EWOULDBLOCK)
+        {
+            SPDLOG_ERROR("UART read error: {}", strerror(errno));
+        }
+        return false;
+    }
+    
+    if (bytes_read == 0) // No data available
     {
         return false;
     } 
@@ -220,6 +229,8 @@ bool UART::Receive(uint8_t& cmd_id, std::vector<uint8_t>& data)
     //     return false;
     // }
 
+    SPDLOG_DEBUG("UART read {} bytes: cmd_id={:#x}", bytes_read, READ_BUF[0]);
+    
     cmd_id = READ_BUF[0];
     data.assign(READ_BUF.begin() , READ_BUF.begin() + bytes_read); // Got rid of readbuf.begin() +1 because of the way I'm reading currently 
     return true;
@@ -230,11 +241,13 @@ void UART::RunLoop()
 {
     _running_loop.store(true);
 
-
-    if (_connected)
+    if (!_connected)
     {
+        SPDLOG_WARN("UART not connected at RunLoop start, attempting connection...");
         Connect();
     }
+    
+    SPDLOG_INFO("UART RunLoop started. Connected: {}, FD: {}", _connected, serial_port_fd);
 
     while (_running_loop.load() && _connected)
     {
@@ -245,6 +258,7 @@ void UART::RunLoop()
         Receive(cmd_id, data);
         if (!data.empty())
         {
+            SPDLOG_INFO("UART received {} bytes, cmd_id: {}", data.size(), cmd_id);
             // Incoming commands from mainboard are small (32 bytes max) and have NO CRC
             // CRC16 is only used for outgoing large packets (246 bytes) from Jetson to mainboard
             sys::payload().AddCommand(cmd_id, data);

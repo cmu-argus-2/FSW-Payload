@@ -400,7 +400,7 @@ void request_next_file_packet(std::vector<uint8_t>& data)
     }
 
     // check if a file has been readied -> NO_FILE_READY
-    if (!FileTransferManager::IsThereAvailableFile() || !FileTransferManager::active_transfer())
+    if (!FileTransferManager::active_transfer())
     {
         SPDLOG_ERROR("No file available for transfer.");
         std::shared_ptr<Message> msg = CreateErrorAckMessage(CommandID::REQUEST_NEXT_FILE_PACKET, to_uint8(EC::NO_FILE_READY));

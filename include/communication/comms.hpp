@@ -71,12 +71,7 @@ struct FileTransferManager
 
     static EC PopulateMetadata(const std::string& file_path)
     {
-        if (!IsThereAvailableFile())
-        {
-            SPDLOG_INFO("No files available for transfer.");
-            return EC::FILE_NOT_FOUND;
-        }
-
+        // Check if the specific file exists
         long file_size = DH::GetFileSize(file_path);
         if (file_size < 0)
         {

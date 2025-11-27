@@ -649,10 +649,11 @@ void request_next_file_packets(std::vector<uint8_t>& data)
         );
         sys::payload().TransmitMessage(msg);
         
-        // Add small delay between packets to prevent UART buffer overflow on mainboard
+        // Add delay between packets to prevent UART buffer overflow on mainboard
+        // CircuitPython polls at 1ms intervals, need sufficient time for processing
         if (i < count - 1)  // Don't delay after last packet
         {
-            std::this_thread::sleep_for(std::chrono::milliseconds(8));
+            std::this_thread::sleep_for(std::chrono::milliseconds(15));
         }
     }
 

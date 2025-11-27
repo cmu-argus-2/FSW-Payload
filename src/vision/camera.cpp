@@ -33,22 +33,52 @@ bool Camera::Enable()
 
     try 
     {
+        SPDLOG_INFO("CAM{}: Attempting to open camera at {}", cam_id, cam_path);
 
-        cap.open(cam_path, cv::CAP_V4L2);
+        std::string gst_pipeline = "nvarguscamerasrc sensor-id=" + std::to_string(cam_id) + 
+                                   " ! video/x-raw(memory:NVMM),width=" + std::to_string(width) + 
+                                   ",height=" + std::to_string(height) + 
+                                   ",framerate=" + std::to_string(DEFAULT_CAMERA_FPS) + "/1" +
+                                   ",format=NV12" +
+                                   " ! nvvidconv" +
+                                   " ! video/x-raw,format=BGRx" +
+                                   " ! videoconvert" + 
+                                   " ! video/x-raw,format=BGR" +
+                                   " ! appsink drop=true max-buffers=2";  
+        
+        SPDLOG_INFO("CAM{}: GStreamer pipeline: {}", cam_id, gst_pipeline);
+        
+        cap.open(gst_pipeline, cv::CAP_GSTREAMER);
 
-        // Check if the camera is opened successfully
         if (!cap.isOpened()) {
-            SPDLOG_WARN("Unable to open the camera");
+            SPDLOG_WARN("CAM{}: Unable to open the camera with GStreamer pipeline", cam_id);
             throw std::runtime_error("Unable to open the camera");
         }
 
-        // Set the camera resolution - remove by reading confif file
-        cap.set(cv::CAP_PROP_FRAME_WIDTH, width);
-        cap.set(cv::CAP_PROP_FRAME_HEIGHT, height);
-        cap.set(cv::CAP_PROP_FPS, DEFAULT_CAMERA_FPS);
-        cap.set(cv::CAP_PROP_BUFFERSIZE, 3); 
-        // cap.set(cv::CAP_PROP_GAIN, 10000); // Set gain to maximum - OpenCV will clamp it to the maximum value
-        SPDLOG_INFO("CAM{}: Camera gain set to {}", cam_id, cap.get(cv::CAP_PROP_GAIN));
+        SPDLOG_INFO("CAM{}: Camera opened successfully", cam_id);
+
+        // Note: Resolution and FPS are set in the GStreamer pipeline, not via cap.set()
+        SPDLOG_INFO("CAM{}: Camera configured for {}x{} @ {} fps", cam_id, width, height, DEFAULT_CAMERA_FPS);
+
+        // grab a few frames to initialize
+        cv::Mat dummy_frame;
+        int valid_frames = 0;
+        for (int i = 0; i < 5; i++) {  
+            cap >> dummy_frame;
+            if (!dummy_frame.empty()) {
+                valid_frames++;
+                SPDLOG_DEBUG("CAM{}: Warmup frame {}/5 - valid ({}x{})", cam_id, i+1, dummy_frame.cols, dummy_frame.rows);
+            } else {
+                SPDLOG_DEBUG("CAM{}: Warmup frame {}/5 - empty", cam_id, i+1);
+            }
+            std::this_thread::sleep_for(std::chrono::milliseconds(30)); // Reduced delay
+        }
+        SPDLOG_INFO("CAM{}: Camera warmup complete - {}/5 valid frames", cam_id, valid_frames);
+        
+        if (valid_frames == 0) {
+            SPDLOG_ERROR("CAM{}: No valid frames captured during warmup", cam_id);
+            throw std::runtime_error("Camera not producing valid frames");
+        }
 
         // Start capture loop
         cam_status = CAM_STATUS::ACTIVE;
@@ -61,7 +91,7 @@ bool Camera::Enable()
     } 
     catch (const std::exception& e) 
     {
-        SPDLOG_WARN("Exception occurred: {}", e.what());
+        SPDLOG_WARN("CAM{}: Exception occurred: {}", cam_id, e.what());
 
 
         HandleErrors(CAM_ERROR::INITIALIZATION_FAILED);
@@ -128,10 +158,12 @@ void Camera::CaptureFrame()
         std::lock_guard<std::shared_mutex> lock(frame_mutex);
         _new_frame_flag.store(false);
         // local_buffer_img = cv::Mat::zeros(height, width, CV_8UC3);
-        SPDLOG_ERROR("Unable to capture frame");
+        SPDLOG_ERROR("CAM{}: Unable to capture frame - empty image returned", cam_id);
         HandleErrors(CAM_ERROR::CAPTURE_FAILED);
         return;
     }
+
+    SPDLOG_DEBUG("CAM{}: Frame captured successfully ({}x{})", cam_id, local_buffer_img.cols, local_buffer_img.rows);
 
     // Lock only for modifying shared resources
     {
@@ -172,12 +204,13 @@ EC Camera::MapError(CAM_ERROR cam_error)
 void Camera::HandleErrors(CAM_ERROR error)
 {
     last_error = error;
-    LogError(MapError(error));
-
+    
     if (last_error == CAM_ERROR::NO_ERROR) {
         consecutive_error_count = 0;
         return;
     }
+    
+    LogError(MapError(error));
 
     consecutive_error_count++;
     SPDLOG_ERROR("CAM{}: Error occurred: {}", cam_id, static_cast<uint8_t>(last_error));

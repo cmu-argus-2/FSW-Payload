@@ -22,3 +22,9 @@ target_link_libraries(RUN_INFERENCE
     PRIVATE
     PAYLOAD_LIB
 )
+
+add_executable(TEST_CAMERA test_camera.cpp)
+target_link_libraries(TEST_CAMERA
+    PRIVATE
+    PAYLOAD_LIB
+)

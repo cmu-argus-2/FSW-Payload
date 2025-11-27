@@ -271,12 +271,10 @@ void UART::RunLoop()
         
         uint8_t cmd_id;
         std::vector<uint8_t> data;
-        Receive(cmd_id, data);
-        if (!data.empty())
+        bool received = Receive(cmd_id, data);
+        if (received)
         {
             SPDLOG_INFO("UART received {} bytes, cmd_id: {}", data.size(), cmd_id);
-            // Incoming commands from mainboard are small (32 bytes max) and have NO CRC
-            // CRC16 is only used for outgoing large packets (246 bytes) from Jetson to mainboard
             sys::payload().AddCommand(cmd_id, data);
         }
 

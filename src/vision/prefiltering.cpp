@@ -3,18 +3,11 @@
 #include <opencv2/opencv.hpp>
 using namespace cv;
 
-PrefilterResult prefilter_image(const std::string& image_path, int cloudiness_threshold, int white_threshold, int color_threshold, int contrast_threshold) {
+PrefilterResult prefilter_image(const cv::Mat& img, int cloudiness_threshold, int white_threshold, int color_threshold, int contrast_threshold) {
     PrefilterResult result;
     result.passed = false; // Default to false
     result.is_significant = false;
     result.dominant_type = "";
-
-    // Import image
-    Mat img = imread(image_path, IMREAD_COLOR);
-    if (img.empty()) {
-        result.error = "Could not load image";
-        return result;
-    }
 
     // Get rbg and hsv versions
     Mat img_rgb;

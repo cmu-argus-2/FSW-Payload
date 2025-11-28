@@ -336,11 +336,12 @@ void request_storage_info([[maybe_unused]] std::vector<uint8_t>& data)
 
 void request_image([[maybe_unused]] std::vector<uint8_t>& data)
 {
-    SPDLOG_INFO("Requesting last image..");
+    SPDLOG_INFO("Requesting highest value image..");
 
     // Back-end for images will change soon. However, this is sufficient for now
     Frame frame;
-    bool res = DH::ReadLatestStoredRawImg(frame);
+    // bool res = DH::ReadLatestStoredRawImg(frame);
+    bool res = DH::ReadHighestValueStoredRawImg(frame);
 
     // If no image available, return an error ACK
     if (!res)

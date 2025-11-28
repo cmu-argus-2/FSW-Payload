@@ -10,7 +10,13 @@ int main(int argc, char** argv) {
     std::string image_path = argv[1];
     std::cout << "Processing: " << image_path << std::endl;
 
-    PrefilterResult res = prefilter_image(image_path);
+    Mat img = imread(image_path, IMREAD_COLOR);
+    if (img.empty()) {
+        std::cerr << "Could not load image" << std::endl;
+        return -1;
+    }
+
+    PrefilterResult res = prefilter_image(img);
 
     if (!res.error.empty()) {
         std::cerr << "Error: " << res.error << std::endl;

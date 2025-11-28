@@ -159,6 +159,29 @@ bool GetLatestRawFilePath(std::filesystem::directory_entry& latest_file)
     return found;
 }
 
+// Returns true if the highest value file is found, false otherwise
+bool GetHighestValueRawFilePath(std::filesystem::directory_entry& highest_value_file)
+{
+
+    bool found = false;    
+    for (const auto& entry : std::filesystem::directory_iterator(IMAGES_FOLDER)) 
+    {
+        if (entry.is_regular_file()) 
+        {
+            
+            if (!found || entry.last_write_time() > highest_value_file.last_write_time()) 
+            {
+                highest_value_file = entry;
+                found = true;
+            }
+        }
+    }
+
+
+    SPDLOG_INFO("Highest Value file: {}", highest_value_file.path().string());
+    return found;
+}
+
 
 // We know the structure of the filename already (raw_timestamp_camid.png)
 void SplitRawImgPath(const std::string& input, std::uint64_t& timestamp, int& cam_id) 

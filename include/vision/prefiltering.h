@@ -18,6 +18,6 @@ struct PrefilterResult {
     std::string error; // To handle "Could not load image"
 };
 
-PrefilterResult prefilter_image(const std::string& image_path, int cloudiness_threshold = 50, int white_threshold = 100, int color_threshold = 30, int contrast_threshold = 20);
+PrefilterResult prefilter_image(const cv::Mat& img, int cloudiness_threshold = 50, int white_threshold = 100, int color_threshold = 30, int contrast_threshold = 20);
 
 #endif // PREFILTERING_H

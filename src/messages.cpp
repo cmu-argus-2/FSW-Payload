@@ -50,8 +50,8 @@ bool Message::VerifyPacketSerialization()
 
 std::shared_ptr<Message> CreateMessage(CommandID::Type id, std::vector<uint8_t>& tx_data, uint16_t seq_count)
 {
-    // For file packets, always use padded data_length of 240 in header
-    uint8_t header_data_length = (tx_data.size() > Packet::MAX_DATA_LENGTH) ? tx_data.size() : Packet::MAX_DATA_LENGTH;
+    // Use the actual payload length in the header (<= 240); still pad to 240 for fixed-size frames
+    uint8_t header_data_length = static_cast<uint8_t>(std::min<std::size_t>(tx_data.size(), Packet::MAX_DATA_LENGTH));
     auto msg = std::make_shared<Message>(id, header_data_length, seq_count);
     msg->AddToPacket(tx_data);
 

@@ -17,6 +17,7 @@ namespace Packet
     static constexpr uint8_t INCOMING_PCKT_SIZE = 32;
 
     static constexpr uint8_t MAX_DATA_LENGTH = 240;  // Maximum payload data (before CRC16)
+    static constexpr uint8_t FILE_CHUNK_DATA_LEN = MAX_DATA_LENGTH; // send up to 240 raw bytes per frame
 
     using Out = std::array<uint8_t, OUTGOING_PCKT_SIZE>;
     using In = std::array<uint8_t, INCOMING_PCKT_SIZE>;
@@ -73,8 +74,8 @@ struct FileTransferManager
 
         std::lock_guard<std::mutex> lock(FileTransferManager::_mtx);
         _file_path = file_path;
-        // Treat all files the same: chunk into MAX_DATA_LENGTH slices
-        _total_seq_count = static_cast<uint16_t>(std::ceil(static_cast<double>(file_size) / Packet::MAX_DATA_LENGTH));
+        // Treat all files the same: chunk into FILE_CHUNK_DATA_LEN slices
+        _total_seq_count = static_cast<uint16_t>(std::ceil(static_cast<double>(file_size) / Packet::FILE_CHUNK_DATA_LEN));
         SPDLOG_INFO("Total packets needed for transfer: {}", _total_seq_count);
 
         _active_transfer.store(true);
@@ -99,9 +100,9 @@ struct FileTransferManager
             return EC::NO_MORE_PACKET_FOR_FILE;
         }
 
-        // Read by MAX_DATA_LENGTH chunks (1-based sequence numbers)
-        uint32_t offset = (seq_number == 0) ? 0 : static_cast<uint32_t>((seq_number - 1) * Packet::MAX_DATA_LENGTH);
-        EC err = DH::ReadFileChunk(_file_path, offset, Packet::MAX_DATA_LENGTH, data);
+        // Read by FILE_CHUNK_DATA_LEN chunks (1-based sequence numbers)
+        uint32_t offset = (seq_number == 0) ? 0 : static_cast<uint32_t>((seq_number - 1) * Packet::FILE_CHUNK_DATA_LEN);
+        EC err = DH::ReadFileChunk(_file_path, offset, Packet::FILE_CHUNK_DATA_LEN, data);
         if (err != EC::OK)
         {
             LogError(EC::FAILED_TO_GRAB_FILE_CHUNK);

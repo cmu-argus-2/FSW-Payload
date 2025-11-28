@@ -8,6 +8,7 @@ This file contains classes and functions providing file services and data handli
 #define DATA_HANDLING_HPP
 
 #include <filesystem>
+#include <cstdint>
 #include <string_view>
 #include <vector>
 #include <opencv2/opencv.hpp>
@@ -32,6 +33,10 @@ This file contains classes and functions providing file services and data handli
 namespace DH // Data Handling
 {
     namespace fs = std::filesystem;
+    constexpr std::uint16_t DH_PACKET_HEADER_SIZE = 2;
+    constexpr std::uint16_t DH_MAX_PAYLOAD_SIZE = 240;
+    constexpr std::uint16_t DH_FIXED_PACKET_SIZE = DH_PACKET_HEADER_SIZE + DH_MAX_PAYLOAD_SIZE; // 242 bytes on disk
+    constexpr std::uint16_t DH_FILE_HEADER_SIZE = 5; // magic number length
 
     /*
         Initialize the folder structure for all data storage activities.
@@ -97,6 +102,10 @@ namespace DH // Data Handling
     void EmptyCommsFolder();
     std::string CopyFrameToCommsFolder(Frame& frame);
     EC GetCommsFilePath(std::string& path_out);
+
+    // Data handler formatted fixed-packet files (matches Python FileProcess)
+    bool WriteFixedPacketFile(const std::string& output_path, const std::vector<std::vector<uint8_t>>& payloads);
+    bool ReadFixedPacketFile(const std::string& input_path, std::vector<std::vector<uint8_t>>& payloads_out);
 
 
 

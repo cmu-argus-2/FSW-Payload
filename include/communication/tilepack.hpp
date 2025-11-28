@@ -82,6 +82,8 @@ public:
     const ImageMetadata& get_metadata() const { return metadata_; }
     
     bool write_radio_file(const std::string& output_path) const;
+    // Write radio file without data-handler padding (concatenated tilepack packets)
+    bool write_radio_file_raw(const std::string& output_path) const;
     
     bool write_metadata(const std::string& output_path) const;
     
@@ -110,6 +112,10 @@ private:
     std::vector<Packet> packetize_tile(uint16_t tile_idx, 
                                        const std::vector<uint8_t>& tile_bytes);
 };
+
+// Read/write helpers for data handler formatted binary files
+bool WritePacketsToDataHandlerFile(const std::string& output_path, const std::vector<Packet>& packets);
+bool ReadPacketsFromDataHandlerFile(const std::string& input_path, std::vector<Packet>& packets_out);
 
 } 
 

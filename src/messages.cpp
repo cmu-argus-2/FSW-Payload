@@ -44,10 +44,10 @@ void Message::AddToPacket(uint8_t data)
 
 bool Message::VerifyPacketSerialization()
 {
-    // ACKs: 5 bytes (4 header + 1 status, NO CRC)
+    // ACKs: 6 bytes (5 header + 1 status, NO CRC)
     // Data packets: 249 bytes (5 header + 242 data + 2 CRC)
     if (data_length == 1) {
-        _serialized = (packet.size() == 5);  // ACK packet
+        _serialized = (packet.size() == 6);  // ACK packet
     } else {
         _serialized = (packet.size() == 249);  // Data packet
     }

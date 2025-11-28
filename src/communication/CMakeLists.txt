@@ -16,5 +16,7 @@ target_include_directories(tilepack PUBLIC
 )
 
 target_link_libraries(tilepack
-    ${OpenCV_LIBS}
+    PUBLIC
+        core
+        ${OpenCV_LIBS}
 )

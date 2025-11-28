@@ -33,5 +33,7 @@ target_link_libraries(TEST_CAMERA
 add_executable(GEN_TILEPACK_RAW tilepack_test/generate_tilepack_raw.cpp)
 target_link_libraries(GEN_TILEPACK_RAW
     PRIVATE
-    PAYLOAD_LIB
+    tilepack
+    vision
+    core
 )

@@ -9,6 +9,7 @@
 #include <opencv2/opencv.hpp>
 #include <opencv2/imgcodecs.hpp>
 #include <opencv2/imgproc.hpp>
+#include "core/data_handling.hpp"
 
 namespace tilepack {
 
@@ -232,25 +233,27 @@ std::vector<Packet> TilepackEncoder::packetize_tile(uint16_t tile_idx,
 }
 
 bool TilepackEncoder::write_radio_file(const std::string& output_path) const {
-    std::ofstream file(output_path, std::ios::binary);
-    if (!file.is_open()) {
-        std::cerr << "Failed to open output file: " << output_path << std::endl;
-        return false;
-    }
-    
+    std::vector<std::vector<uint8_t>> packet_bytes;
+    packet_bytes.reserve(packets_.size());
+
     for (const auto& pkt : packets_) {
         auto header_bytes = pkt.header.to_bytes();
-        file.write(reinterpret_cast<const char*>(header_bytes.data()), header_bytes.size());
-        
-        file.write(reinterpret_cast<const char*>(pkt.payload.data()), pkt.payload.size());
-        
-        if (pkt.total_size() > MAX_PACKET_SIZE) {
-            std::cerr << "Warning: Packet exceeds MAX_PACKET_SIZE" << std::endl;
+        const size_t payload_size = pkt.payload.size();
+
+        if (payload_size > MAX_PAYLOAD_PER_PACKET) {
+            std::cerr << "Packet payload exceeds MAX_PAYLOAD_PER_PACKET (" 
+                      << payload_size << " > " << MAX_PAYLOAD_PER_PACKET << ")" << std::endl;
+            return false;
         }
+
+        std::vector<uint8_t> bytes;
+        bytes.reserve(header_bytes.size() + payload_size);
+        bytes.insert(bytes.end(), header_bytes.begin(), header_bytes.end());
+        bytes.insert(bytes.end(), pkt.payload.begin(), pkt.payload.end());
+        packet_bytes.push_back(std::move(bytes));
     }
-    
-    file.close();
-    return true;
+
+    return DH::WriteFixedPacketFile(output_path, packet_bytes);
 }
 
 bool TilepackEncoder::write_metadata(const std::string& output_path) const {
@@ -268,11 +271,7 @@ bool TilepackEncoder::write_metadata(const std::string& output_path) const {
 }
 
 size_t TilepackEncoder::get_total_bytes() const {
-    size_t total = 0;
-    for (const auto& pkt : packets_) {
-        total += pkt.total_size();
-    }
-    return total;
+    return DH::DH_FILE_HEADER_SIZE + packets_.size() * DH::DH_FIXED_PACKET_SIZE;
 }
 
 size_t TilepackEncoder::get_compressed_size() const {
@@ -286,6 +285,65 @@ size_t TilepackEncoder::get_compressed_size() const {
 double TilepackEncoder::get_avg_packet_size() const {
     if (packets_.empty()) return 0.0;
     return static_cast<double>(get_total_bytes()) / packets_.size();
+}
+
+bool WritePacketsToDataHandlerFile(const std::string& output_path, const std::vector<Packet>& packets) {
+    std::vector<std::vector<uint8_t>> packet_bytes;
+    packet_bytes.reserve(packets.size());
+
+    for (const auto& pkt : packets) {
+        auto header_bytes = pkt.header.to_bytes();
+        const size_t payload_size = pkt.payload.size();
+
+        if (payload_size > MAX_PAYLOAD_PER_PACKET) {
+            std::cerr << "Packet payload exceeds MAX_PAYLOAD_PER_PACKET (" 
+                      << payload_size << " > " << MAX_PAYLOAD_PER_PACKET << ")" << std::endl;
+            return false;
+        }
+
+        std::vector<uint8_t> bytes;
+        bytes.reserve(header_bytes.size() + payload_size);
+        bytes.insert(bytes.end(), header_bytes.begin(), header_bytes.end());
+        bytes.insert(bytes.end(), pkt.payload.begin(), pkt.payload.end());
+        packet_bytes.push_back(std::move(bytes));
+    }
+
+    return DH::WriteFixedPacketFile(output_path, packet_bytes);
+}
+
+bool ReadPacketsFromDataHandlerFile(const std::string& input_path, std::vector<Packet>& packets_out) {
+    std::vector<std::vector<uint8_t>> payloads;
+    if (!DH::ReadFixedPacketFile(input_path, payloads)) {
+        return false;
+    }
+
+    packets_out.clear();
+    packets_out.reserve(payloads.size());
+
+    for (std::size_t i = 0; i < payloads.size(); ++i) {
+        const auto& buf = payloads[i];
+        if (buf.size() < PACKET_HEADER_SIZE) {
+            std::cerr << "Payload " << i << " too small to contain tilepack header" << std::endl;
+            return false;
+        }
+
+        Packet pkt;
+        pkt.header = PacketHeader::from_bytes(buf.data(), buf.size());
+
+        const std::size_t expected_payload = pkt.header.payload_size_bytes;
+        if (PACKET_HEADER_SIZE + expected_payload > buf.size()) {
+            std::cerr << "Payload length mismatch in packet " << i << " (" 
+                      << expected_payload << " > " << buf.size() - PACKET_HEADER_SIZE << ")" << std::endl;
+            return false;
+        }
+
+        pkt.payload.assign(buf.begin() + PACKET_HEADER_SIZE,
+                           buf.begin() + PACKET_HEADER_SIZE + expected_payload);
+
+        packets_out.push_back(std::move(pkt));
+    }
+
+    return true;
 }
 
 } // namespace tilepack

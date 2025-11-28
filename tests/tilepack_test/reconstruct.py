@@ -7,7 +7,7 @@ from typing import List, Dict, Tuple
 from collections import defaultdict
 from PIL import Image
 
-INPUT_BIN     = "img_0.bin"
+INPUT_BIN     = "image_radio_file_cpp_raw.bin"
 INPUT_META    = "img_0.meta"   
 OUTPUT_IMAGE_PNG  = "tilepack/gs_reconstructed.png"     
 TILES_OUTPUT_DIR  = "tilepack/gs_reconstructed_tiles"   
@@ -17,11 +17,12 @@ ASPECT_RATIO_HEIGHT = 3
 DEFAULT_TILE_WIDTH = 64
 DEFAULT_TILE_HEIGHT = 32
 
+@dataclass
 class PacketHeader:
-    payload_size_bytes: int  
-    page_id: int            
-    tile_idx: int           
-    frag_idx: int        
+    payload_size_bytes: int
+    page_id: int
+    tile_idx: int
+    frag_idx: int
 
     @staticmethod
     def from_bytes(data: bytes) -> 'PacketHeader':

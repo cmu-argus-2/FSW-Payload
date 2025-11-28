@@ -256,6 +256,31 @@ bool TilepackEncoder::write_radio_file(const std::string& output_path) const {
     return DH::WriteFixedPacketFile(output_path, packet_bytes);
 }
 
+bool TilepackEncoder::write_radio_file_raw(const std::string& output_path) const {
+    std::ofstream file(output_path, std::ios::binary | std::ios::trunc);
+    if (!file.is_open()) {
+        std::cerr << "Failed to open output file: " << output_path << std::endl;
+        return false;
+    }
+
+    for (const auto& pkt : packets_) {
+        auto header_bytes = pkt.header.to_bytes();
+        const size_t payload_size = pkt.payload.size();
+
+        if (payload_size > MAX_PAYLOAD_PER_PACKET) {
+            std::cerr << "Packet payload exceeds MAX_PAYLOAD_PER_PACKET (" 
+                      << payload_size << " > " << MAX_PAYLOAD_PER_PACKET << ")" << std::endl;
+            return false;
+        }
+
+        file.write(reinterpret_cast<const char*>(header_bytes.data()), header_bytes.size());
+        file.write(reinterpret_cast<const char*>(pkt.payload.data()), payload_size);
+    }
+
+    file.flush();
+    return true;
+}
+
 bool TilepackEncoder::write_metadata(const std::string& output_path) const {
     std::ofstream file(output_path, std::ios::binary);
     if (!file.is_open()) {

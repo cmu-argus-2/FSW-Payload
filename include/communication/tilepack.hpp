@@ -82,6 +82,8 @@ public:
     const ImageMetadata& get_metadata() const { return metadata_; }
     
     bool write_radio_file(const std::string& output_path) const;
+    // Write radio file without data-handler padding (concatenated tilepack packets)
+    bool write_radio_file_raw(const std::string& output_path) const;
     
     bool write_metadata(const std::string& output_path) const;
     

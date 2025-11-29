@@ -660,10 +660,10 @@ void request_next_file_packets(std::vector<uint8_t>& data)
         
         // Add delay between packets to prevent UART buffer overflow on mainboard
         // CircuitPython polls at 1ms intervals, need sufficient time for processing
-        if (i < count - 1)  // Don't delay after last packet
-        {
-            std::this_thread::sleep_for(std::chrono::milliseconds(15));
-        }
+        // if (i < count - 1)  // Don't delay after last packet
+        // {
+        //     std::this_thread::sleep_for(std::chrono::milliseconds(15));
+        // }
     }
 
     sys::payload().SetLastExecutedCmdID(CommandID::REQUEST_NEXT_FILE_PACKETS);

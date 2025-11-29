@@ -14,6 +14,36 @@
 
 static Packet::In READ_BUF = {0};
 static Packet::Out WRITE_BUF = {0};
+static bool WriteAll(int fd, const uint8_t* data, size_t len, const char* port_name)
+{
+    size_t offset = 0;
+    int retries = 0;
+    const int max_retries = 10;
+
+    while (offset < len)
+    {
+        ssize_t written = write(fd, data + offset, len - offset);
+        if (written == -1)
+        {
+            if (errno == EAGAIN || errno == EWOULDBLOCK)
+            {
+                if (retries++ >= max_retries)
+                {
+                    SPDLOG_ERROR("UART write to {} would block after {} retries", port_name, retries);
+                    return false;
+                }
+                usleep(1000); // back off 1ms and retry
+                continue;
+            }
+            SPDLOG_ERROR("Failed to write to UART port {}: {}", port_name, strerror(errno));
+            return false;
+        }
+
+        offset += static_cast<size_t>(written);
+    }
+
+    return true;
+}
 
 
 UART::UART()
@@ -172,16 +202,13 @@ bool UART::FillWriteBuffer(const std::vector<uint8_t>& data)
 
 bool UART::Send(const Packet::Out& data)
 {
-    ssize_t bytes_written = write(serial_port_fd, data.data(), Packet::OUTGOING_PCKT_SIZE);
-
-    if (bytes_written == -1) 
+    if (!WriteAll(serial_port_fd, data.data(), Packet::OUTGOING_PCKT_SIZE, PORT_NAME))
     {
-        SPDLOG_ERROR("Failed to write to UART port {}: {}", PORT_NAME, strerror(errno));
         LogError(EC::UART_FAILED_WRITE);
         return false;
     }
 
-    SPDLOG_INFO("Sent data of size {} !", bytes_written);
+    SPDLOG_INFO("Sent data of size {}", Packet::OUTGOING_PCKT_SIZE);
     return true;
 }
 
@@ -204,23 +231,17 @@ bool UART::Send(const std::vector<uint8_t>& data)
         SPDLOG_INFO("[SEND DEBUG] First 20 bytes being sent: {}", hex_str);
     }
 
-    ssize_t bytes_written = write(serial_port_fd, data.data(), data.size());
-
-    if (bytes_written == -1) 
+    if (!WriteAll(serial_port_fd, data.data(), data.size(), PORT_NAME))
     {
-        SPDLOG_ERROR("Failed to write to UART port {}: {}", PORT_NAME, strerror(errno));
         LogError(EC::UART_FAILED_WRITE);
         return false;
     }
 
-    SPDLOG_INFO("Sent packet of {} bytes (wrote {} bytes)", data.size(), bytes_written);
-    
-    if (bytes_written != static_cast<ssize_t>(data.size())) {
-        SPDLOG_WARN("Partial write! Expected {} bytes, only wrote {}", data.size(), bytes_written);
-    }
-    
+    SPDLOG_INFO("Sent packet of {} bytes", data.size());
     return true;
-}bool UART::Receive(uint8_t& cmd_id, std::vector<uint8_t>& data)
+}
+
+bool UART::Receive(uint8_t& cmd_id, std::vector<uint8_t>& data)
 {
     // Non-blocking 
     ssize_t bytes_read = read(serial_port_fd, READ_BUF.data(), Packet::INCOMING_PCKT_SIZE);
@@ -474,4 +495,3 @@ void UART::Disconnect()
 // // //     uart_close(fd);
 // // //     return 0;
 // // // }
-

@@ -135,30 +135,36 @@ struct FileTransferManager
         }
 
         if (is_dh) {
-            // Read the (seq_number-1)th DH record (after 5-byte magic)
+            // DH file: Extract payload from the 242-byte record
             // Each record is 242 bytes: [2B length][up to 240B data][padding]
             const std::size_t record_size = 242;
             std::size_t offset = 5 + static_cast<std::size_t>(seq_number - 1) * record_size;
             
-            // Read the full 242-byte record (including length header and padding)
-            EC err = DH::ReadFileChunk(_file_path, static_cast<uint32_t>(offset), static_cast<uint32_t>(record_size), data);
-            if (err != EC::OK || data.size() != record_size) {
+            // Read the full 242-byte record
+            std::vector<uint8_t> dh_packet;
+            EC err = DH::ReadFileChunk(_file_path, static_cast<uint32_t>(offset), static_cast<uint32_t>(record_size), dh_packet);
+            if (err != EC::OK || dh_packet.size() != record_size) {
                 SPDLOG_ERROR("Failed to read DH record at packet {}", seq_number);
                 LogError(EC::FAILED_TO_GRAB_FILE_CHUNK);
                 return EC::FAILED_TO_GRAB_FILE_CHUNK;
             }
             
-            // Verify the length header is valid
-            const uint16_t payload_len = (static_cast<uint16_t>(data[0]) << 8) | data[1];
+            // Extract payload length from 2-byte header (big-endian)
+            const uint16_t payload_len = (static_cast<uint16_t>(dh_packet[0]) << 8) | dh_packet[1];
             if (payload_len > 240) {
                 SPDLOG_ERROR("Invalid DH record length {} at packet {}", payload_len, seq_number);
                 return EC::FAILED_TO_GRAB_FILE_CHUNK;
             }
             
-            SPDLOG_DEBUG("Read DH packet {}: full 242 bytes (actual payload: {} bytes)", seq_number, payload_len);
+            // Extract only the actual payload (skip 2-byte length header)
+            data.clear();
+            data.reserve(payload_len);
+            data.insert(data.end(), dh_packet.begin() + 2, dh_packet.begin() + 2 + payload_len);
+            
+            SPDLOG_DEBUG("Extracted payload from DH packet {}: {} bytes (from 242-byte record)", seq_number, payload_len);
             return EC::OK;
         } else {
-            // Read by FILE_CHUNK_DATA_LEN chunks (1-based sequence numbers)
+            // Non-DH file: Read raw data in 240-byte chunks
             uint32_t offset = (seq_number == 0) ? 0 : static_cast<uint32_t>((seq_number - 1) * Packet::FILE_CHUNK_DATA_LEN);
             EC err = DH::ReadFileChunk(_file_path, offset, Packet::FILE_CHUNK_DATA_LEN, data);
             if (err != EC::OK)
@@ -166,6 +172,7 @@ struct FileTransferManager
                 LogError(EC::FAILED_TO_GRAB_FILE_CHUNK);
                 return EC::FAILED_TO_GRAB_FILE_CHUNK;
             }
+            SPDLOG_DEBUG("Read raw file chunk {}: {} bytes", seq_number, data.size());
             return EC::OK;
         }
     }

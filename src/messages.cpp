@@ -45,31 +45,37 @@ void Message::AddToPacket(uint8_t data)
 bool Message::VerifyPacketSerialization()
 {
     // ACKs: 6 bytes (5 header + 1 status, NO CRC)
-    // Data packets: 249 bytes (5 header + 242 data + 2 CRC)
+    // Data packets: 247 bytes (5 header + 240 data + 2 CRC)
     if (data_length == 1) {
         _serialized = (packet.size() == 6);  // ACK packet
     } else {
-        _serialized = (packet.size() == 249);  // Data packet
+        _serialized = (packet.size() == 247);  // Data packet
     }
     return _serialized;
 }
 
 std::shared_ptr<Message> CreateMessage(CommandID::Type id, std::vector<uint8_t>& tx_data, uint16_t seq_count)
 {
-    // Data packets are always 249 bytes: 5 header + 242 data (padded) + 2 CRC
+    // Data packets are always 247 bytes: 5 header + 240 data (padded) + 2 CRC
+    // tx_data contains the actual payload (≤240 bytes)
     uint16_t header_data_length = static_cast<uint16_t>(tx_data.size());
+    
+    if (header_data_length > 240) {
+        throw std::runtime_error("Payload too large: " + std::to_string(header_data_length) + " bytes (max 240)");
+    }
+    
     auto msg = std::make_shared<Message>(id, header_data_length, seq_count);
     msg->AddToPacket(tx_data);
 
-    // Always pad to 242 bytes total data for fixed-size 249-byte packets
+    // Always pad to 240 bytes total data for fixed-size 247-byte packets
     size_t current_size = msg->packet.size();  // 5 (header) + actual_data_size
-    size_t target_size = 247;  // 5 (header) + 242 (padded data)
+    size_t target_size = 245;  // 5 (header) + 240 (padded data)
     
     if (current_size < target_size) {
         msg->packet.resize(target_size, 0);  // Pad with zeros
     }
 
-    // Calculate CRC16 over [header + padded data] (bytes 0-246)
+    // Calculate CRC16 over [header + padded data] (bytes 0-244)
     uint16_t crc = calculate_crc16(msg->packet.data(), msg->packet.size());
     msg->packet.push_back(static_cast<uint8_t>(crc >> 8));    // CRC16 high byte
     msg->packet.push_back(static_cast<uint8_t>(crc & 0xFF));  // CRC16 low byte
@@ -84,7 +90,7 @@ std::shared_ptr<Message> CreateSuccessAckMessage(CommandID::Type id)
     auto msg = std::make_shared<Message>(id, 1);
     msg->AddToPacket(ACK_SUCCESS);
 
-    // ACKs are 5 bytes: 4 header + 1 status (NO CRC, NO PADDING)
+    // ACKs are 6 bytes: 5 header + 1 status (NO CRC, NO PADDING)
     
     return msg;
 }
@@ -95,7 +101,7 @@ std::shared_ptr<Message> CreateErrorAckMessage(CommandID::Type id, uint8_t error
     auto msg = std::make_shared<Message>(id, 1);  // data_length = 1 (just the error code)
     msg->AddToPacket(error_code);  // Error code is the status byte
 
-    // NACKs are 5 bytes: 4 header + 1 error code (NO CRC, NO PADDING)
+    // NACKs are 6 bytes: 5 header + 1 error code (NO CRC, NO PADDING)
     
     return msg;
 }

@@ -426,7 +426,9 @@ void request_next_file_packet(std::vector<uint8_t>& data)
     std::vector<uint8_t> transmit_data;
     transmit_data.reserve(Packet::MAX_DATA_LENGTH);
 
-    // Grab the data from the file
+    // GrabFileChunk handles both DH and non-DH files:
+    // - DH files: extracts payload (≤240 bytes) from 242-byte records
+    // - Non-DH files: reads raw data in 240-byte chunks
     EC err = FileTransferManager::GrabFileChunk(requested_packet_nb, transmit_data);
     if (err != EC::OK)
     {
@@ -436,6 +438,8 @@ void request_next_file_packet(std::vector<uint8_t>& data)
         return;
     }
     
+    // transmit_data now contains the payload only (≤240 bytes)
+    // CreateMessage will pad to 240 bytes and add CRC to create 247-byte UART packet
     std::shared_ptr<Message> msg = CreateMessage(CommandID::REQUEST_NEXT_FILE_PACKET, transmit_data, requested_packet_nb);
     sys::payload().TransmitMessage(msg);
 
@@ -633,6 +637,9 @@ void request_next_file_packets(std::vector<uint8_t>& data)
         std::vector<uint8_t> transmit_data;
         transmit_data.reserve(Packet::MAX_DATA_LENGTH);
 
+        // GrabFileChunk handles both DH and non-DH files:
+        // - DH files: extracts payload (≤240 bytes) from 242-byte records
+        // - Non-DH files: reads raw data in 240-byte chunks
         EC err = FileTransferManager::GrabFileChunk(current_packet, transmit_data);
         if (err != EC::OK)
         {
@@ -644,6 +651,8 @@ void request_next_file_packets(std::vector<uint8_t>& data)
             return;
         }
 
+        // transmit_data now contains the payload only (≤240 bytes)
+        // CreateMessage will pad to 240 bytes and add CRC to create 247-byte UART packet
         std::shared_ptr<Message> msg = CreateMessage(
             CommandID::REQUEST_NEXT_FILE_PACKETS, transmit_data, current_packet
         );

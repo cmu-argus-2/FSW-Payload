@@ -3,6 +3,7 @@
 #include <cmath>
 #include <cstdlib>  
 #include <fstream>
+#include <array>
 
 
 namespace DH // Data Handling
@@ -288,6 +289,123 @@ int GetTotalDiskUsage()
     double usage_percentage = (1.0 - static_cast<double>(info.free) / info.capacity) * 100.0;
     return static_cast<int>(std::round(usage_percentage)); // round to nearest integer
 
+}
+
+bool WriteFixedPacketFile(const std::string& output_path, const std::vector<std::vector<uint8_t>>& payloads)
+{
+    static const std::array<uint8_t, DH_FILE_HEADER_SIZE> MAGIC = {'D', 'H', 'G', 'E', 'N'};
+
+    std::ofstream file(output_path, std::ios::binary | std::ios::trunc);
+    if (!file.is_open()) 
+    {
+        SPDLOG_ERROR("Failed to open output file: {}", output_path);
+        LogError(EC::FILE_NOT_FOUND);
+        return false;
+    }
+
+    file.write(reinterpret_cast<const char*>(MAGIC.data()), MAGIC.size());
+
+    std::array<uint8_t, DH_FIXED_PACKET_SIZE> packet_buf{};
+    std::size_t idx = 0;
+    for (const auto& payload : payloads)
+    {
+        if (payload.size() > DH_MAX_PAYLOAD_SIZE)
+        {
+            SPDLOG_ERROR("Payload {} too large for data handler format: {} bytes > {}", idx, payload.size(), DH_MAX_PAYLOAD_SIZE);
+            return false;
+        }
+
+        packet_buf.fill(0);
+        const uint16_t payload_len = static_cast<uint16_t>(payload.size());
+        packet_buf[0] = static_cast<uint8_t>((payload_len >> 8) & 0xFF);
+        packet_buf[1] = static_cast<uint8_t>(payload_len & 0xFF);
+        std::copy(payload.begin(), payload.end(), packet_buf.begin() + DH_PACKET_HEADER_SIZE);
+
+        file.write(reinterpret_cast<const char*>(packet_buf.data()), packet_buf.size());
+        ++idx;
+    }
+
+    file.flush();
+    return true;
+}
+
+bool ReadFixedPacketFile(const std::string& input_path, std::vector<std::vector<uint8_t>>& payloads_out)
+{
+    static const std::array<uint8_t, DH_FILE_HEADER_SIZE> MAGIC = {'D', 'H', 'G', 'E', 'N'};
+
+    payloads_out.clear();
+
+    std::ifstream file(input_path, std::ios::binary);
+    if (!file.is_open()) 
+    {
+        SPDLOG_ERROR("Failed to open input file: {}", input_path);
+        LogError(EC::FILE_NOT_FOUND);
+        return false;
+    }
+
+    std::array<char, DH_FILE_HEADER_SIZE> header{};
+    file.read(header.data(), header.size());
+    const bool is_magic = (file.gcount() == static_cast<std::streamsize>(header.size()) &&
+                           std::equal(header.begin(), header.end(), MAGIC.begin()));
+
+    if (!is_magic)
+    {
+        // Treat as raw file split into DH_MAX_PAYLOAD_SIZE chunks
+        file.clear();
+        file.seekg(0, std::ios::beg);
+        while (true)
+        {
+            std::vector<uint8_t> chunk(DH_MAX_PAYLOAD_SIZE, 0);
+            file.read(reinterpret_cast<char*>(chunk.data()), DH_MAX_PAYLOAD_SIZE);
+            const std::streamsize read_bytes = file.gcount();
+            if (read_bytes <= 0) break;
+
+            chunk.resize(static_cast<std::size_t>(read_bytes));
+            payloads_out.push_back(std::move(chunk));
+        }
+        return true;
+    }
+
+    std::size_t idx = 0;
+    while (true)
+    {
+        std::array<uint8_t, DH_FIXED_PACKET_SIZE> packet_buf{};
+        file.read(reinterpret_cast<char*>(packet_buf.data()), packet_buf.size());
+        const std::streamsize read_bytes = file.gcount();
+        if (read_bytes == 0) break; // EOF
+
+        if (read_bytes < DH_PACKET_HEADER_SIZE)
+        {
+            SPDLOG_ERROR("Truncated packet header at index {} in {}", idx, input_path);
+            return false;
+        }
+
+        const uint16_t payload_len = static_cast<uint16_t>(packet_buf[0]) << 8 | packet_buf[1];
+        if (payload_len == 0 || payload_len > DH_MAX_PAYLOAD_SIZE)
+        {
+            SPDLOG_ERROR("Invalid payload length {} at index {} in {}", payload_len, idx, input_path);
+            return false;
+        }
+
+        if (payload_len > static_cast<uint16_t>(std::max<std::streamsize>(0, read_bytes - DH_PACKET_HEADER_SIZE)))
+        {
+            SPDLOG_ERROR("Payload length {} exceeds bytes read {} at index {} in {}", payload_len, read_bytes, idx, input_path);
+            return false;
+        }
+
+        payloads_out.emplace_back(packet_buf.begin() + DH_PACKET_HEADER_SIZE,
+                                  packet_buf.begin() + DH_PACKET_HEADER_SIZE + payload_len);
+
+        if (read_bytes < static_cast<std::streamsize>(DH_FIXED_PACKET_SIZE))
+        {
+            SPDLOG_WARN("Partial packet read at index {} ({} bytes) in {}", idx, read_bytes, input_path);
+            break;
+        }
+
+        ++idx;
+    }
+
+    return true;
 }
 
 void EmptyCommsFolder()

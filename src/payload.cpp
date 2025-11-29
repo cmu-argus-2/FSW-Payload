@@ -2,6 +2,8 @@
 #include "payload.hpp"
 #include "core/data_handling.hpp"
 #include "core/timing.hpp"
+#include "image_sender.hpp"
+
 
 const char* ToString(PayloadState state) {
     switch (state) {
@@ -132,14 +134,25 @@ void Payload::Run()
     // Launch communication system
     StartCommunicationThread();
 
+    SPDLOG_INFO("Hello1");
+
     // Launch camera system
     StartCameraThread();
+    SPDLOG_INFO("Hello2");
 
     // Launch OD system
     StartODThread();
+    SPDLOG_INFO("Hello3");
 
     // Launch telemetry service
     StartTelemetryService();
+    SPDLOG_INFO("Hello4");
+
+    // ImageSender sender;
+    
+    // sender.RunImageTransfer();
+
+    SPDLOG_INFO("Hello");
 
     // Running execution loop 
     _running_instance = true;

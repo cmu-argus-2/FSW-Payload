@@ -21,7 +21,7 @@ struct Message
 {
     uint8_t id;               // ID field (1 byte)
     uint16_t seq_count = 1;       // Sequence count (2 bytes), default to 1
-    uint8_t data_length;      // Data length field (1 byte)
+    uint16_t data_length;     // Data length field (2 bytes) - changed from uint8_t
 
     std::atomic<bool> _serialized = false; // Atomic flag for serialization status  
 
@@ -31,7 +31,7 @@ struct Message
     uint8_t priority = TX_PRIORITY_1;         // For the TX priority queue
     uint64_t created_at; // UNIX timestamp for when the task was created.
     
-    Message(uint8_t id, uint8_t data_length, uint16_t seq_count = 1);
+    Message(uint8_t id, uint16_t data_length, uint16_t seq_count = 1);
 
     virtual ~Message() = default; // Virtual destructor
     void AddToPacket(std::vector<uint8_t>& data); // Add data (vector) to the packet
@@ -49,6 +49,10 @@ void SerializeToBytes(uint16_t value, std::vector<uint8_t>& output);
 
 std::shared_ptr<Message> CreateSuccessAckMessage(CommandID::Type id);
 std::shared_ptr<Message> CreateErrorAckMessage(CommandID::Type id, uint8_t error_code);
+
+// CRC16-CCITT functions
+uint16_t calculate_crc16(const uint8_t* data, size_t length);
+bool verify_crc16(const uint8_t* data, size_t length);
 
 
 #endif // MESSAGES_HPP

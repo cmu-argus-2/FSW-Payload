@@ -25,6 +25,7 @@ sudo apt install -y \
   libeigen3-dev \
   libreadline-dev \
   libnvinfer-dev \
+  nlohmann-json3-dev \
   ccache
 
 # Uncomment this line if you get ccache related issues

@@ -3,7 +3,9 @@
 #include <cmath>
 #include <cstdlib>  
 #include <fstream>
-
+#include <sys/stat.h>
+#include <nlohmann/json.hpp>
+using Json = nlohmann::json;
 
 namespace DH // Data Handling
 {
@@ -130,6 +132,24 @@ void StoreFrameMetadataToDisk(Frame& frame, std::string_view target_folder)
 
     const cv::Mat& img = frame.GetImg();
 
+    Json j = frame.toJson();
+
+    std::ofstream ofs(file_path, std::ios::out | std::ios::trunc);
+    if (!ofs.is_open())
+    {
+        SPDLOG_ERROR("Failed to write metadata to disk: {}", file_path);
+        return;
+    }
+
+    ofs << j.dump(4);
+    ofs.close();
+    /*
+    std::ostringstream oss;
+    oss << target_folder << "raw" << DELIMITER << frame.GetTimestamp() << DELIMITER << frame.GetCamID() << ".png";
+    std::string img_file_path = oss.str();
+
+    j["img_path"] = img_file_path;
+    
     std::ostringstream js;
     js << "{\n";
     js << "  \"timestamp\": " << frame.GetTimestamp() << ",\n";
@@ -140,6 +160,7 @@ void StoreFrameMetadataToDisk(Frame& frame, std::string_view target_folder)
     // TODO: regions and landmarks
     js << "  \"rank\": " << frame.GetRank() << "\n";
     js << "}\n";
+    
 
     std::ofstream ofs(file_path, std::ios::out | std::ios::trunc);
     if (!ofs.is_open())
@@ -150,7 +171,7 @@ void StoreFrameMetadataToDisk(Frame& frame, std::string_view target_folder)
 
     ofs << js.str();
     ofs.close();
-
+    */
     SPDLOG_INFO("Saved metadata to disk: {}", file_path);
     SPDLOG_DEBUG("Metadata file size: {} bytes", GetFileSize(file_path));
     
@@ -272,6 +293,7 @@ bool ReadLatestStoredRawImg(Frame& frame)
         SPDLOG_ERROR("Failed to load image from disk.");
         return false;
     }
+
 
     frame.Update(extracted_cam_id, extracted_img, extracted_timestamp);
 

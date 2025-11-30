@@ -11,6 +11,9 @@
 
 #include <vision/regions.hpp>
 #include <vision/ld.hpp>
+#include <nlohmann/json.hpp>
+using Json = nlohmann::json;
+
 
 // 4608×2592
 inline constexpr int DEFAULT_FRAME_WIDTH = 4608;
@@ -93,6 +96,9 @@ public:
     const ImageState GetImageState() const;
     const ProcessingStage GetProcessingStage() const;
     const float GetRank() const;
+    Json toJson() const;
+    void fromJson(const Json& j);
+
 
     const std::vector<RegionID>& GetRegionIDs() const;
     const std::vector<Landmark>& GetLandmarks() const;

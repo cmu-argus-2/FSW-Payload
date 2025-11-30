@@ -59,9 +59,10 @@ namespace DH // Data Handling
     std::string StoreFrameToDisk(Frame& frame, std::string_view target_folder = IMAGES_FOLDER);
     std::string StoreRawImgToDisk(std::uint64_t timestamp, int cam_id, const cv::Mat& img, std::string_view target_folder = IMAGES_FOLDER);
     void StoreFrameMetadataToDisk(Frame& frame, std::string_view target_folder = IMAGES_FOLDER);
-    
+
     // Load in memory the latest img
     bool ReadLatestStoredRawImg(Frame& frame);
+    bool ReadHighestValueStoredRawImg(Frame& frame);
     // Load an image from disk by its path
     bool ReadImageFromDisk(const std::string& file_path, Frame& frame_out);
 
@@ -81,7 +82,7 @@ namespace DH // Data Handling
 
     // Returns true if the latest file is found, false otherwise
     bool GetLatestRawFilePath(std::filesystem::directory_entry& latest_file);
-
+    bool GetHighestValueRawFilePath(std::filesystem::directory_entry& highest_value_file);
 
     /*
     Assumes the primary system disk is an NVMe drive as the main root partition (/)

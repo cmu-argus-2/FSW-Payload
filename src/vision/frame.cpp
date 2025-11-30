@@ -2,6 +2,9 @@
 #include "vision/frame.hpp"
 #include "vision/prefiltering.hpp"
 #include <opencv2/opencv.hpp>
+#include <nlohmann/json.hpp>
+using Json = nlohmann::json;
+
 
 Frame::Frame()  
     :
@@ -138,7 +141,36 @@ const float Frame::GetRank() const
     return _rank;
 }
 
+Json Frame::toJson() const
+{
+    Json j;
+    try {
+        j["timestamp"] = _timestamp;
+        j["cam_id"] = _cam_id;
+        j["annotation_state"] = static_cast<int>(_annotation_state);
+        j["processing_stage"] = static_cast<int>(_processing_stage);
+        j["rank"] = _rank;
+        // TODO: landmarks and regions
+        
+    } catch (const std::exception& e) {
+        SPDLOG_ERROR("Failed to convert Frame to JSON: {}", e.what());
+    }
+    return j;
+}
 
+void Frame::fromJson(const Json& j)
+{
+    try {
+        _timestamp = j.at("timestamp").get<std::uint64_t>();
+        _cam_id = j.at("cam_id").get<int>();
+        _annotation_state = static_cast<ImageState>(j.at("annotation_state").get<int>());
+        _processing_stage = static_cast<ProcessingStage>(j.at("processing_stage").get<int>());
+        _rank = j.at("rank").get<float>();
+    } 
+    catch (const std::exception& e) {
+        SPDLOG_ERROR("Failed to parse Frame from JSON: {}", e.what());
+    }
+}
 
 void Frame::AddRegion(RegionID region_id)
 {

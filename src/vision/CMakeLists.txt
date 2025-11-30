@@ -11,5 +11,5 @@ add_library(vision
 
 
 target_link_libraries(vision
-    PRIVATE core ${OpenCV_LIBS}
+    PRIVATE core ${OpenCV_LIBS} nlohmann_json::nlohmann_json
 )

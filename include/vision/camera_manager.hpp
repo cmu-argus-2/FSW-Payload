@@ -52,7 +52,7 @@ public:
 
     void CaptureFrames();
 
-    uint8_t SaveLatestFrames(bool only_earth = true);
+    uint8_t SaveLatestFrames(bool only_earth = false);
 
     // Copy the latest frames from each camera to the provided vector and return the number of frames copied
     uint8_t CopyFrames(std::vector<Frame>& vec_frames, bool only_earth = true);
@@ -91,7 +91,7 @@ private:
     std::mutex capture_mode_mutex;
     std::condition_variable capture_mode_cv;
     
-    std::atomic<uint8_t> periodic_capture_rate = 5; // Default rate of 5 seconds
+    std::atomic<uint8_t> periodic_capture_rate = 10; //60; // Default rate of 60 seconds
     std::atomic<uint8_t> periodic_frames_to_capture = DEFAULT_PERIODIC_FRAMES_TO_CAPTURE; // After the request is serviced, it gets back to the default value
     std::atomic<uint8_t> periodic_frames_captured = 0;
 

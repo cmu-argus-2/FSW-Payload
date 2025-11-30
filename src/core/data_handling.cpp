@@ -117,9 +117,44 @@ bool InitializeDataStorage()
 
 std::string StoreFrameToDisk(Frame& frame, std::string_view target_folder)
 {
+    StoreFrameMetadataToDisk(frame, target_folder);
     return StoreRawImgToDisk(frame.GetTimestamp(), frame.GetCamID(), frame.GetImg(), target_folder);
 }
+
+void StoreFrameMetadataToDisk(Frame& frame, std::string_view target_folder)
+{
+    // Implementation for storing frame metadata to disk
+    std::ostringstream oss;
+    oss << target_folder << "raw" << DELIMITER << frame.GetTimestamp() << DELIMITER << frame.GetCamID() << ".json";
+    std::string file_path = oss.str();
+
+    const cv::Mat& img = frame.GetImg();
+
+    std::ostringstream js;
+    js << "{\n";
+    js << "  \"timestamp\": " << frame.GetTimestamp() << ",\n";
+    js << "  \"cam_id\": " << frame.GetCamID() << ",\n";
+    // Cast to int to avoid streaming as a `char` (uint8_t prints as character)
+    js << "  \"annotation_state\": " <<  static_cast<int>(frame.GetImageState()) << ",\n";
+    js << "  \"processing_stage\": " << static_cast<int>(frame.GetProcessingStage()) << ",\n";
+    // TODO: regions and landmarks
+    js << "  \"rank\": " << frame.GetRank() << "\n";
+    js << "}\n";
+
+    std::ofstream ofs(file_path, std::ios::out | std::ios::trunc);
+    if (!ofs.is_open())
+    {
+        SPDLOG_ERROR("Failed to write metadata to disk: {}", file_path);
+        return;
+    }
+
+    ofs << js.str();
+    ofs.close();
+
+    SPDLOG_INFO("Saved metadata to disk: {}", file_path);
+    SPDLOG_DEBUG("Metadata file size: {} bytes", GetFileSize(file_path));
     
+}
 
 std::string StoreRawImgToDisk(std::uint64_t timestamp, int cam_id, const cv::Mat& img, std::string_view target_folder)
 {

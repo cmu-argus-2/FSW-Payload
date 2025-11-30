@@ -90,6 +90,9 @@ public:
     int GetCamID() const;
     const cv::Mat& GetImg() const;
     std::uint64_t GetTimestamp() const;
+    const ImageState GetImageState() const;
+    const ProcessingStage GetProcessingStage() const;
+    const float GetRank() const;
 
     const std::vector<RegionID>& GetRegionIDs() const;
     const std::vector<Landmark>& GetLandmarks() const;

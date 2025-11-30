@@ -58,7 +58,8 @@ namespace DH // Data Handling
     // raw_timestamp_camid.png 
     std::string StoreFrameToDisk(Frame& frame, std::string_view target_folder = IMAGES_FOLDER);
     std::string StoreRawImgToDisk(std::uint64_t timestamp, int cam_id, const cv::Mat& img, std::string_view target_folder = IMAGES_FOLDER);
-
+    void StoreFrameMetadataToDisk(Frame& frame, std::string_view target_folder = IMAGES_FOLDER);
+    
     // Load in memory the latest img
     bool ReadLatestStoredRawImg(Frame& frame);
     // Load an image from disk by its path

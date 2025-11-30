@@ -59,7 +59,7 @@ Frame& Frame::operator=(const Frame& other)
         _img_mtx = std::make_shared<std::mutex>(); // new mutex per instance
         _annotation_state = other._annotation_state;
         _rank = other._rank;
-        _ranked = other._ranked;
+        _processing_stage = other._processing_stage;
     }
     return *this;
 }
@@ -122,6 +122,23 @@ const std::vector<Landmark>& Frame::GetLandmarks() const
 {
     return _landmarks;
 }
+
+const ImageState Frame::GetImageState() const
+{
+    return _annotation_state;
+}
+
+const ProcessingStage Frame::GetProcessingStage() const
+{
+    return _processing_stage;
+}
+
+const float Frame::GetRank() const
+{
+    return _rank;
+}
+
+
 
 void Frame::AddRegion(RegionID region_id)
 {

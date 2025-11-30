@@ -91,7 +91,7 @@ private:
     std::mutex capture_mode_mutex;
     std::condition_variable capture_mode_cv;
     
-    std::atomic<uint8_t> periodic_capture_rate = 10; //60; // Default rate of 60 seconds
+    std::atomic<uint8_t> periodic_capture_rate = 60; // Default rate of 60 seconds
     std::atomic<uint8_t> periodic_frames_to_capture = DEFAULT_PERIODIC_FRAMES_TO_CAPTURE; // After the request is serviced, it gets back to the default value
     std::atomic<uint8_t> periodic_frames_captured = 0;
 

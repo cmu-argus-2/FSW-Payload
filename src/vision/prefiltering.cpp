@@ -1,4 +1,4 @@
-#include "vision/prefiltering.h"
+#include "vision/prefiltering.hpp"
 #include <iostream>
 #include <opencv2/opencv.hpp>
 using namespace cv;
@@ -82,7 +82,7 @@ PrefilterResult prefilter_image(const cv::Mat& img, int cloudiness_threshold, in
         result.dominant_type = "green";
     }
     else {
-        result.passed = false;
+        result.passed = true;
         result.dominant_type = "single_color";
     }
 

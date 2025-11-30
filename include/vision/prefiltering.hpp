@@ -3,6 +3,8 @@
 
 #include <string>
 #include <vector>
+#include <opencv2/opencv.hpp>
+using namespace cv;
 
 struct PrefilterResult {
     bool passed;

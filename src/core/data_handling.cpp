@@ -376,13 +376,20 @@ bool ReadHighestValueStoredRawImg(Frame& frame)
 
 
 // New function to get the latest binary image file path (img_<timestamp>_<camera_id>.bin)
+// Only looks in the COMMS_FOLDER
 std::string GetLatestImgBinPath()
 {
     std::filesystem::directory_entry latest_file;
     bool found = false;
     
-    // Look for img_*_*.bin files in IMAGES_FOLDER
-    for (const auto& entry : std::filesystem::directory_iterator(IMAGES_FOLDER)) 
+    // Look for img_*_*.bin files in COMMS_FOLDER only
+    if (!std::filesystem::exists(COMMS_FOLDER))
+    {
+        SPDLOG_WARN("COMMS_FOLDER does not exist: {}", COMMS_FOLDER);
+        return "";
+    }
+    
+    for (const auto& entry : std::filesystem::directory_iterator(COMMS_FOLDER)) 
     {
         if (entry.is_regular_file()) 
         {
@@ -402,12 +409,12 @@ std::string GetLatestImgBinPath()
 
     if (!found)
     {
-        SPDLOG_WARN("No binary image files (img_*_*.bin) found in {}", IMAGES_FOLDER);
+        SPDLOG_WARN("No binary image files (img_*_*.bin) found in {}", COMMS_FOLDER);
         return "";
     }
 
     std::string file_path = latest_file.path().string();
-    SPDLOG_INFO("Latest binary image file: {}", file_path);
+    SPDLOG_INFO("Latest binary image file in comms: {}", file_path);
     return file_path;
 
 }

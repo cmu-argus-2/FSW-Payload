@@ -372,7 +372,7 @@ void request_image([[maybe_unused]] std::vector<uint8_t>& data)
     if (!cv::imwrite(temp_img_path, img))
     {
         SPDLOG_ERROR("Failed to save temporary image: {}", temp_img_path);
-        std::shared_ptr<Message> msg = CreateErrorAckMessage(CommandID::REQUEST_IMAGE, to_uint8(EC::FILE_WRITE_FAILED));
+        std::shared_ptr<Message> msg = CreateErrorAckMessage(CommandID::REQUEST_IMAGE, to_uint8(EC::FAIL_TO_READ_FILE));
         sys::payload().TransmitMessage(msg);
         return;
     }
@@ -392,7 +392,7 @@ void request_image([[maybe_unused]] std::vector<uint8_t>& data)
     {
         SPDLOG_ERROR("Failed to load image into tilepack encoder");
         std::filesystem::remove(temp_img_path);  // Clean up temp file
-        std::shared_ptr<Message> msg = CreateErrorAckMessage(CommandID::REQUEST_IMAGE, to_uint8(EC::FILE_READ_FAILED));
+        std::shared_ptr<Message> msg = CreateErrorAckMessage(CommandID::REQUEST_IMAGE, to_uint8(EC::FAIL_TO_READ_FILE));
         sys::payload().TransmitMessage(msg);
         return;
     }
@@ -405,7 +405,7 @@ void request_image([[maybe_unused]] std::vector<uint8_t>& data)
     {
         SPDLOG_ERROR("Failed to write tilepack binary file: {}", bin_file_path);
         std::filesystem::remove(temp_img_path);  // Clean up temp file
-        std::shared_ptr<Message> msg = CreateErrorAckMessage(CommandID::REQUEST_IMAGE, to_uint8(EC::FILE_WRITE_FAILED));
+        std::shared_ptr<Message> msg = CreateErrorAckMessage(CommandID::REQUEST_IMAGE, to_uint8(EC::FAIL_TO_READ_FILE));
         sys::payload().TransmitMessage(msg);
         return;
     }

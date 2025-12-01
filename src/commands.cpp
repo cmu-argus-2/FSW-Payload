@@ -340,8 +340,8 @@ void request_image([[maybe_unused]] std::vector<uint8_t>& data)
 
     // Back-end for images will change soon. However, this is sufficient for now
     Frame frame;
-    bool res = DH::ReadLatestStoredRawImg(frame);
-    // bool res = DH::ReadHighestValueStoredRawImg(frame);
+    // bool res = DH::ReadLatestStoredRawImg(frame);
+    bool res = DH::ReadHighestValueStoredRawImg(frame);
 
     // If no image available, return an error ACK
     if (!res)

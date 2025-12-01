@@ -63,6 +63,7 @@ namespace DH // Data Handling
     // Load in memory the latest img
     bool ReadLatestStoredRawImg(Frame& frame);
     bool ReadHighestValueStoredRawImg(Frame& frame);
+    
     // Load an image from disk by its path
     bool ReadImageFromDisk(const std::string& file_path, Frame& frame_out);
 

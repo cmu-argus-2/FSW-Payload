@@ -210,25 +210,56 @@ bool GetLatestRawFilePath(std::filesystem::directory_entry& latest_file)
         }
     }
 
-
     SPDLOG_INFO("Latest file: {}", latest_file.path().string());
     return found;
 }
 
 // Returns true if the highest value file is found, false otherwise
+// Reads JSON file metadata to determine the highest value image
 bool GetHighestValueRawFilePath(std::filesystem::directory_entry& highest_value_file)
 {
 
-    bool found = false;    
+    Frame best_frame;
+    bool found = false;
+    
     for (const auto& entry : std::filesystem::directory_iterator(IMAGES_FOLDER)) 
     {
         if (entry.is_regular_file()) 
         {
             
-            if (!found || entry.last_write_time() > highest_value_file.last_write_time()) 
+            if (entry.path().extension() == ".json")
             {
-                highest_value_file = entry;
-                found = true;
+
+                Json j;
+
+                try // make sure the json loads correctly
+                {
+                    std::ifstream ifs(entry.path());
+                    ifs >> j;
+                    ifs.close();
+                }
+                
+                catch (const std::exception& e)
+                {
+                    SPDLOG_ERROR("Failed to read JSON file {}: {}", entry.path().string(), e.what());
+                    continue;
+                }
+
+                Frame cur_frame;
+                cur_frame.fromJson(j);
+
+                if (!found || cur_frame > best_frame)
+                {
+
+                    best_frame = cur_frame;
+
+                    auto img_path = entry.path();
+                    img_path.replace_extension(".png"); // get the corresponding image path from the JSON file
+
+                    highest_value_file = std::filesystem::directory_entry(img_path);
+                    found = true;
+
+                }
             }
         }
     }
@@ -288,6 +319,46 @@ bool ReadLatestStoredRawImg(Frame& frame)
     // Load the image into memory
     // CV_8UC3 - 8-bit unsigned integer matrix/image with 3 channels
     cv::Mat extracted_img = cv::imread(latest_file_path, cv::IMREAD_COLOR); // Load the image from the file
+    if (extracted_img.empty()) 
+    {
+        SPDLOG_ERROR("Failed to load image from disk.");
+        return false;
+    }
+
+
+    frame.Update(extracted_cam_id, extracted_img, extracted_timestamp);
+
+    SPDLOG_INFO("Image loaded successfully.");
+    return true;
+
+}
+
+bool ReadHighestValueStoredRawImg(Frame& frame)
+{
+
+    std::filesystem::directory_entry highest_value_file;
+
+    if (!GetHighestValueRawFilePath(highest_value_file)) 
+    {
+        SPDLOG_WARN("No files found in the directory.");
+        return false;
+    }
+
+    std::string highest_value_file_path = highest_value_file.path().string();
+    SPDLOG_INFO("Highest value image path: {}", highest_value_file_path);
+
+    std::string infolder_highest_value_file_path = highest_value_file_path.substr(highest_value_file_path.find_last_of("/\\") + 1);
+
+    // Extract timestamp and id from filename
+    std::uint64_t extracted_timestamp;
+    int extracted_cam_id;
+    SplitRawImgPath(infolder_highest_value_file_path, extracted_timestamp, extracted_cam_id);
+    SPDLOG_DEBUG("Filename: {}, Timestamp: {}, Camera ID: {}", infolder_highest_value_file_path, extracted_timestamp, extracted_cam_id);
+
+
+    // Load the image into memory
+    // CV_8UC3 - 8-bit unsigned integer matrix/image with 3 channels
+    cv::Mat extracted_img = cv::imread(highest_value_file_path, cv::IMREAD_COLOR); // Load the image from the file
     if (extracted_img.empty()) 
     {
         SPDLOG_ERROR("Failed to load image from disk.");
@@ -399,6 +470,7 @@ EC GetCommsFilePath(std::string& path_out)
     }
 
     path_out = latest_file.path().string();
+
     return EC::OK;
 }
 

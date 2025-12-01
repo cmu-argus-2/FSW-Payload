@@ -10,7 +10,6 @@ set(CMAKE_CXX_COMPILER_LAUNCHER ccache)
 # Don't use
 # set(CMAKE_CXX_COMPILER clang++)
 
-
 ##### COMPILE DEFINITIONS
 # Executable directory
 set(CMAKE_RUNTIME_OUTPUT_DIRECTORY ${CMAKE_SOURCE_DIR}/bin/)
@@ -38,6 +37,7 @@ find_package(CUDA REQUIRED)
 # find_library(CUDART_LIBRARY cudart REQUIRED)
 find_library(CUDART_LIBRARY cudart HINTS ENV CUDART_LIBRARY ${CUDA_TOOLKIT_ROOT_DIR}/lib64)
 find_library(NVINFER_LIBRARY nvinfer REQUIRED)
+find_package(nlohmann_json REQUIRED)
 
 
 # Include OpenCV directories
@@ -84,6 +84,12 @@ target_link_libraries(${PROJECT_NAME}
 # message(STATUS "NN_ENABLED: ${NN_ENABLED}")
 # target_compile_definitions(${PROJECT_NAME} PRIVATE NN_ENABLED=${NN_ENABLED})
 
+add_executable(prefilter 
+    src/vision/test_prefiltering.cpp 
+    src/vision/prefiltering.cpp
+)
+
+target_link_libraries(prefilter ${OpenCV_LIBS})
 
 ##### COMMAND-LINE INTERFACE
 find_package(Threads REQUIRED)

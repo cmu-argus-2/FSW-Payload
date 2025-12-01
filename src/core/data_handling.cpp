@@ -4,6 +4,9 @@
 #include <cstdlib>  
 #include <fstream>
 #include <array>
+#include <sys/stat.h>
+#include <nlohmann/json.hpp>
+using Json = nlohmann::json;#include <array>
 
 
 namespace DH // Data Handling
@@ -118,9 +121,63 @@ bool InitializeDataStorage()
 
 std::string StoreFrameToDisk(Frame& frame, std::string_view target_folder)
 {
+    StoreFrameMetadataToDisk(frame, target_folder);
     return StoreRawImgToDisk(frame.GetTimestamp(), frame.GetCamID(), frame.GetImg(), target_folder);
 }
+
+void StoreFrameMetadataToDisk(Frame& frame, std::string_view target_folder)
+{
+    // Implementation for storing frame metadata to disk
+    std::ostringstream oss;
+    oss << target_folder << "raw" << DELIMITER << frame.GetTimestamp() << DELIMITER << frame.GetCamID() << ".json";
+    std::string file_path = oss.str();
+
+    const cv::Mat& img = frame.GetImg();
+
+    Json j = frame.toJson();
+
+    std::ofstream ofs(file_path, std::ios::out | std::ios::trunc);
+    if (!ofs.is_open())
+    {
+        SPDLOG_ERROR("Failed to write metadata to disk: {}", file_path);
+        return;
+    }
+
+    ofs << j.dump(4);
+    ofs.close();
+    /*
+    std::ostringstream oss;
+    oss << target_folder << "raw" << DELIMITER << frame.GetTimestamp() << DELIMITER << frame.GetCamID() << ".png";
+    std::string img_file_path = oss.str();
+
+    j["img_path"] = img_file_path;
     
+    std::ostringstream js;
+    js << "{\n";
+    js << "  \"timestamp\": " << frame.GetTimestamp() << ",\n";
+    js << "  \"cam_id\": " << frame.GetCamID() << ",\n";
+    // Cast to int to avoid streaming as a `char` (uint8_t prints as character)
+    js << "  \"annotation_state\": " <<  static_cast<int>(frame.GetImageState()) << ",\n";
+    js << "  \"processing_stage\": " << static_cast<int>(frame.GetProcessingStage()) << ",\n";
+    // TODO: regions and landmarks
+    js << "  \"rank\": " << frame.GetRank() << "\n";
+    js << "}\n";
+    
+
+    std::ofstream ofs(file_path, std::ios::out | std::ios::trunc);
+    if (!ofs.is_open())
+    {
+        SPDLOG_ERROR("Failed to write metadata to disk: {}", file_path);
+        return;
+    }
+
+    ofs << js.str();
+    ofs.close();
+    */
+    SPDLOG_INFO("Saved metadata to disk: {}", file_path);
+    SPDLOG_DEBUG("Metadata file size: {} bytes", GetFileSize(file_path));
+    
+}
 
 std::string StoreRawImgToDisk(std::uint64_t timestamp, int cam_id, const cv::Mat& img, std::string_view target_folder)
 {
@@ -155,8 +212,62 @@ bool GetLatestRawFilePath(std::filesystem::directory_entry& latest_file)
         }
     }
 
-
     SPDLOG_INFO("Latest file: {}", latest_file.path().string());
+    return found;
+}
+
+// Returns true if the highest value file is found, false otherwise
+// Reads JSON file metadata to determine the highest value image
+bool GetHighestValueRawFilePath(std::filesystem::directory_entry& highest_value_file)
+{
+
+    Frame best_frame;
+    bool found = false;
+    
+    for (const auto& entry : std::filesystem::directory_iterator(IMAGES_FOLDER)) 
+    {
+        if (entry.is_regular_file()) 
+        {
+            
+            if (entry.path().extension() == ".json")
+            {
+
+                Json j;
+
+                try // make sure the json loads correctly
+                {
+                    std::ifstream ifs(entry.path());
+                    ifs >> j;
+                    ifs.close();
+                }
+                
+                catch (const std::exception& e)
+                {
+                    SPDLOG_ERROR("Failed to read JSON file {}: {}", entry.path().string(), e.what());
+                    continue;
+                }
+
+                Frame cur_frame;
+                cur_frame.fromJson(j);
+
+                if (!found || cur_frame > best_frame)
+                {
+
+                    best_frame = cur_frame;
+
+                    auto img_path = entry.path();
+                    img_path.replace_extension(".png"); // get the corresponding image path from the JSON file
+
+                    highest_value_file = std::filesystem::directory_entry(img_path);
+                    found = true;
+
+                }
+            }
+        }
+    }
+
+
+    SPDLOG_INFO("Highest Value file: {}", highest_value_file.path().string());
     return found;
 }
 
@@ -215,6 +326,47 @@ bool ReadLatestStoredRawImg(Frame& frame)
         SPDLOG_ERROR("Failed to load image from disk.");
         return false;
     }
+
+
+    frame.Update(extracted_cam_id, extracted_img, extracted_timestamp);
+
+    SPDLOG_INFO("Image loaded successfully.");
+    return true;
+
+}
+
+bool ReadHighestValueStoredRawImg(Frame& frame)
+{
+
+    std::filesystem::directory_entry highest_value_file;
+
+    if (!GetHighestValueRawFilePath(highest_value_file)) 
+    {
+        SPDLOG_WARN("No files found in the directory.");
+        return false;
+    }
+
+    std::string highest_value_file_path = highest_value_file.path().string();
+    SPDLOG_INFO("Highest value image path: {}", highest_value_file_path);
+
+    std::string infolder_highest_value_file_path = highest_value_file_path.substr(highest_value_file_path.find_last_of("/\\") + 1);
+
+    // Extract timestamp and id from filename
+    std::uint64_t extracted_timestamp;
+    int extracted_cam_id;
+    SplitRawImgPath(infolder_highest_value_file_path, extracted_timestamp, extracted_cam_id);
+    SPDLOG_DEBUG("Filename: {}, Timestamp: {}, Camera ID: {}", infolder_highest_value_file_path, extracted_timestamp, extracted_cam_id);
+
+
+    // Load the image into memory
+    // CV_8UC3 - 8-bit unsigned integer matrix/image with 3 channels
+    cv::Mat extracted_img = cv::imread(highest_value_file_path, cv::IMREAD_COLOR); // Load the image from the file
+    if (extracted_img.empty()) 
+    {
+        SPDLOG_ERROR("Failed to load image from disk.");
+        return false;
+    }
+
 
     frame.Update(extracted_cam_id, extracted_img, extracted_timestamp);
 
@@ -474,6 +626,7 @@ EC GetCommsFilePath(std::string& path_out)
     }
 
     path_out = latest_file.path().string();
+
     return EC::OK;
 }
 

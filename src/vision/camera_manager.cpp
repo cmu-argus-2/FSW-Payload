@@ -3,7 +3,7 @@
 
 CameraManager::CameraManager(const std::array<CameraConfig, NUM_CAMERAS>& camera_configs) 
 :
-capture_mode(CAPTURE_MODE::IDLE),
+capture_mode(CAPTURE_MODE::PERIODIC_EARTH),
 camera_configs(camera_configs),
 cameras{{Camera(camera_configs[0].id, camera_configs[0].path), 
     Camera(camera_configs[1].id, camera_configs[1].path), 
@@ -42,12 +42,20 @@ uint8_t CameraManager::SaveLatestFrames(bool only_earth)
     {
         if (cameras[i].GetStatus() == CAM_STATUS::ACTIVE && cameras[i].IsNewFrameAvailable())
         {
-            // TODO: make a single call to GetBufferFrame() to avoid memory changes between calls (had the explicit locking interface in the camera class)
-            [[maybe_unused]] std::string img_path = DH::StoreRawImgToDisk(
-                                        cameras[i].GetBufferFrame().GetTimestamp(),
-                                        cameras[i].GetBufferFrame().GetCamID(),
-                                        cameras[i].GetBufferFrame().GetImg()
-                                                    );
+            Frame buffer_frame = cameras[i].GetBufferFrame();
+
+            if (buffer_frame.GetProcessingStage() == ProcessingStage::NotPrefiltered)
+            {
+                buffer_frame.RunPrefiltering();
+            }
+            
+            if (only_earth && buffer_frame.GetImageState() < ImageState::Earth)
+            {
+                SPDLOG_INFO("CAM{}: Frame skipped (not Earth)", cameras[i].GetID());
+                cameras[i].SetOffNewFrameFlag();
+                continue;
+            }
+            [[maybe_unused]] std::string img_path = DH::StoreFrameToDisk(buffer_frame, IMAGES_FOLDER);
             cameras[i].SetOffNewFrameFlag();
             save_count++;
         }  
@@ -119,7 +127,8 @@ void CameraManager::RunLoop()
                 if (elapsed_seconds >= periodic_capture_rate) 
                 {
                     // not an issue if we exceed a bit
-                    periodic_frames_captured += SaveLatestFrames();
+                    bool only_earth = false;
+                    periodic_frames_captured += SaveLatestFrames(only_earth);
                     SPDLOG_INFO("Periodic capture request: {}/{} frames captured", periodic_frames_captured, periodic_frames_to_capture);
 
                     if (periodic_frames_captured >= periodic_frames_to_capture)
@@ -138,6 +147,26 @@ void CameraManager::RunLoop()
 
             case CAPTURE_MODE::PERIODIC_EARTH:
             {
+                current_capture_time = std::chrono::high_resolution_clock::now();
+                auto elapsed_seconds = std::chrono::duration_cast<std::chrono::seconds>(current_capture_time - last_capture_time).count();
+                if (elapsed_seconds >= periodic_capture_rate) 
+                {
+                    // not an issue if we exceed a bit
+                    bool only_earth = true;
+                    periodic_frames_captured += SaveLatestFrames(only_earth);
+                    SPDLOG_INFO("Periodic capture request: {}/{} frames captured", periodic_frames_captured, periodic_frames_to_capture);
+
+                    if (periodic_frames_captured >= periodic_frames_to_capture)
+                    {
+                        SPDLOG_INFO("Periodic capture request completed");
+                        SetCaptureMode(CAPTURE_MODE::IDLE);
+                        periodic_frames_captured = 0;
+                        periodic_frames_to_capture = DEFAULT_PERIODIC_FRAMES_TO_CAPTURE; // Reset to default
+                        break;
+                    }
+                    last_capture_time = current_capture_time; // Update last capture time
+
+                }
                 break;
             }
 

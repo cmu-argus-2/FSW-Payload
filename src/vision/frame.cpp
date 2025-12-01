@@ -1,13 +1,20 @@
 #include "spdlog/spdlog.h"
 #include "vision/frame.hpp"
+#include "vision/prefiltering.hpp"
 #include <opencv2/opencv.hpp>
+#include <nlohmann/json.hpp>
+using Json = nlohmann::json;
+
 
 Frame::Frame()  
-:
-_cam_id(-1),
-_img(DEFAULT_FRAME_WIDTH, DEFAULT_FRAME_HEIGHT, CV_8UC3),
-_timestamp(0),
-_img_mtx(std::make_shared<std::mutex>())
+    :
+    _cam_id(-1),
+    _img(DEFAULT_FRAME_WIDTH, DEFAULT_FRAME_HEIGHT, CV_8UC3),
+    _timestamp(0),
+    _img_mtx(std::make_shared<std::mutex>()),
+    _annotation_state(ImageState::NotEarth),
+    _rank(0.0f),
+    _processing_stage(ProcessingStage::NotPrefiltered)
 {}
 
 
@@ -15,7 +22,10 @@ Frame::Frame(int cam_id, const cv::Mat& img, std::uint64_t timestamp)
     : _cam_id(cam_id),
       _img(img),  
       _timestamp(timestamp),
-      _img_mtx(std::make_shared<std::mutex>())
+      _img_mtx(std::make_shared<std::mutex>()),
+      _annotation_state(ImageState::NotEarth),
+      _rank(0.0f),
+      _processing_stage(ProcessingStage::NotPrefiltered)
 {}
 
 // For rvalue reference
@@ -24,14 +34,20 @@ Frame::Frame(int cam_id, cv::Mat&& img, std::uint64_t timestamp)
 _cam_id(cam_id),
 _img(std::move(img)),
 _timestamp(timestamp),
-_img_mtx(std::make_shared<std::mutex>())
+_img_mtx(std::make_shared<std::mutex>()),
+_annotation_state(ImageState::NotEarth),
+_rank(0.0f),
+_processing_stage(ProcessingStage::NotPrefiltered)
 {}
 
 Frame::Frame(const Frame& other)
     : _cam_id(other._cam_id),
       _img(other._img.clone()), 
       _timestamp(other._timestamp),
-      _img_mtx(std::make_shared<std::mutex>())  // creating a new mutex per instance to avoid intercopy locking
+      _img_mtx(std::make_shared<std::mutex>()),  // creating a new mutex per instance to avoid intercopy locking
+      _annotation_state(other._annotation_state),
+      _rank(other._rank),
+      _processing_stage(other._processing_stage)
 {}
 
 
@@ -44,8 +60,34 @@ Frame& Frame::operator=(const Frame& other)
         _region_ids = other._region_ids;
         _landmarks = other._landmarks;
         _img_mtx = std::make_shared<std::mutex>(); // new mutex per instance
+        _annotation_state = other._annotation_state;
+        _rank = other._rank;
+        _processing_stage = other._processing_stage;
     }
     return *this;
+}
+
+bool Frame::operator>(const Frame& other) const
+{
+    return std::tie(this->_annotation_state, this->_rank, this->_timestamp) > std::tie(other._annotation_state, other._rank, other._timestamp);
+}
+bool Frame::operator>=(const Frame& other) const
+{
+    return std::tie(this->_annotation_state, this->_rank, this->_timestamp) >= std::tie(other._annotation_state, other._rank, other._timestamp);
+}
+bool Frame::operator<(const Frame& other) const
+{
+    return std::tie(this->_annotation_state, this->_rank, this->_timestamp) < std::tie(other._annotation_state, other._rank, other._timestamp);
+}
+bool Frame::operator<=(const Frame& other) const
+{
+    return std::tie(this->_annotation_state, this->_rank, this->_timestamp) <= std::tie(other._annotation_state, other._rank, other._timestamp);
+}
+// May want an == operator to check if the images are the same instead, in case 
+// one somehow gets duplicated. That should never happen though
+bool Frame::operator==(const Frame& other) const
+{
+    return this->_annotation_state == other._annotation_state && this->_rank == other._rank && this->_timestamp == other._timestamp;
 }
 
 void Frame::Update(int cam_id, const cv::Mat& img, std::uint64_t timestamp) 
@@ -84,6 +126,52 @@ const std::vector<Landmark>& Frame::GetLandmarks() const
     return _landmarks;
 }
 
+const ImageState Frame::GetImageState() const
+{
+    return _annotation_state;
+}
+
+const ProcessingStage Frame::GetProcessingStage() const
+{
+    return _processing_stage;
+}
+
+const float Frame::GetRank() const
+{
+    return _rank;
+}
+
+Json Frame::toJson() const
+{
+    Json j;
+    try {
+        j["timestamp"] = _timestamp;
+        j["cam_id"] = _cam_id;
+        j["annotation_state"] = static_cast<int>(_annotation_state);
+        j["processing_stage"] = static_cast<int>(_processing_stage);
+        j["rank"] = _rank;
+        // TODO: landmarks and regions
+        
+    } catch (const std::exception& e) {
+        SPDLOG_ERROR("Failed to convert Frame to JSON: {}", e.what());
+    }
+    return j;
+}
+
+void Frame::fromJson(const Json& j)
+{
+    try {
+        _timestamp = j.at("timestamp").get<std::uint64_t>();
+        _cam_id = j.at("cam_id").get<int>();
+        _annotation_state = static_cast<ImageState>(j.at("annotation_state").get<int>());
+        _processing_stage = static_cast<ProcessingStage>(j.at("processing_stage").get<int>());
+        _rank = j.at("rank").get<float>();
+    } 
+    catch (const std::exception& e) {
+        SPDLOG_ERROR("Failed to parse Frame from JSON: {}", e.what());
+    }
+}
+
 void Frame::AddRegion(RegionID region_id)
 {
     _region_ids.push_back(region_id);
@@ -98,6 +186,28 @@ void Frame::AddLandmark(float x, float y, uint16_t class_id, RegionID region_id)
 void Frame::ClearLandmarks()
 {
     _landmarks.clear();
+}
+
+void Frame::RunPrefiltering()
+{
+    if (_processing_stage != ProcessingStage::NotPrefiltered)
+    {
+        SPDLOG_WARN("Frame has already been pre-filtered. Skipping pre-filtering step.");
+        return;
+    }
+    PrefilterResult res = prefilter_image(_img);
+    if (res.passed)
+    {
+        _annotation_state = ImageState::Earth;
+        _rank = 1.0f - (res.cloudiness / 100.0f); // higher cloudiness = lower rank
+    }
+    else
+    {
+        _annotation_state = ImageState::NotEarth;
+        _rank = 0.0f;
+    }
+    
+    _processing_stage = ProcessingStage::Prefiltered;
 }
 
 bool Frame::IsBlurred()

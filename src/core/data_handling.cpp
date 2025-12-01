@@ -6,7 +6,7 @@
 #include <array>
 #include <sys/stat.h>
 #include <nlohmann/json.hpp>
-using Json = nlohmann::json;#include <array>
+using Json = nlohmann::json;
 
 
 namespace DH // Data Handling

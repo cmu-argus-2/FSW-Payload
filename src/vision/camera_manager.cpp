@@ -172,6 +172,65 @@ void CameraManager::RunLoop()
 
             case CAPTURE_MODE::PERIODIC_ROI:
             {
+
+                std::string trt_file_path = ""; //TODO: set path
+                
+
+                Inference::Orchestrator orchestrator;
+                orchestrator.Initialize(trt_file_path);
+                
+                current_capture_time = std::chrono::high_resolution_clock::now();
+                auto elapsed_seconds = std::chrono::duration_cast<std::chrono::seconds>(current_capture_time - last_capture_time).count();
+                if (elapsed_seconds >= periodic_capture_rate) 
+                {
+                    // From above: only take images with earth
+                    bool only_earth = true;
+                    periodic_frames_captured += SaveLatestFrames(only_earth);
+                    std::string sample_image_path = ""; //TODO: set path to whatever was actually captured
+                    SPDLOG_INFO("Periodic capture request: {}/{} frames captured", periodic_frames_captured, periodic_frames_to_capture);
+
+                    // Inference part
+                    //TODO loop on all?
+                    Frame frame; // empty frame 
+                    if (!DH::ReadImageFromDisk(sample_image_path, frame))
+                    {
+                        spdlog::error("Failed to read image from disk: {}", sample_image_path);
+                        return 1;
+                    }
+
+                    std::shared_ptr<Frame> frame_ptr = std::make_shared<Frame>(frame);
+
+                    orchestrator.GrabNewImage(frame_ptr); 
+                    spdlog::info("Running inference on the frame...");
+                    EC status = orchestrator.ExecFullInference();
+                    if (status != EC::OK)
+                    {
+                        spdlog::error("Inference failed with error code: {}", to_uint8(status));
+                        return 1;
+                    }
+
+                    //TODO: Save to image metadata, not just printing 
+                    spdlog::info("Inference completed successfully.");
+                    spdlog::info("Regions found: {}", frame_ptr->GetRegionIDs().size());
+
+                    for (const auto& region_id : frame_ptr->GetRegionIDs())
+                    {
+                        spdlog::info("Region ID: {}", GetRegionString(region_id));
+                    }
+
+                    // Switch to camera idle, not actively taking photos?
+                    if (periodic_frames_captured >= periodic_frames_to_capture)
+                    {
+                        SPDLOG_INFO("Periodic capture request completed");
+                        SetCaptureMode(CAPTURE_MODE::IDLE);
+                        periodic_frames_captured = 0;
+                        periodic_frames_to_capture = DEFAULT_PERIODIC_FRAMES_TO_CAPTURE; // Reset to default
+                        break;
+                    }
+                    last_capture_time = current_capture_time; // Update last capture time
+
+                }
+            
                 break;
             }
 

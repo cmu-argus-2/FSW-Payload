@@ -357,28 +357,12 @@ void request_image([[maybe_unused]] std::vector<uint8_t>& data)
         return;
     }
 
-    // Get the image from the frame
-    const cv::Mat& img = frame.GetImg();
-    if (img.empty())
-    {
-        SPDLOG_ERROR("Frame contains empty image");
-        std::shared_ptr<Message> msg = CreateErrorAckMessage(CommandID::REQUEST_IMAGE, to_uint8(EC::FILE_NOT_AVAILABLE));
-        sys::payload().TransmitMessage(msg);
-        return;
-    }
+    // Reconstruct the original image path from the frame data
+    std::string img_path = std::string(IMAGES_FOLDER) + "raw_" + std::to_string(frame.GetTimestamp()) + "_" + std::to_string(frame.GetCamID()) + ".png";
+    std::string abs_img_path = std::filesystem::absolute(img_path).string();
+    SPDLOG_INFO("Using image: {}", abs_img_path);
 
-    // Save the image temporarily so tilepack can load it
-    std::string temp_img_path = std::string(COMMS_FOLDER) + "temp_img_" + std::to_string(frame.GetTimestamp()) + "_" + std::to_string(frame.GetCamID()) + ".png";
-    if (!cv::imwrite(temp_img_path, img))
-    {
-        SPDLOG_ERROR("Failed to save temporary image: {}", temp_img_path);
-        std::shared_ptr<Message> msg = CreateErrorAckMessage(CommandID::REQUEST_IMAGE, to_uint8(EC::FAIL_TO_READ_FILE));
-        sys::payload().TransmitMessage(msg);
-        return;
-    }
-    SPDLOG_INFO("Saved temporary image: {}", temp_img_path);
-
-    // Create tilepack encoder and process the image
+    // Create tilepack encoder and process the image directly from disk
     tilepack::TilepackEncoder encoder(
         1,  // page_id
         640,  // target_width
@@ -388,10 +372,9 @@ void request_image([[maybe_unused]] std::vector<uint8_t>& data)
         30    // jpeg_quality
     );
 
-    if (!encoder.load_image(temp_img_path))
+    if (!encoder.load_image(abs_img_path))
     {
         SPDLOG_ERROR("Failed to load image into tilepack encoder");
-        std::filesystem::remove(temp_img_path);  // Clean up temp file
         std::shared_ptr<Message> msg = CreateErrorAckMessage(CommandID::REQUEST_IMAGE, to_uint8(EC::FAIL_TO_READ_FILE));
         sys::payload().TransmitMessage(msg);
         return;
@@ -404,14 +387,10 @@ void request_image([[maybe_unused]] std::vector<uint8_t>& data)
     if (!encoder.write_radio_file(bin_file_path))
     {
         SPDLOG_ERROR("Failed to write tilepack binary file: {}", bin_file_path);
-        std::filesystem::remove(temp_img_path);  // Clean up temp file
         std::shared_ptr<Message> msg = CreateErrorAckMessage(CommandID::REQUEST_IMAGE, to_uint8(EC::FAIL_TO_READ_FILE));
         sys::payload().TransmitMessage(msg);
         return;
     }
-
-    // Clean up temporary image file
-    std::filesystem::remove(temp_img_path);
 
     SPDLOG_INFO("Created tilepack binary: {} ({} packets, {} bytes compressed)", 
                 bin_file_path, encoder.get_total_packets(), encoder.get_compressed_size());

@@ -347,7 +347,7 @@ void request_image([[maybe_unused]] std::vector<uint8_t>& data)
 
     // Read the latest stored raw image
     Frame frame;
-    bool res = DH::ReadLatestStoredRawImg(frame);
+    bool res = DH::ReadHighestValueStoredRawImg(frame);
     
     if (!res)
     {

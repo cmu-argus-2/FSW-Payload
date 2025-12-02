@@ -1,4 +1,4 @@
-cmake_minimum_required(VERSION 3.11)
+cmake_minimum_required(VERSION 3.16)
 set(CMAKE_CXX_STANDARD 17)
 
 project(PAYLOAD VERSION 1.0 LANGUAGES CXX)
@@ -13,6 +13,7 @@ set(CMAKE_CXX_COMPILER_LAUNCHER ccache)
 
 ##### COMPILE DEFINITIONS
 # Executable directory
+set(CMAKE_EXPORT_COMPILE_COMMANDS ON)
 set(CMAKE_RUNTIME_OUTPUT_DIRECTORY ${CMAKE_SOURCE_DIR}/bin/)
 add_compile_definitions(EXECUTABLE_DIR=\"${CMAKE_RUNTIME_OUTPUT_DIRECTORY}\")
 # Preprocessor definition for the path of the inter-process fifo 
@@ -32,12 +33,21 @@ set(CMAKE_RUNTIME_OUTPUT_DIRECTORY ${CMAKE_SOURCE_DIR}/bin/)
 set(SPDLOG_FMT_EXTERNAL OFF)
 find_package(spdlog REQUIRED)
 find_package(Eigen3 3.3 REQUIRED NO_MODULE)
+include_directories(${EIGEN_INCLUDE_DIR})
+link_directories(${EIGEN_LIBRARY_DIRS})
+find_package(Ceres 2.2.0 REQUIRED)
 find_package(OpenCV REQUIRED)
-find_package(GTest REQUIRED)
+
+enable_language(C)
+find_package(HDF5 REQUIRED COMPONENTS C CXX HL)
+list(APPEND CMAKE_PREFIX_PATH "${PWD}/depsbuild/install")
+find_package(HighFive REQUIRED)
 find_package(CUDA REQUIRED)
 # find_library(CUDART_LIBRARY cudart REQUIRED)
 find_library(CUDART_LIBRARY cudart HINTS ENV CUDART_LIBRARY ${CUDA_TOOLKIT_ROOT_DIR}/lib64)
 find_library(NVINFER_LIBRARY nvinfer REQUIRED)
+
+
 
 
 # Include OpenCV directories
@@ -73,6 +83,10 @@ endif()
 =]]
 
 add_executable(${PROJECT_NAME} src/main.cpp)
+add_executable(run_batch_opt
+    src/navigation/run_batch_opt.cpp
+    src/navigation/batch_optimization.cpp
+)
 
 target_link_libraries(${PROJECT_NAME}
     PRIVATE
@@ -81,6 +95,18 @@ target_link_libraries(${PROJECT_NAME}
     ${OpenCV_LIBS}
     # ${PAYLOAD_CONDITIONAL_LIBS}
 )
+# 
+target_link_libraries(run_batch_opt
+    PRIVATE
+    spdlog::spdlog
+    PAYLOAD_LIB
+    HDF5::HDF5           
+    HighFive::HighFive
+    Ceres::ceres
+    Eigen3::Eigen
+)
+
+
 # message(STATUS "NN_ENABLED: ${NN_ENABLED}")
 # target_compile_definitions(${PROJECT_NAME} PRIVATE NN_ENABLED=${NN_ENABLED})
 

@@ -9,9 +9,14 @@
 // using namespace HighFive;
  
 
-int main() {
+int main(int argc, char** argv) {
       // TODO: WIP Fix path to correct HDF5 file
-      std::string filename = "/home/frederik/cmu/GNC-Payload/batch_opt_gen/orbit_measurements.h5";
+      std::string filename = "/home/argus/Documents/batch_opt/FSW-Payload/data/datasets/batch_opt_gen/orbit_measurements.h5";
+    
+      if (argc > 1) {
+        filename = std::string(argv[1]);
+      }
+
 
       HighFive::File file(filename, HighFive::File::ReadOnly);
 
@@ -39,5 +44,17 @@ int main() {
           
       // Run Ceres batch optimization
       StateEstimates state_estimates = solve_ceres_batch_opt(lm, gs, gm, 60.0);
+
+    try {
+        const std::string out_filename = "/home/argus/Documents/batch_opt/FSW-Payload/data/datasets/batch_opt_gen/state_estimates.h5";
+        H5Easy::File outfile(out_filename, H5Easy::File::Overwrite);
+        // write state_estimates to an HDF5 file (overwrites if exists)
+        H5Easy::dump(outfile, "state_estimates", state_estimates);
+        std::cout << "Saved state estimates to " << out_filename << std::endl;
+    } catch (const HighFive::Exception& e) {
+        std::cerr << "Failed to write state estimates: " << e.what() << std::endl;
+    } catch (const std::exception& e) {
+        std::cerr << "Unexpected error writing state estimates: " << e.what() << std::endl;
+    }
     return 0;
 }

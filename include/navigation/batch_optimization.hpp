@@ -1,6 +1,8 @@
 #ifndef BATCH_OPTIMIZATION_HPP
 #define BATCH_OPTIMIZATION_HPP
 
+#include "navigation/measurement_residuals.hpp"
+#include "navigation/pose_dynamics.hpp"
 #include <cstdint>
 #include <utility>
 
@@ -13,25 +15,6 @@ enum class BatchOptimizationState {
     FAILED = 3
 };
 
-enum LandmarkMeasurementIdx {
-    LANDMARK_TIMESTAMP = 0,
-    BEARING_VEC_X = 1,
-    BEARING_VEC_Y = 2,
-    BEARING_VEC_Z = 3,
-    LANDMARK_POS_X = 4,
-    LANDMARK_POS_Y = 5,
-    LANDMARK_POS_Z = 6,
-    LANDMARK_COUNT = 7
-};
-
-enum GyroMeasurementIdx {
-    GYRO_MEAS_TIMESTAMP = 0,
-    ANG_VEL_X = 1,
-    ANG_VEL_Y = 2,
-    ANG_VEL_Z = 3,
-    GYRO_MEAS_COUNT = 4
-};
-
 enum StateEstimateIdx {
     STATE_ESTIMATE_TIMESTAMP = 0,
     POS_X = 1,
@@ -40,10 +23,10 @@ enum StateEstimateIdx {
     VEL_X = 4,
     VEL_Y = 5,
     VEL_Z = 6,
-    QUAT_W = 7,
-    QUAT_X = 8,
-    QUAT_Y = 9,
-    QUAT_Z = 10,
+    QUAT_X = 7,
+    QUAT_Y = 8,
+    QUAT_Z = 9,
+    QUAT_W = 10,
     GYRO_BIAS_X = 11,
     GYRO_BIAS_Y = 12,
     GYRO_BIAS_Z = 13,

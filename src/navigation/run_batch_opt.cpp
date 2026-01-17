@@ -11,7 +11,7 @@
 
 int main(int argc, char** argv) {
       // TODO: WIP Fix path to correct HDF5 file
-      std::string filename = "/home/argus/Documents/batch_opt/FSW-Payload/data/datasets/batch_opt_gen/orbit_measurements.h5";
+    std::string filename = "data/datasets/batch_opt_gen/orbit_measurements.h5";
     
       if (argc > 1) {
         filename = std::string(argv[1]);
@@ -46,7 +46,7 @@ int main(int argc, char** argv) {
       StateEstimates state_estimates = solve_ceres_batch_opt(lm, gs, gm, 60.0);
 
     try {
-        const std::string out_filename = "/home/argus/Documents/batch_opt/FSW-Payload/data/datasets/batch_opt_gen/state_estimates.h5";
+        const std::string out_filename = "data/datasets/batch_opt_gen/state_estimates.h5";
         H5Easy::File outfile(out_filename, H5Easy::File::Overwrite);
         // write state_estimates to an HDF5 file (overwrites if exists)
         H5Easy::dump(outfile, "state_estimates", state_estimates);

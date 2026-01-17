@@ -42,12 +42,12 @@ enable_language(C)
 find_package(HDF5 REQUIRED COMPONENTS C CXX HL)
 list(APPEND CMAKE_PREFIX_PATH "${PWD}/depsbuild/install")
 find_package(HighFive REQUIRED)
-find_package(CUDA REQUIRED)
-# find_library(CUDART_LIBRARY cudart REQUIRED)
-find_library(CUDART_LIBRARY cudart HINTS ENV CUDART_LIBRARY ${CUDA_TOOLKIT_ROOT_DIR}/lib64)
-find_library(NVINFER_LIBRARY nvinfer REQUIRED)
-
-
+if(CUDA_ENABLED)
+    find_package(CUDA REQUIRED)
+    # find_library(CUDART_LIBRARY cudart REQUIRED)
+    find_library(CUDART_LIBRARY cudart HINTS ENV CUDART_LIBRARY ${CUDA_TOOLKIT_ROOT_DIR}/lib64)
+    find_library(NVINFER_LIBRARY nvinfer REQUIRED)
+endif()
 
 
 # Include OpenCV directories
@@ -55,7 +55,9 @@ include_directories(SYSTEM ${OpenCV_INCLUDE_DIRS})
 # Include the directories for header files
 include_directories(${PROJECT_SOURCE_DIR}/include)
 include_directories(SYSTEM ${PROJECT_SOURCE_DIR}/external) # ignore warnings from external libraries
-include_directories(${CUDA_HOME}/include)
+if(CUDA_ENABLED)
+    include_directories(${CUDA_HOME}/include)
+endif()
 # Add the source files subdirectory
 set(CMAKE_POSITION_INDEPENDENT_CODE ON)
 add_subdirectory(src)
@@ -83,10 +85,6 @@ endif()
 =]]
 
 add_executable(${PROJECT_NAME} src/main.cpp)
-add_executable(run_batch_opt
-    src/navigation/run_batch_opt.cpp
-    src/navigation/batch_optimization.cpp
-)
 
 target_link_libraries(${PROJECT_NAME}
     PRIVATE
@@ -96,6 +94,11 @@ target_link_libraries(${PROJECT_NAME}
     # ${PAYLOAD_CONDITIONAL_LIBS}
 )
 # 
+
+add_executable(run_batch_opt
+    src/navigation/run_batch_opt.cpp
+    src/navigation/batch_optimization.cpp
+)
 target_link_libraries(run_batch_opt
     PRIVATE
     spdlog::spdlog
@@ -106,6 +109,21 @@ target_link_libraries(run_batch_opt
     Eigen3::Eigen
 )
 
+# temporary executable to test jacobians
+add_executable(test_jacobians
+    src/navigation/test_jacobians.cpp
+    src/navigation/pose_dynamics.cpp
+    src/navigation/batch_optimization.cpp
+)
+target_link_libraries(test_jacobians
+    PRIVATE
+    spdlog::spdlog
+    PAYLOAD_LIB
+    HDF5::HDF5           
+    HighFive::HighFive
+    Ceres::ceres
+    Eigen3::Eigen
+)
 
 # message(STATUS "NN_ENABLED: ${NN_ENABLED}")
 # target_compile_definitions(${PROJECT_NAME} PRIVATE NN_ENABLED=${NN_ENABLED})

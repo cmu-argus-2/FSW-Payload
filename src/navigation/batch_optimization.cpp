@@ -1,5 +1,4 @@
 #include "navigation/batch_optimization.hpp"
-
 #include <ceres/ceres.h>
 #include <ceres/manifold.h>
 // Is there some symlink in place that makes ceres/eigen work by default?
@@ -14,129 +13,26 @@
 
 using idx_t = Eigen::Index;
 
-static constexpr double GM_EARTH = 3.9860044188e5;  // km^3/s^2
-
-// TODO: Needs to be normalized by the linear dynamics process noise covariance
-struct LinearDynamicsCostFunctor {
-public:
-    LinearDynamicsCostFunctor(const double dt) : dt(dt) {}
-
-    template<typename T>
-    bool operator()(const T* const pos_curr,
-                    const T* const vel_curr,
-                    const T* const pos_next,
-                    const T* const vel_next,
-                    T* const residuals) const {
-        const Eigen::Map<const Eigen::Matrix<T, 3, 1>> r0(pos_curr);
-        const Eigen::Map<const Eigen::Matrix<T, 3, 1>> v0(vel_curr);
-        const Eigen::Map<const Eigen::Matrix<T, 3, 1>> r1(pos_next);
-        const Eigen::Map<const Eigen::Matrix<T, 3, 1>> v1(vel_next);
-
-        Eigen::Map <Eigen::Matrix<T, 3, 1>> r_res(residuals);
-        Eigen::Map <Eigen::Matrix<T, 3, 1>> v_res(residuals + 3);
-
-        const T eps = T(1e-8);
-        const T r_norm_safe = ceres::sqrt(r0.squaredNorm() + eps*eps);
-        const T denom = r_norm_safe * r_norm_safe * r_norm_safe;
-
-        r_res = r1 - (r0 + v0 * dt);
-        v_res = v1 - (v0 - (GM_EARTH * r0 / denom) * dt);
-        return true;
+StateEstimates init_state_estimate(std::vector<double> state_timestamps) {
+    StateEstimates state_estimates(state_timestamps.size(), StateEstimateIdx::STATE_ESTIMATE_COUNT);
+    for (int i = 0; i < state_timestamps.size(); ++i) {
+        state_estimates(i, StateEstimateIdx::STATE_ESTIMATE_TIMESTAMP) = state_timestamps[i];
+        state_estimates(i, StateEstimateIdx::POS_X) = 0.0; // km
+        state_estimates(i, StateEstimateIdx::POS_Y) = 0.0;
+        state_estimates(i, StateEstimateIdx::POS_Z) = 7000.0;
+        state_estimates(i, StateEstimateIdx::VEL_X) = 0.0;
+        state_estimates(i, StateEstimateIdx::VEL_Y) = 8.0; // km/s
+        state_estimates(i, StateEstimateIdx::VEL_Z) = 0.0; // km/s
+        state_estimates(i, StateEstimateIdx::QUAT_W) = 1.0;
+        state_estimates(i, StateEstimateIdx::QUAT_X) = 0.0;
+        state_estimates(i, StateEstimateIdx::QUAT_Y) = 0.0;
+        state_estimates(i, StateEstimateIdx::QUAT_Z) = 0.0;
+        state_estimates(i, StateEstimateIdx::GYRO_BIAS_X) = 0.0;
+        state_estimates(i, StateEstimateIdx::GYRO_BIAS_Y) = 0.0;
+        state_estimates(i, StateEstimateIdx::GYRO_BIAS_Z) = 0.0;
     }
-
-private:
-    const double dt;
-};
-
-// TODO: Needs to be normalized by the angular dynamics process noise covariance
-struct AngularDynamicsCostFunctor {
-public:
-    AngularDynamicsCostFunctor(const double* const gyro_row, const double& dt) :
-            gyro_ang_vel(gyro_row + GyroMeasurementIdx::ANG_VEL_X), dt(dt) {}
-
-    template<typename T>
-    bool operator()(const T* const quat_curr,
-                    const T* const gyro_bias_curr,
-                    const T* const quat_next,
-                    const T* const gyro_bias_next,
-                    T* const residuals) const {
-        // const Eigen::Map<const Eigen::Matrix<T, 3, 1>> w0(ang_vel_curr);
-        const Eigen::Matrix<T, 3, 1> gyro_w_0 = gyro_ang_vel.template cast<T>();
-        
-        const Eigen::Map<const Eigen::Quaternion <T>> q0(quat_curr);
-        const Eigen::Map<const Eigen::Matrix<T, 3, 1>> b_w_0(gyro_bias_curr);
-        const Eigen::Map<const Eigen::Quaternion <T>> q1(quat_next);
-        const Eigen::Map<const Eigen::Matrix<T, 3, 1>> b_w_1(gyro_bias_next);
-
-        Eigen::Map <Eigen::Matrix<T, 3, 1>> q_res(residuals);  // in axis-angle form
-        Eigen::Map <Eigen::Matrix<T, 3, 1>> b_res(residuals + 3);
-
-        
-        Eigen::Matrix<T, 3, 1> unbiased_gyro_ang_vel = gyro_w_0 - b_w_0;
-        
-        // Halving not needed because Eigen Quaternion base handles half angle
-        // https://github.com/libigl/eigen/blob/1f05f51517ec4fd91eed711e0f89e97a7c028c0e/Eigen/src/Geometry/Quaternion.h#L505
-
-        // const T half_dt = T(0.5) * T(dt);
-
-        //Safe normalization of angular velocity vector
-        const T w_norm_sq = unbiased_gyro_ang_vel.squaredNorm();
-        const T eps = T(1e-8);
-        const T inv_w_norm = T(1.0) / ceres::sqrt(w_norm_sq + eps);
-
-        const Eigen::Quaternion <T> dq = Eigen::Quaternion<T>(
-                Eigen::AngleAxis<T>(unbiased_gyro_ang_vel.norm() * T(dt), unbiased_gyro_ang_vel * inv_w_norm));
-        const Eigen::Quaternion <T> q_pred = q0 * dq;
-        const Eigen::AngleAxis <T> q_error = Eigen::AngleAxis<T>(q_pred.conjugate() * q1);
-        q_res = q_error.angle() * q_error.axis();
-        b_res = b_w_1 - b_w_0; // assuming constant bias for now
-        return true;
-    }
-
-private:
-    const Eigen::Map<const Eigen::Vector3d> gyro_ang_vel;
-    const double& dt;
-};
-
-// TODO: Needs to be normalized by the landmark measurement noise covariance
-struct LandmarkCostFunctor {
-public:
-    LandmarkCostFunctor(const double* const landmark_row)
-            : bearing_vec(landmark_row + LandmarkMeasurementIdx::BEARING_VEC_X),
-              landmark_pos(landmark_row + LandmarkMeasurementIdx::LANDMARK_POS_X) {}
-
-    template<typename T>
-    bool operator()(const T* const pos,
-                    const T* const quat,
-                    T* const residuals) const {
-        const Eigen::Map<const Eigen::Matrix<T, 3, 1>> r(pos);
-        // const Eigen::Map<const Eigen::Quaternion <T>> q(quat);
-
-        const T w0 = quat[0],
-                x0 = quat[1],
-                y0 = quat[2],
-                z0 = quat[3];
-        const Eigen::Quaternion<T> q(w0, x0, y0, z0);
-
-        const Eigen::Matrix<T, 3, 1> landmark_pos_T   = landmark_pos.template cast<T>();
-        const Eigen::Matrix<T, 3, 1> bearing_vec_T    = bearing_vec.template cast<T>();
-
-        Eigen::Map <Eigen::Matrix<T, 3, 1>> r_res(residuals);
-
-        const Eigen::Matrix<T, 3, 1> diff = (landmark_pos_T - r);
-        const T norm_sq = diff.squaredNorm();
-        const T eps = T(1e-6);
-        const T inv_norm = T(1.0) / ceres::sqrt(norm_sq + eps);
-        const Eigen::Matrix<T,3,1> predicted_bearing = diff * inv_norm;
-
-        r_res = predicted_bearing - q * bearing_vec_T;
-        return true;
-    }
-
-private:
-    const Eigen::Map<const Eigen::Vector3d> bearing_vec;
-    const Eigen::Map<const Eigen::Vector3d> landmark_pos;
-};
+    return state_estimates;
+}
 
 /**
  * @brief Generates timestamps for the state estimates and the corresponding indices for the landmark groups and gyro
@@ -288,16 +184,15 @@ StateEstimates solve_ceres_batch_opt(const LandmarkMeasurements& landmark_measur
             gyro_measurements,
             max_dt,
             num_groups);
-
-    StateEstimates state_estimates(state_timestamps.size(), StateEstimateIdx::STATE_ESTIMATE_COUNT);
-    Eigen::Vector3d gyro_bias = Eigen::Vector3d::Zero();
+    // give an initial guess
+    StateEstimates state_estimates = init_state_estimate(state_timestamps);
+    
     ceres::EigenQuaternionManifold quaternion_manifold = ceres::EigenQuaternionManifold{};
 
     ceres::Problem::Options problem_options;
     problem_options.manifold_ownership = ceres::DO_NOT_TAKE_OWNERSHIP;
 
     ceres::Problem problem(problem_options);
-    // problem.AddParameterBlock(gyro_bias.data(), 3);
     for (idx_t i = 0; i < state_timestamps.size(); ++i) {
         state_estimates(i, StateEstimateIdx::STATE_ESTIMATE_TIMESTAMP) = state_timestamps[i];
         double* const row_start = state_estimates.data() + i * StateEstimateIdx::STATE_ESTIMATE_COUNT;
@@ -307,10 +202,10 @@ StateEstimates solve_ceres_batch_opt(const LandmarkMeasurements& landmark_measur
                                     StateEstimateIdx::VEL_X - StateEstimateIdx::POS_X);
         // Velocity parameter block
         problem.AddParameterBlock(row_start + StateEstimateIdx::VEL_X,
-                                    StateEstimateIdx::QUAT_W - StateEstimateIdx::VEL_X);
+                                    StateEstimateIdx::QUAT_X - StateEstimateIdx::VEL_X);
         // Quaternion parameter block
-        problem.AddParameterBlock(row_start + StateEstimateIdx::QUAT_W,
-                                    StateEstimateIdx::GYRO_BIAS_X - StateEstimateIdx::QUAT_W,
+        problem.AddParameterBlock(row_start + StateEstimateIdx::QUAT_X,
+                                    StateEstimateIdx::GYRO_BIAS_X - StateEstimateIdx::QUAT_X,
                                     &quaternion_manifold);
         // Gyro bias parameter block
         problem.AddParameterBlock(row_start + StateEstimateIdx::GYRO_BIAS_X,
@@ -330,7 +225,14 @@ StateEstimates solve_ceres_batch_opt(const LandmarkMeasurements& landmark_measur
         double* p_v0 = &state_estimates(i, StateEstimateIdx::VEL_X);
         double* p_r1 = &state_estimates(i+1, StateEstimateIdx::POS_X);
         double* p_v1 = &state_estimates(i+1, StateEstimateIdx::VEL_X);
-
+        problem.AddResidualBlock(
+            new LinearDynamicsAnalytic{dt},
+                nullptr,
+                p_r0,
+                p_v0,
+                p_r1,
+                p_v1);
+        /*
         problem.AddResidualBlock(
             new ceres::AutoDiffCostFunction<LinearDynamicsCostFunctor, 6, 3, 3, 3, 3>(
                 new LinearDynamicsCostFunctor{dt}),
@@ -339,6 +241,7 @@ StateEstimates solve_ceres_batch_opt(const LandmarkMeasurements& landmark_measur
                 p_v0,
                 p_r1,
                 p_v1);
+        */
     }
 
     // Angular Dynamics costs
@@ -350,9 +253,9 @@ StateEstimates solve_ceres_batch_opt(const LandmarkMeasurements& landmark_measur
         double* const next_row_start = state_estimates.data() + (i + 1) * StateEstimateIdx::STATE_ESTIMATE_COUNT;
 
         
-        double* p_q0  = &state_estimates(i, StateEstimateIdx::QUAT_W);
+        double* p_q0  = &state_estimates(i, StateEstimateIdx::QUAT_X);
         double* p_bw0 = &state_estimates(i, StateEstimateIdx::GYRO_BIAS_X);
-        double* p_q1  = &state_estimates(i+1, StateEstimateIdx::QUAT_W);
+        double* p_q1  = &state_estimates(i+1, StateEstimateIdx::QUAT_X);
         double* p_bw1 = &state_estimates(i+1, StateEstimateIdx::GYRO_BIAS_X);
         
         // TODO: Find the correct gyro measurement for this time step
@@ -380,7 +283,7 @@ StateEstimates solve_ceres_batch_opt(const LandmarkMeasurements& landmark_measur
         double* const state_estimate_row =
                 state_estimates.data() + landmark_group_index * StateEstimateIdx::STATE_ESTIMATE_COUNT;
         double* const pos_estimate = state_estimate_row + StateEstimateIdx::POS_X;
-        double* const quat_estimate = state_estimate_row + StateEstimateIdx::QUAT_W;
+        double* const quat_estimate = state_estimate_row + StateEstimateIdx::QUAT_X;
 
         do {
             auto* landmark_row =
@@ -423,7 +326,7 @@ StateEstimates solve_ceres_batch_opt(const LandmarkMeasurements& landmark_measur
     solver_options.max_num_iterations = 1000;
     solver_options.linear_solver_type = ceres::SPARSE_NORMAL_CHOLESKY;
     solver_options.minimizer_progress_to_stdout = true;
-    solver_options.check_gradients = true;
+    solver_options.check_gradients = false;
     solver_options.gradient_check_relative_precision = 1e-6;
     solver_options.logging_type = ceres::LoggingType::PER_MINIMIZER_ITERATION;
 

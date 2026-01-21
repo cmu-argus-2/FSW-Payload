@@ -117,10 +117,27 @@ def plot_states(true_states, est_states, orbit_measurements):
     plt.subplots_adjust(top=0.92)
     plt.savefig(os.path.join(RESULTS_DIR, "gyro_bias_true_vs_estimated.png"))
     
-    
     # Plot angular velocity
     true_ang_vel = true_states["states"][:,10:13]
-    # est_ang_vel = est_states["state_estimates"][:,14:17]    
+    gyro_meas = orbit_measurements['gyro_measurements'][:,1:4]
+    t_gyro = orbit_measurements['gyro_measurements'][:,0] - t0
+    
+    est_ang_vel = gyro_meas - est_gyro_bias
+    # est ang vel repeated timestamps every 10 seconds
+    fig, axs = plt.subplots(3, 1, sharex=True, figsize=(10, 6))
+    comp_labels = ["Omega X (rad/s)", "Omega Y (rad/s)", "Omega Z (rad/s)"]
+    for i, ax in enumerate(axs):
+        ax.plot(t_true, true_ang_vel[:, i], label="true", color=colors[0])
+        ax.plot(t_est, est_ang_vel[:, i], label="est", color=colors[1], linestyle="--")
+        ax.set_ylabel(comp_labels[i])
+        ax.grid(True)
+        if i == 0:
+            ax.legend(loc="upper right")
+    axs[-1].set_xlabel("time (s) since start")
+    fig.suptitle("Angular Velocity: True vs Estimated")
+    plt.tight_layout()
+    plt.subplots_adjust(top=0.92)
+    plt.savefig(os.path.join(RESULTS_DIR, "angular_velocity_true_vs_estimated.png"))
     
     
 def plot_errors(true_states, est_states):
@@ -240,15 +257,15 @@ def plot_errors(true_states, est_states):
     # Plot gyro bias
     true_gyro_bias = true_states["states"][:,13:16]
     est_gyro_bias = est_states["state_estimates"][:,11:14]
-    true_gyro_bias_estt = np.zeros(est_gyro_bias.shape)
+    true_gyro_bias_est = np.zeros(est_gyro_bias.shape)
     
     fig, axs = plt.subplots(3, 1, sharex=True, figsize=(10, 6))
     for i, ax in enumerate(axs):
-        true_gyro_bias_estt[:,i] = np.interp(t_est, t_true, true_gyro_bias[:,i])
+        true_gyro_bias_est[:,i] = np.interp(t_est, t_true, true_gyro_bias[:,i])
     comp_labels = ["Bias X (rad/s)", "Bias Y (rad/s)", "Bias Z (rad/s)"]
     colors = ["C0", "C1"]
     for i, ax in enumerate(axs):
-        ax.plot(t_est, true_gyro_bias_estt[:, i] - est_gyro_bias[:, i], label="error", color=colors[0])
+        ax.plot(t_est, true_gyro_bias_est[:, i] - est_gyro_bias[:, i], label="error", color=colors[0])
         ax.set_ylabel(comp_labels[i])
         ax.grid(True)
         if i == 0:
@@ -259,7 +276,7 @@ def plot_errors(true_states, est_states):
     plt.subplots_adjust(top=0.92)
     plt.savefig(os.path.join(RESULTS_DIR, "gyro_bias_three_error.png"))
     
-    gyro_bias_norm = np.linalg.norm(true_gyro_bias_estt - est_gyro_bias, axis=1)
+    gyro_bias_norm = np.linalg.norm(true_gyro_bias_est - est_gyro_bias, axis=1)
     fig, ax = plt.subplots(figsize=(10, 4))
     ax.plot(t_est, gyro_bias_norm, label="Gyro Bias Error Norm", color="C0")
     ax.set_ylabel("Error Norm (rad/s)")
@@ -273,10 +290,48 @@ def plot_errors(true_states, est_states):
 
 
 def plot_measurements(measurements, ground_truth_states, state_estimates):
-    # plot the measurements vs residuals
+    # plot the measurements vs measurement estimate
     # TODO: Save measurement residuals during batch optimization
-    pass
+    # gyro measurements
+    # Plot angular velocity
+    true_time = ground_truth_states["unixtime"]
+    t0 = true_time[0] if len(true_time) > 0 else 0
+    gyro_meas = measurements['gyro_measurements'][:,1:4]
+    t_gyro = measurements['gyro_measurements'][:,0] - t0
+    colors = ["C0", "C1"]
+
+    # gyromeas = gyromeas_hat
+    fig, axs = plt.subplots(3, 1, sharex=True, figsize=(10, 6))
+    comp_labels = ["Omega X (rad/s)", "Omega Y (rad/s)", "Omega Z (rad/s)"]
+    for i, ax in enumerate(axs):
+        ax.plot(t_gyro, gyro_meas[:, i], label="est", color=colors[1], linestyle="--")
+        ax.set_ylabel(comp_labels[i])
+        ax.grid(True)
+        if i == 0:
+            ax.legend(loc="upper right")
+    axs[-1].set_xlabel("time (s) since start")
+    fig.suptitle("Gyro measurements")
+    plt.tight_layout()
+    plt.subplots_adjust(top=0.92)
+    plt.savefig(os.path.join(RESULTS_DIR, "gyro_measurements.png"))
     
+    # landmark measurements
+    landmark_meas = measurements['landmark_measurements']
+    t_landmark = landmark_meas[:,0] - t0
+    
+    fig, axs = plt.subplots(6, 1, sharex=True, figsize=(10, 6))
+    comp_labels = ["Bear X (km)", "Bear Y (km)", "Bear Z (km)", "Ldmk X (km)", "Ldmk Y (km)", "Ldmk Z (km)"]
+    for i, ax in enumerate(axs):
+        ax.plot(t_landmark, landmark_meas[:, i+1], color=colors[1], linestyle="None", marker='.') # , markersize=3)
+        ax.set_ylabel(comp_labels[i])
+        ax.grid(True)
+        # if i == 0:
+        #     ax.legend(loc="upper right")
+    axs[-1].set_xlabel("time (s) since start")
+    fig.suptitle("Landmark measurements")
+    plt.tight_layout()
+    plt.subplots_adjust(top=0.92)
+    plt.savefig(os.path.join(RESULTS_DIR, "landmark_measurements.png"))
 
 if __name__ == "__main__":
     files = {

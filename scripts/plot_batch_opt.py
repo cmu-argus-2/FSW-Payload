@@ -4,30 +4,25 @@ import numpy as np
 import matplotlib.pyplot as plt
 import os
 import sys
+import pyquaternion as pyqt
 
 #!/usr/bin/env python3
-"""
-Load HDF5 datasets:
-    data/datasets/batch_opt_gen/ground_truth_states.h5
-    data/datasets/batch_opt_gen/orbit_measurements.h5
-    data/datasets/batch_opt_gen/state_estimates.h5
-"""
-
-DATA_DIR = Path("data/datasets/batch_opt_gen")
+# DATA_DIR = Path("data/datasets/batch_opt_gen")
+DATA_DIR = Path("data/datasets/batch_opt_gen_no_bias")
 RESULTS_DIR = os.path.join(os.path.dirname(__file__), "../data/results/batch_opt")
 
 def load_h5(path: Path) -> dict:
-        """Load all datasets from an HDF5 file into a dict {dataset_path: ndarray}."""
-        path = Path(path)
-        if not path.exists():
-                raise FileNotFoundError(f"File not found: {path}")
-        data = {}
-        with h5py.File(path, "r") as f:
-                def visitor(name, obj):
-                        if isinstance(obj, h5py.Dataset):
-                                data[name] = obj[()]  # read into numpy array
-                f.visititems(visitor)
-        return data
+    """Load all datasets from an HDF5 file into a dict {dataset_path: ndarray}."""
+    path = Path(path)
+    if not path.exists():
+        raise FileNotFoundError(f"File not found: {path}")
+    data = {}
+    with h5py.File(path, "r") as f:
+        def visitor(name, obj):
+                if isinstance(obj, h5py.Dataset):
+                        data[name] = obj[()]  # read into numpy array
+        f.visititems(visitor)
+    return data
 
 def plot_states(true_states, est_states, orbit_measurements):
     # Plot true and estimated states over time
@@ -79,7 +74,8 @@ def plot_states(true_states, est_states, orbit_measurements):
     
     # Plot quaternion
     true_quat = true_states["states"][:,6:10]
-    est_quat = est_states["state_estimates"][:,7:11]
+    true_quat = true_quat * np.sign(true_quat[:,0:1])
+    est_quat = est_states["state_estimates"][:,[10,7,8,9]]  # note: est quat is at indices 7-10, shifted by 1 due to time at index 0
     
     fig, axs = plt.subplots(4, 1, sharex=True, figsize=(10, 6))
     comp_labels = ["QW", "QX", "QY", "QZ"]
@@ -220,9 +216,11 @@ def plot_errors(true_states, est_states):
     plt.subplots_adjust(top=0.92)
     plt.savefig(os.path.join(RESULTS_DIR, "eci_velocity_error_norm.png"))
     
-    # Plot quaternion
+    # Plot attitude error
     true_quat = true_states["states"][:,6:10]
-    est_quat = est_states["state_estimates"][:,7:11]
+    true_quat = true_quat * np.sign(true_quat[:,0:1])
+    est_quat = est_states["state_estimates"][:,[10,7,8,9]]
+    est_quat = est_quat * np.sign(est_quat[:,0:1])
     
     fig, axs = plt.subplots(4, 1, sharex=True, figsize=(10, 6))
     true_quat_estt = np.zeros(est_quat.shape)
@@ -242,17 +240,24 @@ def plot_errors(true_states, est_states):
     plt.subplots_adjust(top=0.92)
     plt.savefig(os.path.join(RESULTS_DIR, "quaternion_four_error.png"))
     
-    quat_norm = np.linalg.norm(true_quat_estt - est_quat, axis=1)
+    # angle between quaternions
+    angle_errors = np.zeros(est_quat.shape[0])  # shape (N,)
+    for i in range(est_quat.shape[0]):
+        q_true = pyqt.Quaternion(true_quat_estt[i,0], true_quat_estt[i,1], true_quat_estt[i,2], true_quat_estt[i,3])
+        q_est  = pyqt.Quaternion(est_quat[i,0], est_quat[i,1], est_quat[i,2], est_quat[i,3])
+        dq = q_true.inverse * q_est
+        angle_errors[i] = np.rad2deg(2 * np.arccos(np.clip(np.abs(dq.w), -1.0, 1.0)))  # angle in degrees
     fig, ax = plt.subplots(figsize=(10, 4))
-    ax.plot(t_est, quat_norm, label="Quaternion Error Norm", color="C0")
-    ax.set_ylabel("Error Norm")
+    ax.plot(t_est, angle_errors, label="Attitude Error", color="C0")
+    ax.set_ylabel("Error (degrees)")
     ax.set_xlabel("time (s) since start")
-    ax.set_title("Quaternion Error Norm")
+    ax.set_title("Attitude Error")
     ax.grid(True)
-    ax.legend(loc="upper right")
+    ax.set_ylim(0, np.maximum(np.max(angle_errors)*1.1,180))
+    # ax.legend(loc="upper right")
     plt.tight_layout()
     plt.subplots_adjust(top=0.92)
-    plt.savefig(os.path.join(RESULTS_DIR, "quaternion_error_norm.png"))
+    plt.savefig(os.path.join(RESULTS_DIR, "attitude_error.png"))
     
     # Plot gyro bias
     true_gyro_bias = true_states["states"][:,13:16]

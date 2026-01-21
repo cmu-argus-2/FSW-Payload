@@ -1,5 +1,6 @@
 #include "navigation/batch_optimization.hpp"
 #include "navigation/pose_dynamics.hpp"
+#include "navigation/test_jacobians.hpp"
 #include <ceres/ceres.h>
 #include <ceres/internal/eigen.h>
 // #include <xtensor/xtensor.hpp>
@@ -10,7 +11,15 @@
 #include <chrono>
 #include <iomanip>
 
+
+// TODO: Once ready, move to tests folder 
 int main(int argc, char** argv) {
+    // test_linear_dynamics_cost_functor();
+    test_angular_dynamics_cost_functor();
+    return 0;
+}
+
+void test_linear_dynamics_cost_functor() {
     double dt = 1.0;
     LinearDynamicsCostFunctor linear_dyn(dt);
     LinearDynamicsAnalytic linear_dyn_analytic(dt);
@@ -163,24 +172,110 @@ int main(int argc, char** argv) {
             std::cout << "Skipping comparison due to Evaluate failure\n";
         }
     }
-
-    // fix the angular dynamics
-
-    // cleanup
-    // free the single contiguous jacobian block and the row pointer array
-    // for (int i = 0; i < 4; ++i) delete [] jacobians_ad[i];
-    // for (int i = 0; i < 2; ++i) delete [] jacobian2[i];
-
-
-    /*
-    // Gradient checking
-    GradientChecker gradient_checker(my_cost_function,
-                                 manifolds,
-                                 numeric_diff_options);
-    GradientCheckResults results;
-    if (!gradient_checker.Probe(parameter_blocks.data(), 1e-9, &results) {
-    LOG(ERROR) << "An error has occurred:\n" << results.error_log;
-    }
-    */
+    return;
 }
 
+void test_angular_dynamics_cost_functor() {
+    double dt = 1.0;
+
+    // double M_PI = 3.14159265358979323846;
+
+    GyroMeasurements gyro_measurements = Eigen::MatrixXd::Zero(4, GyroMeasurementIdx::GYRO_MEAS_COUNT);
+    gyro_measurements(1,GyroMeasurementIdx::ANG_VEL_X) = M_PI / 2.0;
+    gyro_measurements(2,GyroMeasurementIdx::ANG_VEL_X) = M_PI / 2.0+0.1;
+    gyro_measurements(3,GyroMeasurementIdx::ANG_VEL_X) = M_PI / 2.0;
+    AngularDynamicsCostFunctor angular_dyn(gyro_measurements.data(), dt);
+    // AngularDynamicsAnalytic angular_dyn_analytic(dt);
+
+    auto* ad_angular_dyn = new ceres::AutoDiffCostFunction<AngularDynamicsCostFunctor, 6, 4, 3, 4, 3>(
+        new AngularDynamicsCostFunctor{gyro_measurements.data(), dt}
+    );
+    
+    // D: state/residual dimension
+    const int D = 6;
+    const int TD = 14;
+    const int V_array[4] = {4, 3, 4, 3};
+    const double tol = 1e-9;
+
+    double residuals_ad[D];
+    double residuals_an[D];
+
+    double* jacobians_an[4];
+    for (int i = 0; i < 4; ++i) {
+        jacobians_an[i] = new double[D * V_array[i]];
+    }
+    double* jacobians_ad[4];
+    for (int i = 0; i < 4; ++i) {
+        jacobians_ad[i] = new double[D * V_array[i]];
+    }
+
+    // Predefined list of state vectors (q0(4), omega0(3), q1(4), omega1(3))
+    // q = [x,y,z,w]
+    std::vector<std::array<double, TD>> tests{
+        std::array<double, TD>{0.0,0.0,0.0,1.0, 0.0,0.0,0.0, 0.0,0.0,0.0,1.0, 0.0,0.0,0.0},
+        std::array<double, TD>{0.0,0.0,0.0,1.0, 0.0,0.0,0.0, 0.7071,0.0,0.0,0.7071, 0.0,0.0,0.0},
+        std::array<double, TD>{0.0,0.0,0.0,1.0, 0.1,0.0,0.0, 0.7071,0.0,0.0,0.7071, 0.1,0.0,0.0},
+        std::array<double, TD>{0.0,0.0,0.0,1.0, 0.1,0.0,0.0, 0.7071,0.0,0.0,0.7071, 0.0,0.0,0.0},
+    };
+
+    for (size_t t = 0; t < tests.size(); ++t) {
+        const auto &data = tests[t];
+
+        // parameter block pointers for autodiff (point to x0, x1)
+        const double* param_blocks[4] = {
+            data.data() + 0,   // q0
+            data.data() + 4,   // bw0
+            data.data() + 7,   // q1
+            data.data() + 11   // bw1
+        };
+
+        auto* gyro_row = gyro_measurements.data() + GyroMeasurementIdx::GYRO_MEAS_COUNT * t;
+        
+        auto* ad_angular_dyn = new ceres::AutoDiffCostFunction<AngularDynamicsCostFunctor, 6, 4, 3, 4, 3>(
+            new AngularDynamicsCostFunctor{gyro_row, dt}
+        );
+
+        // time autodiff Evaluate
+        auto t0 = std::chrono::high_resolution_clock::now();
+        bool ok_ad = ad_angular_dyn->Evaluate(param_blocks, residuals_ad, jacobians_ad);
+        auto t1 = std::chrono::high_resolution_clock::now();
+        double time_ad_ms = std::chrono::duration<double, std::milli>(t1 - t0).count();
+
+        std::cout << std::fixed << std::setprecision(6);
+        std::cout << "time autodiff Evaluate: " << time_ad_ms << " ms\n";
+
+        if (!ok_ad) std::cout << "autodiff Evaluate failed\n";
+
+        if (ok_ad) {
+            // print residuals and their difference
+            std::cout << "residuals (autodiff): ";
+            for (int i = 0; i < D; ++i) std::cout << residuals_ad[i] << " ";
+
+            // assemble full autodiff jacobian into row-major D x TD
+            std::vector<double> J_ad(D * TD, 0.0);
+            int col_offset = 0;
+            for (int b = 0; b < 4; ++b) {
+                col_offset = (b == 0) ? 0 : col_offset + V_array[b-1];
+                for (int i = 0; i < D; ++i) {
+                    for (int j = 0; j < V_array[b]; ++j) {
+                        int col = col_offset + j;
+                        J_ad[i * TD + col] = jacobians_ad[b][i * V_array[b] + j];
+                    }
+                }
+            }
+
+            std::cout << "Jacobian (autodiff):\n";
+            for (int i = 0; i < D; ++i) {
+                for (int j = 0; j < TD; ++j) {
+                    std::cout << J_ad[i * TD + j] << (j + 1 == TD ? "" : " ");
+                }
+                std::cout << "\n";
+            }
+
+        } else {
+            std::cout << "Skipping comparison due to Evaluate failure\n";
+        }
+
+    }
+    return;
+}

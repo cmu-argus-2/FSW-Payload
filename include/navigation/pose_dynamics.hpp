@@ -315,7 +315,7 @@ private:
 
 struct AngularDynamicsCostFunctor {
 public:
-    AngularDynamicsCostFunctor(const double* const gyro_row, const double& dt) :
+    AngularDynamicsCostFunctor(const double* const gyro_row, const double dt) :
             gyro_ang_vel(gyro_row + GyroMeasurementIdx::ANG_VEL_X), dt(dt) {}
 
     template<typename T>
@@ -366,7 +366,7 @@ public:
         T dq_arr[4];
         ceres::AngleAxisToQuaternion(angle_axis, dq_arr);
         // Eigen::Quaternion constructor takes (w, x, y, z)
-        dq = Eigen::Quaternion<T>(dq_arr[3], dq_arr[0], dq_arr[1], dq_arr[2]);
+        dq = Eigen::Quaternion<T>(dq_arr[0], dq_arr[1], dq_arr[2], dq_arr[3]);
     }
     const Eigen::Quaternion <T> q_pred = q0 * dq;
     {
@@ -374,7 +374,7 @@ public:
         const Eigen::Quaternion<T> q_err = q_pred.conjugate() * q1;
         T q_err_arr[4] = { q_err.w(), q_err.x(), q_err.y(), q_err.z() };
         // Write angle-axis into residuals
-        ceres::QuaternionToAngleAxis(q_err_arr, residuals);
+        ceres::QuaternionToAngleAxis(q_err_arr, q_res.data());
     }
     
     b_res = b_w_1 - b_w_0; // assuming constant bias for now
@@ -383,7 +383,7 @@ public:
 
 private:
     const Eigen::Map<const Eigen::Vector3d> gyro_ang_vel;
-    const double& dt;
+    const double dt;
 };
 /*
 struct AngularDynamicsCostFunctor {

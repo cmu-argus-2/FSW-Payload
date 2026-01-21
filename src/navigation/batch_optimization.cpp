@@ -23,10 +23,10 @@ StateEstimates init_state_estimate(std::vector<double> state_timestamps) {
         state_estimates(i, StateEstimateIdx::VEL_X) = 0.0;
         state_estimates(i, StateEstimateIdx::VEL_Y) = 8.0; // km/s
         state_estimates(i, StateEstimateIdx::VEL_Z) = 0.0; // km/s
-        state_estimates(i, StateEstimateIdx::QUAT_W) = 1.0;
         state_estimates(i, StateEstimateIdx::QUAT_X) = 0.0;
         state_estimates(i, StateEstimateIdx::QUAT_Y) = 0.0;
         state_estimates(i, StateEstimateIdx::QUAT_Z) = 0.0;
+        state_estimates(i, StateEstimateIdx::QUAT_W) = 1.0;
         state_estimates(i, StateEstimateIdx::GYRO_BIAS_X) = 0.0;
         state_estimates(i, StateEstimateIdx::GYRO_BIAS_Y) = 0.0;
         state_estimates(i, StateEstimateIdx::GYRO_BIAS_Z) = 0.0;
@@ -85,6 +85,13 @@ get_state_timestamps(const LandmarkMeasurements& landmark_measurements,
         const double& last_timestamp = state_timestamps.back();
         const double dt = timestamp - last_timestamp;
         if (dt <= max_dt) {
+            if (dt <= 1e-9) {
+                for (idx_t i = 0; i < state_timestamps.size(); ++i) {
+                    if (abs(state_timestamps[i] - timestamp) < 1e-9) {
+                        return;
+                    }
+                }
+            }
             state_timestamps.push_back(timestamp);
             return;
         }
@@ -264,12 +271,12 @@ StateEstimates solve_ceres_batch_opt(const LandmarkMeasurements& landmark_measur
         problem.AddResidualBlock(
             new ceres::AutoDiffCostFunction<AngularDynamicsCostFunctor, 6, 4, 3, 4, 3>(
                 new AngularDynamicsCostFunctor{gyro_row, dt}),
-                nullptr,
-                p_q0,
-                p_bw0,
-                p_q1,
-                p_bw1
-            );
+            nullptr,
+            p_q0,
+            p_bw0,
+            p_q1,
+            p_bw1
+        );
     }
 
     // TODO: Add magnetometer measurements for attitude estimation
@@ -289,12 +296,12 @@ StateEstimates solve_ceres_batch_opt(const LandmarkMeasurements& landmark_measur
             auto* landmark_row =
                     landmark_measurements.data() + landmark_idx * LandmarkMeasurementIdx::LANDMARK_COUNT;
             problem.AddResidualBlock(
-                    // Ceres will automatically take ownership of the cost function and cost functor
-                    new ceres::AutoDiffCostFunction<LandmarkCostFunctor, 3, 3, 4>(
-                            new LandmarkCostFunctor{landmark_row}),
-                    nullptr,
-                    pos_estimate,
-                    quat_estimate);
+                // Ceres will automatically take ownership of the cost function and cost functor
+                new ceres::AutoDiffCostFunction<LandmarkCostFunctor, 3, 3, 4>(
+                        new LandmarkCostFunctor{landmark_row}),
+                nullptr,
+                pos_estimate,
+                quat_estimate);
             ++landmark_idx;
         } while (landmark_idx < landmark_group_starts.rows() && !landmark_group_starts(landmark_idx, 0));
     }

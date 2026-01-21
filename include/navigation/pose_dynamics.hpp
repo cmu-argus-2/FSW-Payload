@@ -341,18 +341,6 @@ public:
     // Halving not needed because Eigen Quaternion base handles half angle
     // https://github.com/libigl/eigen/blob/1f05f51517ec4fd91eed711e0f89e97a7c028c0e/Eigen/src/Geometry/Quaternion.h#L505
 
-    // const T half_dt = T(0.5) * T(dt);
-
-    //Safe normalization of angular velocity vector
-    // const T w_norm_sq = unbiased_gyro_ang_vel.squaredNorm();
-    // const T eps = T(1e-8);
-    // const T inv_w_norm = T(1.0) / ceres::sqrt(w_norm_sq + eps);
-    // ceres::AngleAxisRotatePoint(unbiased_gyro_ang_vel, const T pt[3], T result[3])
-    // const Eigen::Quaternion <T> dq = Eigen::Quaternion<T>(
-    //         Eigen::AngleAxis<T>(unbiased_gyro_ang_vel.norm() * T(dt), unbiased_gyro_ang_vel * inv_w_norm));
-    // const Eigen::AngleAxis <T> q_error = Eigen::AngleAxis<T>(q_pred.conjugate() * q1);
-    // q_res = q_error.angle() * q_error.axis();
-
     
     Eigen::Quaternion <T> dq;
     {
@@ -377,7 +365,7 @@ public:
         ceres::QuaternionToAngleAxis(q_err_arr, q_res.data());
     }
     
-    b_res = b_w_1 - b_w_0; // assuming constant bias for now
+    b_res = (b_w_1 - b_w_0) / 0.05; // assuming constant bias for now
     return true;
     }
 
@@ -385,56 +373,117 @@ private:
     const Eigen::Map<const Eigen::Vector3d> gyro_ang_vel;
     const double dt;
 };
-/*
-struct AngularDynamicsCostFunctor {
+
+
+struct AngularDynamicsCostFunctorFixBias {
 public:
-    AngularDynamicsCostFunctor(const double* const gyro_row, const double& dt) :
+    AngularDynamicsCostFunctorFixBias(const double* const gyro_row, const double dt) :
             gyro_ang_vel(gyro_row + GyroMeasurementIdx::ANG_VEL_X), dt(dt) {}
 
     template<typename T>
     bool operator()(const T* const quat_curr,
-                    const T* const gyro_bias_curr,
                     const T* const quat_next,
-                    const T* const gyro_bias_next,
+                    const T* const gyro_bias,
                     T* const residuals) const {
                         // const Eigen::Map<const Eigen::Matrix<T, 3, 1>> w0(ang_vel_curr);
-    const Eigen::Matrix<T, 3, 1> gyro_w_0 = gyro_ang_vel.template cast<T>();
-    
-    const Eigen::Map<const Eigen::Quaternion <T>> q0(quat_curr);
-    const Eigen::Map<const Eigen::Matrix<T, 3, 1>> b_w_0(gyro_bias_curr);
-    const Eigen::Map<const Eigen::Quaternion <T>> q1(quat_next);
-    const Eigen::Map<const Eigen::Matrix<T, 3, 1>> b_w_1(gyro_bias_next);
+        const Eigen::Matrix<T, 3, 1> gyro_w_0 = gyro_ang_vel.template cast<T>();
+        
+        const Eigen::Map<const Eigen::Quaternion <T>> q0(quat_curr);
+        const Eigen::Map<const Eigen::Quaternion <T>> q1(quat_next);
+        const Eigen::Map<const Eigen::Matrix<T, 3, 1>> b_w(gyro_bias);
 
-    Eigen::Map <Eigen::Matrix<T, 3, 1>> q_res(residuals);  // in axis-angle form
-    Eigen::Map <Eigen::Matrix<T, 3, 1>> b_res(residuals + 3);
+        Eigen::Map <Eigen::Matrix<T, 3, 1>> q_res(residuals);  // in axis-angle form
 
-    
-    Eigen::Matrix<T, 3, 1> unbiased_gyro_ang_vel = gyro_w_0 - b_w_0;
-    
-    // Halving not needed because Eigen Quaternion base handles half angle
-    // https://github.com/libigl/eigen/blob/1f05f51517ec4fd91eed711e0f89e97a7c028c0e/Eigen/src/Geometry/Quaternion.h#L505
+        Eigen::Matrix<T, 3, 1> unbiased_gyro_ang_vel = gyro_w_0 - b_w;
+        
+        // Halving not needed because Eigen Quaternion base handles half angle
+        // https://github.com/libigl/eigen/blob/1f05f51517ec4fd91eed711e0f89e97a7c028c0e/Eigen/src/Geometry/Quaternion.h#L505
 
-    // const T half_dt = T(0.5) * T(dt);
-
-    //Safe normalization of angular velocity vector
-    const T w_norm_sq = unbiased_gyro_ang_vel.squaredNorm();
-    const T eps = T(1e-8);
-    const T inv_w_norm = T(1.0) / ceres::sqrt(w_norm_sq + eps);
-
-    const Eigen::Quaternion <T> dq = Eigen::Quaternion<T>(
-            Eigen::AngleAxis<T>(unbiased_gyro_ang_vel.norm() * T(dt), unbiased_gyro_ang_vel * inv_w_norm));
-    const Eigen::Quaternion <T> q_pred = q0 * dq;
-    const Eigen::AngleAxis <T> q_error = Eigen::AngleAxis<T>(q_pred.conjugate() * q1);
-    q_res = q_error.angle() * q_error.axis();
-    b_res = b_w_1 - b_w_0; // assuming constant bias for now
-    return true;
+        
+        Eigen::Quaternion <T> dq;
+        {
+            // Build angle-axis array (angle = |w|*dt, axis = w/|w|) in T type
+            T angle_axis[3] = {
+                unbiased_gyro_ang_vel[0] * T(dt),
+                unbiased_gyro_ang_vel[1] * T(dt),
+                unbiased_gyro_ang_vel[2] * T(dt)
+            };
+            // Ceres expects quaternion in order [x, y, z, w]
+            T dq_arr[4];
+            ceres::AngleAxisToQuaternion(angle_axis, dq_arr);
+            // Eigen::Quaternion constructor takes (w, x, y, z)
+            dq = Eigen::Quaternion<T>(dq_arr[0], dq_arr[1], dq_arr[2], dq_arr[3]);
+        }
+        const Eigen::Quaternion <T> q_pred = q0 * dq;
+        {
+            // Compute error quaternion q_err = q_pred.conjugate() * q1 and convert to array [w,x,y,z]
+            const Eigen::Quaternion<T> q_err = q_pred.conjugate() * q1;
+            T q_err_arr[4] = { q_err.w(), q_err.x(), q_err.y(), q_err.z() };
+            // Write angle-axis into residuals
+            ceres::QuaternionToAngleAxis(q_err_arr, q_res.data());
+        }
+        return true;
     }
 
 private:
     const Eigen::Map<const Eigen::Vector3d> gyro_ang_vel;
-    const double& dt;
+    const double dt;
 };
 
-*/
+
+struct AngularDynamicsCostFunctorNoBias {
+public:
+    AngularDynamicsCostFunctorNoBias(const double* const gyro_row, const double dt) :
+            gyro_ang_vel(gyro_row + GyroMeasurementIdx::ANG_VEL_X), dt(dt) {}
+
+    template<typename T>
+    bool operator()(const T* const quat_curr,
+                    const T* const quat_next,
+                    T* const residuals) const {
+                        // const Eigen::Map<const Eigen::Matrix<T, 3, 1>> w0(ang_vel_curr);
+        const Eigen::Matrix<T, 3, 1> gyro_w_0 = gyro_ang_vel.template cast<T>();
+        
+        const Eigen::Map<const Eigen::Quaternion <T>> q0(quat_curr);
+        const Eigen::Map<const Eigen::Quaternion <T>> q1(quat_next);
+
+        Eigen::Map <Eigen::Matrix<T, 3, 1>> q_res(residuals);  // in axis-angle form
+
+        Eigen::Matrix<T, 3, 1> unbiased_gyro_ang_vel = gyro_w_0;
+        
+        // Halving not needed because Eigen Quaternion base handles half angle
+        // https://github.com/libigl/eigen/blob/1f05f51517ec4fd91eed711e0f89e97a7c028c0e/Eigen/src/Geometry/Quaternion.h#L505
+
+        
+        Eigen::Quaternion <T> dq;
+        {
+            // Build angle-axis array (angle = |w|*dt, axis = w/|w|) in T type
+            T angle_axis[3] = {
+                unbiased_gyro_ang_vel[0] * T(dt),
+                unbiased_gyro_ang_vel[1] * T(dt),
+                unbiased_gyro_ang_vel[2] * T(dt)
+            };
+            // Ceres expects quaternion in order [x, y, z, w]
+            T dq_arr[4];
+            ceres::AngleAxisToQuaternion(angle_axis, dq_arr);
+            // Eigen::Quaternion constructor takes (w, x, y, z)
+            dq = Eigen::Quaternion<T>(dq_arr[0], dq_arr[1], dq_arr[2], dq_arr[3]);
+        }
+        const Eigen::Quaternion <T> q_pred = q0 * dq;
+        {
+            // Compute error quaternion q_err = q_pred.conjugate() * q1 and convert to array [w,x,y,z]
+            const Eigen::Quaternion<T> q_err = q_pred.conjugate() * q1;
+            T q_err_arr[4] = { q_err.w(), q_err.x(), q_err.y(), q_err.z() };
+            // Write angle-axis into residuals
+            ceres::QuaternionToAngleAxis(q_err_arr, q_res.data());
+        }
+        return true;
+    }
+
+private:
+    const Eigen::Map<const Eigen::Vector3d> gyro_ang_vel;
+    const double dt;
+};
+
+
 
 # endif // POSE_DYNAMICS_HPP

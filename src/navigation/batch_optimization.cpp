@@ -156,7 +156,8 @@ get_state_timestamps(const LandmarkMeasurements& landmark_measurements,
 StateEstimates solve_ceres_batch_opt(const LandmarkMeasurements& landmark_measurements,
                                      const LandmarkGroupStarts& landmark_group_starts,
                                      const GyroMeasurements& gyro_measurements,
-                                     const double max_dt) {
+                                     const double max_dt,
+                                     const std::string bias_mode) {
     assert(landmark_measurements.rows() == landmark_group_starts.rows() &&
            "landmark_measurements and landmark_group_starts must have the same number of rows.");
     assert(landmark_measurements.rows() > 0 &&
@@ -214,10 +215,24 @@ StateEstimates solve_ceres_batch_opt(const LandmarkMeasurements& landmark_measur
         problem.AddParameterBlock(row_start + StateEstimateIdx::QUAT_X,
                                     StateEstimateIdx::GYRO_BIAS_X - StateEstimateIdx::QUAT_X,
                                     &quaternion_manifold);
+        problem.SetParameterLowerBound(row_start + StateEstimateIdx::QUAT_X, 3, 0.0);
         // Gyro bias parameter block
-        problem.AddParameterBlock(row_start + StateEstimateIdx::GYRO_BIAS_X,
-            StateEstimateIdx::STATE_ESTIMATE_COUNT - StateEstimateIdx::GYRO_BIAS_X);
+        if (bias_mode == "tv_bias") {
+            problem.AddParameterBlock(row_start + StateEstimateIdx::GYRO_BIAS_X,
+                StateEstimateIdx::STATE_ESTIMATE_COUNT - StateEstimateIdx::GYRO_BIAS_X);
+        } else if (bias_mode == "fix_bias") {
+            if (i ==0) {
+                problem.AddParameterBlock(row_start + StateEstimateIdx::GYRO_BIAS_X,
+                    StateEstimateIdx::STATE_ESTIMATE_COUNT - StateEstimateIdx::GYRO_BIAS_X);
+            }
+        } else if (bias_mode == "no_bias") {
+            // Do not add parameter block for gyro bias
+        } else {
+            throw std::invalid_argument("Invalid bias_mode: " + bias_mode +
+                                        ". Must be 'tv_bias', 'fix_bias', or 'no_bias'.");
         }
+
+    }
 
     // TODO: Figure out why the gradient check fails for the Linear Dynamics cost function
     // Linear Dynamics costs
@@ -259,24 +274,46 @@ StateEstimates solve_ceres_batch_opt(const LandmarkMeasurements& landmark_measur
         double* const curr_row_start = state_estimates.data() + i * StateEstimateIdx::STATE_ESTIMATE_COUNT;
         double* const next_row_start = state_estimates.data() + (i + 1) * StateEstimateIdx::STATE_ESTIMATE_COUNT;
 
-        
         double* p_q0  = &state_estimates(i, StateEstimateIdx::QUAT_X);
-        double* p_bw0 = &state_estimates(i, StateEstimateIdx::GYRO_BIAS_X);
         double* p_q1  = &state_estimates(i+1, StateEstimateIdx::QUAT_X);
-        double* p_bw1 = &state_estimates(i+1, StateEstimateIdx::GYRO_BIAS_X);
-        
+
         // TODO: Find the correct gyro measurement for this time step
         auto* gyro_row = gyro_measurements.data() + GyroMeasurementIdx::GYRO_MEAS_COUNT * i;
 
-        problem.AddResidualBlock(
-            new ceres::AutoDiffCostFunction<AngularDynamicsCostFunctor, 6, 4, 3, 4, 3>(
-                new AngularDynamicsCostFunctor{gyro_row, dt}),
-            nullptr,
-            p_q0,
-            p_bw0,
-            p_q1,
-            p_bw1
-        );
+        if (bias_mode == "fix_bias") { // fixed bias
+            double* p_bw = &state_estimates(1, StateEstimateIdx::GYRO_BIAS_X);
+
+            problem.AddResidualBlock(
+                new ceres::AutoDiffCostFunction<AngularDynamicsCostFunctorFixBias, 3, 4, 4, 3>(
+                    new AngularDynamicsCostFunctorFixBias{gyro_row, dt}),
+                nullptr,
+                p_q0,
+                p_q1,
+                p_bw
+            );
+        } else if (bias_mode == "tv_bias") { // time-varying bias
+            double* p_bw0 = &state_estimates(i, StateEstimateIdx::GYRO_BIAS_X);
+            double* p_bw1 = &state_estimates(i+1, StateEstimateIdx::GYRO_BIAS_X);
+
+            problem.AddResidualBlock(
+                new ceres::AutoDiffCostFunction<AngularDynamicsCostFunctor, 6, 4, 3, 4, 3>(
+                    new AngularDynamicsCostFunctor{gyro_row, dt}),
+                nullptr,
+                p_q0,
+                p_bw0,
+                p_q1,
+                p_bw1
+            );
+        } else if (bias_mode == "no_bias") { // no bias
+
+            problem.AddResidualBlock(
+                new ceres::AutoDiffCostFunction<AngularDynamicsCostFunctorNoBias, 3, 4, 4>(
+                    new AngularDynamicsCostFunctorNoBias{gyro_row, dt}),
+                nullptr,
+                p_q0,
+                p_q1
+            );
+        }
     }
 
     // TODO: Add magnetometer measurements for attitude estimation
@@ -342,6 +379,18 @@ StateEstimates solve_ceres_batch_opt(const LandmarkMeasurements& landmark_measur
 
     // Now `summary` holds convergence info and your parameter blocks are updated.
     std::cout << summary.FullReport() << "\n";
+
+    if (bias_mode == "fix_bias") {
+        // Copy the fixed bias to all time steps
+        const double* const fixed_bias = state_estimates.data() + StateEstimateIdx::GYRO_BIAS_X;
+        for (idx_t i = 1; i < state_estimates.rows(); ++i) {
+            double* const row_start = state_estimates.data() + i * StateEstimateIdx::STATE_ESTIMATE_COUNT;
+            double* const bias_ptr = row_start + StateEstimateIdx::GYRO_BIAS_X;
+            std::copy(fixed_bias,
+                      fixed_bias + (StateEstimateIdx::STATE_ESTIMATE_COUNT - StateEstimateIdx::GYRO_BIAS_X),
+                      bias_ptr);
+        }
+    }
 
     // Print state estimates
     for (idx_t i = 0; i < state_estimates.rows(); i+=100){

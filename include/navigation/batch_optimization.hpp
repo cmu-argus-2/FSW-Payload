@@ -69,6 +69,7 @@ StateEstimates
 solve_ceres_batch_opt(const LandmarkMeasurements& landmark_measurements,
                       const LandmarkGroupStarts& landmark_group_starts,
                       const GyroMeasurements& gyro_measurements,
-                      const double max_dt);
+                      const double max_dt,
+                      const std::string bias_mode="tv_bias");
 
 #endif // BATCH_OPTIMIZATION_HPP

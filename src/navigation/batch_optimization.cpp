@@ -195,7 +195,7 @@ StateEstimates solve_ceres_batch_opt(const LandmarkMeasurements& landmark_measur
     // give an initial guess
     StateEstimates state_estimates = init_state_estimate(state_timestamps);
     
-    ceres::EigenQuaternionManifold quaternion_manifold = ceres::EigenQuaternionManifold{};
+    // ceres::EigenQuaternionManifold quaternion_manifold = ceres::EigenQuaternionManifold{};
 
     ceres::Problem::Options problem_options;
     problem_options.manifold_ownership = ceres::DO_NOT_TAKE_OWNERSHIP;
@@ -214,8 +214,8 @@ StateEstimates solve_ceres_batch_opt(const LandmarkMeasurements& landmark_measur
         // Quaternion parameter block
         problem.AddParameterBlock(row_start + StateEstimateIdx::QUAT_X,
                                     StateEstimateIdx::GYRO_BIAS_X - StateEstimateIdx::QUAT_X,
-                                    &quaternion_manifold);
-        problem.SetParameterLowerBound(row_start + StateEstimateIdx::QUAT_X, 3, 0.0);
+                                    new ceres::EigenQuaternionManifold());
+        // problem.SetParameterLowerBound(row_start + StateEstimateIdx::QUAT_X, 3, 0.0);
         // Gyro bias parameter block
         if (bias_mode == "tv_bias") {
             problem.AddParameterBlock(row_start + StateEstimateIdx::GYRO_BIAS_X,
@@ -240,8 +240,8 @@ StateEstimates solve_ceres_batch_opt(const LandmarkMeasurements& landmark_measur
         // In the last timestep it seems to show dt 60 
         // seems to be because of the condition of requiring every timestamp to have an additional timestamp after it
         const double dt = state_timestamps[i + 1] - state_timestamps[i];
-        double* const curr_row_start = state_estimates.data() + i * StateEstimateIdx::STATE_ESTIMATE_COUNT;
-        double* const next_row_start = state_estimates.data() + (i + 1) * StateEstimateIdx::STATE_ESTIMATE_COUNT;
+        // double* const curr_row_start = state_estimates.data() + i * StateEstimateIdx::STATE_ESTIMATE_COUNT;
+        // double* const next_row_start = state_estimates.data() + (i + 1) * StateEstimateIdx::STATE_ESTIMATE_COUNT;
         
         double* p_r0 = &state_estimates(i, StateEstimateIdx::POS_X);
         double* p_v0 = &state_estimates(i, StateEstimateIdx::VEL_X);
@@ -271,8 +271,8 @@ StateEstimates solve_ceres_batch_opt(const LandmarkMeasurements& landmark_measur
         // In the last timestep it seems to show dt 60 
         // seems to be because of the condition of requiring every timestamp to have an additional timestamp after it
         const double dt = state_timestamps[i + 1] - state_timestamps[i];
-        double* const curr_row_start = state_estimates.data() + i * StateEstimateIdx::STATE_ESTIMATE_COUNT;
-        double* const next_row_start = state_estimates.data() + (i + 1) * StateEstimateIdx::STATE_ESTIMATE_COUNT;
+        // double* const curr_row_start = state_estimates.data() + i * StateEstimateIdx::STATE_ESTIMATE_COUNT;
+        // double* const next_row_start = state_estimates.data() + (i + 1) * StateEstimateIdx::STATE_ESTIMATE_COUNT;
 
         double* p_q0  = &state_estimates(i, StateEstimateIdx::QUAT_X);
         double* p_q1  = &state_estimates(i+1, StateEstimateIdx::QUAT_X);
@@ -377,7 +377,15 @@ StateEstimates solve_ceres_batch_opt(const LandmarkMeasurements& landmark_measur
     ceres::Solver::Summary summary;
     ceres::Solve(solver_options, &problem, &summary);
 
-    // Now `summary` holds convergence info and your parameter blocks are updated.
+    double* row_start = state_estimates.data() + 0 * StateEstimateIdx::STATE_ESTIMATE_COUNT;
+    double* q_ptr = row_start + StateEstimateIdx::QUAT_X;
+
+    std::cout << "HasManifold: " << problem.HasManifold(q_ptr) << "\n";
+    std::cout << "BlockSize: " << problem.ParameterBlockSize(q_ptr) << "\n";
+    std::cout << "TangentSize: " << problem.ParameterBlockTangentSize(q_ptr) << "\n";
+    std::cout << "IsConstantBlock: " << problem.IsParameterBlockConstant(q_ptr) << "\n";
+
+
     std::cout << summary.FullReport() << "\n";
 
     if (bias_mode == "fix_bias") {

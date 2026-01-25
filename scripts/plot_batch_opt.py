@@ -77,16 +77,36 @@ def plot_states(true_states, est_states, orbit_measurements):
     true_quat = true_quat * np.sign(true_quat[:,0:1])
     est_quat = est_states["state_estimates"][:,[10,7,8,9]]  # note: est quat is at indices 7-10, shifted by 1 due to time at index 0
     
-    fig, axs = plt.subplots(4, 1, sharex=True, figsize=(10, 6))
-    comp_labels = ["QW", "QX", "QY", "QZ"]
-    colors = ["C0", "C1"]
+    norm_est = np.linalg.norm(np.array(est_quat),axis=1)
+    norm_true = np.linalg.norm(np.array(true_quat),axis=1)
+    dot_prod = np.zeros(est_quat.shape[0])
+    for i in range(est_quat.shape[0]):
+        dot_prod[i] = np.dot(est_quat[i,:],true_quat[i,:])
+    dot_prod = np.abs(dot_prod)
+    theta = 2.0 * np.arccos(dot_prod)  
+    
+    fig, axs = plt.subplots(6, 1, sharex=True, figsize=(10, 6))
+    comp_labels = ["QW", "QX", "QY", "QZ", "Quaternion Norm", "Theta"]
+    colors = ["C0", "C1", "C2", "C3"]
     for i, ax in enumerate(axs):
-        ax.plot(t_true, true_quat[:, i], label="true", color=colors[0])
-        ax.plot(t_est, est_quat[:, i], label="est", color=colors[1], linestyle="--")
+        if i <= 3:
+            ax.plot(t_true, true_quat[:, i], label="true", color=colors[0])
+            ax.plot(t_est, est_quat[:, i], label="est", color=colors[1], linestyle="--")
+            if i == 0:
+                ax.legend(loc="upper right")
+        elif i==4:
+            norm_est = np.linalg.norm(np.array(est_quat),axis=1)
+            norm_true = np.linalg.norm(np.array(true_quat),axis=1)
+            ax.plot(t_true, norm_true, label="true", color=colors[2])
+            ax.plot(t_est, norm_est, label="est", color=colors[3], linestyle="--")
+            ax.legend(loc="upper right")
+        elif i==5:
+            ax.plot(t_est, theta, label="est", color=colors[3], linestyle="--")
+            ax.legend(loc="upper right")
         ax.set_ylabel(comp_labels[i])
         ax.grid(True)
-        if i == 0:
-            ax.legend(loc="upper right")
+
+
     axs[-1].set_xlabel("time (s) since start")
     fig.suptitle("Quaternion: True vs Estimated")
     plt.tight_layout()

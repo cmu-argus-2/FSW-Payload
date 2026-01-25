@@ -350,7 +350,6 @@ public:
             unbiased_gyro_ang_vel[1] * T(dt),
             unbiased_gyro_ang_vel[2] * T(dt)
         };
-        // Ceres expects quaternion in order [x, y, z, w]
         T dq_arr[4];
         ceres::AngleAxisToQuaternion(angle_axis, dq_arr);
         // Eigen::Quaternion constructor takes (w, x, y, z)
@@ -408,7 +407,6 @@ public:
                 unbiased_gyro_ang_vel[1] * T(dt),
                 unbiased_gyro_ang_vel[2] * T(dt)
             };
-            // Ceres expects quaternion in order [x, y, z, w]
             T dq_arr[4];
             ceres::AngleAxisToQuaternion(angle_axis, dq_arr);
             // Eigen::Quaternion constructor takes (w, x, y, z)
@@ -453,25 +451,23 @@ public:
         // Halving not needed because Eigen Quaternion base handles half angle
         // https://github.com/libigl/eigen/blob/1f05f51517ec4fd91eed711e0f89e97a7c028c0e/Eigen/src/Geometry/Quaternion.h#L505
 
-        
-        Eigen::Quaternion <T> dq;
-        {
-            // Build angle-axis array (angle = |w|*dt, axis = w/|w|) in T type
-            T angle_axis[3] = {
+        T angle_axis[3] = {
                 unbiased_gyro_ang_vel[0] * T(dt),
                 unbiased_gyro_ang_vel[1] * T(dt),
                 unbiased_gyro_ang_vel[2] * T(dt)
             };
-            // Ceres expects quaternion in order [x, y, z, w]
-            T dq_arr[4];
-            ceres::AngleAxisToQuaternion(angle_axis, dq_arr);
-            // Eigen::Quaternion constructor takes (w, x, y, z)
-            dq = Eigen::Quaternion<T>(dq_arr[0], dq_arr[1], dq_arr[2], dq_arr[3]);
-        }
+
+
+        T dq_wxyz[4];
+        ceres::AngleAxisToQuaternion(angle_axis, dq_wxyz);
+        const Eigen::Quaternion<T> dq(dq_wxyz[0], dq_wxyz[1], dq_wxyz[2], dq_wxyz[3]);
         const Eigen::Quaternion <T> q_pred = q0 * dq;
         {
             // Compute error quaternion q_err = q_pred.conjugate() * q1 and convert to array [w,x,y,z]
-            const Eigen::Quaternion<T> q_err = q_pred.conjugate() * q1;
+            Eigen::Quaternion<T> q_err = q_pred.conjugate() * q1;
+            if (q_err.w() < T(0)) {
+                q_err.coeffs() *= T(-1);   // coeffs() is [x,y,z,w] in Eigen
+                }
             T q_err_arr[4] = { q_err.w(), q_err.x(), q_err.y(), q_err.z() };
             // Write angle-axis into residuals
             ceres::QuaternionToAngleAxis(q_err_arr, q_res.data());

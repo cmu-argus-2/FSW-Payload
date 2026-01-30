@@ -10,6 +10,27 @@ def build_engine(model_path):
     # https://docs.nvidia.com/deeplearning/tensorrt/developer-guide/index.html#explicit-implicit-batch
     flag = 1 << int(trt.NetworkDefinitionCreationFlag.EXPLICIT_BATCH)
     network = builder.create_network(flag)
+    profile = builder.create_optimization_profile()
+    # profile.set_shape(
+    #     "silu_1",
+    #     min=(1,3,224,224),
+    #     opt=(77,3,224,224),
+    #     max=(128,3,224,224)
+    # )
+    config = builder.create_builder_config()
+    
+    config.set_flag(trt.BuilderFlag.STRICT_TYPES)
+    config.add_optimization_profile(profile)
+
+
+    for i in range(network.num_inputs):
+        inp = network.get_input(i)
+        print(f"Input {i}: name={inp.name}, shape={inp.shape}")
+
+    for i in range(network.num_layers):
+        layer = network.get_layer(i)
+        print(f"Layer {i}: {layer.name}, output shapes = {[o.shape for o in layer.get_output(0)]}")
+
 
     ##### Parse the ONNX model
     parser = trt.OnnxParser(network, TRT_LOGGER) 

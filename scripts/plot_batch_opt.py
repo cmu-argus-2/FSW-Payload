@@ -6,10 +6,9 @@ import os
 import sys
 import pyquaternion as pyqt
 
-#!/usr/bin/env python3
 # DATA_DIR = Path("data/datasets/batch_opt_gen")
-DATA_DIR = Path("data/datasets/batch_opt_gen_no_bias")
-RESULTS_DIR = os.path.join(os.path.dirname(__file__), "../data/results/batch_opt")
+DATA_DIR = Path("/home/frederik/cmu/FSW-Payload/batch_opt_gen/")
+RESULTS_DIR = os.path.join(os.path.dirname(__file__), "../batch_opt_gen")
 
 def load_h5(path: Path) -> dict:
     """Load all datasets from an HDF5 file into a dict {dataset_path: ndarray}."""
@@ -74,7 +73,7 @@ def plot_states(true_states, est_states, orbit_measurements):
     
     # Plot quaternion
     true_quat = true_states["states"][:,6:10]
-    true_quat = true_quat * np.sign(true_quat[:,0:1])
+    # true_quat = true_quat * np.sign(true_quat[:,0:1])
     est_quat = est_states["state_estimates"][:,[10,7,8,9]]  # note: est quat is at indices 7-10, shifted by 1 due to time at index 0
     
     norm_est = np.linalg.norm(np.array(est_quat),axis=1)
@@ -85,7 +84,7 @@ def plot_states(true_states, est_states, orbit_measurements):
     dot_prod = np.abs(dot_prod)
     theta = 2.0 * np.arccos(dot_prod)  
     
-    fig, axs = plt.subplots(6, 1, sharex=True, figsize=(10, 6))
+    fig, axs = plt.subplots(5, 1, sharex=True, figsize=(10, 6))
     comp_labels = ["QW", "QX", "QY", "QZ", "Quaternion Norm", "Theta"]
     colors = ["C0", "C1", "C2", "C3"]
     for i, ax in enumerate(axs):
@@ -100,9 +99,9 @@ def plot_states(true_states, est_states, orbit_measurements):
             ax.plot(t_true, norm_true, label="true", color=colors[2])
             ax.plot(t_est, norm_est, label="est", color=colors[3], linestyle="--")
             ax.legend(loc="upper right")
-        elif i==5:
-            ax.plot(t_est, theta, label="est", color=colors[3], linestyle="--")
-            ax.legend(loc="upper right")
+        # elif i==5:
+        #     ax.plot(t_est, theta, label="est", color=colors[3], linestyle="--")
+        #     ax.legend(loc="upper right")
         ax.set_ylabel(comp_labels[i])
         ax.grid(True)
 
@@ -362,7 +361,7 @@ if __name__ == "__main__":
     files = {
             "ground_truth": DATA_DIR / "ground_truth_states.h5",
             "measurements": DATA_DIR / "orbit_measurements.h5",
-            "estimates": DATA_DIR / "state_estimates.h5",
+            "estimates": DATA_DIR / "states_estimates.h5",
     }
 
     loaded = {}

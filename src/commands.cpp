@@ -6,8 +6,13 @@
 #include "vision/dataset.hpp"
 #include "core/errors.hpp"
 #include "communication/comms.hpp"
+#include "communication/tilepack.hpp"
+#include <opencv2/opencv.hpp>
 
 #include <array>
+#include <chrono>
+#include <thread>
+#include <filesystem>
 
 #define DATASET_KEY_CMD "CMD"
 
@@ -32,7 +37,8 @@ std::array<CommandFunction, COMMAND_NUMBER> COMMAND_FUNCTIONS =
     synchronize_time, // SYNCHRONIZE_TIME
     full_reset, // FULL_RESET (no implementation provided)
     debug_display_camera, // DEBUG_DISPLAY_CAMERA
-    debug_stop_display // DEBUG_STOP_DISPLAY
+    debug_stop_display, // DEBUG_STOP_DISPLAY
+    request_next_file_packets // REQUEST_NEXT_FILE_PACKETS
 };
 
 // Define the array of strings mapping CommandID to command names
@@ -55,7 +61,8 @@ std::array<std::string_view, COMMAND_NUMBER> COMMAND_NAMES = {
     "SYNCHRONIZE_TIME",
     "FULL_RESET",
     "DEBUG_DISPLAY_CAMERA",
-    "DEBUG_STOP_DISPLAY"
+    "DEBUG_STOP_DISPLAY",
+    "REQUEST_NEXT_FILE_PACKETS"
 };
 
 void ping_ack([[maybe_unused]] std::vector<uint8_t>& data)
@@ -338,28 +345,72 @@ void request_image([[maybe_unused]] std::vector<uint8_t>& data)
 {
     SPDLOG_INFO("Requesting highest value image..");
 
-    // Back-end for images will change soon. However, this is sufficient for now
+    // Read the latest stored raw image
     Frame frame;
-    // bool res = DH::ReadLatestStoredRawImg(frame);
     bool res = DH::ReadHighestValueStoredRawImg(frame);
-
-    // If no image available, return an error ACK
+    
     if (!res)
     {
-        SPDLOG_ERROR("Couldn't get an image..");
+        SPDLOG_ERROR("Failed to read latest stored raw image");
         std::shared_ptr<Message> msg = CreateErrorAckMessage(CommandID::REQUEST_IMAGE, to_uint8(EC::FILE_NOT_AVAILABLE));
         sys::payload().TransmitMessage(msg);
         return;
     }
 
-    // Follow the logic when a file is requested
-    // Select the file to be used -> overwrite/copy it to comms buffer folder -> ACK the command (= I'm ready)
-    std::string file_path = DH::CopyFrameToCommsFolder(frame);
+    // Reconstruct the original image path from the frame data
+    std::string img_path = std::string(IMAGES_FOLDER) + "raw_" + std::to_string(frame.GetTimestamp()) + "_" + std::to_string(frame.GetCamID()) + ".png";
+    std::string abs_img_path = std::filesystem::absolute(img_path).string();
+    SPDLOG_INFO("Using image: {}", abs_img_path);
 
+    // Create tilepack encoder and process the image directly from disk
+    tilepack::TilepackEncoder encoder(
+        1,  // page_id
+        640,  // target_width
+        480,  // target_height
+        64,   // tile_w
+        32,   // tile_h
+        30    // jpeg_quality
+    );
 
-    // Set the file transfer manager
+    if (!encoder.load_image(abs_img_path))
+    {
+        SPDLOG_ERROR("Failed to load image into tilepack encoder");
+        std::shared_ptr<Message> msg = CreateErrorAckMessage(CommandID::REQUEST_IMAGE, to_uint8(EC::FAIL_TO_READ_FILE));
+        sys::payload().TransmitMessage(msg);
+        return;
+    }
+
+    // Generate output filename for binary file in comms folder
+    std::string bin_file_path = std::string(COMMS_FOLDER) + "img_" + std::to_string(frame.GetTimestamp()) + "_" + std::to_string(frame.GetCamID()) + ".bin";
+    
+    // Write the tilepack binary file (data-handler format with 242-byte records)
+    if (!encoder.write_radio_file(bin_file_path))
+    {
+        SPDLOG_ERROR("Failed to write tilepack binary file: {}", bin_file_path);
+        std::shared_ptr<Message> msg = CreateErrorAckMessage(CommandID::REQUEST_IMAGE, to_uint8(EC::FAIL_TO_READ_FILE));
+        sys::payload().TransmitMessage(msg);
+        return;
+    }
+
+    SPDLOG_INFO("Created tilepack binary: {} ({} packets, {} bytes compressed)", 
+                bin_file_path, encoder.get_total_packets(), encoder.get_compressed_size());
+
+    // Get file size to log info
+    long file_size = DH::GetFileSize(bin_file_path);
+    if (file_size < 0)
+    {
+        SPDLOG_ERROR("Failed to get file size for: {}", bin_file_path);
+        std::shared_ptr<Message> msg = CreateErrorAckMessage(CommandID::REQUEST_IMAGE, to_uint8(EC::FILE_NOT_FOUND));
+        sys::payload().TransmitMessage(msg);
+        return;
+    }
+
+    SPDLOG_INFO("Binary image file: {} ({} bytes)", bin_file_path, file_size);
+
+    // Set the file transfer manager to transfer the binary file directly
+    // FileTransferManager will read it in 240-byte chunks (which will include headers + payloads from the binary file)
     FileTransferManager::Reset();
-    EC err = FileTransferManager::PopulateMetadata(file_path);
+    EC err = FileTransferManager::PopulateMetadata(bin_file_path);
 
     if (err != EC::OK)
     {
@@ -372,7 +423,6 @@ void request_image([[maybe_unused]] std::vector<uint8_t>& data)
     // Send the ACK message
     std::shared_ptr<Message> msg = CreateSuccessAckMessage(CommandID::REQUEST_IMAGE);
     sys::payload().TransmitMessage(msg);
-
 
     sys::payload().SetLastExecutedCmdID(CommandID::REQUEST_IMAGE);
 }
@@ -394,7 +444,7 @@ void request_next_file_packet(std::vector<uint8_t>& data)
     }
 
     // check if a file has been readied -> NO_FILE_READY
-    if (!FileTransferManager::IsThereAvailableFile() || !FileTransferManager::active_transfer())
+    if (!FileTransferManager::active_transfer())
     {
         SPDLOG_ERROR("No file available for transfer.");
         std::shared_ptr<Message> msg = CreateErrorAckMessage(CommandID::REQUEST_NEXT_FILE_PACKET, to_uint8(EC::NO_FILE_READY));
@@ -416,7 +466,9 @@ void request_next_file_packet(std::vector<uint8_t>& data)
     std::vector<uint8_t> transmit_data;
     transmit_data.reserve(Packet::MAX_DATA_LENGTH);
 
-    // Grab the data from the file
+    // GrabFileChunk handles both DH and non-DH files:
+    // - DH files: extracts payload (≤240 bytes) from 242-byte records
+    // - Non-DH files: reads raw data in 240-byte chunks
     EC err = FileTransferManager::GrabFileChunk(requested_packet_nb, transmit_data);
     if (err != EC::OK)
     {
@@ -426,6 +478,8 @@ void request_next_file_packet(std::vector<uint8_t>& data)
         return;
     }
     
+    // transmit_data now contains the payload only (≤240 bytes)
+    // CreateMessage will pad to 240 bytes and add CRC to create 247-byte UART packet
     std::shared_ptr<Message> msg = CreateMessage(CommandID::REQUEST_NEXT_FILE_PACKET, transmit_data, requested_packet_nb);
     sys::payload().TransmitMessage(msg);
 
@@ -562,4 +616,95 @@ void debug_stop_display([[maybe_unused]] std::vector<uint8_t>& data)
     sys::payload().TransmitMessage(msg);
 
     sys::payload().SetLastExecutedCmdID(CommandID::DEBUG_STOP_DISPLAY);
+}
+void request_next_file_packets(std::vector<uint8_t>& data)
+{
+    SPDLOG_INFO("Requesting next file packets (batch)..");
+    
+    if (data.size() < 3)
+    {
+        SPDLOG_ERROR("Invalid data size for REQUEST_NEXT_FILE_PACKETS command");
+        std::shared_ptr<Message> msg = CreateErrorAckMessage(
+            CommandID::REQUEST_NEXT_FILE_PACKETS, to_uint8(EC::INVALID_COMMAND_ARGUMENTS)
+        );
+        sys::payload().TransmitMessage(msg);
+        return;
+    }
+
+    uint16_t start_packet_nb = (data[0] << 8) | data[1];
+    uint8_t count = data[2];
+    
+    SPDLOG_INFO("Requested batch: start packet={}, count={}", start_packet_nb, count);
+
+    // NEED TO START BY 1 so we can filter invalid commands from random commands filled with zeros
+    if (start_packet_nb == 0)
+    {
+        SPDLOG_ERROR("Invalid start packet number (0) for REQUEST_NEXT_FILE_PACKETS command");
+        std::shared_ptr<Message> msg = CreateErrorAckMessage(
+            CommandID::REQUEST_NEXT_FILE_PACKETS, to_uint8(EC::INVALID_COMMAND_ARGUMENTS)
+        );
+        sys::payload().TransmitMessage(msg);
+        return;
+    }
+
+    // check if a file has been readied -> NO_FILE_READY
+    if (!FileTransferManager::active_transfer())
+    {
+        SPDLOG_ERROR("No file available for transfer.");
+        std::shared_ptr<Message> msg = CreateErrorAckMessage(
+            CommandID::REQUEST_NEXT_FILE_PACKETS, to_uint8(EC::NO_FILE_READY)
+        );
+        sys::payload().TransmitMessage(msg);
+        return;
+    }
+
+    uint16_t total_packets = FileTransferManager::total_seq_count();
+    
+    for (uint8_t i = 0; i < count; i++)
+    {
+        uint16_t current_packet = start_packet_nb + i;
+        
+        if (current_packet > total_packets)
+        {
+            SPDLOG_INFO("Reached end of file at packet {}", current_packet);
+            std::shared_ptr<Message> msg = CreateErrorAckMessage(
+                CommandID::REQUEST_NEXT_FILE_PACKETS, to_uint8(EC::NO_MORE_PACKET_FOR_FILE)
+            );
+            sys::payload().TransmitMessage(msg);
+            return;
+        }
+
+        std::vector<uint8_t> transmit_data;
+        transmit_data.reserve(Packet::MAX_DATA_LENGTH);
+
+        // GrabFileChunk handles both DH and non-DH files:
+        // - DH files: extracts payload (≤240 bytes) from 242-byte records
+        // - Non-DH files: reads raw data in 240-byte chunks
+        EC err = FileTransferManager::GrabFileChunk(current_packet, transmit_data);
+        if (err != EC::OK)
+        {
+            SPDLOG_ERROR("Failed to grab file chunk for packet {}", current_packet);
+            std::shared_ptr<Message> msg = CreateErrorAckMessage(
+                CommandID::REQUEST_NEXT_FILE_PACKETS, to_uint8(err)
+            );
+            sys::payload().TransmitMessage(msg);
+            return;
+        }
+
+        // transmit_data now contains the payload only (≤240 bytes)
+        // CreateMessage will pad to 240 bytes and add CRC to create 247-byte UART packet
+        std::shared_ptr<Message> msg = CreateMessage(
+            CommandID::REQUEST_NEXT_FILE_PACKETS, transmit_data, current_packet
+        );
+        sys::payload().TransmitMessage(msg);
+        
+        // Add delay between packets to prevent UART buffer overflow on mainboard
+        // CircuitPython polls at 1ms intervals, need sufficient time for processing
+        // if (i < count - 1)  // Don't delay after last packet
+        // {
+        //     std::this_thread::sleep_for(std::chrono::milliseconds(15));
+        // }
+    }
+
+    sys::payload().SetLastExecutedCmdID(CommandID::REQUEST_NEXT_FILE_PACKETS);
 }

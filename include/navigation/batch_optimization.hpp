@@ -37,6 +37,41 @@ using LandmarkMeasurements = Eigen::Matrix<double, Eigen::Dynamic, LandmarkMeasu
 using LandmarkGroupStarts = Eigen::Matrix<bool, Eigen::Dynamic, 1, Eigen::ColMajor>;
 using GyroMeasurements = Eigen::Matrix<double, Eigen::Dynamic, GyroMeasurementIdx::GYRO_MEAS_COUNT, Eigen::RowMajor>;
 using StateEstimates = Eigen::Matrix<double, Eigen::Dynamic, StateEstimateIdx::STATE_ESTIMATE_COUNT, Eigen::RowMajor>;
+using idx_t = Eigen::Index;
+
+/**
+ * @brief Generates timestamps for the state estimates and the corresponding indices for the landmark groups and gyro
+ *        measurements.
+ *
+ * @param landmark_measurements An Eigen matrix where each row contains a landmark bearing measurement. Each row
+ *                              contains 7 elements: the timestamp, the bearing unit vector to the landmark in the body
+ *                              frame, and the ECI position of the landmark. The timestamps must be non-strictly
+ *                              monotonically increasing.
+ * @param landmark_group_starts An Eigen matrix that contains the same number of rows as in
+ *                              landmark_bearing_measurements where each row contains a single bool indicating whether
+ *                              or not the corresponding measurement is the start of a new group. Measurements from the
+ *                              same group are captured from the same image and are assumed to have the same timestamp.
+ * @param gyro_measurements An Eigen matrix where each row contains a gyro measurement. Each row contains 4 elements:
+ *                          the timestamp and the angular velocity vector in the body frame. The timestamps must be
+ *                          strictly monotonically increasing.
+ * @param max_dt The maximum allowed time step between adjacent rows in the optimized states.
+ * @param num_groups The number of landmark groups. Must be the same as the number of true values in
+ *                   landmark_group_starts.
+ * @return A std::tuple containing:
+ *         - A vector of timestamps for the state estimates.
+ *         - A vector of indices into the state_timestamps vector for each landmark group.
+ *         - A vector of indices into the state_timestamps vector for each gyro measurement.
+ */
+std::tuple <std::vector<double>, std::vector<idx_t>, std::vector<idx_t>>
+get_state_timestamps(const LandmarkMeasurements& landmark_measurements,
+                     const LandmarkGroupStarts& landmark_group_starts,
+                     const GyroMeasurements& gyro_measurements,
+                     const double max_dt,
+                     const idx_t num_groups);
+
+std::vector<double> compute_covariance(ceres::Problem& problem,
+                        StateEstimates& state_estimates,
+                    std::string bias_mode);
 
 /**
  * @brief Solves the batched nonlinear least squares optimization problem for orbit determination using Ceres Solver.
@@ -65,7 +100,7 @@ using StateEstimates = Eigen::Matrix<double, Eigen::Dynamic, StateEstimateIdx::S
 
 // TODO: Figure out what the correct return type should be.
 // std::pair <StateEstimates, Eigen::Vector3d>
-StateEstimates
+std::tuple <StateEstimates, std::vector<double>>
 solve_ceres_batch_opt(const LandmarkMeasurements& landmark_measurements,
                       const LandmarkGroupStarts& landmark_group_starts,
                       const GyroMeasurements& gyro_measurements,

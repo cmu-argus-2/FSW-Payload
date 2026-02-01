@@ -174,7 +174,7 @@ class LinearDynamicsAnalytic
     , public DynamicsResidual {
 public:
     static constexpr int NX = 6;
-    LinearDynamicsAnalytic(const double dt) : DynamicsResidual(NX, 0, dt) {}
+    LinearDynamicsAnalytic(const double dt, const double pos_std_dev, const double vel_std_dev) : DynamicsResidual(NX, 0, dt), pos_std_dev(pos_std_dev), vel_std_dev(vel_std_dev) {}
 
     virtual bool Evaluate(double const* const* parameters,
                           double* residuals,
@@ -199,7 +199,12 @@ public:
             }
 
             bool result = this->residuals(params, residuals, jacobians_x);
-
+            residuals[0] /= pos_std_dev;
+            residuals[1] /= pos_std_dev;
+            residuals[2] /= pos_std_dev;
+            residuals[3] /= vel_std_dev;
+            residuals[4] /= vel_std_dev;
+            residuals[5] /= vel_std_dev;
             // Copy back jacobians to ceres format
             // Param 0: x0 -> r0,v0
             if (jacobians[0]) {
@@ -275,14 +280,16 @@ public:
         // dv/dr = -GM_EARTH * J
         fx->block<3,3>(3,0) = -GM_EARTH * J;
     }
-
+private:
+    const double pos_std_dev;
+    const double vel_std_dev;
 };
 
 // TODO: Needs to be normalized by the linear dynamics process noise covariance
 // Old Autodiff function
 class LinearDynamicsCostFunctor {
 public:
-    LinearDynamicsCostFunctor(const double dt) : dt(dt) {}
+    LinearDynamicsCostFunctor(const double dt, const double pos_std_dev, const double vel_std_dev) : dt(dt), pos_std_dev(pos_std_dev), vel_std_dev(vel_std_dev) {}
 
     template<typename T>
     bool operator()(const T* const pos_curr,
@@ -304,19 +311,23 @@ public:
 
     r_res = r1 - (r0 + v0 * dt);
     v_res = v1 - (v0 - (GM_EARTH * r0 / denom) * dt);
+    r_res /= T(pos_std_dev);
+    v_res /= T(vel_std_dev);
     return true;
     }
 
 private:
     const double dt;
+    const double pos_std_dev;
+    const double vel_std_dev;
 };
 
 // TODO: Needs to be normalized by the angular dynamics process noise covariance
 
 struct AngularDynamicsCostFunctor {
 public:
-    AngularDynamicsCostFunctor(const double* const gyro_row, const double dt) :
-            gyro_ang_vel(gyro_row + GyroMeasurementIdx::ANG_VEL_X), dt(dt) {}
+    AngularDynamicsCostFunctor(const double* const gyro_row, const double dt, const double quat_std_dev, const double bias_std_dev) :
+            gyro_ang_vel(gyro_row + GyroMeasurementIdx::ANG_VEL_X), dt(dt), quat_std_dev(quat_std_dev), bias_std_dev(bias_std_dev) {}
 
     template<typename T>
     bool operator()(const T* const quat_curr,
@@ -365,20 +376,22 @@ public:
         ceres::QuaternionToAngleAxis(q_err_arr, q_res.data());
     }
     
-    b_res = (b_w_1 - b_w_0) / 0.05; // assuming constant bias for now
+    b_res = (b_w_1 - b_w_0) / T(bias_std_dev); // assuming constant bias for now
     return true;
     }
 
 private:
     const Eigen::Map<const Eigen::Vector3d> gyro_ang_vel;
     const double dt;
+    const double quat_std_dev;
+    const double bias_std_dev;
 };
 
 
 struct AngularDynamicsCostFunctorFixBias {
 public:
-    AngularDynamicsCostFunctorFixBias(const double* const gyro_row, const double dt) :
-            gyro_ang_vel(gyro_row + GyroMeasurementIdx::ANG_VEL_X), dt(dt) {}
+    AngularDynamicsCostFunctorFixBias(const double* const gyro_row, const double dt, const double quat_std_dev) :
+            gyro_ang_vel(gyro_row + GyroMeasurementIdx::ANG_VEL_X), dt(dt), quat_std_dev(quat_std_dev) {}
 
     template<typename T>
     bool operator()(const T* const quat_curr,
@@ -422,19 +435,23 @@ public:
             // Write angle-axis into residuals
             ceres::QuaternionToAngleAxis(q_err_arr, q_res.data());
         }
+        // Normalize by standard deviation
+        q_res = q_res / T(quat_std_dev); // assuming 0.01 rad std dev
+
         return true;
     }
 
 private:
     const Eigen::Map<const Eigen::Vector3d> gyro_ang_vel;
     const double dt;
+    const double quat_std_dev;
 };
 
 
 struct AngularDynamicsCostFunctorNoBias {
 public:
-    AngularDynamicsCostFunctorNoBias(const double* const gyro_row, const double dt) :
-            gyro_ang_vel(gyro_row + GyroMeasurementIdx::ANG_VEL_X), dt(dt) {}
+    AngularDynamicsCostFunctorNoBias(const double* const gyro_row, const double dt, const double quat_std_dev) :
+            gyro_ang_vel(gyro_row + GyroMeasurementIdx::ANG_VEL_X), dt(dt), quat_std_dev(quat_std_dev) {}
 
     template<typename T>
     bool operator()(const T* const quat_curr,
@@ -476,12 +493,16 @@ public:
             // Write angle-axis into residuals
             ceres::QuaternionToAngleAxis(q_err_arr, q_res.data());
         }
+        // Normalize by standard deviation
+        q_res = q_res / T(quat_std_dev); // assuming 0.01 rad std dev
+
         return true;
     }
 
 private:
     const Eigen::Map<const Eigen::Vector3d> gyro_ang_vel;
     const double dt;
+    const double quat_std_dev;
 };
 
 

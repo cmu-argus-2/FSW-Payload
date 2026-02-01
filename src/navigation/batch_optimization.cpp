@@ -11,7 +11,6 @@
 #include <tuple>
 #include <vector>
 
-using idx_t = Eigen::Index;
 
 StateEstimates init_state_estimate(std::vector<double> state_timestamps) {
     StateEstimates state_estimates(state_timestamps.size(), StateEstimateIdx::STATE_ESTIMATE_COUNT);
@@ -34,29 +33,7 @@ StateEstimates init_state_estimate(std::vector<double> state_timestamps) {
     return state_estimates;
 }
 
-/**
- * @brief Generates timestamps for the state estimates and the corresponding indices for the landmark groups and gyro
- *        measurements.
- *
- * @param landmark_measurements An Eigen matrix where each row contains a landmark bearing measurement. Each row
- *                              contains 7 elements: the timestamp, the bearing unit vector to the landmark in the body
- *                              frame, and the ECI position of the landmark. The timestamps must be non-strictly
- *                              monotonically increasing.
- * @param landmark_group_starts An Eigen matrix that contains the same number of rows as in
- *                              landmark_bearing_measurements where each row contains a single bool indicating whether
- *                              or not the corresponding measurement is the start of a new group. Measurements from the
- *                              same group are captured from the same image and are assumed to have the same timestamp.
- * @param gyro_measurements An Eigen matrix where each row contains a gyro measurement. Each row contains 4 elements:
- *                          the timestamp and the angular velocity vector in the body frame. The timestamps must be
- *                          strictly monotonically increasing.
- * @param max_dt The maximum allowed time step between adjacent rows in the optimized states.
- * @param num_groups The number of landmark groups. Must be the same as the number of true values in
- *                   landmark_group_starts.
- * @return A std::tuple containing:
- *         - A vector of timestamps for the state estimates.
- *         - A vector of indices into the state_timestamps vector for each landmark group.
- *         - A vector of indices into the state_timestamps vector for each gyro measurement.
- */
+
 std::tuple <std::vector<double>, std::vector<idx_t>, std::vector<idx_t>>
 get_state_timestamps(const LandmarkMeasurements& landmark_measurements,
                      const LandmarkGroupStarts& landmark_group_starts,
@@ -153,11 +130,119 @@ get_state_timestamps(const LandmarkMeasurements& landmark_measurements,
                            gyro_measurement_indices);
 }
 
-StateEstimates solve_ceres_batch_opt(const LandmarkMeasurements& landmark_measurements,
-                                     const LandmarkGroupStarts& landmark_group_starts,
-                                     const GyroMeasurements& gyro_measurements,
-                                     const double max_dt,
-                                     const std::string bias_mode) {
+
+std::vector<double> compute_covariance(ceres::Problem& problem,
+                        StateEstimates& state_estimates,
+                        std::string bias_mode) {
+    ceres::Covariance::Options options;
+    // options.algorithm_type = ceres::CovarianceAlgorithmType::DENSE_SVD;
+    ceres::Covariance covariance(options);
+
+
+    std::vector<std::pair<const double*, const double*>> covariance_blocks;
+    for (idx_t i = 0; i < state_estimates.rows(); ++i) {
+        double* const row_start = state_estimates.data() + i * StateEstimateIdx::STATE_ESTIMATE_COUNT;
+        
+        covariance_blocks.push_back(std::make_pair(
+            row_start + StateEstimateIdx::POS_X,
+            row_start + StateEstimateIdx::POS_X
+        ));
+        covariance_blocks.push_back(std::make_pair(
+            row_start + StateEstimateIdx::VEL_X,
+            row_start + StateEstimateIdx::VEL_X
+        ));
+        covariance_blocks.push_back(std::make_pair(
+            row_start + StateEstimateIdx::QUAT_X,
+            row_start + StateEstimateIdx::QUAT_X
+        ));
+        if (bias_mode == "tv_bias")
+        covariance_blocks.push_back(std::make_pair(
+            row_start + StateEstimateIdx::GYRO_BIAS_X,
+            row_start + StateEstimateIdx::GYRO_BIAS_X
+        ));
+        else if (bias_mode == "fix_bias" && i == 0) {
+            covariance_blocks.push_back(std::make_pair(
+                row_start + StateEstimateIdx::GYRO_BIAS_X,
+                row_start + StateEstimateIdx::GYRO_BIAS_X
+            ));
+        }
+    }
+    CHECK(covariance.Compute(covariance_blocks, &problem));
+    bool compute_check = covariance.Compute(covariance_blocks, &problem);
+    if(!compute_check) {
+        std::cout << "Covariance computation failed." << std::endl;
+    }
+    // if (!compute_check) {
+    //     std::cerr << "Covariance computation failed." << std::endl;
+    //     return {};
+    // }
+
+    std::vector<double> covariance_diagonal;
+    int j = 0;
+    int block_size = 0;
+    for (const auto& block : covariance_blocks) {
+        if (bias_mode == "no_bias") {
+            if (j % 3 == 0) {
+                int block_size = StateEstimateIdx::VEL_X - StateEstimateIdx::POS_X;
+            } else if (j % 3 == 1) {
+                int block_size = StateEstimateIdx::QUAT_X - StateEstimateIdx::VEL_X;
+            } else {
+                int block_size = StateEstimateIdx::GYRO_BIAS_X - StateEstimateIdx::QUAT_X;
+            }
+        } else if (bias_mode == "fix_bias") {
+            if (j < 4) {
+                if (j % 4 == 0) {
+                    block_size = StateEstimateIdx::VEL_X - StateEstimateIdx::POS_X;
+                } else if (j % 4 == 1) {
+                    block_size = StateEstimateIdx::QUAT_X - StateEstimateIdx::VEL_X;
+                } else if (j % 4 == 2) {
+                    block_size = StateEstimateIdx::GYRO_BIAS_X - StateEstimateIdx::QUAT_X;
+                } else {
+                    block_size = StateEstimateIdx::STATE_ESTIMATE_COUNT - StateEstimateIdx::GYRO_BIAS_X;
+                }
+            } else {
+                if (j % 3 == 0) {
+                    block_size = StateEstimateIdx::VEL_X - StateEstimateIdx::POS_X;
+                } else if (j % 3 == 1) {
+                    block_size = StateEstimateIdx::QUAT_X - StateEstimateIdx::VEL_X;
+                } else {
+                    block_size = StateEstimateIdx::GYRO_BIAS_X - StateEstimateIdx::QUAT_X;
+                }
+            }
+        } else if (bias_mode == "tv_bias") { // tv_bias
+            if (j % 4 == 0) {
+                block_size = StateEstimateIdx::VEL_X - StateEstimateIdx::POS_X;
+            } else if (j % 4 == 1) {
+                block_size = StateEstimateIdx::QUAT_X - StateEstimateIdx::VEL_X;
+            } else if (j % 4 == 2) {
+                block_size = StateEstimateIdx::GYRO_BIAS_X - StateEstimateIdx::QUAT_X;
+            } else {
+                block_size = StateEstimateIdx::STATE_ESTIMATE_COUNT - StateEstimateIdx::GYRO_BIAS_X;
+            }
+        } else {
+            throw std::invalid_argument("Invalid bias_mode: " + bias_mode +
+                                        ". Must be 'tv_bias', 'fix_bias', or 'no_bias'.");
+        }
+        j += 1;
+        
+        std::vector<std::pair<const double*, const double*>> single_block = {block};
+        double cov_matrix[block_size * block_size];
+        covariance.GetCovarianceBlock(block.first, block.first, cov_matrix);
+        
+        for (int i = 0; i < block_size; ++i) {
+            covariance_diagonal.push_back(cov_matrix[i * block_size + i]);
+        }
+    }
+    
+    return covariance_diagonal;
+}
+ 
+std::tuple <StateEstimates, std::vector<double>>
+solve_ceres_batch_opt(const LandmarkMeasurements& landmark_measurements,
+                      const LandmarkGroupStarts& landmark_group_starts,
+                      const GyroMeasurements& gyro_measurements,
+                      const double max_dt,
+                      const std::string bias_mode) {
     assert(landmark_measurements.rows() == landmark_group_starts.rows() &&
            "landmark_measurements and landmark_group_starts must have the same number of rows.");
     assert(landmark_measurements.rows() > 0 &&
@@ -186,15 +271,22 @@ StateEstimates solve_ceres_batch_opt(const LandmarkMeasurements& landmark_measur
     const idx_t num_groups = std::count(landmark_group_starts.col(0).begin(),
                                         landmark_group_starts.col(0).end(),
                                         true);
+    
     const auto [state_timestamps, landmark_group_indices, gyro_measurement_indices] = get_state_timestamps(
             landmark_measurements,
             landmark_group_starts,
             gyro_measurements,
             max_dt,
             num_groups);
+    
+    const double uma_std_dev = 1; // 1e-5; // km/s^2
+    const double gyro_wn_std_dev_rad_s = 1; //0.001; // rad/sqrt(s)
+    const double gyro_bias_instability = 1; // 0.0001; // rad/s^2
+    const double landmark_std_dev = 1; // 0.0001; // TODO: actual value
+
     // give an initial guess
     StateEstimates state_estimates = init_state_estimate(state_timestamps);
-    
+
     ceres::EigenQuaternionManifold quaternion_manifold = ceres::EigenQuaternionManifold{};
 
     ceres::Problem::Options problem_options;
@@ -215,7 +307,7 @@ StateEstimates solve_ceres_batch_opt(const LandmarkMeasurements& landmark_measur
         problem.AddParameterBlock(row_start + StateEstimateIdx::QUAT_X,
                                     StateEstimateIdx::GYRO_BIAS_X - StateEstimateIdx::QUAT_X,
                                     &quaternion_manifold);
-        problem.SetParameterLowerBound(row_start + StateEstimateIdx::QUAT_X, 3, 0.0);
+        // problem.SetParameterLowerBound(row_start + StateEstimateIdx::QUAT_X, 3, 0.0);
         // Gyro bias parameter block
         if (bias_mode == "tv_bias") {
             problem.AddParameterBlock(row_start + StateEstimateIdx::GYRO_BIAS_X,
@@ -240,6 +332,8 @@ StateEstimates solve_ceres_batch_opt(const LandmarkMeasurements& landmark_measur
         // In the last timestep it seems to show dt 60 
         // seems to be because of the condition of requiring every timestamp to have an additional timestamp after it
         const double dt = state_timestamps[i + 1] - state_timestamps[i];
+        const double pos_std_dev = 0.5*uma_std_dev*dt*std::sqrt(dt); // km
+        const double vel_std_dev = uma_std_dev * std::sqrt(dt); // km/s
         double* const curr_row_start = state_estimates.data() + i * StateEstimateIdx::STATE_ESTIMATE_COUNT;
         double* const next_row_start = state_estimates.data() + (i + 1) * StateEstimateIdx::STATE_ESTIMATE_COUNT;
         
@@ -248,7 +342,7 @@ StateEstimates solve_ceres_batch_opt(const LandmarkMeasurements& landmark_measur
         double* p_r1 = &state_estimates(i+1, StateEstimateIdx::POS_X);
         double* p_v1 = &state_estimates(i+1, StateEstimateIdx::VEL_X);
         problem.AddResidualBlock(
-            new LinearDynamicsAnalytic{dt},
+            new LinearDynamicsAnalytic{dt, pos_std_dev, vel_std_dev},
                 nullptr,
                 p_r0,
                 p_v0,
@@ -271,6 +365,8 @@ StateEstimates solve_ceres_batch_opt(const LandmarkMeasurements& landmark_measur
         // In the last timestep it seems to show dt 60 
         // seems to be because of the condition of requiring every timestamp to have an additional timestamp after it
         const double dt = state_timestamps[i + 1] - state_timestamps[i];
+        const double quat_std_dev = gyro_wn_std_dev_rad_s * std::sqrt(dt); // rad
+        const double bias_std_dev = gyro_bias_instability * std::sqrt(dt); // rad/s
         double* const curr_row_start = state_estimates.data() + i * StateEstimateIdx::STATE_ESTIMATE_COUNT;
         double* const next_row_start = state_estimates.data() + (i + 1) * StateEstimateIdx::STATE_ESTIMATE_COUNT;
 
@@ -285,7 +381,7 @@ StateEstimates solve_ceres_batch_opt(const LandmarkMeasurements& landmark_measur
 
             problem.AddResidualBlock(
                 new ceres::AutoDiffCostFunction<AngularDynamicsCostFunctorFixBias, 3, 4, 4, 3>(
-                    new AngularDynamicsCostFunctorFixBias{gyro_row, dt}),
+                    new AngularDynamicsCostFunctorFixBias{gyro_row, dt, quat_std_dev}),
                 nullptr,
                 p_q0,
                 p_q1,
@@ -297,7 +393,7 @@ StateEstimates solve_ceres_batch_opt(const LandmarkMeasurements& landmark_measur
 
             problem.AddResidualBlock(
                 new ceres::AutoDiffCostFunction<AngularDynamicsCostFunctor, 6, 4, 3, 4, 3>(
-                    new AngularDynamicsCostFunctor{gyro_row, dt}),
+                    new AngularDynamicsCostFunctor{gyro_row, dt, quat_std_dev, bias_std_dev}),
                 nullptr,
                 p_q0,
                 p_bw0,
@@ -308,7 +404,7 @@ StateEstimates solve_ceres_batch_opt(const LandmarkMeasurements& landmark_measur
 
             problem.AddResidualBlock(
                 new ceres::AutoDiffCostFunction<AngularDynamicsCostFunctorNoBias, 3, 4, 4>(
-                    new AngularDynamicsCostFunctorNoBias{gyro_row, dt}),
+                    new AngularDynamicsCostFunctorNoBias{gyro_row, dt, quat_std_dev}),
                 nullptr,
                 p_q0,
                 p_q1
@@ -323,7 +419,6 @@ StateEstimates solve_ceres_batch_opt(const LandmarkMeasurements& landmark_measur
     idx_t landmark_idx = 0;
     for (const auto& landmark_group_index : landmark_group_indices) {
         assert(landmark_idx < landmark_group_starts.rows());
-
         double* const state_estimate_row =
                 state_estimates.data() + landmark_group_index * StateEstimateIdx::STATE_ESTIMATE_COUNT;
         double* const pos_estimate = state_estimate_row + StateEstimateIdx::POS_X;
@@ -335,7 +430,7 @@ StateEstimates solve_ceres_batch_opt(const LandmarkMeasurements& landmark_measur
             problem.AddResidualBlock(
                 // Ceres will automatically take ownership of the cost function and cost functor
                 new ceres::AutoDiffCostFunction<LandmarkCostFunctor, 3, 3, 4>(
-                        new LandmarkCostFunctor{landmark_row}),
+                        new LandmarkCostFunctor{landmark_row, landmark_std_dev}),
                 nullptr,
                 pos_estimate,
                 quat_estimate);
@@ -343,28 +438,6 @@ StateEstimates solve_ceres_batch_opt(const LandmarkMeasurements& landmark_measur
         } while (landmark_idx < landmark_group_starts.rows() && !landmark_group_starts(landmark_idx, 0));
     }
     assert(landmark_idx == landmark_group_starts.rows());
-    // std::vector<double*> residual_blocks;
-
-
-    // int num_blocks = problem.NumResidualBlocks();
-    // for (int block_id = 0; block_id < num_blocks; ++block_id) {
-    // // const ceres::CostFunction* cost_fn = problem.residual_blocks()[block_id]->cost_function();
-    // const ceres::CostFunction* cost_fn =
-    //     problem.GetResidualBlocks
-    // std::vector<const double*> params;
-    // problem.GetParameterBlocksForResidualBlock(block_id, &params);
-
-    // // allocate storage
-    // std::vector<double>  residuals(cost_fn->num_residuals());
-    // std::vector<double*> jacs(params.size());
-    // for (int i = 0; i < (int)params.size(); ++i) {
-    //     jacs[i] = new double[cost_fn->num_residuals() *
-    //                         cost_fn->parameter_block_sizes()[i]];
-    // }
-
-    // bool ok = cost_fn->Evaluate(params.data(),
-    //                             residuals.data(),
-    //                             jacs.data());
 
     ceres::Solver::Options solver_options;
     solver_options.max_num_iterations = 1000;
@@ -372,6 +445,7 @@ StateEstimates solve_ceres_batch_opt(const LandmarkMeasurements& landmark_measur
     solver_options.minimizer_progress_to_stdout = true;
     solver_options.check_gradients = false;
     solver_options.gradient_check_relative_precision = 1e-6;
+    solver_options.function_tolerance = 1e-6;
     solver_options.logging_type = ceres::LoggingType::PER_MINIMIZER_ITERATION;
 
     ceres::Solver::Summary summary;
@@ -401,6 +475,12 @@ StateEstimates solve_ceres_batch_opt(const LandmarkMeasurements& landmark_measur
             }
         std::cout << "\n";
     }
+    std::vector<double> covariance = compute_covariance(problem, state_estimates, bias_mode);
 
-    return state_estimates;
+    // compute residuals
+
+    // return state_estimates
+    return std::make_tuple(state_estimates,
+                            covariance);
+    //                        residuals);
 }

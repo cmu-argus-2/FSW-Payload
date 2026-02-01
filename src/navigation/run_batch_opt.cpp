@@ -43,15 +43,17 @@ int main(int argc, char** argv) {
       std::cout << "Gyro Measurements (first 5 rows):\n" <<
           gm.topRows(5) << std::endl;
 
-      std::string bias_mode = "no_bias"; // "no_bias", "fix_bias" or "tv_bias"
+      std::string bias_mode = "tv_bias"; // "no_bias", "fix_bias" or "tv_bias"
       // Run Ceres batch optimization
-      StateEstimates state_estimates = solve_ceres_batch_opt(lm, gs, gm, 60.0, bias_mode);
-
+      auto [state_estimates, covariance] = solve_ceres_batch_opt(lm, gs, gm, 60.0, bias_mode);
+      // Compute residuals of state estimates
+      
     try {
         const std::string out_filename = "data/datasets/batch_opt_gen_no_bias/state_estimates.h5";
         H5Easy::File outfile(out_filename, H5Easy::File::Overwrite);
         // write state_estimates to an HDF5 file (overwrites if exists)
         H5Easy::dump(outfile, "state_estimates", state_estimates);
+        H5Easy::dump(outfile, "state_estimate_covariance_diagonal", covariance);
         std::cout << "Saved state estimates to " << out_filename << std::endl;
     } catch (const HighFive::Exception& e) {
         std::cerr << "Failed to write state estimates: " << e.what() << std::endl;

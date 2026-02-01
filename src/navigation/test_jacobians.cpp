@@ -21,11 +21,11 @@ int main(int argc, char** argv) {
 
 void test_linear_dynamics_cost_functor() {
     double dt = 1.0;
-    LinearDynamicsCostFunctor linear_dyn(dt);
-    LinearDynamicsAnalytic linear_dyn_analytic(dt);
+    LinearDynamicsCostFunctor linear_dyn(dt, 1.0, 1.0);
+    LinearDynamicsAnalytic linear_dyn_analytic(dt, 1.0, 1.0);
 
     auto* ad_linear_dyn = new ceres::AutoDiffCostFunction<LinearDynamicsCostFunctor, 6, 3, 3, 3, 3>(
-        new LinearDynamicsCostFunctor{dt}
+        new LinearDynamicsCostFunctor{dt, 1.0, 1.0}
     );
 
     
@@ -184,11 +184,11 @@ void test_angular_dynamics_cost_functor() {
     gyro_measurements(1,GyroMeasurementIdx::ANG_VEL_X) = M_PI / 2.0;
     gyro_measurements(2,GyroMeasurementIdx::ANG_VEL_X) = M_PI / 2.0+0.1;
     gyro_measurements(3,GyroMeasurementIdx::ANG_VEL_X) = M_PI / 2.0;
-    AngularDynamicsCostFunctor angular_dyn(gyro_measurements.data(), dt);
+    AngularDynamicsCostFunctor angular_dyn(gyro_measurements.data(), dt, 1.0, 1.0);
     // AngularDynamicsAnalytic angular_dyn_analytic(dt);
 
     auto* ad_angular_dyn = new ceres::AutoDiffCostFunction<AngularDynamicsCostFunctor, 6, 4, 3, 4, 3>(
-        new AngularDynamicsCostFunctor{gyro_measurements.data(), dt}
+        new AngularDynamicsCostFunctor{gyro_measurements.data(), dt, 1.0, 1.0}
     );
     
     // D: state/residual dimension
@@ -232,7 +232,7 @@ void test_angular_dynamics_cost_functor() {
         auto* gyro_row = gyro_measurements.data() + GyroMeasurementIdx::GYRO_MEAS_COUNT * t;
         
         auto* ad_angular_dyn = new ceres::AutoDiffCostFunction<AngularDynamicsCostFunctor, 6, 4, 3, 4, 3>(
-            new AngularDynamicsCostFunctor{gyro_row, dt}
+            new AngularDynamicsCostFunctor{gyro_row, dt, 1.0, 1.0}
         );
 
         // time autodiff Evaluate

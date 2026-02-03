@@ -132,7 +132,7 @@ void StoreFrameMetadataToDisk(Frame& frame, std::string_view target_folder)
     oss << target_folder << "raw" << DELIMITER << frame.GetTimestamp() << DELIMITER << frame.GetCamID() << ".json";
     std::string file_path = oss.str();
 
-    const cv::Mat& img = frame.GetImg();
+    // const cv::Mat& img = frame.GetImg();
 
     Json j = frame.toJson();
 

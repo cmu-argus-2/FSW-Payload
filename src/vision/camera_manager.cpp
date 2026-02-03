@@ -3,7 +3,7 @@
 
 CameraManager::CameraManager(const std::array<CameraConfig, NUM_CAMERAS>& camera_configs) 
 :
-capture_mode(CAPTURE_MODE::PERIODIC_EARTH),
+capture_mode(CAPTURE_MODE::IDLE),
 camera_configs(camera_configs),
 cameras{{Camera(camera_configs[0].id, camera_configs[0].path), 
     Camera(camera_configs[1].id, camera_configs[1].path), 

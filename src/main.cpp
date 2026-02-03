@@ -84,7 +84,7 @@ int main(int argc, char** argv)
         } 
         else 
         {
-            SPDLOG_ERROR("Invalid communication interface: {}. Use ' UART' or 'CLI'.", choice_interface);
+            SPDLOG_ERROR("Invalid communication interface: {}. Use 'UART' or 'CLI'.", choice_interface);
             return 1;
         }
         

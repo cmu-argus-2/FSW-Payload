@@ -14,6 +14,7 @@ Author: Ibrahima S. Sow
 #include <semaphore.h>
 #include <string>
 #include <regex>
+#include <cstdint>
 
 // Constants for the shared memory and semaphore paths
 #define TEGRASTATS_SHARED_MEM "/tm_tegrastats_shared_mem"

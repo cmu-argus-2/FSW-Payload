@@ -1,7 +1,7 @@
 #include "vision/prefiltering.hpp"
 #include <iostream>
 #include <opencv2/opencv.hpp>
-using namespace cv;
+// using namespace cv;
 
 PrefilterResult prefilter_image(const cv::Mat& img, int cloudiness_threshold, int white_threshold, int color_threshold, int contrast_threshold) {
     PrefilterResult result;
@@ -10,28 +10,27 @@ PrefilterResult prefilter_image(const cv::Mat& img, int cloudiness_threshold, in
     result.dominant_type = "";
 
     // Get rbg and hsv versions
-    Mat img_rgb;
-    cvtColor(img, img_rgb, COLOR_BGR2RGB);
+    cv::Mat img_rgb;
+    cv::cvtColor(img, img_rgb, cv::COLOR_BGR2RGB);
 
-    Mat img_hsv;
-    cvtColor(img, img_hsv, COLOR_BGR2HSV);
-
+    cv::Mat img_hsv;
+    cv::cvtColor(img, img_hsv, cv::COLOR_BGR2HSV);
     // std_dev of color channels
-    Scalar mean_rgb, stddev_rgb;
-    meanStdDev(img_rgb, mean_rgb, stddev_rgb);
+    cv::Scalar mean_rgb, stddev_rgb;
+    cv::meanStdDev(img_rgb, mean_rgb, stddev_rgb);
     double avg_color_rgb = (stddev_rgb[0] + stddev_rgb[1] + stddev_rgb[2]) / 3.0;
 
     // std_dev of contrast in grayscale
-    Mat gray;
-    cvtColor(img, gray, COLOR_BGR2GRAY);
+    cv::Mat gray;
+    cv::cvtColor(img, gray, cv::COLOR_BGR2GRAY);
     
-    Scalar mean_gray, stddev_gray;
-    meanStdDev(gray, mean_gray, stddev_gray);
+    cv::Scalar mean_gray, stddev_gray;
+    cv::meanStdDev(gray, mean_gray, stddev_gray);
     double contrast_std = stddev_gray[0];
 
     // avg color, hue, saturation, value
-    Scalar mean_hsv, stddev_hsv;
-    meanStdDev(img_hsv, mean_hsv, stddev_hsv);
+    cv::Scalar mean_hsv, stddev_hsv;
+    cv::meanStdDev(img_hsv, mean_hsv, stddev_hsv);
     double avg_hue = mean_hsv[0];
     double avg_saturation = mean_hsv[1];
     double avg_value = mean_hsv[2];
@@ -41,7 +40,7 @@ PrefilterResult prefilter_image(const cv::Mat& img, int cloudiness_threshold, in
     double total_pixel_count = img.rows * img.cols;
     for (int i = 0; i < img.rows; ++i) {
         for (int j = 0; j < img.cols; ++j) { 
-            Vec3b pixel = img.at<Vec3b>(i, j);
+            cv::Vec3b pixel = img.at<cv::Vec3b>(i, j);
             if (pixel[0] > white_threshold && pixel[1] > white_threshold && pixel[2] > white_threshold) {
                 white_pixel_count++;
             }

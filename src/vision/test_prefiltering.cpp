@@ -10,7 +10,7 @@ int main(int argc, char** argv) {
     std::string image_path = argv[1];
     std::cout << "Processing: " << image_path << std::endl;
 
-    Mat img = imread(image_path, IMREAD_COLOR);
+    cv::Mat img = cv::imread(image_path, cv::IMREAD_COLOR);
     if (img.empty()) {
         std::cerr << "Could not load image" << std::endl;
         return -1;

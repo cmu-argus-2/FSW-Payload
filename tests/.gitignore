@@ -1,7 +1,4 @@
-*
-!.gitignore
-!.txt
 *.jpg
 *.png
 *.bin
-!*/
+

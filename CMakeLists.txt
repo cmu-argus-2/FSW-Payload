@@ -84,13 +84,6 @@ target_link_libraries(${PROJECT_NAME}
 # message(STATUS "NN_ENABLED: ${NN_ENABLED}")
 # target_compile_definitions(${PROJECT_NAME} PRIVATE NN_ENABLED=${NN_ENABLED})
 
-add_executable(prefilter 
-    src/vision/test_prefiltering.cpp 
-    src/vision/prefiltering.cpp
-)
-
-target_link_libraries(prefilter ${OpenCV_LIBS})
-
 ##### COMMAND-LINE INTERFACE
 find_package(Threads REQUIRED)
 find_library(READLINE_LIBRARY readline)

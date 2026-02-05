@@ -372,8 +372,10 @@ def process_covariances(covariances, bias_mode):
         est_covariances = covariances.reshape(-1, nsteps, state_size)
     elif bias_mode == "fix_bias":
         start = covariances[:13]
-        covariances[13:]
-        est_covariances = covariances.reshape(-1, state_size, state_size)
+        rest = covariances[13:]
+        rest_cov = rest.reshape(-1, 10)
+        rest_cov = np.hstack((rest_cov, start[10:].reshape(1,3).repeat(rest_cov.shape[0], axis=0)))
+        est_covariances = np.vstack((start, rest_cov))
     elif bias_mode == "tv_bias":
         state_size = 13  # [pos(3), vel(3), quat(4), bias(3)]
         nsteps = covariances.shape[0] // state_size
@@ -407,7 +409,7 @@ if __name__ == "__main__":
     plot_states(ground_truth_states, state_estimates, orbit_measurements)
     
     # plot errors
-    bias_mode = "tv_bias"
+    bias_mode = "fix_bias"
     plot_errors(ground_truth_states, state_estimates, covariances, bias_mode)
     
     # plot measurements vs residuals

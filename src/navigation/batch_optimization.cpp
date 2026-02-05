@@ -138,7 +138,6 @@ std::vector<double> compute_covariance(ceres::Problem& problem,
     // options.algorithm_type = ceres::CovarianceAlgorithmType::DENSE_SVD;
     ceres::Covariance covariance(options);
 
-
     std::vector<std::pair<const double*, const double*>> covariance_blocks;
     for (idx_t i = 0; i < state_estimates.rows(); ++i) {
         double* const row_start = state_estimates.data() + i * StateEstimateIdx::STATE_ESTIMATE_COUNT;
@@ -167,6 +166,7 @@ std::vector<double> compute_covariance(ceres::Problem& problem,
             ));
         }
     }
+
     CHECK(covariance.Compute(covariance_blocks, &problem));
     bool compute_check = covariance.Compute(covariance_blocks, &problem);
     if(!compute_check) {
@@ -201,9 +201,9 @@ std::vector<double> compute_covariance(ceres::Problem& problem,
                     block_size = StateEstimateIdx::STATE_ESTIMATE_COUNT - StateEstimateIdx::GYRO_BIAS_X;
                 }
             } else {
-                if (j % 3 == 0) {
+                if ((j - 4) % 3 == 0) {
                     block_size = StateEstimateIdx::VEL_X - StateEstimateIdx::POS_X;
-                } else if (j % 3 == 1) {
+                } else if ((j - 4) % 3 == 1) {
                     block_size = StateEstimateIdx::QUAT_X - StateEstimateIdx::VEL_X;
                 } else {
                     block_size = StateEstimateIdx::GYRO_BIAS_X - StateEstimateIdx::QUAT_X;
@@ -224,7 +224,8 @@ std::vector<double> compute_covariance(ceres::Problem& problem,
                                         ". Must be 'tv_bias', 'fix_bias', or 'no_bias'.");
         }
         j += 1;
-        
+        // TODO: get attitude residual covariance in rotation vector/angle-axis form
+        // This can be done with GetCovarianceBlockInTangentSpace
         std::vector<std::pair<const double*, const double*>> single_block = {block};
         double cov_matrix[block_size * block_size];
         covariance.GetCovarianceBlock(block.first, block.first, cov_matrix);
@@ -279,10 +280,11 @@ solve_ceres_batch_opt(const LandmarkMeasurements& landmark_measurements,
             max_dt,
             num_groups);
     
-    const double uma_std_dev = 1; // 1e-5; // km/s^2
-    const double gyro_wn_std_dev_rad_s = 1; //0.001; // rad/sqrt(s)
+    const double uma_std_dev = 1e-4; // km/s^2
+    const double gyro_wn_std_dev_rad_s = 0.0008726; //0.001; // rad/s
     const double gyro_bias_instability = 1; // 0.0001; // rad/s^2
-    const double landmark_std_dev = 1; // 0.0001; // TODO: actual value
+    const double landmark_std_dev = 0.009; // very conservative assumption of 1/2 degree error
+    // landmark std dev from 1/2 bounding box size (1/12 deg of lat/long) -> earth surface distance -> camera fov
 
     // give an initial guess
     StateEstimates state_estimates = init_state_estimate(state_timestamps);
@@ -326,7 +328,6 @@ solve_ceres_batch_opt(const LandmarkMeasurements& landmark_measurements,
 
     }
 
-    // TODO: Figure out why the gradient check fails for the Linear Dynamics cost function
     // Linear Dynamics costs
     for (idx_t i = 0; i+1 < state_timestamps.size(); ++i) {
         // In the last timestep it seems to show dt 60 
@@ -343,11 +344,12 @@ solve_ceres_batch_opt(const LandmarkMeasurements& landmark_measurements,
         double* p_v1 = &state_estimates(i+1, StateEstimateIdx::VEL_X);
         problem.AddResidualBlock(
             new LinearDynamicsAnalytic{dt, pos_std_dev, vel_std_dev},
-                nullptr,
-                p_r0,
-                p_v0,
-                p_r1,
-                p_v1);
+            new ceres::LossFunctionWrapper(
+                new ceres::HuberLoss(6.0), ceres::DO_NOT_TAKE_OWNERSHIP),
+            p_r0,
+            p_v0,
+            p_r1,
+            p_v1);
         /*
         problem.AddResidualBlock(
             new ceres::AutoDiffCostFunction<LinearDynamicsCostFunctor, 6, 3, 3, 3, 3>(
@@ -365,7 +367,7 @@ solve_ceres_batch_opt(const LandmarkMeasurements& landmark_measurements,
         // In the last timestep it seems to show dt 60 
         // seems to be because of the condition of requiring every timestamp to have an additional timestamp after it
         const double dt = state_timestamps[i + 1] - state_timestamps[i];
-        const double quat_std_dev = gyro_wn_std_dev_rad_s * std::sqrt(dt); // rad
+        const double quat_std_dev = gyro_wn_std_dev_rad_s * dt; // rad
         const double bias_std_dev = gyro_bias_instability * std::sqrt(dt); // rad/s
         double* const curr_row_start = state_estimates.data() + i * StateEstimateIdx::STATE_ESTIMATE_COUNT;
         double* const next_row_start = state_estimates.data() + (i + 1) * StateEstimateIdx::STATE_ESTIMATE_COUNT;
@@ -373,7 +375,6 @@ solve_ceres_batch_opt(const LandmarkMeasurements& landmark_measurements,
         double* p_q0  = &state_estimates(i, StateEstimateIdx::QUAT_X);
         double* p_q1  = &state_estimates(i+1, StateEstimateIdx::QUAT_X);
 
-        // TODO: Find the correct gyro measurement for this time step
         auto* gyro_row = gyro_measurements.data() + GyroMeasurementIdx::GYRO_MEAS_COUNT * i;
 
         if (bias_mode == "fix_bias") { // fixed bias
@@ -382,7 +383,8 @@ solve_ceres_batch_opt(const LandmarkMeasurements& landmark_measurements,
             problem.AddResidualBlock(
                 new ceres::AutoDiffCostFunction<AngularDynamicsCostFunctorFixBias, 3, 4, 4, 3>(
                     new AngularDynamicsCostFunctorFixBias{gyro_row, dt, quat_std_dev}),
-                nullptr,
+                new ceres::LossFunctionWrapper(
+                    new ceres::HuberLoss(6.0), ceres::DO_NOT_TAKE_OWNERSHIP),
                 p_q0,
                 p_q1,
                 p_bw
@@ -394,7 +396,8 @@ solve_ceres_batch_opt(const LandmarkMeasurements& landmark_measurements,
             problem.AddResidualBlock(
                 new ceres::AutoDiffCostFunction<AngularDynamicsCostFunctor, 6, 4, 3, 4, 3>(
                     new AngularDynamicsCostFunctor{gyro_row, dt, quat_std_dev, bias_std_dev}),
-                nullptr,
+                new ceres::LossFunctionWrapper(
+                    new ceres::HuberLoss(6.0), ceres::DO_NOT_TAKE_OWNERSHIP),
                 p_q0,
                 p_bw0,
                 p_q1,
@@ -405,7 +408,8 @@ solve_ceres_batch_opt(const LandmarkMeasurements& landmark_measurements,
             problem.AddResidualBlock(
                 new ceres::AutoDiffCostFunction<AngularDynamicsCostFunctorNoBias, 3, 4, 4>(
                     new AngularDynamicsCostFunctorNoBias{gyro_row, dt, quat_std_dev}),
-                nullptr,
+                new ceres::LossFunctionWrapper(
+                    new ceres::HuberLoss(6.0), ceres::DO_NOT_TAKE_OWNERSHIP),
                 p_q0,
                 p_q1
             );
@@ -414,7 +418,6 @@ solve_ceres_batch_opt(const LandmarkMeasurements& landmark_measurements,
 
     // TODO: Add magnetometer measurements for attitude estimation
 
-    // TODO: Figure out why the gradient check fails for the landmark cost function
     // Landmark costs
     idx_t landmark_idx = 0;
     for (const auto& landmark_group_index : landmark_group_indices) {
@@ -431,7 +434,8 @@ solve_ceres_batch_opt(const LandmarkMeasurements& landmark_measurements,
                 // Ceres will automatically take ownership of the cost function and cost functor
                 new ceres::AutoDiffCostFunction<LandmarkCostFunctor, 3, 3, 4>(
                         new LandmarkCostFunctor{landmark_row, landmark_std_dev}),
-                nullptr,
+                new ceres::LossFunctionWrapper(
+                    new ceres::HuberLoss(3.0), ceres::DO_NOT_TAKE_OWNERSHIP),
                 pos_estimate,
                 quat_estimate);
             ++landmark_idx;
@@ -442,10 +446,12 @@ solve_ceres_batch_opt(const LandmarkMeasurements& landmark_measurements,
     ceres::Solver::Options solver_options;
     solver_options.max_num_iterations = 1000;
     solver_options.linear_solver_type = ceres::SPARSE_NORMAL_CHOLESKY;
+    solver_options.use_explicit_schur_complement = true;
     solver_options.minimizer_progress_to_stdout = true;
     solver_options.check_gradients = false;
     solver_options.gradient_check_relative_precision = 1e-6;
     solver_options.function_tolerance = 1e-6;
+    // solver_options.preconditioner_type = ceres::SCHUR_POWER_SERIES_EXPANSION;
     solver_options.logging_type = ceres::LoggingType::PER_MINIMIZER_ITERATION;
 
     ceres::Solver::Summary summary;
@@ -477,7 +483,7 @@ solve_ceres_batch_opt(const LandmarkMeasurements& landmark_measurements,
     }
     std::vector<double> covariance = compute_covariance(problem, state_estimates, bias_mode);
 
-    // compute residuals
+    // TODO: compute residuals
 
     // return state_estimates
     return std::make_tuple(state_estimates,

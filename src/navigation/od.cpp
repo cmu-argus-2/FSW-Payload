@@ -16,6 +16,7 @@ max_downtime_for_restart(60) // 1hr
 BATCH_OPT_config::BATCH_OPT_config()
 : 
 solver_function_tolerance(1e-6),
+solver_parameter_tolerance(1e-10),
 max_iterations(10000),
 bias_mode(BIAS_MODE::FIX_BIAS),
 max_dt(60.0)
@@ -153,6 +154,7 @@ void OD::ReadConfig(const std::string& config_path)
     // BATCH_OPT
     auto BATCH_OPT_params = params["BATCH_OPT"].as_table();
     config.batch_opt.solver_function_tolerance = get_param_as_double(BATCH_OPT_params, "solver_function_tolerance", config.batch_opt.solver_function_tolerance);
+    config.batch_opt.solver_parameter_tolerance = get_param_as_double(BATCH_OPT_params, "solver_parameter_tolerance", config.batch_opt.solver_parameter_tolerance);
     config.batch_opt.max_iterations = BATCH_OPT_params->get_as<int64_t>("max_iterations")->value_or(config.batch_opt.max_iterations);
     config.batch_opt.max_dt = get_param_as_double(BATCH_OPT_params, "max_dt", config.batch_opt.max_dt);
     config.batch_opt.bias_mode = static_cast<BIAS_MODE>(BATCH_OPT_params->get_as<int64_t>("bias_mode")->value_or(static_cast<int64_t>(config.batch_opt.bias_mode)));
@@ -174,6 +176,7 @@ void OD::LogConfig()
 
     SPDLOG_INFO("BATCH_OPT_config:");
     SPDLOG_INFO("  solver_function_tolerance: {}", config.batch_opt.solver_function_tolerance);
+    SPDLOG_INFO("  solver_parameter_tolerance: {}", config.batch_opt.solver_parameter_tolerance);
     SPDLOG_INFO("  max_iterations: {}", config.batch_opt.max_iterations);
     SPDLOG_INFO("  max_dt: {}", config.batch_opt.max_dt);
     SPDLOG_INFO("  bias_mode: {}", static_cast<int>(config.batch_opt.bias_mode));

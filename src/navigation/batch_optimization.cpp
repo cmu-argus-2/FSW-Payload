@@ -130,8 +130,7 @@ get_state_timestamps(const LandmarkMeasurements& landmark_measurements,
                            gyro_measurement_indices);
 }
 
-void build_ceres_problem(ceres::Problem::Options problem_options,
-                         StateEstimates& state_estimates,
+void build_ceres_problem(StateEstimates& state_estimates,
                          const std::vector<double> state_timestamps,
                          const std::vector<idx_t> landmark_group_indices,
                          const LandmarkMeasurements& landmark_measurements,
@@ -144,10 +143,6 @@ void build_ceres_problem(ceres::Problem::Options problem_options,
                          double landmark_std_dev,
                          ceres::EigenQuaternionManifold* quaternion_manifold,
                          ceres::Problem* problem) {
-    // ceres::Problem problem(problem_options);
-    // problem->Options(problem_options);
-    
-    // ceres::EigenQuaternionManifold quaternion_manifold = ceres::EigenQuaternionManifold{};
 
     for (idx_t i = 0; i < state_timestamps.size(); ++i) {
         state_estimates(i, StateEstimateIdx::STATE_ESTIMATE_TIMESTAMP) = state_timestamps[i];
@@ -457,7 +452,7 @@ solve_ceres_batch_opt(const LandmarkMeasurements& landmark_measurements,
     StateEstimates state_estimates = init_state_estimate(state_timestamps);        
     
     // TODO: this information should be obtained from the configuration file
-    const double uma_std_dev = 1; // km/s^2
+    double uma_std_dev = 1; // km/s^2
     const double gyro_wn_std_dev_rad_s = 0.0008726; //0.001; // rad/s
     const double gyro_bias_instability = 1; // 0.0001; // rad/s^2
     // TODO: this information should be obtained from the output of the LD nets
@@ -472,8 +467,7 @@ solve_ceres_batch_opt(const LandmarkMeasurements& landmark_measurements,
     problem_options.manifold_ownership = ceres::DO_NOT_TAKE_OWNERSHIP;
 
     ceres::Problem problem(problem_options);
-    build_ceres_problem(problem_options,
-                         state_estimates,
+    build_ceres_problem(state_estimates,
                          state_timestamps,
                          landmark_group_indices,
                          landmark_measurements,
@@ -485,16 +479,16 @@ solve_ceres_batch_opt(const LandmarkMeasurements& landmark_measurements,
                          gyro_bias_instability,
                          landmark_std_dev,
                          &quaternion_manifold,
-                        &problem);
+                         &problem);
 
     ceres::Solver::Options solver_options;
     solver_options.max_num_iterations = bo_config.max_iterations;
-    solver_options.linear_solver_type = ceres::SPARSE_NORMAL_CHOLESKY;
-    solver_options.use_explicit_schur_complement = true;
+    solver_options.linear_solver_type = ceres::SPARSE_NORMAL_CHOLESKY;; // ceres::ITERATIVE_SCHUR; // ceres::SPARSE_NORMAL_CHOLESKY;
+    // solver_options.use_explicit_schur_complement = true;
     solver_options.minimizer_progress_to_stdout = true;
-    solver_options.check_gradients = false;
-    solver_options.gradient_check_relative_precision = 1e-6;
     solver_options.function_tolerance = bo_config.solver_function_tolerance;
+    solver_options.parameter_tolerance = bo_config.solver_parameter_tolerance;
+
     // solver_options.preconditioner_type = ceres::SCHUR_POWER_SERIES_EXPANSION;
     solver_options.logging_type = ceres::LoggingType::PER_MINIMIZER_ITERATION;
 
@@ -502,6 +496,7 @@ solve_ceres_batch_opt(const LandmarkMeasurements& landmark_measurements,
     ceres::Solve(solver_options, &problem, &summary);
 
     std::cout << summary.FullReport() << "\n";
+
 
     if (bias_mode == BIAS_MODE::FIX_BIAS) {
         // Copy the fixed bias to all time steps

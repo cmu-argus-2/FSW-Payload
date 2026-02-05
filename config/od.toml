@@ -14,6 +14,8 @@ max_downtime_for_restart_in_minutes = 120 # min : difference of time to allow be
 # INT or floating
 solver_function_tolerance = 1e-6
 # INT or floating
+solver_parameter_tolerance = 1e-10
+# INT or floating
 solver_gradient_check_relative_precision = 1e-6 # TODO: implement parsing
 # INT
 max_iterations = 10000 # iterations

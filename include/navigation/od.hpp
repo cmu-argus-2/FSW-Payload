@@ -40,6 +40,7 @@ struct INIT_config
 struct BATCH_OPT_config
 {
     double solver_function_tolerance;
+    double solver_parameter_tolerance;
     uint32_t max_iterations;
     BIAS_MODE bias_mode;
     double max_dt;

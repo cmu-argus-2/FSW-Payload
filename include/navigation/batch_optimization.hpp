@@ -74,8 +74,7 @@ std::vector<double> compute_covariance(ceres::Problem& problem,
                         StateEstimates& state_estimates,
                     std::string bias_mode);
 
-void build_ceres_problem(ceres::Problem::Options problem_options,
-                         StateEstimates& state_estimates,
+void build_ceres_problem(StateEstimates& state_estimates,
                          const std::vector<double> state_timestamps,
                          const std::vector<idx_t> landmark_group_indices,
                          const LandmarkMeasurements& landmark_measurements,

@@ -18,7 +18,7 @@ int main(int argc, char** argv) {
 
       // Load OD configuration file
       std::string config_filename = "config/od.toml";
-      BATCH_OPT_config bo_config = ReadBOConfig(config_filename);
+      OD_Config od_config = ReadODConfig(config_filename);
 
       std::cout << "Loaded OD configuration from: " << config_filename << std::endl;
 
@@ -48,7 +48,7 @@ int main(int argc, char** argv) {
 
       std::string bias_mode = "fix_bias"; // "no_bias", "fix_bias" or "tv_bias"
       // Run Ceres batch optimization
-      auto [state_estimates, covariance] = solve_ceres_batch_opt(lm, gs, gm, bo_config);
+      auto [state_estimates, covariance] = solve_ceres_batch_opt(lm, gs, gm, od_config.batch_opt);
       // Compute residuals of state estimates
       
     try {

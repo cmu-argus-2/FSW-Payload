@@ -220,7 +220,7 @@ bool OD::HandleStop()
 }
 
 // TODO: To be removed once run batch opt is updated to use the OD class
-BATCH_OPT_config ReadBOConfig(const std::string& config_path)
+OD_Config ReadODConfig(const std::string& config_path)
 {
     toml::table params;
     try
@@ -230,7 +230,7 @@ BATCH_OPT_config ReadBOConfig(const std::string& config_path)
     catch (const toml::parse_error& err)
     { 
         SPDLOG_ERROR("Failed to parse config file: {}", err.what());
-        return BATCH_OPT_config{};
+        return OD_Config{};
     }
 
     // Helper to get parameter as double (supports int64_t and double)
@@ -244,22 +244,28 @@ BATCH_OPT_config ReadBOConfig(const std::string& config_path)
         return default_value;
     };
     
+    OD_Config od_config;
+
+    // INIT
+    auto INIT_params = params["INIT"].as_table();
+    od_config.init.collection_period = INIT_params->get_as<int64_t>("collection_period")->value_or(od_config.init.collection_period);
+    od_config.init.target_samples = INIT_params->get_as<int64_t>("target_samples")->value_or(od_config.init.target_samples);
+    od_config.init.max_collection_time = INIT_params->get_as<int64_t>("max_collection_time")->value_or(od_config.init.max_collection_time);
+    od_config.init.max_downtime_for_restart = INIT_params->get_as<int64_t>("max_downtime_for_restart_in_minutes")->value_or(od_config.init.max_downtime_for_restart);
+
     // BATCH_OPT
     auto BATCH_OPT_params = params["BATCH_OPT"].as_table();
+    od_config.batch_opt.solver_function_tolerance = get_param_as_double(BATCH_OPT_params, "solver_function_tolerance", od_config.batch_opt.solver_function_tolerance);
+    od_config.batch_opt.max_iterations = BATCH_OPT_params->get_as<int64_t>("max_iterations")->value_or(od_config.batch_opt.max_iterations);
+    od_config.batch_opt.max_dt = get_param_as_double(BATCH_OPT_params, "max_dt", od_config.batch_opt.max_dt);
+    od_config.batch_opt.bias_mode = static_cast<BIAS_MODE>(BATCH_OPT_params->get_as<int64_t>("bias_mode")->value_or(static_cast<int64_t>(od_config.batch_opt.bias_mode)));
 
-    BATCH_OPT_config batch_opt;
-    batch_opt.solver_function_tolerance = get_param_as_double(BATCH_OPT_params, "solver_function_tolerance", batch_opt.solver_function_tolerance);
-    batch_opt.max_iterations = BATCH_OPT_params->get_as<int64_t>("max_iterations")->value_or(batch_opt.max_iterations);
-    batch_opt.max_dt = get_param_as_double(BATCH_OPT_params, "max_dt", batch_opt.max_dt);
-    batch_opt.bias_mode = static_cast<BIAS_MODE>(BATCH_OPT_params->get_as<int64_t>("bias_mode")->value_or(static_cast<int64_t>(batch_opt.bias_mode)));
-    
     // Print the configuration
     std::cout << "BATCH_OPT Current Configuration parameters: \n";
-    std::cout << "  solver_function_tolerance: " << batch_opt.solver_function_tolerance << "\n";
-    std::cout << "  max_iterations: " << batch_opt.max_iterations << "\n";
-    std::cout << "  max_dt: " << batch_opt.max_dt << "\n";
-    std::cout << "  bias_mode: " << static_cast<int>(batch_opt.bias_mode) << "\n";
+    std::cout << "  solver_function_tolerance: " << od_config.batch_opt.solver_function_tolerance << "\n";
+    std::cout << "  max_iterations: " << od_config.batch_opt.max_iterations << "\n";
+    std::cout << "  max_dt: " << od_config.batch_opt.max_dt << "\n";
+    std::cout << "  bias_mode: " << static_cast<int>(od_config.batch_opt.bias_mode) << "\n";
 
-    return batch_opt;
-
+    return od_config;
 }

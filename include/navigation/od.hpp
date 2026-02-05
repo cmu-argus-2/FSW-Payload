@@ -112,7 +112,7 @@ private:
 
 };
 
-BATCH_OPT_config ReadBOConfig(const std::string& config_path);
+OD_Config ReadODConfig(const std::string& config_path);
 
 
 

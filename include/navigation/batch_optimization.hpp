@@ -2,6 +2,7 @@
 #define BATCH_OPTIMIZATION_HPP
 
 #include "navigation/measurement_residuals.hpp"
+#include "navigation/od.hpp"
 #include "navigation/pose_dynamics.hpp"
 #include <cstdint>
 #include <utility>
@@ -104,7 +105,6 @@ std::tuple <StateEstimates, std::vector<double>>
 solve_ceres_batch_opt(const LandmarkMeasurements& landmark_measurements,
                       const LandmarkGroupStarts& landmark_group_starts,
                       const GyroMeasurements& gyro_measurements,
-                      const double max_dt,
-                      const std::string bias_mode="tv_bias");
+                      BATCH_OPT_config bo_config);
 
 #endif // BATCH_OPTIMIZATION_HPP

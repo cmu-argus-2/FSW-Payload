@@ -133,7 +133,7 @@ get_state_timestamps(const LandmarkMeasurements& landmark_measurements,
 
 std::vector<double> compute_covariance(ceres::Problem& problem,
                         StateEstimates& state_estimates,
-                        std::string bias_mode) {
+                        BIAS_MODE bias_mode) {
     ceres::Covariance::Options options;
     // options.algorithm_type = ceres::CovarianceAlgorithmType::DENSE_SVD;
     ceres::Covariance covariance(options);
@@ -154,12 +154,12 @@ std::vector<double> compute_covariance(ceres::Problem& problem,
             row_start + StateEstimateIdx::QUAT_X,
             row_start + StateEstimateIdx::QUAT_X
         ));
-        if (bias_mode == "tv_bias")
+        if (bias_mode == BIAS_MODE::TV_BIAS)
         covariance_blocks.push_back(std::make_pair(
             row_start + StateEstimateIdx::GYRO_BIAS_X,
             row_start + StateEstimateIdx::GYRO_BIAS_X
         ));
-        else if (bias_mode == "fix_bias" && i == 0) {
+        else if (bias_mode == BIAS_MODE::FIX_BIAS && i == 0) {
             covariance_blocks.push_back(std::make_pair(
                 row_start + StateEstimateIdx::GYRO_BIAS_X,
                 row_start + StateEstimateIdx::GYRO_BIAS_X
@@ -181,7 +181,7 @@ std::vector<double> compute_covariance(ceres::Problem& problem,
     int j = 0;
     int block_size = 0;
     for (const auto& block : covariance_blocks) {
-        if (bias_mode == "no_bias") {
+        if (bias_mode == BIAS_MODE::NO_BIAS) {
             if (j % 3 == 0) {
                 int block_size = StateEstimateIdx::VEL_X - StateEstimateIdx::POS_X;
             } else if (j % 3 == 1) {
@@ -189,7 +189,7 @@ std::vector<double> compute_covariance(ceres::Problem& problem,
             } else {
                 int block_size = StateEstimateIdx::GYRO_BIAS_X - StateEstimateIdx::QUAT_X;
             }
-        } else if (bias_mode == "fix_bias") {
+        } else if (bias_mode == BIAS_MODE::FIX_BIAS) {
             if (j < 4) {
                 if (j % 4 == 0) {
                     block_size = StateEstimateIdx::VEL_X - StateEstimateIdx::POS_X;
@@ -209,7 +209,7 @@ std::vector<double> compute_covariance(ceres::Problem& problem,
                     block_size = StateEstimateIdx::GYRO_BIAS_X - StateEstimateIdx::QUAT_X;
                 }
             }
-        } else if (bias_mode == "tv_bias") { // tv_bias
+        } else if (bias_mode == BIAS_MODE::TV_BIAS) { // tv_bias
             if (j % 4 == 0) {
                 block_size = StateEstimateIdx::VEL_X - StateEstimateIdx::POS_X;
             } else if (j % 4 == 1) {
@@ -220,8 +220,8 @@ std::vector<double> compute_covariance(ceres::Problem& problem,
                 block_size = StateEstimateIdx::STATE_ESTIMATE_COUNT - StateEstimateIdx::GYRO_BIAS_X;
             }
         } else {
-            throw std::invalid_argument("Invalid bias_mode: " + bias_mode +
-                                        ". Must be 'tv_bias', 'fix_bias', or 'no_bias'.");
+            throw std::invalid_argument("Invalid bias_mode: " + std::to_string(static_cast<int>(bias_mode)) +
+                                        ". Must be 2:'tv_bias', 1:'fix_bias', or 0:'no_bias'.");
         }
         j += 1;
         // TODO: get attitude residual covariance in rotation vector/angle-axis form
@@ -237,13 +237,17 @@ std::vector<double> compute_covariance(ceres::Problem& problem,
     
     return covariance_diagonal;
 }
- 
+
 std::tuple <StateEstimates, std::vector<double>>
 solve_ceres_batch_opt(const LandmarkMeasurements& landmark_measurements,
                       const LandmarkGroupStarts& landmark_group_starts,
                       const GyroMeasurements& gyro_measurements,
-                      const double max_dt,
-                      const std::string bias_mode) {
+                      BATCH_OPT_config bo_config) {
+    // Unpack configuration
+    const double max_dt = bo_config.max_dt;
+    const BIAS_MODE bias_mode = bo_config.bias_mode;
+
+    // Input validation
     assert(landmark_measurements.rows() == landmark_group_starts.rows() &&
            "landmark_measurements and landmark_group_starts must have the same number of rows.");
     assert(landmark_measurements.rows() > 0 &&
@@ -280,9 +284,11 @@ solve_ceres_batch_opt(const LandmarkMeasurements& landmark_measurements,
             max_dt,
             num_groups);
     
+    // TODO: this information should be obtained from the configuration file
     const double uma_std_dev = 1e-4; // km/s^2
     const double gyro_wn_std_dev_rad_s = 0.0008726; //0.001; // rad/s
     const double gyro_bias_instability = 1; // 0.0001; // rad/s^2
+    // TODO: this information should be obtained from the output of the LD nets
     const double landmark_std_dev = 0.009; // very conservative assumption of 1/2 degree error
     // landmark std dev from 1/2 bounding box size (1/12 deg of lat/long) -> earth surface distance -> camera fov
 
@@ -311,19 +317,19 @@ solve_ceres_batch_opt(const LandmarkMeasurements& landmark_measurements,
                                     &quaternion_manifold);
         // problem.SetParameterLowerBound(row_start + StateEstimateIdx::QUAT_X, 3, 0.0);
         // Gyro bias parameter block
-        if (bias_mode == "tv_bias") {
+        if (bias_mode == BIAS_MODE::TV_BIAS) {
             problem.AddParameterBlock(row_start + StateEstimateIdx::GYRO_BIAS_X,
                 StateEstimateIdx::STATE_ESTIMATE_COUNT - StateEstimateIdx::GYRO_BIAS_X);
-        } else if (bias_mode == "fix_bias") {
+        } else if (bias_mode == BIAS_MODE::FIX_BIAS) {
             if (i ==0) {
                 problem.AddParameterBlock(row_start + StateEstimateIdx::GYRO_BIAS_X,
                     StateEstimateIdx::STATE_ESTIMATE_COUNT - StateEstimateIdx::GYRO_BIAS_X);
             }
-        } else if (bias_mode == "no_bias") {
+        } else if (bias_mode == BIAS_MODE::NO_BIAS) {
             // Do not add parameter block for gyro bias
         } else {
-            throw std::invalid_argument("Invalid bias_mode: " + bias_mode +
-                                        ". Must be 'tv_bias', 'fix_bias', or 'no_bias'.");
+            throw std::invalid_argument("Invalid bias_mode: " + std::to_string(static_cast<int>(bias_mode)) +
+                                        ". Must be 2:'tv_bias', 1:'fix_bias', or 0:'no_bias'.");
         }
 
     }
@@ -377,7 +383,7 @@ solve_ceres_batch_opt(const LandmarkMeasurements& landmark_measurements,
 
         auto* gyro_row = gyro_measurements.data() + GyroMeasurementIdx::GYRO_MEAS_COUNT * i;
 
-        if (bias_mode == "fix_bias") { // fixed bias
+        if (bias_mode == BIAS_MODE::FIX_BIAS) { // fixed bias
             double* p_bw = &state_estimates(1, StateEstimateIdx::GYRO_BIAS_X);
 
             problem.AddResidualBlock(
@@ -389,7 +395,7 @@ solve_ceres_batch_opt(const LandmarkMeasurements& landmark_measurements,
                 p_q1,
                 p_bw
             );
-        } else if (bias_mode == "tv_bias") { // time-varying bias
+        } else if (bias_mode == BIAS_MODE::TV_BIAS) { // time-varying bias
             double* p_bw0 = &state_estimates(i, StateEstimateIdx::GYRO_BIAS_X);
             double* p_bw1 = &state_estimates(i+1, StateEstimateIdx::GYRO_BIAS_X);
 
@@ -403,7 +409,7 @@ solve_ceres_batch_opt(const LandmarkMeasurements& landmark_measurements,
                 p_q1,
                 p_bw1
             );
-        } else if (bias_mode == "no_bias") { // no bias
+        } else if (bias_mode == BIAS_MODE::NO_BIAS) { // no bias
 
             problem.AddResidualBlock(
                 new ceres::AutoDiffCostFunction<AngularDynamicsCostFunctorNoBias, 3, 4, 4>(
@@ -444,23 +450,22 @@ solve_ceres_batch_opt(const LandmarkMeasurements& landmark_measurements,
     assert(landmark_idx == landmark_group_starts.rows());
 
     ceres::Solver::Options solver_options;
-    solver_options.max_num_iterations = 1000;
+    solver_options.max_num_iterations = bo_config.max_iterations;
     solver_options.linear_solver_type = ceres::SPARSE_NORMAL_CHOLESKY;
     solver_options.use_explicit_schur_complement = true;
     solver_options.minimizer_progress_to_stdout = true;
     solver_options.check_gradients = false;
     solver_options.gradient_check_relative_precision = 1e-6;
-    solver_options.function_tolerance = 1e-6;
+    solver_options.function_tolerance = bo_config.solver_function_tolerance;
     // solver_options.preconditioner_type = ceres::SCHUR_POWER_SERIES_EXPANSION;
     solver_options.logging_type = ceres::LoggingType::PER_MINIMIZER_ITERATION;
 
     ceres::Solver::Summary summary;
     ceres::Solve(solver_options, &problem, &summary);
 
-    // Now `summary` holds convergence info and your parameter blocks are updated.
     std::cout << summary.FullReport() << "\n";
 
-    if (bias_mode == "fix_bias") {
+    if (bias_mode == BIAS_MODE::FIX_BIAS) {
         // Copy the fixed bias to all time steps
         const double* const fixed_bias = state_estimates.data() + StateEstimateIdx::GYRO_BIAS_X;
         for (idx_t i = 1; i < state_estimates.rows(); ++i) {

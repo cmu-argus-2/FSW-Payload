@@ -15,7 +15,6 @@ enum LandmarkMeasurementIdx {
     LANDMARK_COUNT = 7
 };
 
-// TODO: Needs to be normalized by the landmark measurement noise covariance
 struct LandmarkCostFunctor {
 public:
     LandmarkCostFunctor(const double* const landmark_row, const double landmark_std_dev)

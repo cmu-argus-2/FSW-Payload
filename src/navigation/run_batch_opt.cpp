@@ -1,13 +1,11 @@
 #include "navigation/batch_optimization.hpp"
+#include "navigation/od.hpp"
 
 #include <ceres/internal/eigen.h>
 // #include <xtensor/xtensor.hpp>
 #include <Eigen/Eigen>
 #include <highfive/H5Easy.hpp>
 #include <highfive/highfive.hpp>
-
-// using namespace HighFive;
- 
 
 int main(int argc, char** argv) {
       // TODO: WIP Fix path to correct HDF5 file
@@ -18,6 +16,11 @@ int main(int argc, char** argv) {
         filename = std::string(argv[1]);
       }
 
+      // Load OD configuration file
+      std::string config_filename = "config/od.toml";
+      BATCH_OPT_config bo_config = ReadBOConfig(config_filename);
+
+      std::cout << "Loaded OD configuration from: " << config_filename << std::endl;
 
       HighFive::File file(filename, HighFive::File::ReadOnly);
 
@@ -45,7 +48,7 @@ int main(int argc, char** argv) {
 
       std::string bias_mode = "fix_bias"; // "no_bias", "fix_bias" or "tv_bias"
       // Run Ceres batch optimization
-      auto [state_estimates, covariance] = solve_ceres_batch_opt(lm, gs, gm, 60.0, bias_mode);
+      auto [state_estimates, covariance] = solve_ceres_batch_opt(lm, gs, gm, bo_config);
       // Compute residuals of state estimates
       
     try {

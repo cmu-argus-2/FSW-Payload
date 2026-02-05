@@ -19,6 +19,13 @@ enum class OD_STATE : uint8_t
     BATCH_OPT = 2, // Perform batch optimization on the stored landmarks
 };
 
+enum class BIAS_MODE : uint8_t
+{
+    NO_BIAS  = 0,  // no gyro bias estimation
+    FIX_BIAS = 1, // fixed/constant gyro bias estimation
+    TV_BIAS  = 2   // time-varying gyro bias estimation
+};
+
 
 struct INIT_config
 {
@@ -32,9 +39,10 @@ struct INIT_config
 
 struct BATCH_OPT_config
 {
-    double tolerance_solver;
+    double solver_function_tolerance;
     uint32_t max_iterations;
-
+    BIAS_MODE bias_mode;
+    double max_dt;
     BATCH_OPT_config();
 };
 
@@ -104,6 +112,7 @@ private:
 
 };
 
+BATCH_OPT_config ReadBOConfig(const std::string& config_path);
 
 
 

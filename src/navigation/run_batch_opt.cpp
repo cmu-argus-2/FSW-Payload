@@ -46,7 +46,6 @@ int main(int argc, char** argv) {
       std::cout << "Gyro Measurements (first 5 rows):\n" <<
           gm.topRows(5) << std::endl;
 
-      std::string bias_mode = "fix_bias"; // "no_bias", "fix_bias" or "tv_bias"
       // Run Ceres batch optimization
       auto [state_estimates, covariance] = solve_ceres_batch_opt(lm, gs, gm, od_config.batch_opt);
       // Compute residuals of state estimates

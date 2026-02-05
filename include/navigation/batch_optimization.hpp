@@ -74,6 +74,21 @@ std::vector<double> compute_covariance(ceres::Problem& problem,
                         StateEstimates& state_estimates,
                     std::string bias_mode);
 
+void build_ceres_problem(ceres::Problem::Options problem_options,
+                         StateEstimates& state_estimates,
+                         const std::vector<double> state_timestamps,
+                         const std::vector<idx_t> landmark_group_indices,
+                         const LandmarkMeasurements& landmark_measurements,
+                         const LandmarkGroupStarts& landmark_group_starts,
+                         const GyroMeasurements& gyro_measurements,
+                         BIAS_MODE bias_mode,
+                         double uma_std_dev,
+                         double gyro_wn_std_dev_rad_s,
+                         double gyro_bias_instability,
+                         double landmark_std_dev,
+                        ceres::EigenQuaternionManifold* quaternion_manifold,
+                        ceres::Problem* problem);
+
 /**
  * @brief Solves the batched nonlinear least squares optimization problem for orbit determination using Ceres Solver.
  *

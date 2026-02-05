@@ -1,9 +1,10 @@
 [INIT]
 # INT
-img_collection_period = 60 # sec
-imu_collection_period = 1  # sec
+collection_period = 60 # sec
+# img_collection_period = 60 # sec
+# imu_collection_period = 1  # sec
 # INT
-target_samples = 20 # samples 
+target_samples = 10 # samples 
 # INT
 max_collection_time = 3600 # sec
 # INT 

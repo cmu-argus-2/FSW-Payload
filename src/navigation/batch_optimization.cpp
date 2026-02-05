@@ -130,6 +130,175 @@ get_state_timestamps(const LandmarkMeasurements& landmark_measurements,
                            gyro_measurement_indices);
 }
 
+void build_ceres_problem(ceres::Problem::Options problem_options,
+                         StateEstimates& state_estimates,
+                         const std::vector<double> state_timestamps,
+                         const std::vector<idx_t> landmark_group_indices,
+                         const LandmarkMeasurements& landmark_measurements,
+                         const LandmarkGroupStarts& landmark_group_starts,
+                         const GyroMeasurements& gyro_measurements,
+                         BIAS_MODE bias_mode,
+                         double uma_std_dev,
+                         double gyro_wn_std_dev_rad_s,
+                         double gyro_bias_instability,
+                         double landmark_std_dev,
+                         ceres::EigenQuaternionManifold* quaternion_manifold,
+                         ceres::Problem* problem) {
+    // ceres::Problem problem(problem_options);
+    // problem->Options(problem_options);
+    
+    // ceres::EigenQuaternionManifold quaternion_manifold = ceres::EigenQuaternionManifold{};
+
+    for (idx_t i = 0; i < state_timestamps.size(); ++i) {
+        state_estimates(i, StateEstimateIdx::STATE_ESTIMATE_TIMESTAMP) = state_timestamps[i];
+        double* const row_start = state_estimates.data() + i * StateEstimateIdx::STATE_ESTIMATE_COUNT;
+
+        // Position parameter block
+        problem->AddParameterBlock(row_start + StateEstimateIdx::POS_X,
+                                    StateEstimateIdx::VEL_X - StateEstimateIdx::POS_X);
+        // Velocity parameter block
+        problem->AddParameterBlock(row_start + StateEstimateIdx::VEL_X,
+                                    StateEstimateIdx::QUAT_X - StateEstimateIdx::VEL_X);
+        // Quaternion parameter block
+        problem->AddParameterBlock(row_start + StateEstimateIdx::QUAT_X,
+                                    StateEstimateIdx::GYRO_BIAS_X - StateEstimateIdx::QUAT_X,
+                                    quaternion_manifold);
+        // problem.SetParameterLowerBound(row_start + StateEstimateIdx::QUAT_X, 3, 0.0);
+        // Gyro bias parameter block
+        if (bias_mode == BIAS_MODE::TV_BIAS) {
+            problem->AddParameterBlock(row_start + StateEstimateIdx::GYRO_BIAS_X,
+                StateEstimateIdx::STATE_ESTIMATE_COUNT - StateEstimateIdx::GYRO_BIAS_X);
+        } else if (bias_mode == BIAS_MODE::FIX_BIAS) {
+            if (i ==0) {
+                problem->AddParameterBlock(row_start + StateEstimateIdx::GYRO_BIAS_X,
+                    StateEstimateIdx::STATE_ESTIMATE_COUNT - StateEstimateIdx::GYRO_BIAS_X);
+            }
+        } else if (bias_mode == BIAS_MODE::NO_BIAS) {
+            // Do not add parameter block for gyro bias
+        } else {
+            throw std::invalid_argument("Invalid bias_mode: " + std::to_string(static_cast<int>(bias_mode)) +
+                                        ". Must be 2:'tv_bias', 1:'fix_bias', or 0:'no_bias'.");
+        }
+
+    }
+    // Linear Dynamics costs
+    for (idx_t i = 0; i+1 < state_timestamps.size(); ++i) {
+        // In the last timestep it seems to show dt 60 
+        // seems to be because of the condition of requiring every timestamp to have an additional timestamp after it
+        const double dt = state_timestamps[i + 1] - state_timestamps[i];
+        const double pos_std_dev = 0.5*uma_std_dev*dt*std::sqrt(dt); // km
+        const double vel_std_dev = uma_std_dev * std::sqrt(dt); // km/s
+        double* const curr_row_start = state_estimates.data() + i * StateEstimateIdx::STATE_ESTIMATE_COUNT;
+        double* const next_row_start = state_estimates.data() + (i + 1) * StateEstimateIdx::STATE_ESTIMATE_COUNT;
+        
+        double* p_r0 = &state_estimates(i, StateEstimateIdx::POS_X);
+        double* p_v0 = &state_estimates(i, StateEstimateIdx::VEL_X);
+        double* p_r1 = &state_estimates(i+1, StateEstimateIdx::POS_X);
+        double* p_v1 = &state_estimates(i+1, StateEstimateIdx::VEL_X);
+        // new ceres::LossFunctionWrapper(
+        // new ceres::HuberLoss(6.0), ceres::DO_NOT_TAKE_OWNERSHIP),
+        problem->AddResidualBlock(
+            new LinearDynamicsAnalytic{dt, pos_std_dev, vel_std_dev},
+            nullptr,
+            p_r0,
+            p_v0,
+            p_r1,
+            p_v1);
+        /*
+        problem.AddResidualBlock(
+            new ceres::AutoDiffCostFunction<LinearDynamicsCostFunctor, 6, 3, 3, 3, 3>(
+                new LinearDynamicsCostFunctor{dt}),
+                nullptr,
+                p_r0,
+                p_v0,
+                p_r1,
+                p_v1);
+        */
+    }
+
+    // Angular Dynamics costs
+    for (idx_t i = 0; i+1 < state_timestamps.size(); ++i) {
+        // In the last timestep it seems to show dt 60 
+        // seems to be because of the condition of requiring every timestamp to have an additional timestamp after it
+        const double dt = state_timestamps[i + 1] - state_timestamps[i];
+        const double quat_std_dev = gyro_wn_std_dev_rad_s * dt; // rad
+        const double bias_std_dev = gyro_bias_instability * std::sqrt(dt); // rad/s
+        double* const curr_row_start = state_estimates.data() + i * StateEstimateIdx::STATE_ESTIMATE_COUNT;
+        double* const next_row_start = state_estimates.data() + (i + 1) * StateEstimateIdx::STATE_ESTIMATE_COUNT;
+
+        double* p_q0  = &state_estimates(i, StateEstimateIdx::QUAT_X);
+        double* p_q1  = &state_estimates(i+1, StateEstimateIdx::QUAT_X);
+
+        auto* gyro_row = gyro_measurements.data() + GyroMeasurementIdx::GYRO_MEAS_COUNT * i;
+
+        if (bias_mode == BIAS_MODE::FIX_BIAS) { // fixed bias
+            double* p_bw = &state_estimates(0, StateEstimateIdx::GYRO_BIAS_X);
+
+            problem->AddResidualBlock(
+                new ceres::AutoDiffCostFunction<AngularDynamicsCostFunctorFixBias, 3, 4, 4, 3>(
+                    new AngularDynamicsCostFunctorFixBias{gyro_row, dt, quat_std_dev}),
+                new ceres::LossFunctionWrapper(
+                    new ceres::HuberLoss(6.0), ceres::TAKE_OWNERSHIP),
+                p_q0,
+                p_q1,
+                p_bw
+            );
+        } else if (bias_mode == BIAS_MODE::TV_BIAS) { // time-varying bias
+            double* p_bw0 = &state_estimates(i, StateEstimateIdx::GYRO_BIAS_X);
+            double* p_bw1 = &state_estimates(i+1, StateEstimateIdx::GYRO_BIAS_X);
+
+            problem->AddResidualBlock(
+                new ceres::AutoDiffCostFunction<AngularDynamicsCostFunctor, 6, 4, 3, 4, 3>(
+                    new AngularDynamicsCostFunctor{gyro_row, dt, quat_std_dev, bias_std_dev}),
+                new ceres::LossFunctionWrapper(
+                    new ceres::HuberLoss(6.0), ceres::TAKE_OWNERSHIP),
+                p_q0,
+                p_bw0,
+                p_q1,
+                p_bw1
+            );
+        } else if (bias_mode == BIAS_MODE::NO_BIAS) { // no bias
+
+            problem->AddResidualBlock(
+                new ceres::AutoDiffCostFunction<AngularDynamicsCostFunctorNoBias, 3, 4, 4>(
+                    new AngularDynamicsCostFunctorNoBias{gyro_row, dt, quat_std_dev}),
+                new ceres::LossFunctionWrapper(
+                    new ceres::HuberLoss(6.0), ceres::TAKE_OWNERSHIP),
+                p_q0,
+                p_q1
+            );
+        }
+    }
+
+    // TODO: Add magnetometer measurements for attitude estimation
+
+    // Landmark costs
+    idx_t landmark_idx = 0;
+    for (const auto& landmark_group_index : landmark_group_indices) {
+        assert(landmark_idx < landmark_group_starts.rows());
+        double* const state_estimate_row =
+                state_estimates.data() + landmark_group_index * StateEstimateIdx::STATE_ESTIMATE_COUNT;
+        double* const pos_estimate = state_estimate_row + StateEstimateIdx::POS_X;
+        double* const quat_estimate = state_estimate_row + StateEstimateIdx::QUAT_X;
+
+        do {
+            auto* landmark_row =
+                    landmark_measurements.data() + landmark_idx * LandmarkMeasurementIdx::LANDMARK_COUNT;
+            problem->AddResidualBlock(
+                // Ceres will automatically take ownership of the cost function and cost functor
+                new ceres::AutoDiffCostFunction<LandmarkCostFunctor, 3, 3, 4>(
+                        new LandmarkCostFunctor{landmark_row, landmark_std_dev}),
+                new ceres::LossFunctionWrapper(
+                    new ceres::HuberLoss(3.0), ceres::TAKE_OWNERSHIP),
+                pos_estimate,
+                quat_estimate);
+            ++landmark_idx;
+        } while (landmark_idx < landmark_group_starts.rows() && !landmark_group_starts(landmark_idx, 0));
+    }
+    assert(landmark_idx == landmark_group_starts.rows());
+
+}
+
 
 std::vector<double> compute_covariance(ceres::Problem& problem,
                         StateEstimates& state_estimates,
@@ -283,17 +452,19 @@ solve_ceres_batch_opt(const LandmarkMeasurements& landmark_measurements,
             gyro_measurements,
             max_dt,
             num_groups);
+
+    // give an initial guess
+    StateEstimates state_estimates = init_state_estimate(state_timestamps);        
     
     // TODO: this information should be obtained from the configuration file
-    const double uma_std_dev = 1e-4; // km/s^2
+    const double uma_std_dev = 1; // km/s^2
     const double gyro_wn_std_dev_rad_s = 0.0008726; //0.001; // rad/s
     const double gyro_bias_instability = 1; // 0.0001; // rad/s^2
     // TODO: this information should be obtained from the output of the LD nets
     const double landmark_std_dev = 0.009; // very conservative assumption of 1/2 degree error
     // landmark std dev from 1/2 bounding box size (1/12 deg of lat/long) -> earth surface distance -> camera fov
 
-    // give an initial guess
-    StateEstimates state_estimates = init_state_estimate(state_timestamps);
+    
 
     ceres::EigenQuaternionManifold quaternion_manifold = ceres::EigenQuaternionManifold{};
 
@@ -301,153 +472,20 @@ solve_ceres_batch_opt(const LandmarkMeasurements& landmark_measurements,
     problem_options.manifold_ownership = ceres::DO_NOT_TAKE_OWNERSHIP;
 
     ceres::Problem problem(problem_options);
-    for (idx_t i = 0; i < state_timestamps.size(); ++i) {
-        state_estimates(i, StateEstimateIdx::STATE_ESTIMATE_TIMESTAMP) = state_timestamps[i];
-        double* const row_start = state_estimates.data() + i * StateEstimateIdx::STATE_ESTIMATE_COUNT;
-
-        // Position parameter block
-        problem.AddParameterBlock(row_start + StateEstimateIdx::POS_X,
-                                    StateEstimateIdx::VEL_X - StateEstimateIdx::POS_X);
-        // Velocity parameter block
-        problem.AddParameterBlock(row_start + StateEstimateIdx::VEL_X,
-                                    StateEstimateIdx::QUAT_X - StateEstimateIdx::VEL_X);
-        // Quaternion parameter block
-        problem.AddParameterBlock(row_start + StateEstimateIdx::QUAT_X,
-                                    StateEstimateIdx::GYRO_BIAS_X - StateEstimateIdx::QUAT_X,
-                                    &quaternion_manifold);
-        // problem.SetParameterLowerBound(row_start + StateEstimateIdx::QUAT_X, 3, 0.0);
-        // Gyro bias parameter block
-        if (bias_mode == BIAS_MODE::TV_BIAS) {
-            problem.AddParameterBlock(row_start + StateEstimateIdx::GYRO_BIAS_X,
-                StateEstimateIdx::STATE_ESTIMATE_COUNT - StateEstimateIdx::GYRO_BIAS_X);
-        } else if (bias_mode == BIAS_MODE::FIX_BIAS) {
-            if (i ==0) {
-                problem.AddParameterBlock(row_start + StateEstimateIdx::GYRO_BIAS_X,
-                    StateEstimateIdx::STATE_ESTIMATE_COUNT - StateEstimateIdx::GYRO_BIAS_X);
-            }
-        } else if (bias_mode == BIAS_MODE::NO_BIAS) {
-            // Do not add parameter block for gyro bias
-        } else {
-            throw std::invalid_argument("Invalid bias_mode: " + std::to_string(static_cast<int>(bias_mode)) +
-                                        ". Must be 2:'tv_bias', 1:'fix_bias', or 0:'no_bias'.");
-        }
-
-    }
-
-    // Linear Dynamics costs
-    for (idx_t i = 0; i+1 < state_timestamps.size(); ++i) {
-        // In the last timestep it seems to show dt 60 
-        // seems to be because of the condition of requiring every timestamp to have an additional timestamp after it
-        const double dt = state_timestamps[i + 1] - state_timestamps[i];
-        const double pos_std_dev = 0.5*uma_std_dev*dt*std::sqrt(dt); // km
-        const double vel_std_dev = uma_std_dev * std::sqrt(dt); // km/s
-        double* const curr_row_start = state_estimates.data() + i * StateEstimateIdx::STATE_ESTIMATE_COUNT;
-        double* const next_row_start = state_estimates.data() + (i + 1) * StateEstimateIdx::STATE_ESTIMATE_COUNT;
-        
-        double* p_r0 = &state_estimates(i, StateEstimateIdx::POS_X);
-        double* p_v0 = &state_estimates(i, StateEstimateIdx::VEL_X);
-        double* p_r1 = &state_estimates(i+1, StateEstimateIdx::POS_X);
-        double* p_v1 = &state_estimates(i+1, StateEstimateIdx::VEL_X);
-        problem.AddResidualBlock(
-            new LinearDynamicsAnalytic{dt, pos_std_dev, vel_std_dev},
-            new ceres::LossFunctionWrapper(
-                new ceres::HuberLoss(6.0), ceres::DO_NOT_TAKE_OWNERSHIP),
-            p_r0,
-            p_v0,
-            p_r1,
-            p_v1);
-        /*
-        problem.AddResidualBlock(
-            new ceres::AutoDiffCostFunction<LinearDynamicsCostFunctor, 6, 3, 3, 3, 3>(
-                new LinearDynamicsCostFunctor{dt}),
-                nullptr,
-                p_r0,
-                p_v0,
-                p_r1,
-                p_v1);
-        */
-    }
-
-    // Angular Dynamics costs
-    for (idx_t i = 0; i+1 < state_timestamps.size(); ++i) {
-        // In the last timestep it seems to show dt 60 
-        // seems to be because of the condition of requiring every timestamp to have an additional timestamp after it
-        const double dt = state_timestamps[i + 1] - state_timestamps[i];
-        const double quat_std_dev = gyro_wn_std_dev_rad_s * dt; // rad
-        const double bias_std_dev = gyro_bias_instability * std::sqrt(dt); // rad/s
-        double* const curr_row_start = state_estimates.data() + i * StateEstimateIdx::STATE_ESTIMATE_COUNT;
-        double* const next_row_start = state_estimates.data() + (i + 1) * StateEstimateIdx::STATE_ESTIMATE_COUNT;
-
-        double* p_q0  = &state_estimates(i, StateEstimateIdx::QUAT_X);
-        double* p_q1  = &state_estimates(i+1, StateEstimateIdx::QUAT_X);
-
-        auto* gyro_row = gyro_measurements.data() + GyroMeasurementIdx::GYRO_MEAS_COUNT * i;
-
-        if (bias_mode == BIAS_MODE::FIX_BIAS) { // fixed bias
-            double* p_bw = &state_estimates(1, StateEstimateIdx::GYRO_BIAS_X);
-
-            problem.AddResidualBlock(
-                new ceres::AutoDiffCostFunction<AngularDynamicsCostFunctorFixBias, 3, 4, 4, 3>(
-                    new AngularDynamicsCostFunctorFixBias{gyro_row, dt, quat_std_dev}),
-                new ceres::LossFunctionWrapper(
-                    new ceres::HuberLoss(6.0), ceres::DO_NOT_TAKE_OWNERSHIP),
-                p_q0,
-                p_q1,
-                p_bw
-            );
-        } else if (bias_mode == BIAS_MODE::TV_BIAS) { // time-varying bias
-            double* p_bw0 = &state_estimates(i, StateEstimateIdx::GYRO_BIAS_X);
-            double* p_bw1 = &state_estimates(i+1, StateEstimateIdx::GYRO_BIAS_X);
-
-            problem.AddResidualBlock(
-                new ceres::AutoDiffCostFunction<AngularDynamicsCostFunctor, 6, 4, 3, 4, 3>(
-                    new AngularDynamicsCostFunctor{gyro_row, dt, quat_std_dev, bias_std_dev}),
-                new ceres::LossFunctionWrapper(
-                    new ceres::HuberLoss(6.0), ceres::DO_NOT_TAKE_OWNERSHIP),
-                p_q0,
-                p_bw0,
-                p_q1,
-                p_bw1
-            );
-        } else if (bias_mode == BIAS_MODE::NO_BIAS) { // no bias
-
-            problem.AddResidualBlock(
-                new ceres::AutoDiffCostFunction<AngularDynamicsCostFunctorNoBias, 3, 4, 4>(
-                    new AngularDynamicsCostFunctorNoBias{gyro_row, dt, quat_std_dev}),
-                new ceres::LossFunctionWrapper(
-                    new ceres::HuberLoss(6.0), ceres::DO_NOT_TAKE_OWNERSHIP),
-                p_q0,
-                p_q1
-            );
-        }
-    }
-
-    // TODO: Add magnetometer measurements for attitude estimation
-
-    // Landmark costs
-    idx_t landmark_idx = 0;
-    for (const auto& landmark_group_index : landmark_group_indices) {
-        assert(landmark_idx < landmark_group_starts.rows());
-        double* const state_estimate_row =
-                state_estimates.data() + landmark_group_index * StateEstimateIdx::STATE_ESTIMATE_COUNT;
-        double* const pos_estimate = state_estimate_row + StateEstimateIdx::POS_X;
-        double* const quat_estimate = state_estimate_row + StateEstimateIdx::QUAT_X;
-
-        do {
-            auto* landmark_row =
-                    landmark_measurements.data() + landmark_idx * LandmarkMeasurementIdx::LANDMARK_COUNT;
-            problem.AddResidualBlock(
-                // Ceres will automatically take ownership of the cost function and cost functor
-                new ceres::AutoDiffCostFunction<LandmarkCostFunctor, 3, 3, 4>(
-                        new LandmarkCostFunctor{landmark_row, landmark_std_dev}),
-                new ceres::LossFunctionWrapper(
-                    new ceres::HuberLoss(3.0), ceres::DO_NOT_TAKE_OWNERSHIP),
-                pos_estimate,
-                quat_estimate);
-            ++landmark_idx;
-        } while (landmark_idx < landmark_group_starts.rows() && !landmark_group_starts(landmark_idx, 0));
-    }
-    assert(landmark_idx == landmark_group_starts.rows());
+    build_ceres_problem(problem_options,
+                         state_estimates,
+                         state_timestamps,
+                         landmark_group_indices,
+                         landmark_measurements,
+                         landmark_group_starts,
+                         gyro_measurements,
+                         bias_mode,
+                         uma_std_dev,
+                         gyro_wn_std_dev_rad_s,
+                         gyro_bias_instability,
+                         landmark_std_dev,
+                         &quaternion_manifold,
+                        &problem);
 
     ceres::Solver::Options solver_options;
     solver_options.max_num_iterations = bo_config.max_iterations;

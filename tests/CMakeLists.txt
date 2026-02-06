@@ -37,3 +37,10 @@ target_link_libraries(GEN_TILEPACK_RAW
     core
     vision
 )
+
+add_executable(TEST_PREFILTER test_prefiltering.cpp)
+target_link_libraries(TEST_PREFILTER
+    PRIVATE
+    vision
+    ${OpenCV_LIBS}
+)

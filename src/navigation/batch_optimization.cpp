@@ -294,7 +294,6 @@ void build_ceres_problem(StateEstimates& state_estimates,
 
 }
 
-
 std::vector<double> compute_covariance(ceres::Problem& problem,
                         StateEstimates& state_estimates,
                         BIAS_MODE bias_mode) {
@@ -343,56 +342,60 @@ std::vector<double> compute_covariance(ceres::Problem& problem,
 
     std::vector<double> covariance_diagonal;
     int j = 0;
+    // currently a bit unnecessary since they're all size 3 in the tangent space. Was only worth it
+    // if getting the quaternion covariance
     int block_size = 0;
     for (const auto& block : covariance_blocks) {
         if (bias_mode == BIAS_MODE::NO_BIAS) {
             if (j % 3 == 0) {
-                int block_size = StateEstimateIdx::VEL_X - StateEstimateIdx::POS_X;
+                int block_size = StateResCovIdx::VEL_COV_X - StateResCovIdx::POS_COV_X;
             } else if (j % 3 == 1) {
-                int block_size = StateEstimateIdx::QUAT_X - StateEstimateIdx::VEL_X;
+                int block_size = StateResCovIdx::ROT_COV_X - StateResCovIdx::VEL_COV_X;
             } else {
-                int block_size = StateEstimateIdx::GYRO_BIAS_X - StateEstimateIdx::QUAT_X;
+                int block_size = StateResCovIdx::GYRO_BIAS_COV_X - StateResCovIdx::ROT_COV_X;
             }
         } else if (bias_mode == BIAS_MODE::FIX_BIAS) {
             if (j < 4) {
                 if (j % 4 == 0) {
-                    block_size = StateEstimateIdx::VEL_X - StateEstimateIdx::POS_X;
+                    block_size = StateResCovIdx::VEL_COV_X - StateResCovIdx::POS_COV_X;
                 } else if (j % 4 == 1) {
-                    block_size = StateEstimateIdx::QUAT_X - StateEstimateIdx::VEL_X;
+                    block_size = StateResCovIdx::ROT_COV_X - StateResCovIdx::VEL_COV_X;
                 } else if (j % 4 == 2) {
-                    block_size = StateEstimateIdx::GYRO_BIAS_X - StateEstimateIdx::QUAT_X;
+                    block_size = StateResCovIdx::GYRO_BIAS_COV_X - StateResCovIdx::ROT_COV_X;
                 } else {
-                    block_size = StateEstimateIdx::STATE_ESTIMATE_COUNT - StateEstimateIdx::GYRO_BIAS_X;
+                    block_size = StateResCovIdx::STATE_RES_COV_COUNT - StateResCovIdx::GYRO_BIAS_COV_X;
                 }
             } else {
                 if ((j - 4) % 3 == 0) {
-                    block_size = StateEstimateIdx::VEL_X - StateEstimateIdx::POS_X;
+                    block_size = StateResCovIdx::VEL_COV_X - StateResCovIdx::POS_COV_X;
                 } else if ((j - 4) % 3 == 1) {
-                    block_size = StateEstimateIdx::QUAT_X - StateEstimateIdx::VEL_X;
+                    block_size = StateResCovIdx::ROT_COV_X - StateResCovIdx::VEL_COV_X;
                 } else {
-                    block_size = StateEstimateIdx::GYRO_BIAS_X - StateEstimateIdx::QUAT_X;
+                    block_size = StateResCovIdx::GYRO_BIAS_COV_X - StateResCovIdx::ROT_COV_X;
                 }
             }
         } else if (bias_mode == BIAS_MODE::TV_BIAS) { // tv_bias
             if (j % 4 == 0) {
-                block_size = StateEstimateIdx::VEL_X - StateEstimateIdx::POS_X;
+                block_size = StateResCovIdx::VEL_COV_X - StateResCovIdx::POS_COV_X;
             } else if (j % 4 == 1) {
-                block_size = StateEstimateIdx::QUAT_X - StateEstimateIdx::VEL_X;
+                block_size = StateResCovIdx::ROT_COV_X - StateResCovIdx::VEL_COV_X;
             } else if (j % 4 == 2) {
-                block_size = StateEstimateIdx::GYRO_BIAS_X - StateEstimateIdx::QUAT_X;
+                block_size = StateResCovIdx::GYRO_BIAS_COV_X - StateResCovIdx::ROT_COV_X;
             } else {
-                block_size = StateEstimateIdx::STATE_ESTIMATE_COUNT - StateEstimateIdx::GYRO_BIAS_X;
+                block_size = StateResCovIdx::STATE_RES_COV_COUNT - StateResCovIdx::GYRO_BIAS_COV_X;
             }
         } else {
             throw std::invalid_argument("Invalid bias_mode: " + std::to_string(static_cast<int>(bias_mode)) +
                                         ". Must be 2:'tv_bias', 1:'fix_bias', or 0:'no_bias'.");
         }
         j += 1;
+
         // TODO: get attitude residual covariance in rotation vector/angle-axis form
         // This can be done with GetCovarianceBlockInTangentSpace
         std::vector<std::pair<const double*, const double*>> single_block = {block};
         double cov_matrix[block_size * block_size];
-        covariance.GetCovarianceBlock(block.first, block.first, cov_matrix);
+        //covariance.GetCovarianceBlock(block.first, block.first, cov_matrix);
+        covariance.GetCovarianceBlockInTangentSpace(block.first, block.first, cov_matrix);
         
         for (int i = 0; i < block_size; ++i) {
             covariance_diagonal.push_back(cov_matrix[i * block_size + i]);
@@ -522,6 +525,8 @@ solve_ceres_batch_opt(const LandmarkMeasurements& landmark_measurements,
     std::vector<double> covariance = compute_covariance(problem, state_estimates, bias_mode);
 
     // TODO: compute residuals
+
+
 
     // return state_estimates
     return std::make_tuple(state_estimates,

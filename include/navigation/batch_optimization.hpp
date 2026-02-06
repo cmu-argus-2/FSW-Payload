@@ -34,10 +34,29 @@ enum StateEstimateIdx {
     STATE_ESTIMATE_COUNT = 14
 };
 
+// Indexes for the residuals/covariance vector in the tangent space of the manifold
+enum StateResCovIdx {
+    RES_COV_TIMESTAMP = 0,
+    POS_COV_X = 1,
+    POS_COV_Y = 2,
+    POS_COV_Z = 3,
+    VEL_COV_X = 4,
+    VEL_COV_Y = 5,
+    VEL_COV_Z = 6,
+    ROT_COV_X = 7,
+    ROT_COV_Y = 8,
+    ROT_COV_Z = 9,
+    GYRO_BIAS_COV_X = 10,
+    GYRO_BIAS_COV_Y = 11,
+    GYRO_BIAS_COV_Z = 12,
+    STATE_RES_COV_COUNT = 13
+};
+
 using LandmarkMeasurements = Eigen::Matrix<double, Eigen::Dynamic, LandmarkMeasurementIdx::LANDMARK_COUNT, Eigen::RowMajor>;
 using LandmarkGroupStarts = Eigen::Matrix<bool, Eigen::Dynamic, 1, Eigen::ColMajor>;
 using GyroMeasurements = Eigen::Matrix<double, Eigen::Dynamic, GyroMeasurementIdx::GYRO_MEAS_COUNT, Eigen::RowMajor>;
 using StateEstimates = Eigen::Matrix<double, Eigen::Dynamic, StateEstimateIdx::STATE_ESTIMATE_COUNT, Eigen::RowMajor>;
+using ResidualsOrCovariances = Eigen::Matrix<double, Eigen::Dynamic, StateResCovIdx::STATE_RES_COV_COUNT, Eigen::RowMajor>;
 using idx_t = Eigen::Index;
 
 /**

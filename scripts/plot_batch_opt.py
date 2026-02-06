@@ -245,8 +245,8 @@ def plot_errors(true_states, est_states, covariances, bias_mode):
     colors = ["C0", "C1"]
     for i, ax in enumerate(axs):
         ax.plot(t_est, true_quat_estt[:, i] - est_quat[:, i], label="error", color=colors[0])
-        ax.fill_between(t_est, - 3*est_covars_quat[:, i], 3*est_covars_quat[:, i],
-                        color=colors[0], alpha=0.3, label="3-sigma")
+        # ax.fill_between(t_est, - 3*est_covars_quat[:, i], 3*est_covars_quat[:, i],
+        #                 color=colors[0], alpha=0.3, label="3-sigma")
         ax.set_ylabel(comp_labels[i])
         ax.grid(True)
         if i == 0:
@@ -258,23 +258,51 @@ def plot_errors(true_states, est_states, covariances, bias_mode):
     plt.savefig(os.path.join(RESULTS_DIR, "quaternion_four_error.png"))
     
     # angle between quaternions
-    angle_errors = np.zeros(est_quat.shape[0])  # shape (N,)
+    angle_errors = np.zeros((est_quat.shape[0],3))  # shape (N,)
+    att_covar = np.rad2deg(np.sqrt(est_covars[:, 6:9]))
     for i in range(est_quat.shape[0]):
         q_true = pyqt.Quaternion(true_quat_estt[i,0], true_quat_estt[i,1], true_quat_estt[i,2], true_quat_estt[i,3])
         q_est  = pyqt.Quaternion(est_quat[i,0], est_quat[i,1], est_quat[i,2], est_quat[i,3])
         dq = q_true.inverse * q_est
-        angle_errors[i] = np.rad2deg(2 * np.arccos(np.clip(np.abs(dq.w), -1.0, 1.0)))  # angle in degrees
-    fig, ax = plt.subplots(figsize=(10, 4))
-    ax.plot(t_est, angle_errors, label="Attitude Error", color="C0")
-    ax.set_ylabel("Error (degrees)")
-    ax.set_xlabel("time (s) since start")
-    ax.set_title("Attitude Error")
-    ax.grid(True)
-    ax.set_ylim(0, np.minimum(np.max(angle_errors)*1.1,180))
+        rotvec = dq.axis * dq.angle  # rotation vector
+        angle_errors[i] = np.rad2deg(rotvec)
+    fig, axs = plt.subplots(3, 1, sharex=True, figsize=(10, 4))
+    ylbls = ["X (deg)", "Y (deg)", "Z (deg)"]
+    for i, ax in enumerate(axs):
+        ax.plot(t_est, angle_errors[:, i], label="error", color=colors[0])
+        ax.fill_between(t_est, - 3*att_covar[:, i], 3*att_covar[:, i],
+                        color=colors[0], alpha=0.3, label="3-sigma")
+        ax.set_ylabel(ylbls[i])
+        ax.grid(True)
+        if i == 0:
+            ax.legend(loc="upper right")
+    axs[-1].set_xlabel("time (s) since start")
+    fig.suptitle("Attitude Error")
     # ax.legend(loc="upper right")
     plt.tight_layout()
     plt.subplots_adjust(top=0.92)
     plt.savefig(os.path.join(RESULTS_DIR, "attitude_error.png"))
+    
+    # angle between quaternions
+    angle_error_norm = np.zeros(est_quat.shape[0])  # shape (N,)
+    att_norm_std = np.linalg.norm(att_covar, axis=1)
+    for i in range(est_quat.shape[0]):
+        q_true = pyqt.Quaternion(true_quat_estt[i,0], true_quat_estt[i,1], true_quat_estt[i,2], true_quat_estt[i,3])
+        q_est  = pyqt.Quaternion(est_quat[i,0], est_quat[i,1], est_quat[i,2], est_quat[i,3])
+        dq = q_true.inverse * q_est
+        angle_error_norm[i] = np.rad2deg(2 * np.arccos(np.clip(np.abs(dq.w), -1.0, 1.0)))  # angle in degrees
+    fig, ax = plt.subplots(figsize=(10, 4))
+    ax.plot(t_est, angle_error_norm, label="Attitude Error", color="C0")
+    ax.fill_between(t_est, np.zeros_like(t_est), 3*att_norm_std, color="C0", alpha=0.3, label="3-sigma")
+    ax.set_ylabel("Error (degrees)")
+    ax.set_xlabel("time (s) since start")
+    ax.set_title("Attitude Error Norm")
+    ax.grid(True)
+    ax.set_ylim(0, np.minimum(np.max(angle_error_norm)*1.1,180))
+    # ax.legend(loc="upper right")
+    plt.tight_layout()
+    plt.subplots_adjust(top=0.92)
+    plt.savefig(os.path.join(RESULTS_DIR, "attitude_error_norm.png"))
     
     # Plot gyro bias
     true_gyro_bias = true_states["states"][:,13:16]
@@ -283,7 +311,7 @@ def plot_errors(true_states, est_states, covariances, bias_mode):
     if bias_mode == "no_bias":
         gyro_bias_covar = np.zeros(est_gyro_bias.shape)
     elif bias_mode in ["tv_bias", "fix_bias"]:
-        gyro_bias_covar = np.sqrt(est_covars[:, 10:13])      
+        gyro_bias_covar = np.sqrt(est_covars[:, 9:12])      
     else:
         raise ValueError(f"Unknown bias mode: {bias_mode}")
     
@@ -307,7 +335,7 @@ def plot_errors(true_states, est_states, covariances, bias_mode):
     plt.savefig(os.path.join(RESULTS_DIR, "gyro_bias_three_error.png"))
     
     gyro_bias_norm = np.linalg.norm(true_gyro_bias_est - est_gyro_bias, axis=1)
-    est_covars_gyro_bias_norm = np.sqrt(est_covars[:, 10:13].sum(axis=1))
+    est_covars_gyro_bias_norm = np.sqrt(est_covars[:, 9:12].sum(axis=1))
     fig, ax = plt.subplots(figsize=(10, 4))
     ax.plot(t_est, gyro_bias_norm, label="Gyro Bias Error Norm", color="C0")
     ax.fill_between(t_est, np.zeros_like(t_est), 3*est_covars_gyro_bias_norm, color="C0", alpha=0.3, label="3-sigma")
@@ -366,20 +394,20 @@ def plot_measurements(measurements, ground_truth_states, state_estimates):
     plt.savefig(os.path.join(RESULTS_DIR, "landmark_measurements.png"))
 
 def process_covariances(covariances, bias_mode):
+    state_count_with_bias = 12
+    state_count_without_bias = 9
     if bias_mode == "no_bias":
-        state_size = 10  # [pos(3), vel(3), quat(4)]
-        nsteps = covariances.shape[0] // state_size
-        est_covariances = covariances.reshape(-1, nsteps, state_size)
+        nsteps = covariances.shape[0] // state_count_without_bias
+        est_covariances = covariances.reshape(-1, nsteps, state_count_without_bias)
     elif bias_mode == "fix_bias":
-        start = covariances[:13]
-        rest = covariances[13:]
-        rest_cov = rest.reshape(-1, 10)
-        rest_cov = np.hstack((rest_cov, start[10:].reshape(1,3).repeat(rest_cov.shape[0], axis=0)))
+        start = covariances[:state_count_with_bias]
+        rest = covariances[state_count_with_bias:]
+        rest_cov = rest.reshape(-1, state_count_without_bias)
+        rest_cov = np.hstack((rest_cov, start[state_count_without_bias:].reshape(1,3).repeat(rest_cov.shape[0], axis=0)))
         est_covariances = np.vstack((start, rest_cov))
     elif bias_mode == "tv_bias":
-        state_size = 13  # [pos(3), vel(3), quat(4), bias(3)]
-        nsteps = covariances.shape[0] // state_size
-        est_covariances = covariances.reshape(-1, nsteps, state_size)
+        nsteps = covariances.shape[0] // state_count_with_bias
+        est_covariances = covariances.reshape(-1, nsteps, state_count_with_bias)
         # est_covariances = est_covariances.transpose()
     else:
         raise ValueError(f"Unknown bias mode: {bias_mode}")

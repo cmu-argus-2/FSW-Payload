@@ -94,37 +94,7 @@ target_link_libraries(${PROJECT_NAME}
     ${OpenCV_LIBS}
     # ${PAYLOAD_CONDITIONAL_LIBS}
 )
-# 
 
-add_executable(run_batch_opt
-    src/navigation/run_batch_opt.cpp
-    src/navigation/batch_optimization.cpp
-)
-target_link_libraries(run_batch_opt
-    PRIVATE
-    spdlog::spdlog
-    PAYLOAD_LIB
-    HDF5::HDF5           
-    HighFive::HighFive
-    Ceres::ceres
-    Eigen3::Eigen
-)
-
-# temporary executable to test jacobians
-add_executable(test_jacobians
-    src/navigation/test_jacobians.cpp
-    src/navigation/pose_dynamics.cpp
-    src/navigation/batch_optimization.cpp
-)
-target_link_libraries(test_jacobians
-    PRIVATE
-    spdlog::spdlog
-    PAYLOAD_LIB
-    HDF5::HDF5           
-    HighFive::HighFive
-    Ceres::ceres
-    Eigen3::Eigen
-)
 
 # message(STATUS "NN_ENABLED: ${NN_ENABLED}")
 # target_compile_definitions(${PROJECT_NAME} PRIVATE NN_ENABLED=${NN_ENABLED})

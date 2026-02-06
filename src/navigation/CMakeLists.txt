@@ -4,6 +4,8 @@ add_library(navigation
     od.cpp
     od_alg.cpp
     batch_optimization.cpp
+    pose_dynamics.cpp
+    measurement_residuals.cpp
     quaternion.cpp
     utils.cpp
 )

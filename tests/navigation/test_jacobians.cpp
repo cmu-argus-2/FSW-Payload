@@ -1,6 +1,6 @@
 #include "navigation/batch_optimization.hpp"
 #include "navigation/pose_dynamics.hpp"
-#include "navigation/test_jacobians.hpp"
+// #include "tests/navigation/test_jacobians.hpp"
 #include <ceres/ceres.h>
 #include <ceres/internal/eigen.h>
 // #include <xtensor/xtensor.hpp>
@@ -11,13 +11,6 @@
 #include <chrono>
 #include <iomanip>
 
-
-// TODO: Once ready, move to tests folder 
-int main(int argc, char** argv) {
-    // test_linear_dynamics_cost_functor();
-    test_angular_dynamics_cost_functor();
-    return 0;
-}
 
 void test_linear_dynamics_cost_functor() {
     double dt = 1.0;
@@ -278,4 +271,10 @@ void test_angular_dynamics_cost_functor() {
 
     }
     return;
+}
+
+int main(int argc, char** argv) {
+    // test_linear_dynamics_cost_functor();
+    test_angular_dynamics_cost_functor();
+    return 0;
 }

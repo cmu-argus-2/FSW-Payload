@@ -10,7 +10,6 @@ set(CMAKE_CXX_COMPILER_LAUNCHER ccache)
 # Don't use
 # set(CMAKE_CXX_COMPILER clang++)
 
-
 ##### COMPILE DEFINITIONS
 # Executable directory
 set(CMAKE_EXPORT_COMPILE_COMMANDS ON)
@@ -48,6 +47,7 @@ if(CUDA_ENABLED)
     find_library(CUDART_LIBRARY cudart HINTS ENV CUDART_LIBRARY ${CUDA_TOOLKIT_ROOT_DIR}/lib64)
     find_library(NVINFER_LIBRARY nvinfer REQUIRED)
 endif()
+find_package(nlohmann_json REQUIRED)
 
 
 # Include OpenCV directories
@@ -56,7 +56,8 @@ include_directories(SYSTEM ${OpenCV_INCLUDE_DIRS})
 include_directories(${PROJECT_SOURCE_DIR}/include)
 include_directories(SYSTEM ${PROJECT_SOURCE_DIR}/external) # ignore warnings from external libraries
 if(CUDA_ENABLED)
-    include_directories(${CUDA_HOME}/include)
+    include_directories(SYSTEM ${CUDA_INCLUDE_DIRS})
+    # include_directories(${CUDA_HOME}/include)
 endif()
 # Add the source files subdirectory
 set(CMAKE_POSITION_INDEPENDENT_CODE ON)
@@ -127,7 +128,6 @@ target_link_libraries(test_jacobians
 
 # message(STATUS "NN_ENABLED: ${NN_ENABLED}")
 # target_compile_definitions(${PROJECT_NAME} PRIVATE NN_ENABLED=${NN_ENABLED})
-
 
 ##### COMMAND-LINE INTERFACE
 find_package(Threads REQUIRED)

@@ -1,0 +1,374 @@
+#include "communication/tilepack.hpp"
+#include <fstream>
+#include <algorithm>
+#include <map>
+#include <cstring>
+#include <iostream>
+#include <cmath>
+
+#include <opencv2/opencv.hpp>
+#include <opencv2/imgcodecs.hpp>
+#include <opencv2/imgproc.hpp>
+#include "core/data_handling.hpp"
+
+namespace tilepack {
+
+std::vector<uint8_t> PacketHeader::to_bytes() const {
+    std::vector<uint8_t> bytes(PACKET_HEADER_SIZE);
+    
+    bytes[0] = (payload_size_bytes >> 8) & 0xFF;
+    bytes[1] = payload_size_bytes & 0xFF;
+    bytes[2] = (page_id >> 8) & 0xFF;
+    bytes[3] = page_id & 0xFF;
+    bytes[4] = (tile_idx >> 8) & 0xFF;
+    bytes[5] = tile_idx & 0xFF;
+    bytes[6] = frag_idx;
+    
+    return bytes;
+}
+
+PacketHeader PacketHeader::from_bytes(const uint8_t* data, size_t len) {
+    if (len < PACKET_HEADER_SIZE) {
+        throw std::runtime_error("Insufficient data for packet header");
+    }
+    
+    PacketHeader header;
+    header.payload_size_bytes = (static_cast<uint16_t>(data[0]) << 8) | data[1];
+    header.page_id = (static_cast<uint16_t>(data[2]) << 8) | data[3];
+    header.tile_idx = (static_cast<uint16_t>(data[4]) << 8) | data[5];
+    header.frag_idx = data[6];
+    
+    return header;
+}
+
+std::vector<uint8_t> ImageMetadata::to_bytes() const {
+    std::vector<uint8_t> bytes(15);
+    
+    // Big-endian encoding: >HHHHHHHB
+    bytes[0] = (page_id >> 8) & 0xFF;
+    bytes[1] = page_id & 0xFF;
+    bytes[2] = (tiles_x >> 8) & 0xFF;
+    bytes[3] = tiles_x & 0xFF;
+    bytes[4] = (tiles_y >> 8) & 0xFF;
+    bytes[5] = tiles_y & 0xFF;
+    bytes[6] = (tile_w >> 8) & 0xFF;
+    bytes[7] = tile_w & 0xFF;
+    bytes[8] = (tile_h >> 8) & 0xFF;
+    bytes[9] = tile_h & 0xFF;
+    bytes[10] = (target_width >> 8) & 0xFF;
+    bytes[11] = target_width & 0xFF;
+    bytes[12] = (target_height >> 8) & 0xFF;
+    bytes[13] = target_height & 0xFF;
+    bytes[14] = jpeg_quality;
+    
+    return bytes;
+}
+
+ImageMetadata ImageMetadata::from_bytes(const uint8_t* data, size_t len) {
+    if (len < 15) {
+        throw std::runtime_error("Insufficient data for metadata");
+    }
+    
+    ImageMetadata meta;
+    meta.page_id = (static_cast<uint16_t>(data[0]) << 8) | data[1];
+    meta.tiles_x = (static_cast<uint16_t>(data[2]) << 8) | data[3];
+    meta.tiles_y = (static_cast<uint16_t>(data[4]) << 8) | data[5];
+    meta.tile_w = (static_cast<uint16_t>(data[6]) << 8) | data[7];
+    meta.tile_h = (static_cast<uint16_t>(data[8]) << 8) | data[9];
+    meta.target_width = (static_cast<uint16_t>(data[10]) << 8) | data[11];
+    meta.target_height = (static_cast<uint16_t>(data[12]) << 8) | data[13];
+    meta.jpeg_quality = data[14];
+    
+    return meta;
+}
+
+TilepackEncoder::TilepackEncoder(uint16_t page_id,
+                                 uint16_t target_width,
+                                 uint16_t target_height,
+                                 uint16_t tile_w,
+                                 uint16_t tile_h,
+                                 int jpeg_quality)
+    : page_id_(page_id),
+      target_width_(target_width),
+      target_height_(target_height),
+      tile_w_(tile_w),
+      tile_h_(tile_h),
+      jpeg_quality_(jpeg_quality) {
+    
+    metadata_.page_id = page_id;
+    metadata_.tile_w = tile_w;
+    metadata_.tile_h = tile_h;
+    metadata_.target_width = target_width;
+    metadata_.target_height = target_height;
+    metadata_.jpeg_quality = static_cast<uint8_t>(std::max(0, std::min(100, jpeg_quality)));
+}
+
+TilepackEncoder::~TilepackEncoder() {
+}
+
+bool TilepackEncoder::load_image(const std::string& image_path) {
+    cv::Mat img = cv::imread(image_path, cv::IMREAD_COLOR);
+    if (img.empty()) {
+        std::cerr << "Failed to load image: " << image_path << std::endl;
+        return false;
+    }
+    
+    std::cout << "Loaded image: " << img.cols << "x" << img.rows << std::endl;
+    
+    cv::Mat resized;
+    cv::resize(img, resized, cv::Size(target_width_, target_height_), 0, 0, cv::INTER_LINEAR);
+    
+    std::cout << "Resized to: " << resized.cols << "x" << resized.rows << std::endl;
+    
+    if (!tile_image(resized)) {
+        return false;
+    }
+    
+    packetize_tiles();
+    
+    std::cout << "Generated " << tiles_.size() << " tiles" << std::endl;
+    std::cout << "Generated " << packets_.size() << " packets" << std::endl;
+    
+    return true;
+}
+
+bool TilepackEncoder::tile_image(const cv::Mat& image) {
+    tiles_.clear();
+    
+    int width = image.cols;
+    int height = image.rows;
+    
+    int tiles_x = static_cast<int>(std::ceil(static_cast<double>(width) / tile_w_));
+    int tiles_y = static_cast<int>(std::ceil(static_cast<double>(height) / tile_h_));
+    
+    metadata_.tiles_x = static_cast<uint16_t>(tiles_x);
+    metadata_.tiles_y = static_cast<uint16_t>(tiles_y);
+    
+    cv::Mat padded_img;
+    int padded_width = tiles_x * tile_w_;
+    int padded_height = tiles_y * tile_h_;
+    
+    if (width != padded_width || height != padded_height) {
+        padded_img = cv::Mat::zeros(padded_height, padded_width, image.type());
+        image.copyTo(padded_img(cv::Rect(0, 0, width, height)));
+    } else {
+        padded_img = image.clone();
+    }
+    
+    uint16_t tile_idx = 0;
+    for (int ty = 0; ty < tiles_y; ty++) {
+        for (int tx = 0; tx < tiles_x; tx++) {
+            cv::Rect roi(tx * tile_w_, ty * tile_h_, tile_w_, tile_h_);
+            cv::Mat tile = padded_img(roi);
+            
+            std::vector<uint8_t> jpeg_data;
+            if (!compress_tile_jpeg(tile, jpeg_data)) {
+                std::cerr << "Failed to compress tile " << tile_idx << std::endl;
+                return false;
+            }
+            
+            Tile t;
+            t.tile_idx = tile_idx;
+            t.jpeg_data = jpeg_data;
+            tiles_.push_back(t);
+            
+            tile_idx++;
+        }
+    }
+    
+    return true;
+}
+
+bool TilepackEncoder::compress_tile_jpeg(const cv::Mat& tile, std::vector<uint8_t>& jpeg_out) {
+    std::vector<int> params;
+    params.push_back(cv::IMWRITE_JPEG_QUALITY);
+    params.push_back(jpeg_quality_);
+    params.push_back(cv::IMWRITE_JPEG_OPTIMIZE);
+    params.push_back(1);
+    
+    if (!cv::imencode(".jpg", tile, jpeg_out, params)) {
+        std::cerr << "Failed to encode tile as JPEG" << std::endl;
+        return false;
+    }
+    
+    return true;
+}
+
+void TilepackEncoder::packetize_tiles() {
+    packets_.clear();
+    
+    for (const auto& tile : tiles_) {
+        auto tile_packets = packetize_tile(tile.tile_idx, tile.jpeg_data);
+        packets_.insert(packets_.end(), tile_packets.begin(), tile_packets.end());
+    }
+}
+
+std::vector<Packet> TilepackEncoder::packetize_tile(uint16_t tile_idx,
+                                                     const std::vector<uint8_t>& tile_bytes) {
+    std::vector<Packet> packets;
+    
+    size_t offset = 0;
+    uint8_t frag_idx = 0;
+    
+    while (offset < tile_bytes.size()) {
+        size_t remaining = tile_bytes.size() - offset;
+        size_t payload_size = std::min(remaining, MAX_PAYLOAD_PER_PACKET);
+        
+        Packet pkt;
+        pkt.header.payload_size_bytes = static_cast<uint16_t>(payload_size);
+        pkt.header.page_id = page_id_;
+        pkt.header.tile_idx = tile_idx;
+        pkt.header.frag_idx = frag_idx;
+        
+        pkt.payload.assign(tile_bytes.begin() + offset,
+                          tile_bytes.begin() + offset + payload_size);
+        
+        packets.push_back(pkt);
+        
+        offset += payload_size;
+        frag_idx++;
+    }
+    
+    return packets;
+}
+
+bool TilepackEncoder::write_radio_file(const std::string& output_path) const {
+    std::vector<std::vector<uint8_t>> packet_bytes;
+    packet_bytes.reserve(packets_.size());
+
+    for (const auto& pkt : packets_) {
+        auto header_bytes = pkt.header.to_bytes();
+        const size_t payload_size = pkt.payload.size();
+
+        if (payload_size > MAX_PAYLOAD_PER_PACKET) {
+            std::cerr << "Packet payload exceeds MAX_PAYLOAD_PER_PACKET (" 
+                      << payload_size << " > " << MAX_PAYLOAD_PER_PACKET << ")" << std::endl;
+            return false;
+        }
+
+        std::vector<uint8_t> bytes;
+        bytes.reserve(header_bytes.size() + payload_size);
+        bytes.insert(bytes.end(), header_bytes.begin(), header_bytes.end());
+        bytes.insert(bytes.end(), pkt.payload.begin(), pkt.payload.end());
+        packet_bytes.push_back(std::move(bytes));
+    }
+
+    return DH::WriteFixedPacketFile(output_path, packet_bytes);
+}
+
+bool TilepackEncoder::write_radio_file_raw(const std::string& output_path) const {
+    std::ofstream file(output_path, std::ios::binary | std::ios::trunc);
+    if (!file.is_open()) {
+        std::cerr << "Failed to open output file: " << output_path << std::endl;
+        return false;
+    }
+
+    for (const auto& pkt : packets_) {
+        auto header_bytes = pkt.header.to_bytes();
+        const size_t payload_size = pkt.payload.size();
+
+        if (payload_size > MAX_PAYLOAD_PER_PACKET) {
+            std::cerr << "Packet payload exceeds MAX_PAYLOAD_PER_PACKET (" 
+                      << payload_size << " > " << MAX_PAYLOAD_PER_PACKET << ")" << std::endl;
+            return false;
+        }
+
+        file.write(reinterpret_cast<const char*>(header_bytes.data()), header_bytes.size());
+        file.write(reinterpret_cast<const char*>(pkt.payload.data()), payload_size);
+    }
+
+    file.flush();
+    return true;
+}
+
+bool TilepackEncoder::write_metadata(const std::string& output_path) const {
+    std::ofstream file(output_path, std::ios::binary);
+    if (!file.is_open()) {
+        std::cerr << "Failed to open metadata file: " << output_path << std::endl;
+        return false;
+    }
+    
+    auto meta_bytes = metadata_.to_bytes();
+    file.write(reinterpret_cast<const char*>(meta_bytes.data()), meta_bytes.size());
+    
+    file.close();
+    return true;
+}
+
+size_t TilepackEncoder::get_total_bytes() const {
+    return DH::DH_FILE_HEADER_SIZE + packets_.size() * DH::DH_FIXED_PACKET_SIZE;
+}
+
+size_t TilepackEncoder::get_compressed_size() const {
+    size_t total = 0;
+    for (const auto& tile : tiles_) {
+        total += tile.jpeg_data.size();
+    }
+    return total;
+}
+
+double TilepackEncoder::get_avg_packet_size() const {
+    if (packets_.empty()) return 0.0;
+    return static_cast<double>(get_total_bytes()) / packets_.size();
+}
+
+bool WritePacketsToDataHandlerFile(const std::string& output_path, const std::vector<Packet>& packets) {
+    std::vector<std::vector<uint8_t>> packet_bytes;
+    packet_bytes.reserve(packets.size());
+
+    for (const auto& pkt : packets) {
+        auto header_bytes = pkt.header.to_bytes();
+        const size_t payload_size = pkt.payload.size();
+
+        if (payload_size > MAX_PAYLOAD_PER_PACKET) {
+            std::cerr << "Packet payload exceeds MAX_PAYLOAD_PER_PACKET (" 
+                      << payload_size << " > " << MAX_PAYLOAD_PER_PACKET << ")" << std::endl;
+            return false;
+        }
+
+        std::vector<uint8_t> bytes;
+        bytes.reserve(header_bytes.size() + payload_size);
+        bytes.insert(bytes.end(), header_bytes.begin(), header_bytes.end());
+        bytes.insert(bytes.end(), pkt.payload.begin(), pkt.payload.end());
+        packet_bytes.push_back(std::move(bytes));
+    }
+
+    return DH::WriteFixedPacketFile(output_path, packet_bytes);
+}
+
+bool ReadPacketsFromDataHandlerFile(const std::string& input_path, std::vector<Packet>& packets_out) {
+    std::vector<std::vector<uint8_t>> payloads;
+    if (!DH::ReadFixedPacketFile(input_path, payloads)) {
+        return false;
+    }
+
+    packets_out.clear();
+    packets_out.reserve(payloads.size());
+
+    for (std::size_t i = 0; i < payloads.size(); ++i) {
+        const auto& buf = payloads[i];
+        if (buf.size() < PACKET_HEADER_SIZE) {
+            std::cerr << "Payload " << i << " too small to contain tilepack header" << std::endl;
+            return false;
+        }
+
+        Packet pkt;
+        pkt.header = PacketHeader::from_bytes(buf.data(), buf.size());
+
+        const std::size_t expected_payload = pkt.header.payload_size_bytes;
+        if (PACKET_HEADER_SIZE + expected_payload > buf.size()) {
+            std::cerr << "Payload length mismatch in packet " << i << " (" 
+                      << expected_payload << " > " << buf.size() - PACKET_HEADER_SIZE << ")" << std::endl;
+            return false;
+        }
+
+        pkt.payload.assign(buf.begin() + PACKET_HEADER_SIZE,
+                           buf.begin() + PACKET_HEADER_SIZE + expected_payload);
+
+        packets_out.push_back(std::move(pkt));
+    }
+
+    return true;
+}
+
+} // namespace tilepack

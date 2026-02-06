@@ -13,9 +13,10 @@ add_library(PAYLOAD_LIB SHARED
     payload.cpp
     queues.cpp
     configuration.cpp
+    image_sender.cpp
 )
 
 # Link libraries to PAYLOAD_LIB
 target_link_libraries(PAYLOAD_LIB
-    PUBLIC core navigation vision communication telemetry # inference
+    PUBLIC core navigation vision communication telemetry inference tilepack
 )

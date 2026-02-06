@@ -29,6 +29,7 @@ sudo apt install -y \
   libsuitesparse-dev \
   libreadline-dev \
   libnvinfer-dev \
+  nlohmann-json3-dev \
   libceres-dev \
   libprotobuf-dev \
   protobuf-compiler \

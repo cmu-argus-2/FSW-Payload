@@ -7,8 +7,8 @@ import sys
 import pyquaternion as pyqt
 
 #!/usr/bin/env python3
-# DATA_DIR = Path("data/datasets/batch_opt_gen")
-DATA_DIR = Path("data/datasets/batch_opt_gen_no_bias")
+DATA_DIR = Path("data/datasets/batch_opt_gen")
+# DATA_DIR = Path("data/datasets/batch_opt_gen_no_bias")
 RESULTS_DIR = os.path.join(os.path.dirname(__file__), "../data/results/batch_opt")
 
 def load_h5(path: Path) -> dict:
@@ -137,11 +137,7 @@ def plot_states(true_states, est_states, orbit_measurements):
     plt.savefig(os.path.join(RESULTS_DIR, "angular_velocity_true_vs_estimated.png"))
     
     
-def plot_errors(true_states, est_states, covariances, bias_mode):
-    
-    est_covars = process_covariances(covariances, bias_mode)
-    est_covars = np.squeeze(est_covars)
-    # TODO: Add Covariances
+def plot_errors(true_states, est_states, est_covars):
     true_time = true_states["unixtime"]
     est_time  = est_states["state_estimates"][:,0]
     # Plot position
@@ -349,9 +345,9 @@ def plot_errors(true_states, est_states, covariances, bias_mode):
     plt.savefig(os.path.join(RESULTS_DIR, "gyro_bias_error_norm.png"))
 
 
-def plot_measurements(measurements, ground_truth_states, state_estimates):
+def plot_measurements(measurements, ground_truth_states, state_estimates, ldmkmeasres):
+    
     # plot the measurements vs measurement estimate
-    # TODO: Save measurement residuals during batch optimization
     # gyro measurements
     # Plot angular velocity
     true_time = ground_truth_states["unixtime"]
@@ -378,15 +374,21 @@ def plot_measurements(measurements, ground_truth_states, state_estimates):
     # landmark measurements
     landmark_meas = measurements['landmark_measurements']
     t_landmark = landmark_meas[:,0] - t0
+    landmark_std_dev = 0.009
+    ldmk_est = ldmkmeasres * landmark_std_dev + landmark_meas[:,1:4]
     
     fig, axs = plt.subplots(6, 1, sharex=True, figsize=(10, 6))
     comp_labels = ["Bear X (km)", "Bear Y (km)", "Bear Z (km)", "Ldmk X (km)", "Ldmk Y (km)", "Ldmk Z (km)"]
     for i, ax in enumerate(axs):
-        ax.plot(t_landmark, landmark_meas[:, i+1], color=colors[1], linestyle="None", marker='.') # , markersize=3)
+        ax.plot(t_landmark, landmark_meas[:, i+1], color=colors[1], linestyle="None", marker='.', label="meas") # , markersize=3)
+        if i <3:
+            ax.plot(t_landmark, ldmk_est[:, i], label="est", color=colors[0], linestyle="None", marker='.') # , markersize=3)
+        
+        if i == 0:
+            ax.legend(loc="upper right")
         ax.set_ylabel(comp_labels[i])
         ax.grid(True)
-        # if i == 0:
-        #     ax.legend(loc="upper right")
+
     axs[-1].set_xlabel("time (s) since start")
     fig.suptitle("Landmark measurements")
     plt.tight_layout()
@@ -414,6 +416,35 @@ def process_covariances(covariances, bias_mode):
     
     return est_covariances
 
+def process_residuals(residuals, state_estimates, measurements, bias_mode):
+    n_steps = state_estimates["state_estimates"].shape[0]
+    n_ldmks = measurements['landmark_measurements'].shape[0]
+    # linear dynamics residuals
+    lindynres = np.zeros((n_steps-1, 6))
+    for i in range(n_steps-1):
+        lindynres[i] = residuals[i*6:(i+1)*6]
+    k = (n_steps-1)*6
+    # angular dynamics residuals
+    if bias_mode in ["fix_bias", "no_bias"]:
+        angdynres = np.zeros((n_steps-1, 3))
+        for i in range(n_steps-1):
+            angdynres[i] = residuals[k + i*3:k + (i+1)*3]
+        k += (n_steps-1)*3
+    elif bias_mode == "tv_bias":
+        angdynres = np.zeros((n_steps-1, 6))
+        for i in range(n_steps-1):
+            angdynres[i] = residuals[k + i*6:k + (i+1)*6]
+        k += (n_steps-1)*6
+    else:
+        raise ValueError(f"Unknown bias mode: {bias_mode}")
+    
+    # landmark measurement residuals
+    ldmkmeasres = np.zeros((n_ldmks, 3))
+    for i in range(n_ldmks):
+        ldmkmeasres[i] = residuals[k + i*3:k + (i+1)*3]
+    
+    return lindynres, angdynres, ldmkmeasres
+
 if __name__ == "__main__":
     files = {
             "ground_truth": DATA_DIR / "ground_truth_states.h5",
@@ -432,13 +463,21 @@ if __name__ == "__main__":
     orbit_measurements = loaded["measurements"]
     state_estimates = loaded["estimates"]
     covariances = state_estimates["state_estimate_covariance_diagonal"]
+    residuals = state_estimates["residuals"]
+    
+    bias_mode = "fix_bias"
+    est_covars = process_covariances(covariances, bias_mode)
+    est_covars = np.squeeze(est_covars)
+
+    lindynres, angdynres, ldmkmeasres = process_residuals(residuals, state_estimates, orbit_measurements, bias_mode=bias_mode)
     
     # true and estimated states separately
     plot_states(ground_truth_states, state_estimates, orbit_measurements)
     
     # plot errors
-    bias_mode = "fix_bias"
-    plot_errors(ground_truth_states, state_estimates, covariances, bias_mode)
+    plot_errors(ground_truth_states, state_estimates, est_covars)
     
-    # plot measurements vs residuals
-    plot_measurements(orbit_measurements, ground_truth_states, state_estimates)
+    # plot measurements
+    plot_measurements(orbit_measurements, ground_truth_states, state_estimates, ldmkmeasres)
+    
+    # Plot residuals

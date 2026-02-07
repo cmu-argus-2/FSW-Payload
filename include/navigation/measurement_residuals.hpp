@@ -48,11 +48,12 @@ public:
     const Eigen::Matrix<T,3,1> predicted_bearing = diff * inv_norm;
 
     // r_res = (predicted_bearing - q * bearing_vec_T) / T(landmark_std_dev);
+    r_res = (q.inverse() * predicted_bearing - bearing_vec_T) / T(landmark_std_dev);
 
-    const Eigen::Matrix<T, 3, 3> bearbear_mat    = bearing_vec_T * bearing_vec_T.transpose();
-    const Eigen::Matrix<T, 3, 3> I                 = Eigen::Matrix<T, 3, 3>::Identity();
+    // const Eigen::Matrix<T, 3, 3> bearbear_mat    = bearing_vec_T * bearing_vec_T.transpose();
+    // const Eigen::Matrix<T, 3, 3> I                 = Eigen::Matrix<T, 3, 3>::Identity();
     
-    r_res = ((I-bearbear_mat) / T(landmark_std_dev) + bearbear_mat / T(0.3*landmark_std_dev)) * (q.inverse() * predicted_bearing - bearing_vec_T);
+    // r_res = ((I-bearbear_mat) / T(landmark_std_dev) + bearbear_mat / T(0.3*landmark_std_dev)) * (q.inverse() * predicted_bearing - bearing_vec_T);
     return true;
 };
 

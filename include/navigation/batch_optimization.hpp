@@ -134,7 +134,7 @@ void build_ceres_problem(StateEstimates& state_estimates,
 
 // TODO: Figure out what the correct return type should be.
 // std::pair <StateEstimates, Eigen::Vector3d>
-std::tuple <StateEstimates, std::vector<double>>
+std::tuple <StateEstimates, std::vector<double>, std::vector<double>>
 solve_ceres_batch_opt(const LandmarkMeasurements& landmark_measurements,
                       const LandmarkGroupStarts& landmark_group_starts,
                       const GyroMeasurements& gyro_measurements,

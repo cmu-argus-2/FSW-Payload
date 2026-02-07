@@ -9,8 +9,9 @@
 
 int main(int argc, char** argv) {
       // TODO: WIP Fix path to correct HDF5 file
-      std::string filename = "data/datasets/batch_opt_gen_no_bias/orbit_measurements.h5";
-      // std::string filename = "data/datasets/batch_opt_gen/orbit_measurements.h5";
+      std::string foldername = "data/datasets/batch_opt_gen/";
+      // std::string filename = "data/datasets/batch_opt_gen_no_bias/orbit_measurements.h5";
+      std::string filename = foldername + "orbit_measurements.h5";
 
       if (argc > 1) {
         filename = std::string(argv[1]);
@@ -47,15 +48,16 @@ int main(int argc, char** argv) {
           gm.topRows(5) << std::endl;
 
       // Run Ceres batch optimization
-      auto [state_estimates, covariance] = solve_ceres_batch_opt(lm, gs, gm, od_config.batch_opt);
+      auto [state_estimates, covariance, residuals] = solve_ceres_batch_opt(lm, gs, gm, od_config.batch_opt);
       // Compute residuals of state estimates
       
     try {
-        const std::string out_filename = "data/datasets/batch_opt_gen_no_bias/state_estimates.h5";
-        H5Easy::File outfile(out_filename, H5Easy::File::Overwrite);
+        const std::string out_filename = foldername + "state_estimates.h5";
+        H5Easy::File outfile(out_filename, HighFive::File::Overwrite);
         // write state_estimates to an HDF5 file (overwrites if exists)
         H5Easy::dump(outfile, "state_estimates", state_estimates);
         H5Easy::dump(outfile, "state_estimate_covariance_diagonal", covariance);
+        H5Easy::dump(outfile, "residuals", residuals);
         std::cout << "Saved state estimates to " << out_filename << std::endl;
     } catch (const HighFive::Exception& e) {
         std::cerr << "Failed to write state estimates: " << e.what() << std::endl;

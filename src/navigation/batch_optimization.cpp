@@ -265,7 +265,7 @@ void build_ceres_problem(StateEstimates& state_estimates,
         }
     }
 
-    // TODO: Add magnetometer measurements for attitude estimation
+    // TODO (Optional): Add magnetometer measurements for attitude estimation
 
     // Landmark costs
     idx_t landmark_idx = 0;
@@ -390,8 +390,6 @@ std::vector<double> compute_covariance(ceres::Problem& problem,
         }
         j += 1;
 
-        // TODO: get attitude residual covariance in rotation vector/angle-axis form
-        // This can be done with GetCovarianceBlockInTangentSpace
         std::vector<std::pair<const double*, const double*>> single_block = {block};
         double cov_matrix[block_size * block_size];
         //covariance.GetCovarianceBlock(block.first, block.first, cov_matrix);
@@ -405,7 +403,7 @@ std::vector<double> compute_covariance(ceres::Problem& problem,
     return covariance_diagonal;
 }
 
-std::tuple <StateEstimates, std::vector<double>>
+std::tuple <StateEstimates, std::vector<double>, std::vector<double>>
 solve_ceres_batch_opt(const LandmarkMeasurements& landmark_measurements,
                       const LandmarkGroupStarts& landmark_group_starts,
                       const GyroMeasurements& gyro_measurements,
@@ -524,12 +522,13 @@ solve_ceres_batch_opt(const LandmarkMeasurements& landmark_measurements,
     }
     std::vector<double> covariance = compute_covariance(problem, state_estimates, bias_mode);
 
-    // TODO: compute residuals
-
-
+    std::vector<double> residuals((state_timestamps.size()-1) * StateResCovIdx::STATE_RES_COV_COUNT + 
+                                  landmark_measurements.rows() * 3, 0.0);
+    // could also obtain gradient and cost if needed
+    problem.Evaluate(ceres::Problem::EvaluateOptions(), nullptr, &residuals, nullptr, nullptr);
 
     // return state_estimates
     return std::make_tuple(state_estimates,
-                            covariance);
-    //                        residuals);
+                            covariance,
+                            residuals);
 }

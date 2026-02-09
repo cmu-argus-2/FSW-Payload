@@ -381,8 +381,8 @@ def plot_measurements(measurements, ground_truth_states, state_estimates, ldmkme
     comp_labels = ["Bear X (km)", "Bear Y (km)", "Bear Z (km)", "Ldmk X (km)", "Ldmk Y (km)", "Ldmk Z (km)"]
     for i, ax in enumerate(axs):
         ax.plot(t_landmark, landmark_meas[:, i+1], color=colors[1], linestyle="None", marker='.', label="meas") # , markersize=3)
-        if i <3:
-            ax.plot(t_landmark, ldmk_est[:, i], label="est", color=colors[0], linestyle="None", marker='.') # , markersize=3)
+        # if i <3:
+        #     ax.plot(t_landmark, ldmk_est[:, i], label="est", color=colors[0], linestyle="None", marker='.') # , markersize=3)
         
         if i == 0:
             ax.legend(loc="upper right")
@@ -394,6 +394,76 @@ def plot_measurements(measurements, ground_truth_states, state_estimates, ldmkme
     plt.tight_layout()
     plt.subplots_adjust(top=0.92)
     plt.savefig(os.path.join(RESULTS_DIR, "landmark_measurements.png"))
+
+
+def plot_residuals(lindynres, angdynres, ldmkmeasres, measurements, est_states, true_states, bias_mode):
+    true_time = true_states["unixtime"]
+    est_time  = est_states["state_estimates"][:,0]
+    t0 = true_time[0] if len(true_time) > 0 else 0
+    t_est = est_time - t0
+    colors = ["C0", "C1"]
+    # linear dynamics residuals
+    est_time  = est_states["state_estimates"][:,0]
+    fig, axs = plt.subplots(6, 1, sharex=True, figsize=(10, 6))
+    comp_labels = ["LinDyn Res X", "LinDyn Res Y", "LinDyn Res Z", 
+                    "LinDyn Res VX", "LinDyn Res VY", "LinDyn Res VZ"]
+    for i, ax in enumerate(axs):
+        ax.plot(t_est[:-1], lindynres[:, i], label="residual", color=colors[0])
+        ax.fill_between(t_est[:-1], -3 * np.ones_like(t_est[:-1]), 3 * np.ones_like(t_est[:-1]), color="C0", alpha=0.3, label="3-sigma")
+        ax.set_ylabel(comp_labels[i])
+        ax.grid(True)
+        if i == 0:
+            ax.legend(loc="upper right")
+    axs[-1].set_xlabel("time step")
+    fig.suptitle("Linear Dynamics Residuals")
+    plt.tight_layout()
+    plt.subplots_adjust(top=0.92)
+    plt.savefig(os.path.join(RESULTS_DIR, "linear_dynamics_residuals.png"))
+    
+    # angular dynamics residuals
+    if bias_mode in ["fix_bias", "no_bias"]:
+        fig, axs = plt.subplots(3, 1, sharex=True, figsize=(10, 6))
+        comp_labels = ["AngDyn Res X", "AngDyn Res Y", "AngDyn Res Z"]
+        std_devs = [0.0008726, 0.0008726, 0.0008726] 
+    elif bias_mode == "tv_bias":
+        fig, axs = plt.subplots(6, 1, sharex=True, figsize=(10, 6))
+        comp_labels = ["AngDyn Res X", "AngDyn Res Y", "AngDyn Res Z",
+                        "AngDyn Res Bias X", "AngDyn Res Bias Y", "AngDyn Res Bias Z"]
+        std_devs = [0.0008726, 0.0008726, 0.0008726, 1, 1, 1] 
+    else:
+        raise ValueError(f"Unknown bias mode: {bias_mode}")
+    
+    for i, ax in enumerate(axs):
+        ax.plot(t_est[:-1], angdynres[:, i], label="residual", color=colors[0])
+        ax.fill_between(t_est[:-1], -3 * np.ones_like(t_est[:-1]), 3 * np.ones_like(t_est[:-1]), color="C0", alpha=0.3, label="3-sigma")
+        ax.set_ylabel(comp_labels[i])
+        ax.grid(True)
+        if i == 0:
+            ax.legend(loc="upper right")
+    axs[-1].set_xlabel("time step")
+    fig.suptitle("Angular Dynamics Residuals")
+    plt.tight_layout()
+    plt.subplots_adjust(top=0.92)
+    plt.savefig(os.path.join(RESULTS_DIR, "angular_dynamics_residuals.png"))
+    
+    # landmark measurement residuals
+    landmark_meas = measurements['landmark_measurements']
+    t_landmark = landmark_meas[:,0] - t0
+    ldmk_sigma = 0.009
+    fig, axs = plt.subplots(3, 1, sharex=True, figsize=(10, 6))
+    comp_labels = ["Ldmk Meas Res X", "Ldmk Meas Res Y", "Ldmk Meas Res Z"]
+    for i, ax in enumerate(axs):
+        ax.plot(t_landmark, ldmkmeasres[:, i], label="residual", linestyle="None", marker=".", color=colors[0])
+        ax.fill_between(t_landmark, - 3, 3, color="C0", alpha=0.3, label="3-sigma")
+        ax.set_ylabel(comp_labels[i])
+        ax.grid(True)
+        if i == 0:
+            ax.legend(loc="upper right")
+    axs[-1].set_xlabel("time step")
+    fig.suptitle("Landmark Measurement Residuals")
+    plt.tight_layout()
+    plt.subplots_adjust(top=0.92)
+    plt.savefig(os.path.join(RESULTS_DIR, "landmark_measurement_residuals.png"))
 
 def process_covariances(covariances, bias_mode):
     state_count_with_bias = 12
@@ -481,3 +551,4 @@ if __name__ == "__main__":
     plot_measurements(orbit_measurements, ground_truth_states, state_estimates, ldmkmeasres)
     
     # Plot residuals
+    plot_residuals(lindynres, angdynres, ldmkmeasres, orbit_measurements, state_estimates, ground_truth_states, bias_mode)

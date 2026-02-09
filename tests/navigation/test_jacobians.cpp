@@ -1,6 +1,6 @@
 #include "navigation/batch_optimization.hpp"
 #include "navigation/pose_dynamics.hpp"
-// #include "tests/navigation/test_jacobians.hpp"
+#include "navigation/measurement_residuals.hpp"
 #include <ceres/ceres.h>
 #include <ceres/internal/eigen.h>
 // #include <xtensor/xtensor.hpp>
@@ -273,8 +273,118 @@ void test_angular_dynamics_cost_functor() {
     return;
 }
 
+// TODO: Landmark measurement test function
+void test_landmark_residuals_cost_functor() {
+    double dt = 1.0;
+    
+    // Create landmark measurements: timestamp, earing vector, landmark position
+    LandmarkMeasurements landmark_measurements = Eigen::MatrixXd::Zero(7, LandmarkMeasurementIdx::LANDMARK_COUNT);
+    landmark_measurements(0, LandmarkMeasurementIdx::LANDMARK_TIMESTAMP) = 0.0;
+    landmark_measurements(0, LandmarkMeasurementIdx::BEARING_VEC_X) = 0.7071;
+    landmark_measurements(0, LandmarkMeasurementIdx::BEARING_VEC_Y) = 0.0;
+    landmark_measurements(0, LandmarkMeasurementIdx::BEARING_VEC_Z) = 0.7071;
+    landmark_measurements(0, LandmarkMeasurementIdx::LANDMARK_POS_X) = 10.0;
+    landmark_measurements(0, LandmarkMeasurementIdx::LANDMARK_POS_Y) = 5.0;
+    landmark_measurements(0, LandmarkMeasurementIdx::LANDMARK_POS_Z) = 2.0;
+    
+    landmark_measurements(1, LandmarkMeasurementIdx::LANDMARK_TIMESTAMP) = 1.0;
+    landmark_measurements(1, LandmarkMeasurementIdx::BEARING_VEC_X) = 0.7071;
+    landmark_measurements(1, LandmarkMeasurementIdx::BEARING_VEC_Y) = 0.0;
+    landmark_measurements(1, LandmarkMeasurementIdx::BEARING_VEC_Z) = 0.7071;
+    landmark_measurements(1, LandmarkMeasurementIdx::LANDMARK_POS_X) = 10.5;
+    landmark_measurements(1, LandmarkMeasurementIdx::LANDMARK_POS_Y) = 5.2;
+    landmark_measurements(1, LandmarkMeasurementIdx::LANDMARK_POS_Z) = 2.1;
+    double landmark_std_dev = 1.0;
+    
+    // auto* ad_landmark = new ceres::AutoDiffCostFunction<LandmarkCostFunctor, 3, 3, 4>(
+    //     new LandmarkCostFunctor{landmark_measurements.data(), landmark_std_dev}
+    // );
+    
+    // D: residual dimension (3 for position error)
+    const int D = 3;
+    const int TD = 10;  // r0(3) + v0(3) + q0(4)
+    const int V_array[3] = {3, 3, 4};
+    const double tol = 1e-8;
+    
+    double residuals_ad[D];
+    
+    double* jacobians_ad[3];
+    for (int i = 0; i < 3; ++i) {
+        jacobians_ad[i] = new double[D * V_array[i]];
+    }
+    
+    // Test cases: r0(3), v0(3), q0(4)
+    std::vector<std::array<double, TD>> tests{
+        std::array<double, TD>{9.9, 5.1, 1.9,  0.0, 0.0, 0.0,  0.0, 0.0, 0.0, 1.0},
+        std::array<double, TD>{10.0, 5.0, 2.0,  0.1, 0.1, 0.1,  0.0, 0.0, 0.0, 1.0},
+    };
+    
+    for (size_t t = 0; t < tests.size(); ++t) {
+        const auto &data = tests[t];
+        
+        // parameter block pointers: r0, v0, q0
+        const double* param_blocks[3] = {
+            data.data() + 0,   // r0
+            data.data() + 3,   // v0
+            data.data() + 6    // q0
+        };
+        
+        auto* landmark_row = landmark_measurements.data() + LandmarkMeasurementIdx::LANDMARK_COUNT * t;
+        
+        auto* ad_landmark = new ceres::AutoDiffCostFunction<LandmarkCostFunctor, 3, 3, 4>(
+            new LandmarkCostFunctor{landmark_row, landmark_std_dev}
+        );
+        
+        // time autodiff Evaluate
+        auto t0 = std::chrono::high_resolution_clock::now();
+        bool ok_ad = ad_landmark->Evaluate(param_blocks, residuals_ad, jacobians_ad);
+        auto t1 = std::chrono::high_resolution_clock::now();
+        double time_ad_ms = std::chrono::duration<double, std::milli>(t1 - t0).count();
+        
+        std::cout << std::fixed << std::setprecision(6);
+        std::cout << "Test case " << t << ":\n";
+        std::cout << "time autodiff Evaluate: " << time_ad_ms << " ms\n";
+        
+        if (!ok_ad) std::cout << "autodiff Evaluate failed\n";
+        
+        if (ok_ad) {
+            std::cout << "residuals (autodiff): ";
+            for (int i = 0; i < D; ++i) std::cout << residuals_ad[i] << " ";
+            std::cout << "\n";
+            
+            // assemble full autodiff jacobian
+            std::vector<double> J_ad(D * TD, 0.0);
+            int col_offset = 0;
+            for (int b = 0; b < 3; ++b) {
+                col_offset = (b == 0) ? 0 : col_offset + V_array[b-1];
+                for (int i = 0; i < D; ++i) {
+                    for (int j = 0; j < V_array[b]; ++j) {
+                        int col = col_offset + j;
+                        J_ad[i * TD + col] = jacobians_ad[b][i * V_array[b] + j];
+                    }
+                }
+            }
+            
+            std::cout << "Jacobian (autodiff):\n";
+            for (int i = 0; i < D; ++i) {
+                for (int j = 0; j < TD; ++j) {
+                    std::cout << J_ad[i * TD + j] << (j + 1 == TD ? "" : " ");
+                }
+                std::cout << "\n";
+            }
+        } else {
+            std::cout << "Skipping jacobian output due to Evaluate failure\n";
+        }
+        std::cout << "\n";
+    }
+    
+    return;
+}
+
+// TODO: Once ready, adapt these to the Google Test framework
 int main(int argc, char** argv) {
-    // test_linear_dynamics_cost_functor();
+    test_linear_dynamics_cost_functor();
     test_angular_dynamics_cost_functor();
+    test_landmark_residuals_cost_functor();
     return 0;
 }

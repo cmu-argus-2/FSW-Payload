@@ -21,12 +21,14 @@ if __name__ == "__main__":
     
     config = vars(parser.parse_args())
 
-    ld_folder = "ld"
+    ld_folder = "models/V1/trained-ld/"
 
     list_folder = os.listdir(ld_folder)
     print(list_folder)
 
     for folder in list_folder:
+        if not os.path.isdir(os.path.join(ld_folder, folder)):
+            continue
         path = os.path.join(ld_folder, folder, f"{folder}_nadir.pt")
         print(f"Converting model at: {path}")
         convert_model(path, **config)  

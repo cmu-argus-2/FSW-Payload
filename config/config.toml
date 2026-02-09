@@ -6,19 +6,19 @@ resolution_width = 4608
 
 [camera-device.cam2]
 id = 1
-path = '/dev/video2'
+path = '/dev/video1'
 resolution_height = 2592
 resolution_width = 4608
 
 [camera-device.cam3]
 id = 2
-path = '/dev/video3'
+path = '/dev/video2'
 resolution_height = 2592
 resolution_width = 4608
 
 [camera-device.cam4]
 id = 3
-path = '/dev/video4'
+path = '/dev/video3'
 resolution_height = 2592
 resolution_width = 4608
 

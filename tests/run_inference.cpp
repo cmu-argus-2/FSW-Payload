@@ -14,16 +14,17 @@
 
 int main(int argc, char** argv)
 {
-    if (argc < 3)
+    if (argc < 4)
     {
-        spdlog::error("Usage: {} <path_to_trt_file> <path_to_sample_image>", argv[0]);
+        spdlog::error("Usage: {} <path_to_rc_trt_file> <path_to_ld_trt_folder> <path_to_sample_image>", argv[0]);
         return 1;
     }
-    std::string trt_file_path = argv[1];
-    std::string sample_image_path = argv[2];
+    std::string rc_trt_file_path = argv[1];
+    std::string ld_trt_folder_path = argv[2];
+    std::string sample_image_path = argv[3];
 
     Inference::Orchestrator orchestrator;
-    orchestrator.Initialize(trt_file_path);
+    orchestrator.Initialize(rc_trt_file_path, ld_trt_folder_path);
 
     Frame frame; // empty frame 
     if (!DH::ReadImageFromDisk(sample_image_path, frame))
@@ -49,6 +50,13 @@ int main(int argc, char** argv)
     {
         spdlog::info("Region ID: {}", GetRegionString(region_id));
     }
+
+    // Landmark Detection results
+
+
+
+
+
 
     return 0;
 }

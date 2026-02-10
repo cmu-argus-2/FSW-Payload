@@ -15,7 +15,7 @@ Orchestrator::Orchestrator()
 
 }
 
-void Orchestrator::Initialize(const std::string& rc_engine_path)
+void Orchestrator::Initialize(const std::string& rc_engine_path, const std::string& ld_engine_folder_path)
 {
     // Initialize the RCNet runtime
     EC rc_net_status = rc_net_.LoadEngine(rc_engine_path);
@@ -25,7 +25,30 @@ void Orchestrator::Initialize(const std::string& rc_engine_path)
         return; // could have fallback in which we still run the LDs but that is out of scope for now
     }
 
-    // TODO: Initialize the LDs runtimes
+    // Find all the regions
+    std::string trt_path;
+    std::string csv_path;
+    EC ld_net_status;
+    for(const auto& region_id : GetAllRegionIDs())
+    {
+        std::string region_str = std::string(GetRegionString(region_id));
+
+        // ld_nets_.emplace(region_id, LDNet(region_id));
+        ld_nets_.try_emplace(region_id, region_id); 
+        //ld_nets_.insert(std::make_pair(region_id, LDNet(region_id)));
+
+        trt_path = ld_engine_folder_path + "/" + region_str + "/" + region_str + "_nadir.trt";
+        csv_path = ld_engine_folder_path + "/" + region_str + "/" + region_str + "_top_salient.csv";
+        spdlog::info("Loading model for region {}: TRT path: {}, CSV path: {}", region_str, trt_path, csv_path);
+        ld_net_status = ld_nets_.at(region_id).LoadEngine(trt_path);
+        if (ld_net_status != EC::OK) 
+        {
+            spdlog::error("Failed to load LD Net engine for region: {}", region_str);
+            continue;
+        }
+
+        spdlog::info("LDNet successfully loaded for region: {}", region_str);
+    }
 
 }
 
@@ -191,8 +214,32 @@ EC Orchestrator::ExecFullInference()
 
 
     // TODO: LD selection
+    std::string trt_path;
+    std::string csv_path;
+    for(const auto& region_id : current_frame_->GetRegionIDs())
+    {
+        std::string region_str = std::string(GetRegionString(region_id));
+        
+        trt_path = "models/V1/trained-ld/" + region_str + "/" + region_str + "_nadir.trt";
+        csv_path = "models/trained-ld/" + region_str + "/" + region_str + "_top_salient.csv";
+
+        spdlog::info("Loading model for region {}: TRT path: {}, CSV path: {}", region_str, trt_path, csv_path);
+        // if (!orchestrator.LoadModelForRegion(region_id, trt_path, csv_path))
+        // {
+        //     spdlog::error("Failed to load model for region: {}", region_str);
+        //     return 1;
+        // }
+    }
 
     // TODO: LD inference 
+    // auto ld_host_output = std::unique_ptr<float[]>{new float[LD_NUM_CLASSES]};
+    // EC ld_inference_status = ld_net_.Infer(chw_img.data, ld_host_output.get());
+    // if (ld_inference_status != EC::OK) 
+    // {
+    //     spdlog::error("LDNet inference failed with error code: {}", to_uint8(ld_inference_status));
+    //     LogError(ld_inference_status);
+    //     return ld_inference_status;
+    // }
 
     // TODO: Populate landmarks
 

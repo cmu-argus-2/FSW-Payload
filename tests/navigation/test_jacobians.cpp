@@ -10,9 +10,19 @@
 #include <iostream>
 #include <chrono>
 #include <iomanip>
+#include <cmath>
+#include <algorithm>
+#include <vector>
+#include <array>
+#include <memory>
 
+// tests/navigation/test_jacobians.cpp relies on M_PI, std::abs, and std::max but does not include <cmath> / <algorithm>. 
+// It also allocates multiple arrays with new (jacobians_*, AutoDiffCostFunction) without freeing them, 
+// which makes this test executable leak memory and depend on transitive includes. 
+// Add the missing standard headers and use RAII containers (std::array/std::vector/std::unique_ptr) for allocated buffers.
 
 void test_linear_dynamics_cost_functor() {
+    std::cout << "Testing LinearDynamicsCostFunctor Jacobians...\n";
     double dt = 1.0;
     LinearDynamicsCostFunctor linear_dyn(dt, 1.0, 1.0);
     LinearDynamicsAnalytic linear_dyn_analytic(dt, 1.0, 1.0);
@@ -165,13 +175,21 @@ void test_linear_dynamics_cost_functor() {
             std::cout << "Skipping comparison due to Evaluate failure\n";
         }
     }
+
+    // cleanup
+    for (int i = 0; i < 4; ++i) {
+        delete[] jacobians_an[i];
+        delete[] jacobians_ad[i];
+    }
+
+    delete ad_linear_dyn;
+
     return;
 }
 
 void test_angular_dynamics_cost_functor() {
+    std::cout << "Testing AngularDynamicsCostFunctor Jacobians...\n";
     double dt = 1.0;
-
-    // double M_PI = 3.14159265358979323846;
 
     GyroMeasurements gyro_measurements = Eigen::MatrixXd::Zero(4, GyroMeasurementIdx::GYRO_MEAS_COUNT);
     gyro_measurements(1,GyroMeasurementIdx::ANG_VEL_X) = M_PI / 2.0;
@@ -270,11 +288,21 @@ void test_angular_dynamics_cost_functor() {
         }
 
     }
+
+    // cleanup
+    for (int i = 0; i < 4; ++i) {
+        delete[] jacobians_an[i];
+        delete[] jacobians_ad[i];
+    }
+
+    delete ad_angular_dyn;
+
     return;
 }
 
 // TODO: Landmark measurement test function
 void test_landmark_residuals_cost_functor() {
+    std::cout << "Testing LandmarkCostFunctor Jacobians...\n";
     double dt = 1.0;
     
     // Create landmark measurements: timestamp, earing vector, landmark position
@@ -302,31 +330,32 @@ void test_landmark_residuals_cost_functor() {
     
     // D: residual dimension (3 for position error)
     const int D = 3;
-    const int TD = 10;  // r0(3) + v0(3) + q0(4)
-    const int V_array[3] = {3, 3, 4};
+    const int TD = 7;  // r0(3) + q0(4)
+    const int V_array[2] = {3, 4};
     const double tol = 1e-8;
     
     double residuals_ad[D];
     
-    double* jacobians_ad[3];
-    for (int i = 0; i < 3; ++i) {
+    double* jacobians_ad[2];
+    for (int i = 0; i < 2; ++i) {
         jacobians_ad[i] = new double[D * V_array[i]];
     }
     
-    // Test cases: r0(3), v0(3), q0(4)
+    // Test cases: r0(3), q0(4)
     std::vector<std::array<double, TD>> tests{
-        std::array<double, TD>{9.9, 5.1, 1.9,  0.0, 0.0, 0.0,  0.0, 0.0, 0.0, 1.0},
-        std::array<double, TD>{10.0, 5.0, 2.0,  0.1, 0.1, 0.1,  0.0, 0.0, 0.0, 1.0},
+        std::array<double, TD>{9.9, 5.1, 1.9,  0.0, 0.0, 0.0, 1.0},
+        std::array<double, TD>{10.0, 5.0, 2.0,  0.0, 0.0, 0.0, 1.0},
     };
     
     for (size_t t = 0; t < tests.size(); ++t) {
+        std::cout << std::fixed << std::setprecision(6);
+        std::cout << "Test case " << t << ":\n";
         const auto &data = tests[t];
         
-        // parameter block pointers: r0, v0, q0
-        const double* param_blocks[3] = {
+        // parameter block pointers: r0, q0
+        const double* param_blocks[2] = {
             data.data() + 0,   // r0
-            data.data() + 3,   // v0
-            data.data() + 6    // q0
+            data.data() + 3,   // q0
         };
         
         auto* landmark_row = landmark_measurements.data() + LandmarkMeasurementIdx::LANDMARK_COUNT * t;
@@ -341,8 +370,7 @@ void test_landmark_residuals_cost_functor() {
         auto t1 = std::chrono::high_resolution_clock::now();
         double time_ad_ms = std::chrono::duration<double, std::milli>(t1 - t0).count();
         
-        std::cout << std::fixed << std::setprecision(6);
-        std::cout << "Test case " << t << ":\n";
+        
         std::cout << "time autodiff Evaluate: " << time_ad_ms << " ms\n";
         
         if (!ok_ad) std::cout << "autodiff Evaluate failed\n";
@@ -355,7 +383,7 @@ void test_landmark_residuals_cost_functor() {
             // assemble full autodiff jacobian
             std::vector<double> J_ad(D * TD, 0.0);
             int col_offset = 0;
-            for (int b = 0; b < 3; ++b) {
+            for (int b = 0; b < 2; ++b) {
                 col_offset = (b == 0) ? 0 : col_offset + V_array[b-1];
                 for (int i = 0; i < D; ++i) {
                     for (int j = 0; j < V_array[b]; ++j) {
@@ -376,6 +404,12 @@ void test_landmark_residuals_cost_functor() {
             std::cout << "Skipping jacobian output due to Evaluate failure\n";
         }
         std::cout << "\n";
+        delete ad_landmark;
+    }
+
+    // cleanup
+    for (int i = 0; i < 2; ++i) {
+        delete[] jacobians_ad[i];
     }
     
     return;
@@ -386,5 +420,6 @@ int main(int argc, char** argv) {
     test_linear_dynamics_cost_functor();
     test_angular_dynamics_cost_functor();
     test_landmark_residuals_cost_functor();
+    std::cout << "All Jacobian tests completed.\n";
     return 0;
 }

@@ -3,7 +3,7 @@
 #include <ceres/manifold.h>
 // Is there some symlink in place that makes ceres/eigen work by default?
 #include <ceres/internal/eigen.h>
-
+#include "spdlog/spdlog.h"
 #include <algorithm>
 #include <cassert>
 #include <cmath>
@@ -121,9 +121,8 @@ get_state_timestamps(const LandmarkMeasurements& landmark_measurements,
     assert(landmark_group_indices.size() == num_groups);
     assert(gyro_measurement_indices.size() == gyro_measurements.rows());
 
-    // Manually add an extra timestamp so that we can guarantee that every gyro timestamp has another timestamp after it
-    std::cout << "Final timestamp: " << state_timestamps.back() << std::endl;
-    // state_timestamps.push_back(state_timestamps.back() + dt); // + max_dt);
+    spdlog::info("Generated {} state timestamps from {} landmark groups and {} gyro measurements over a {} s period.",
+                 state_timestamps.size(), num_groups, gyro_measurements.rows(), state_timestamps.back() - state_timestamps.front());
 
     return std::make_tuple(state_timestamps,
                            landmark_group_indices,
@@ -158,7 +157,6 @@ void build_ceres_problem(StateEstimates& state_estimates,
         problem->AddParameterBlock(row_start + StateEstimateIdx::QUAT_X,
                                     StateEstimateIdx::GYRO_BIAS_X - StateEstimateIdx::QUAT_X,
                                     quaternion_manifold);
-        // problem.SetParameterLowerBound(row_start + StateEstimateIdx::QUAT_X, 3, 0.0);
         // Gyro bias parameter block
         if (bias_mode == BIAS_MODE::TV_BIAS) {
             problem->AddParameterBlock(row_start + StateEstimateIdx::GYRO_BIAS_X,
@@ -183,8 +181,6 @@ void build_ceres_problem(StateEstimates& state_estimates,
         const double dt = state_timestamps[i + 1] - state_timestamps[i];
         const double pos_std_dev = 0.5*uma_std_dev*dt*std::sqrt(dt); // km
         const double vel_std_dev = uma_std_dev * std::sqrt(dt); // km/s
-        double* const curr_row_start = state_estimates.data() + i * StateEstimateIdx::STATE_ESTIMATE_COUNT;
-        double* const next_row_start = state_estimates.data() + (i + 1) * StateEstimateIdx::STATE_ESTIMATE_COUNT;
         
         double* p_r0 = &state_estimates(i, StateEstimateIdx::POS_X);
         double* p_v0 = &state_estimates(i, StateEstimateIdx::VEL_X);
@@ -199,16 +195,6 @@ void build_ceres_problem(StateEstimates& state_estimates,
             p_v0,
             p_r1,
             p_v1);
-        /*
-        problem.AddResidualBlock(
-            new ceres::AutoDiffCostFunction<LinearDynamicsCostFunctor, 6, 3, 3, 3, 3>(
-                new LinearDynamicsCostFunctor{dt}),
-                nullptr,
-                p_r0,
-                p_v0,
-                p_r1,
-                p_v1);
-        */
     }
 
     // Angular Dynamics costs
@@ -218,8 +204,6 @@ void build_ceres_problem(StateEstimates& state_estimates,
         const double dt = state_timestamps[i + 1] - state_timestamps[i];
         const double quat_std_dev = gyro_wn_std_dev_rad_s * dt; // rad
         const double bias_std_dev = gyro_bias_instability * std::sqrt(dt); // rad/s
-        double* const curr_row_start = state_estimates.data() + i * StateEstimateIdx::STATE_ESTIMATE_COUNT;
-        double* const next_row_start = state_estimates.data() + (i + 1) * StateEstimateIdx::STATE_ESTIMATE_COUNT;
 
         double* p_q0  = &state_estimates(i, StateEstimateIdx::QUAT_X);
         double* p_q1  = &state_estimates(i+1, StateEstimateIdx::QUAT_X);
@@ -330,29 +314,28 @@ std::vector<double> compute_covariance(ceres::Problem& problem,
         }
     }
 
-    CHECK(covariance.Compute(covariance_blocks, &problem));
     bool compute_check = covariance.Compute(covariance_blocks, &problem);
     if(!compute_check) {
-        std::cout << "Covariance computation failed." << std::endl;
+        spdlog::error("Covariance computation failed.");
+        return {};
     }
-    // if (!compute_check) {
-    //     std::cerr << "Covariance computation failed." << std::endl;
-    //     return {};
-    // }
 
     std::vector<double> covariance_diagonal;
     int j = 0;
     // currently a bit unnecessary since they're all size 3 in the tangent space. Was only worth it
     // if getting the quaternion covariance
     int block_size = 0;
+    std::vector<double> cov_matrix;
+    size_t capacity = 0;
+
     for (const auto& block : covariance_blocks) {
         if (bias_mode == BIAS_MODE::NO_BIAS) {
             if (j % 3 == 0) {
-                int block_size = StateResCovIdx::VEL_COV_X - StateResCovIdx::POS_COV_X;
+                block_size = StateResCovIdx::VEL_COV_X - StateResCovIdx::POS_COV_X;
             } else if (j % 3 == 1) {
-                int block_size = StateResCovIdx::ROT_COV_X - StateResCovIdx::VEL_COV_X;
+                block_size = StateResCovIdx::ROT_COV_X - StateResCovIdx::VEL_COV_X;
             } else {
-                int block_size = StateResCovIdx::GYRO_BIAS_COV_X - StateResCovIdx::ROT_COV_X;
+                block_size = StateResCovIdx::GYRO_BIAS_COV_X - StateResCovIdx::ROT_COV_X;
             }
         } else if (bias_mode == BIAS_MODE::FIX_BIAS) {
             if (j < 4) {
@@ -391,9 +374,18 @@ std::vector<double> compute_covariance(ceres::Problem& problem,
         j += 1;
 
         std::vector<std::pair<const double*, const double*>> single_block = {block};
-        double cov_matrix[block_size * block_size];
+        const size_t needed = static_cast<size_t>(block_size) * block_size;
+        if (needed > capacity) {
+            cov_matrix.resize(needed);
+            capacity = needed;
+        } else {
+            cov_matrix.resize(needed); // just adjusts size, no reallocation
+        }
+
+        covariance.GetCovarianceBlockInTangentSpace(block.first, block.first, cov_matrix.data());
+        // double cov_matrix[block_size * block_size];
         //covariance.GetCovarianceBlock(block.first, block.first, cov_matrix);
-        covariance.GetCovarianceBlockInTangentSpace(block.first, block.first, cov_matrix);
+        // covariance.GetCovarianceBlockInTangentSpace(block.first, block.first, cov_matrix);
         
         for (int i = 0; i < block_size; ++i) {
             covariance_diagonal.push_back(cov_matrix[i * block_size + i]);
@@ -496,7 +488,7 @@ solve_ceres_batch_opt(const LandmarkMeasurements& landmark_measurements,
     ceres::Solver::Summary summary;
     ceres::Solve(solver_options, &problem, &summary);
 
-    std::cout << summary.FullReport() << "\n";
+    spdlog::info("Ceres Solver Summary:\n{}", summary.FullReport());
 
 
     if (bias_mode == BIAS_MODE::FIX_BIAS) {
@@ -511,15 +503,6 @@ solve_ceres_batch_opt(const LandmarkMeasurements& landmark_measurements,
         }
     }
 
-    // Print state estimates
-    for (idx_t i = 0; i < state_estimates.rows(); i+=100){
-            double* const state_estimate_row = state_estimates.data() + i * StateEstimateIdx::STATE_ESTIMATE_COUNT;
-            std::cout << "State estimate " << i << ": ";
-            for (idx_t j = 0; j < StateEstimateIdx::STATE_ESTIMATE_COUNT; ++j) {
-                std::cout << state_estimate_row[j] << " ";
-            }
-        std::cout << "\n";
-    }
     std::vector<double> covariance = compute_covariance(problem, state_estimates, bias_mode);
 
     std::vector<double> residuals((state_timestamps.size()-1) * StateResCovIdx::STATE_RES_COV_COUNT + 

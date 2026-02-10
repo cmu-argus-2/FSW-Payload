@@ -1,12 +1,11 @@
+#!/usr/bin/env python3
 from pathlib import Path
 import h5py
 import numpy as np
 import matplotlib.pyplot as plt
 import os
-import sys
 import pyquaternion as pyqt
 
-#!/usr/bin/env python3
 DATA_DIR = Path("data/datasets/batch_opt_gen")
 # DATA_DIR = Path("data/datasets/batch_opt_gen_no_bias")
 RESULTS_DIR = os.path.join(os.path.dirname(__file__), "../data/results/batch_opt")
@@ -117,7 +116,7 @@ def plot_states(true_states, est_states, orbit_measurements):
     # Plot angular velocity
     true_ang_vel = true_states["states"][:,10:13]
     gyro_meas = orbit_measurements['gyro_measurements'][:,1:4]
-    t_gyro = orbit_measurements['gyro_measurements'][:,0] - t0
+    # t_gyro = orbit_measurements['gyro_measurements'][:,0] - t0
     
     est_ang_vel = gyro_meas - est_gyro_bias
     # est ang vel repeated timestamps every 10 seconds
@@ -232,7 +231,7 @@ def plot_errors(true_states, est_states, est_covars):
     true_quat = true_quat * np.sign(true_quat[:,0:1])
     est_quat = est_states["state_estimates"][:,[10,7,8,9]]
     est_quat = est_quat * np.sign(est_quat[:,0:1])
-    est_covars_quat = np.sqrt(est_covars[:, 6:10])
+    # est_covars_quat = np.sqrt(est_covars[:, 6:10])
     fig, axs = plt.subplots(4, 1, sharex=True, figsize=(10, 6))
     true_quat_estt = np.zeros(est_quat.shape)
     for i, ax in enumerate(axs):
@@ -374,15 +373,13 @@ def plot_measurements(measurements, ground_truth_states, state_estimates, ldmkme
     # landmark measurements
     landmark_meas = measurements['landmark_measurements']
     t_landmark = landmark_meas[:,0] - t0
-    landmark_std_dev = 0.009
-    ldmk_est = ldmkmeasres * landmark_std_dev + landmark_meas[:,1:4]
+    # landmark_std_dev = 0.009
+    # ldmk_est = ldmkmeasres * landmark_std_dev + landmark_meas[:,1:4]
     
     fig, axs = plt.subplots(6, 1, sharex=True, figsize=(10, 6))
     comp_labels = ["Bear X (km)", "Bear Y (km)", "Bear Z (km)", "Ldmk X (km)", "Ldmk Y (km)", "Ldmk Z (km)"]
     for i, ax in enumerate(axs):
         ax.plot(t_landmark, landmark_meas[:, i+1], color=colors[1], linestyle="None", marker='.', label="meas") # , markersize=3)
-        # if i <3:
-        #     ax.plot(t_landmark, ldmk_est[:, i], label="est", color=colors[0], linestyle="None", marker='.') # , markersize=3)
         
         if i == 0:
             ax.legend(loc="upper right")
@@ -403,7 +400,7 @@ def plot_residuals(lindynres, angdynres, ldmkmeasres, measurements, est_states, 
     t_est = est_time - t0
     colors = ["C0", "C1"]
     # linear dynamics residuals
-    est_time  = est_states["state_estimates"][:,0]
+    # est_time  = est_states["state_estimates"][:,0]
     fig, axs = plt.subplots(6, 1, sharex=True, figsize=(10, 6))
     comp_labels = ["LinDyn Res X", "LinDyn Res Y", "LinDyn Res Z", 
                     "LinDyn Res VX", "LinDyn Res VY", "LinDyn Res VZ"]
@@ -424,12 +421,12 @@ def plot_residuals(lindynres, angdynres, ldmkmeasres, measurements, est_states, 
     if bias_mode in ["fix_bias", "no_bias"]:
         fig, axs = plt.subplots(3, 1, sharex=True, figsize=(10, 6))
         comp_labels = ["AngDyn Res X", "AngDyn Res Y", "AngDyn Res Z"]
-        std_devs = [0.0008726, 0.0008726, 0.0008726] 
+        # std_devs = [0.0008726, 0.0008726, 0.0008726] 
     elif bias_mode == "tv_bias":
         fig, axs = plt.subplots(6, 1, sharex=True, figsize=(10, 6))
         comp_labels = ["AngDyn Res X", "AngDyn Res Y", "AngDyn Res Z",
                         "AngDyn Res Bias X", "AngDyn Res Bias Y", "AngDyn Res Bias Z"]
-        std_devs = [0.0008726, 0.0008726, 0.0008726, 1, 1, 1] 
+        # std_devs = [0.0008726, 0.0008726, 0.0008726, 1, 1, 1] 
     else:
         raise ValueError(f"Unknown bias mode: {bias_mode}")
     
@@ -449,7 +446,7 @@ def plot_residuals(lindynres, angdynres, ldmkmeasres, measurements, est_states, 
     # landmark measurement residuals
     landmark_meas = measurements['landmark_measurements']
     t_landmark = landmark_meas[:,0] - t0
-    ldmk_sigma = 0.009
+    # ldmk_sigma = 0.009
     fig, axs = plt.subplots(3, 1, sharex=True, figsize=(10, 6))
     comp_labels = ["Ldmk Meas Res X", "Ldmk Meas Res Y", "Ldmk Meas Res Z"]
     for i, ax in enumerate(axs):

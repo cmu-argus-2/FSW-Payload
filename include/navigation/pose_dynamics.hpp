@@ -76,8 +76,6 @@ public:
                         jacobians[1][row*nx + col] = (row == col) ? 1.0 : 0.0;
             }
 
-            // Prevent the later manual-jacobian block from overwriting these analytic blocks.
-            // for (int i = 0; i < 2; ++i) jacobians[i] = nullptr;
         } else {
             x_pred = this->integrate(0.0, x0, u, dt, integrator_type);
         }
@@ -199,15 +197,19 @@ public:
             }
 
             bool result = this->residuals(params, residuals, jacobians_x);
-            residuals[0] /= pos_std_dev;
-            residuals[1] /= pos_std_dev;
-            residuals[2] /= pos_std_dev;
-            residuals[3] /= vel_std_dev;
-            residuals[4] /= vel_std_dev;
-            residuals[5] /= vel_std_dev;
+            if (!result) {  
+                return false;  
+            }  
+
+            for (int i = 0; i < 3; ++i) {  
+                residuals[i] /= pos_std_dev;  
+            }  
+            for (int i = 3; i < 6; ++i) {  
+                residuals[i] /= vel_std_dev;  
+            }  
             // Copy back jacobians to ceres format
             // Param 0: x0 -> r0,v0
-            if (jacobians[0]) {
+            if (jacobians[0]  && jacobians[1]) {
                 for (int row = 0; row < NX; ++row) {
                     for (int col = 0; col < 3; ++col) {
                         jacobians[0][row*3 + col] = jacobians_x[0][row*NX + col];
@@ -216,7 +218,7 @@ public:
                 }
             }
             // Param 1: x1 -> r1,v1
-            if (jacobians[1]) {
+            if (jacobians[2]  && jacobians[3]) {
                 for (int row = 0; row < NX; ++row) {
                     for (int col = 0; col < 3; ++col) {
                         jacobians[2][row*3 + col] = jacobians_x[1][row*NX + col];
@@ -232,8 +234,18 @@ public:
             return result;
         }
         bool result = this->residuals(params, residuals, jacobians);
+        if (!result) {  
+            return false;  
+        }  
 
-        return result;
+        for (int i = 0; i < 3; ++i) {  
+            residuals[i] /= pos_std_dev;  
+        }  
+        for (int i = 3; i < 6; ++i) {  
+            residuals[i] /= vel_std_dev;  
+        }  
+
+        return true; 
     }
 
     // DynamicsResidual overrides
@@ -375,7 +387,7 @@ public:
         // Write angle-axis into residuals
         ceres::QuaternionToAngleAxis(q_err_arr, q_res.data());
     }
-    
+    q_res = q_res / T(quat_std_dev);
     b_res = (b_w_1 - b_w_0) / T(bias_std_dev); // assuming constant bias for now
     return true;
     }

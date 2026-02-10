@@ -6,6 +6,10 @@
 #include <Eigen/Eigen>
 #include <highfive/H5Easy.hpp>
 #include <highfive/highfive.hpp>
+#include <string>
+#include <iostream>
+#include <cassert>
+#include <exception>
 
 int main(int argc, char** argv) {
       // TODO: WIP Fix path to correct HDF5 file

@@ -94,15 +94,6 @@ target_link_libraries(${PROJECT_NAME}
     ${OpenCV_LIBS}
     # ${PAYLOAD_CONDITIONAL_LIBS}
 )
-# 
-target_link_libraries(run_batch_opt
-    PRIVATE
-    spdlog::spdlog
-    PAYLOAD_LIB
-    HDF5::HDF5           
-    HighFive::HighFive
-    Ceres::ceres
-)
 
 
 message(STATUS "NN_ENABLED: ${NN_ENABLED}")

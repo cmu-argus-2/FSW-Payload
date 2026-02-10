@@ -258,17 +258,14 @@ OD_Config ReadODConfig(const std::string& config_path)
 
     // BATCH_OPT
     auto BATCH_OPT_params = params["BATCH_OPT"].as_table();
+    od_config.batch_opt.solver_parameter_tolerance = get_param_as_double(BATCH_OPT_params, "solver_parameter_tolerance", od_config.batch_opt.solver_parameter_tolerance);
     od_config.batch_opt.solver_function_tolerance = get_param_as_double(BATCH_OPT_params, "solver_function_tolerance", od_config.batch_opt.solver_function_tolerance);
     od_config.batch_opt.max_iterations = BATCH_OPT_params->get_as<int64_t>("max_iterations")->value_or(od_config.batch_opt.max_iterations);
     od_config.batch_opt.max_dt = get_param_as_double(BATCH_OPT_params, "max_dt", od_config.batch_opt.max_dt);
     od_config.batch_opt.bias_mode = static_cast<BIAS_MODE>(BATCH_OPT_params->get_as<int64_t>("bias_mode")->value_or(static_cast<int64_t>(od_config.batch_opt.bias_mode)));
 
     // Print the configuration
-    std::cout << "BATCH_OPT Current Configuration parameters: \n";
-    std::cout << "  solver_function_tolerance: " << od_config.batch_opt.solver_function_tolerance << "\n";
-    std::cout << "  max_iterations: " << od_config.batch_opt.max_iterations << "\n";
-    std::cout << "  max_dt: " << od_config.batch_opt.max_dt << "\n";
-    std::cout << "  bias_mode: " << static_cast<int>(od_config.batch_opt.bias_mode) << "\n";
+    SPDLOG_INFO("OD Configuration parameters set");
 
     return od_config;
 }

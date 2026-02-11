@@ -114,8 +114,17 @@ void CameraManager::RunLoop()
                 if (single_frames_captured > 0)
                 {
                     SPDLOG_INFO("Single capture request completed: {} frame(s) captured", single_frames_captured);
+                    std::shared_ptr<Message> msg = CreateSuccessAckMessage(CommandID::CAPTURE_IMAGES);
+                    sys::payload().TransmitMessage(msg);
                 }
-                // TODO should be a way to ACK the command here, whether this is a success or failure
+                else
+                {
+                    SPDLOG_ERROR("Single capture request failed: no frames captured");
+                    std::shared_ptr<Message> msg = CreateErrorAckMessage(
+                        CommandID::CAPTURE_IMAGES, to_uint8(EC::CAMERA_CAPTURE_FAILED)
+                    );
+                    sys::payload().TransmitMessage(msg);
+                }
                 SetCaptureMode(CAPTURE_MODE::IDLE);
                 break;
             }

@@ -138,6 +138,15 @@ void enable_cameras([[maybe_unused]] std::vector<uint8_t>& data)
     SPDLOG_INFO("Trying to enable all cameras...");
     std::array<bool, NUM_CAMERAS> on_cameras;
 
+    //TODO: Are we assuming we wouldn't intentionally call disable with all 0s?
+    // Turning on specific cameras: if data is used (uint8 array where 1 = turn on, 0 = turn off)
+    if (data != NULL) {
+        for (size_t i = 0; i < NUM_CAMERAS && i < data.size(); ++i)
+        {
+            on_cameras[i] = (data[i] == 1);
+        }
+    }
+
     int nb_activated_cams = sys::cameraManager().EnableCameras(on_cameras);
     bool at_least_one_was_enabled = false;
     for (size_t i = 0; i < NUM_CAMERAS; ++i)
@@ -175,6 +184,15 @@ void disable_cameras([[maybe_unused]] std::vector<uint8_t>& data)
 {
     SPDLOG_INFO("Trying to disable all cameras...");
     std::array<bool, NUM_CAMERAS> off_cameras;
+
+    //TODO: Are we assuming we wouldn't intentionally call disable with all 0s?
+    // Turning off specific cameras: if data is used (uint8 array where 1 = turn on, 0 = turn off)
+    if (data != NULL) {
+        for (size_t i = 0; i < NUM_CAMERAS && i < data.size(); ++i)
+        {
+            off_cameras[i] = (data[i] == 1);
+        }
+    }
 
     int nb_disabled_cams = sys::cameraManager().DisableCameras(off_cameras);
     bool at_least_one_was_disabled = false;
@@ -218,6 +236,10 @@ void capture_images([[maybe_unused]] std::vector<uint8_t>& data)
     // Need to return true or false based on the success of the operations
     // Basically should wait until the camera has captured the image or wait later to send the ocnfirmation and just exit the task? 
     // TODO
+
+    
+
+    
 
     sys::payload().SetLastExecutedCmdID(CommandID::CAPTURE_IMAGES);
 }
@@ -265,6 +287,9 @@ void start_capture_images_periodically([[maybe_unused]] std::vector<uint8_t>& da
         {
             // if running: TODO: return ERROR ACK saying that a dataset is already running
             // If completed, stop it then too
+            SPDLOG_ERROR("Dataset is already running.");
+            std::shared_ptr<Message> msg = CreateErrorAckMessage(CommandID::START_CAPTURE_IMAGES_PERIODICALLY, 0x21); // TODO example error code
+            sys::payload().TransmitMessage(msg);
         }
         else
         {
@@ -295,7 +320,7 @@ void start_capture_images_periodically([[maybe_unused]] std::vector<uint8_t>& da
     sys::payload().SetLastExecutedCmdID(CommandID::START_CAPTURE_IMAGES_PERIODICALLY);
 }
 
-void stop_capture_images([[maybe_unused]] std::vector<uint8_t>& data)
+bool stop_capture_images([[maybe_unused]] std::vector<uint8_t>& data)
 {
     SPDLOG_INFO("Stopping capture images..");
 
@@ -303,6 +328,7 @@ void stop_capture_images([[maybe_unused]] std::vector<uint8_t>& data)
     // TODO return true or false based on the success of the operations
 
     auto ds = DatasetManager::GetActiveDataset(DATASET_KEY_CMD);
+    bool success = False
     if (ds) // if it exists
     {
         ds->StopCollection();
@@ -321,6 +347,7 @@ void stop_capture_images([[maybe_unused]] std::vector<uint8_t>& data)
         SerializeToBytes(nb_frames, transmit_data);
         std::shared_ptr<Message> msg = CreateMessage(CommandID::STOP_CAPTURE_IMAGES, transmit_data);
         sys::payload().TransmitMessage(msg);
+        success = true;
     }
     else
     {
@@ -332,6 +359,7 @@ void stop_capture_images([[maybe_unused]] std::vector<uint8_t>& data)
     }
 
     sys::payload().SetLastExecutedCmdID(CommandID::STOP_CAPTURE_IMAGES);
+    return success;
 }
 
 void request_storage_info([[maybe_unused]] std::vector<uint8_t>& data)

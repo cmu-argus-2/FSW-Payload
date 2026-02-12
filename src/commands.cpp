@@ -140,7 +140,7 @@ void enable_cameras([[maybe_unused]] std::vector<uint8_t>& data)
 
     //TODO: Are we assuming we wouldn't intentionally call disable with all 0s?
     // Turning on specific cameras: if data is used (uint8 array where 1 = turn on, 0 = turn off)
-    if (data != NULL) {
+    if (!data.empty()) {
         for (size_t i = 0; i < NUM_CAMERAS && i < data.size(); ++i)
         {
             on_cameras[i] = (data[i] == 1);
@@ -187,7 +187,7 @@ void disable_cameras([[maybe_unused]] std::vector<uint8_t>& data)
 
     //TODO: Are we assuming we wouldn't intentionally call disable with all 0s?
     // Turning off specific cameras: if data is used (uint8 array where 1 = turn on, 0 = turn off)
-    if (data != NULL) {
+    if (!data.empty()) {
         for (size_t i = 0; i < NUM_CAMERAS && i < data.size(); ++i)
         {
             off_cameras[i] = (data[i] == 1);
@@ -320,7 +320,7 @@ void start_capture_images_periodically([[maybe_unused]] std::vector<uint8_t>& da
     sys::payload().SetLastExecutedCmdID(CommandID::START_CAPTURE_IMAGES_PERIODICALLY);
 }
 
-bool stop_capture_images([[maybe_unused]] std::vector<uint8_t>& data)
+void stop_capture_images([[maybe_unused]] std::vector<uint8_t>& data)
 {
     SPDLOG_INFO("Stopping capture images..");
 
@@ -328,7 +328,6 @@ bool stop_capture_images([[maybe_unused]] std::vector<uint8_t>& data)
     // TODO return true or false based on the success of the operations
 
     auto ds = DatasetManager::GetActiveDataset(DATASET_KEY_CMD);
-    bool success = False
     if (ds) // if it exists
     {
         ds->StopCollection();
@@ -347,7 +346,6 @@ bool stop_capture_images([[maybe_unused]] std::vector<uint8_t>& data)
         SerializeToBytes(nb_frames, transmit_data);
         std::shared_ptr<Message> msg = CreateMessage(CommandID::STOP_CAPTURE_IMAGES, transmit_data);
         sys::payload().TransmitMessage(msg);
-        success = true;
     }
     else
     {
@@ -359,7 +357,6 @@ bool stop_capture_images([[maybe_unused]] std::vector<uint8_t>& data)
     }
 
     sys::payload().SetLastExecutedCmdID(CommandID::STOP_CAPTURE_IMAGES);
-    return success;
 }
 
 void request_storage_info([[maybe_unused]] std::vector<uint8_t>& data)

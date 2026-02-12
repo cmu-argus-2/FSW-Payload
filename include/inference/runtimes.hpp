@@ -10,6 +10,7 @@
 
 #include "inference/structures.hpp"
 #include "core/errors.hpp"
+#include "vision/regions.hpp"
 
 namespace Inference
 {
@@ -62,6 +63,45 @@ public:
 private:
 
     bool initialized_ = false; 
+
+    // Logger for TensorRT
+    Logger trt_logger_;
+
+    // Inference buffer 
+    InferenceBuffer buffers_;
+
+    // Model deserialization >> executable engine
+    std::unique_ptr<IRuntime> runtime_ = nullptr;
+    // Executable engine for inference (contains optimized computation graph)
+    std::unique_ptr<ICudaEngine> engine_ = nullptr;
+    // To execute the inference on a specific batch of inputs (binds to inputs/outputs buffers)
+    std::unique_ptr<IExecutionContext> context_ = nullptr;
+
+    // CUDA stream
+    cudaStream_t stream_ = nullptr;
+
+};
+
+
+class LDNet
+{
+
+public:
+
+    LDNet(RegionID region_id);
+    ~LDNet();
+
+    EC LoadEngine(const std::string& engine_path);
+    bool IsInitialized() const { return initialized_; }
+    EC Infer(const void* input_data, void* output);
+
+
+private:
+
+    bool initialized_ = false; 
+
+    // Region ID
+    RegionID region_id_;
 
     // Logger for TensorRT
     Logger trt_logger_;

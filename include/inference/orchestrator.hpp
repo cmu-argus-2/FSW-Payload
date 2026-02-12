@@ -14,7 +14,7 @@ public:
     Orchestrator();
     // ~Orchestrator();
 
-    void Initialize(const std::string& rc_engine_path);  
+    void Initialize(const std::string& rc_engine_path, const std::string& ld_engine_folder_path);  
 
     void GrabNewImage(std::shared_ptr<Frame> frame);
 
@@ -34,6 +34,8 @@ private:
     // void PreprocessImgGPU(const cv::Mat& img, cv::Mat& out_chw);
 
     RCNet rc_net_; 
+    
+    std::map<RegionID, LDNet> ld_nets_;
 
 };
 

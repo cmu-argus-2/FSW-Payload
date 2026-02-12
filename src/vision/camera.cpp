@@ -215,12 +215,12 @@ void Camera::HandleErrors(CAM_ERROR error)
     consecutive_error_count++;
     SPDLOG_ERROR("CAM{}: Error occurred: {}", cam_id, static_cast<uint8_t>(last_error));
 
-    /*if (consecutive_error_count >= MAX_CONSECUTIVE_ERROR_COUNT) {
-        cam_status = CAM_STATUS::DISABLED;
+    if (consecutive_error_count >= MAX_CONSECUTIVE_ERROR_COUNT) {
+        cam_status = CAM_STATUS::INACTIVE;
         SPDLOG_ERROR("CAM{}: Camera disabled after {} errors", cam_id, consecutive_error_count);
         consecutive_error_count = 0; // Reset the count for next retry? // Could be stuck in a loop
         return;
-    }*/
+    }
 
     if (last_error == CAM_ERROR::INITIALIZATION_FAILED) {
         cam_status = CAM_STATUS::INACTIVE;

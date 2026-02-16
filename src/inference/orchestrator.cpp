@@ -28,27 +28,29 @@ void Orchestrator::Initialize(const std::string& rc_engine_path, const std::stri
     // Find all the regions
     std::string trt_path;
     std::string csv_path;
-    EC ld_net_status;
-    for(const auto& region_id : GetAllRegionIDs())
-    {
-        std::string region_str = std::string(GetRegionString(region_id));
 
-        // ld_nets_.emplace(region_id, LDNet(region_id));
-        ld_nets_.try_emplace(region_id, region_id); 
-        //ld_nets_.insert(std::make_pair(region_id, LDNet(region_id)));
+    // TODO: LD is commented out to compile for now
+    // EC ld_net_status;
+    // for(const auto& region_id : GetAllRegionIDs())
+    // {
+    //     std::string region_str = std::string(GetRegionString(region_id));
 
-        trt_path = ld_engine_folder_path + "/" + region_str + "/" + region_str + "_nadir.trt";
-        csv_path = ld_engine_folder_path + "/" + region_str + "/" + region_str + "_top_salient.csv";
-        spdlog::info("Loading model for region {}: TRT path: {}, CSV path: {}", region_str, trt_path, csv_path);
-        ld_net_status = ld_nets_.at(region_id).LoadEngine(trt_path);
-        if (ld_net_status != EC::OK) 
-        {
-            spdlog::error("Failed to load LD Net engine for region: {}", region_str);
-            continue;
-        }
+    //     // ld_nets_.emplace(region_id, LDNet(region_id));
+    //     ld_nets_.try_emplace(region_id, region_id); 
+    //     //ld_nets_.insert(std::make_pair(region_id, LDNet(region_id)));
 
-        spdlog::info("LDNet successfully loaded for region: {}", region_str);
-    }
+    //     trt_path = ld_engine_folder_path + "/" + region_str + "/" + region_str + "_nadir.trt";
+    //     csv_path = ld_engine_folder_path + "/" + region_str + "/" + region_str + "_top_salient.csv";
+    //     spdlog::info("Loading model for region {}: TRT path: {}, CSV path: {}", region_str, trt_path, csv_path);
+    //     ld_net_status = ld_nets_.at(region_id).LoadEngine(trt_path);
+    //     if (ld_net_status != EC::OK) 
+    //     {
+    //         spdlog::error("Failed to load LD Net engine for region: {}", region_str);
+    //         continue;
+    //     }
+
+    //     spdlog::info("LDNet successfully loaded for region: {}", region_str);
+    // }
 
 }
 

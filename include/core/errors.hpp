@@ -16,7 +16,8 @@ enum class ErrorCode // Error codes
     // TODO must be extremely well documented 
     OK = 0, // Can't be logged
     PLACEHOLDER = 1,
-    // Commands
+    
+    // Commands 2-7
     INVALID_COMMAND_ID,
     INVALID_COMMAND_ARGUMENTS,
     NO_FILE_READY,
@@ -24,13 +25,13 @@ enum class ErrorCode // Error codes
     FAIL_TO_READ_FILE, 
     FILE_NOT_AVAILABLE, // DO NOT CHANGE ALL ABOVE
 
-    // Data handling
+    // Data handling 8-11
     FILE_DOES_NOT_EXIST,
     FILE_NOT_FOUND,
     START_BYTE_OUT_OF_RANGE,
     FAILED_TO_GRAB_FILE_CHUNK, 
     
-    // Camera subsystem
+    // Camera subsystem 12-13
     CAMERA_CAPTURE_FAILED,
     CAMERA_INITIALIZATION_FAILED,
 
@@ -43,7 +44,7 @@ enum class ErrorCode // Error codes
     // Telemetry
 
 
-    // UART
+    // UART 14-23
     UART_OPEN_FAILED,
     UART_CLOSE_FAILED,
     UART_OPEN_FAILED_AFTER_RETRY,
@@ -58,7 +59,7 @@ enum class ErrorCode // Error codes
 
 
 
-    // Neural Engine 
+    // Neural Engine 24-33 
     NN_FAILED_TO_OPEN_ENGINE_FILE,
     NN_FAILED_TO_CREATE_RUNTIME,
     NN_FAILED_TO_CREATE_ENGINE,

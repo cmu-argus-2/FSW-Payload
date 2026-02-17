@@ -14,7 +14,10 @@ Frame::Frame()
     _img_mtx(std::make_shared<std::mutex>()),
     _annotation_state(ImageState::NotEarth),
     _rank(0.0f),
-    _processing_stage(ProcessingStage::NotPrefiltered)
+    _processing_stage(ProcessingStage::NotPrefiltered),
+    _region_ids({}),
+    _region_confidences({}),
+    _landmarks({})
 {}
 
 
@@ -25,7 +28,10 @@ Frame::Frame(int cam_id, const cv::Mat& img, std::uint64_t timestamp)
       _img_mtx(std::make_shared<std::mutex>()),
       _annotation_state(ImageState::NotEarth),
       _rank(0.0f),
-      _processing_stage(ProcessingStage::NotPrefiltered)
+      _processing_stage(ProcessingStage::NotPrefiltered),
+      _region_ids({}),
+      _region_confidences({}),
+      _landmarks({})
 {}
 
 // For rvalue reference
@@ -37,7 +43,10 @@ _timestamp(timestamp),
 _img_mtx(std::make_shared<std::mutex>()),
 _annotation_state(ImageState::NotEarth),
 _rank(0.0f),
-_processing_stage(ProcessingStage::NotPrefiltered)
+_processing_stage(ProcessingStage::NotPrefiltered),
+_region_ids({}),
+_region_confidences({}),
+_landmarks({})
 {}
 
 Frame::Frame(const Frame& other)
@@ -47,7 +56,10 @@ Frame::Frame(const Frame& other)
       _img_mtx(std::make_shared<std::mutex>()),  // creating a new mutex per instance to avoid intercopy locking
       _annotation_state(other._annotation_state),
       _rank(other._rank),
-      _processing_stage(other._processing_stage)
+      _processing_stage(other._processing_stage),
+      _region_ids(other._region_ids),
+      _region_confidences(other._region_confidences),
+      _landmarks(other._landmarks)
 {}
 
 
@@ -58,6 +70,7 @@ Frame& Frame::operator=(const Frame& other)
         _cam_id = other._cam_id;
         _timestamp = other._timestamp;
         _region_ids = other._region_ids;
+        _region_confidences = other._region_confidences;
         _landmarks = other._landmarks;
         _img_mtx = std::make_shared<std::mutex>(); // new mutex per instance
         _annotation_state = other._annotation_state;
@@ -121,6 +134,11 @@ const std::vector<RegionID>& Frame::GetRegionIDs() const
     return _region_ids;
 }
 
+const std::vector<float>& Frame::GetRegionConfidences() const
+{
+    return _region_confidences;
+}
+
 const std::vector<Landmark>& Frame::GetLandmarks() const
 {
     return _landmarks;
@@ -143,14 +161,20 @@ const float Frame::GetRank() const
 
 Json Frame::toJson() const
 {
-    Json j;
+    return Json(toOrderedJson());
+}
+
+nlohmann::ordered_json Frame::toOrderedJson() const // Order the Json keys
+{
+    nlohmann::ordered_json j;
     try {
         j["timestamp"] = _timestamp;
         j["cam_id"] = _cam_id;
         j["annotation_state"] = static_cast<int>(_annotation_state);
         j["processing_stage"] = static_cast<int>(_processing_stage);
         j["rank"] = _rank;
-        // TODO: landmarks and regions
+        j["RC_regions_detected"] = VisionJson::RegionIdsToStrings(_region_ids);
+        j["RC_region_confidences"] = _region_confidences;
         
     } catch (const std::exception& e) {
         SPDLOG_ERROR("Failed to convert Frame to JSON: {}", e.what());
@@ -158,7 +182,7 @@ Json Frame::toJson() const
     return j;
 }
 
-void Frame::fromJson(const Json& j)
+void Frame::fromJson(const Json& j) // Write values to JSON
 {
     try {
         _timestamp = j.at("timestamp").get<std::uint64_t>();
@@ -166,15 +190,40 @@ void Frame::fromJson(const Json& j)
         _annotation_state = static_cast<ImageState>(j.at("annotation_state").get<int>());
         _processing_stage = static_cast<ProcessingStage>(j.at("processing_stage").get<int>());
         _rank = j.at("rank").get<float>();
-    } 
+
+        if (j.contains("RC_regions_detected") && j.at("RC_regions_detected").is_array())
+        {
+            VisionJson::LoadRegionIdsFromJson(j.at("RC_regions_detected"), _region_ids);
+        }
+        _region_confidences.clear();
+        if (j.contains("RC_region_confidences") && j.at("RC_region_confidences").is_array())
+        {
+            for (const auto& conf : j.at("RC_region_confidences"))
+            {
+                _region_confidences.emplace_back(conf.get<float>());
+            }
+        }
+
+        if (_region_confidences.size() != _region_ids.size())
+        {
+            _region_confidences.assign(_region_ids.size(), 0.0f);
+        }
+    }
     catch (const std::exception& e) {
         SPDLOG_ERROR("Failed to parse Frame from JSON: {}", e.what());
     }
 }
 
-void Frame::AddRegion(RegionID region_id)
+void Frame::AddRegion(RegionID region_id, float confidence)
 {
     _region_ids.push_back(region_id);
+    _region_confidences.push_back(confidence);
+}
+
+void Frame::ClearRegions()
+{
+    _region_ids.clear();
+    _region_confidences.clear();
 }
 
 

@@ -134,7 +134,7 @@ void StoreFrameMetadataToDisk(Frame& frame, std::string_view target_folder)
 
     const cv::Mat& img = frame.GetImg();
 
-    Json j = frame.toJson();
+    nlohmann::ordered_json j = frame.toOrderedJson();
 
     std::ofstream ofs(file_path, std::ios::out | std::ios::trunc);
     if (!ofs.is_open())

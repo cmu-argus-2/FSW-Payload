@@ -184,6 +184,7 @@ EC Orchestrator::ExecFullInference()
         spdlog::warn("Inference already performed on the current frame. This will overwrite.");
         // TODO: clear
     }
+    original_frame_->ClearRegions(); // Is this right? May need to be changed
 
     img_buff_ = current_frame_->GetImg();
     cv::Mat chw_img;
@@ -203,13 +204,13 @@ EC Orchestrator::ExecFullInference()
     }
 
     // Populate the RC ID to original frame
-    static constexpr float RC_THRESHOLD = 0.5f; // Threshold for region classification
+    static constexpr float RC_THRESHOLD = 0.5f; // Threshold for region classification TODO Change this later on validation
     for (uint8_t i = 0; i < RC_NUM_CLASSES; i++) 
     {
         spdlog::info("RC output for class {}: {:.3f}", i, host_output[i]);
         if (host_output[i] > RC_THRESHOLD) 
         {
-            original_frame_->AddRegion(static_cast<RegionID>(i)); 
+            original_frame_->AddRegion(static_cast<RegionID>(i), host_output[i]); 
         }
     }
 

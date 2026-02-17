@@ -51,6 +51,9 @@ int main(int argc, char** argv)
         spdlog::info("Region ID: {}", GetRegionString(region_id));
     }
 
+    DH::StoreFrameMetadataToDisk(*frame_ptr); // Test for now
+    spdlog::info("Frame metadata JSON saved to data/images/");
+
     // Landmark Detection results
 
 

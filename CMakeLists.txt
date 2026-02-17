@@ -30,6 +30,11 @@ set(CMAKE_RUNTIME_OUTPUT_DIRECTORY ${CMAKE_SOURCE_DIR}/bin/)
 
 set(SPDLOG_FMT_EXTERNAL OFF)
 find_package(spdlog REQUIRED)
+if(TARGET spdlog::spdlog_header_only)
+    set(PAYLOAD_SPDLOG_TARGET spdlog::spdlog_header_only)
+else()
+    set(PAYLOAD_SPDLOG_TARGET spdlog::spdlog)
+endif()
 find_package(Eigen3 3.3 REQUIRED NO_MODULE)
 find_package(OpenCV REQUIRED)
 find_package(GTest REQUIRED)
@@ -76,7 +81,7 @@ add_executable(${PROJECT_NAME} src/main.cpp)
 
 target_link_libraries(${PROJECT_NAME}
     PRIVATE
-    spdlog::spdlog
+    ${PAYLOAD_SPDLOG_TARGET} # This is now set to either spdlog::spdlog_header_only, may need to be changed back to spdlog::spdlog 
     PAYLOAD_LIB
     ${OpenCV_LIBS}
     # ${PAYLOAD_CONDITIONAL_LIBS}

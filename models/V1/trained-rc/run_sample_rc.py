@@ -1,6 +1,6 @@
 import os
 
-import cv2
+# import cv2
 import torch
 import torch.nn as nn
 import torchvision
@@ -53,7 +53,8 @@ if __name__ == "__main__":
     # Load Custom model weights
     device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
     model = ClassifierEfficient().to(device)
-    model_weights_path = os.path.join(os.path.dirname(__file__), "rc_model_weights.pth")
+    model_weights_path = os.path.join(os.path.dirname(__file__), "effnet_0.997acc.pth")
+    # model_weights_path = os.path.join(os.path.dirname(__file__), "/home/argus/Documents/models/region_classifier/model10.pth")
     model.load_state_dict(torch.load(model_weights_path, map_location=device))
     model.eval()
     
@@ -93,7 +94,7 @@ if __name__ == "__main__":
         ]
     )
 
-    folder_name = os.path.join(os.path.dirname(__file__), "../sample_images")
+    folder_name = os.path.join(os.path.dirname(__file__), "/home/argus/Documents/test_photos/17R")
     files = os.listdir(folder_name)
     results = {}
 
@@ -102,7 +103,7 @@ if __name__ == "__main__":
             continue
         img = Image.open(os.path.join(folder_name, file)).convert("RGB")
         #img = Image.open("tests/sample_data/inference/l9_32S_00001.png").convert("RGB")
-        img = Image.open("tests/sample_data/inference/l9_10T_00021.png").convert("RGB")
+        # img = Image.open("tests/sample_data/inference/l9_10T_00021.png").convert("RGB")
         img = transformations(img).unsqueeze(0).to(device)
 
         print(img.shape)
@@ -135,5 +136,5 @@ if __name__ == "__main__":
         print(f"TensorRT predicted indices: {predicted_trt.flatten().tolist()}")
         print("==========")
         
-        exit()
+        # exit()
 

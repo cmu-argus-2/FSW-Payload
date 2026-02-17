@@ -28,10 +28,12 @@ void Orchestrator::Initialize(const std::string& rc_engine_path, const std::stri
     // Find all the regions
     std::string trt_path;
     std::string csv_path;
-    EC ld_net_status;
-    for(const auto& region_id : GetAllRegionIDs())
-    {
-        std::string region_str = std::string(GetRegionString(region_id));
+
+    // TODO: LD is commented out to compile for now
+    // EC ld_net_status;
+    // for(const auto& region_id : GetAllRegionIDs())
+    // {
+    //     std::string region_str = std::string(GetRegionString(region_id));
 
         trt_path = ld_engine_folder_path + "/" + region_str + "/" + region_str + "_weights.trt";
         csv_path = ld_engine_folder_path + "/" + region_str + "/bounding_boxes.csv";
@@ -48,8 +50,8 @@ void Orchestrator::Initialize(const std::string& rc_engine_path, const std::stri
             continue;
         }
 
-        spdlog::info("LDNet successfully loaded for region: {}", region_str);
-    }
+    //     spdlog::info("LDNet successfully loaded for region: {}", region_str);
+    // }
 
 }
 
@@ -193,6 +195,7 @@ EC Orchestrator::ExecFullInference()
         spdlog::warn("Inference already performed on the current frame. This will overwrite.");
         // TODO: clear
     }
+    original_frame_->ClearRegions(); // Is this right? May need to be changed
 
     img_buff_ = current_frame_->GetImg();
     cv::Mat chw_img;
@@ -212,13 +215,13 @@ EC Orchestrator::ExecFullInference()
     }
 
     // Populate the RC ID to original frame
-    static constexpr float RC_THRESHOLD = 0.5f; // Threshold for region classification
+    static constexpr float RC_THRESHOLD = 0.5f; // Threshold for region classification TODO Change this later on validation
     for (uint8_t i = 0; i < RC_NUM_CLASSES; i++) 
     {
         spdlog::info("RC output for class {}: {:.3f}", i, host_output[i]);
         if (host_output[i] > RC_THRESHOLD) 
         {
-            original_frame_->AddRegion(static_cast<RegionID>(i)); 
+            original_frame_->AddRegion(static_cast<RegionID>(i), host_output[i]); 
         }
     }
 

@@ -2,6 +2,7 @@
 #define FRAME_HPP
 
 #include <cstdint>
+#include <string>
 #include <vector>
 #include <mutex>
 #include <memory>
@@ -97,13 +98,15 @@ public:
     const ProcessingStage GetProcessingStage() const;
     const float GetRank() const;
     Json toJson() const;
+    nlohmann::ordered_json toOrderedJson() const;
     void fromJson(const Json& j);
 
 
     const std::vector<RegionID>& GetRegionIDs() const;
+    const std::vector<float>& GetRegionConfidences() const;
     const std::vector<Landmark>& GetLandmarks() const;
     
-    void AddRegion(RegionID region_id);
+    void AddRegion(RegionID region_id, float confidence);
     void ClearRegions();
     void AddLandmark(const Landmark& landmark); 
     void AddLandmark(float x, float y, uint16_t class_id, RegionID region_id, float height_, float width_, float confidence_);
@@ -121,6 +124,7 @@ private:
     float _rank; // score to rank images with the same annotation_state (higher = better)
     ProcessingStage _processing_stage;
     std::vector<RegionID> _region_ids;  // Container for regions
+    std::vector<float> _region_confidences; // Confidence values aligned with _region_ids
     std::vector<Landmark> _landmarks;  // Container for landmarks
 
     // mutex is not copyable
@@ -128,6 +132,45 @@ private:
 };
 
 
+// Helper functions for parsing the output of RC net and LD net
+namespace VisionJson
+{
+
+using Json = nlohmann::json;
+
+inline std::vector<std::string> RegionIdsToStrings(const std::vector<RegionID>& region_ids)
+{
+    std::vector<std::string> region_codes;
+    region_codes.reserve(region_ids.size());
+    for (const auto& region_id : region_ids)
+    {
+        region_codes.emplace_back(GetRegionString(region_id));
+    }
+    return region_codes;
+}
+
+inline void LoadRegionIdsFromJson(const Json& region_json, std::vector<RegionID>& region_ids)
+{
+    region_ids.clear();
+    if (!region_json.is_array())
+    {
+        return;
+    }
+
+    for (const auto& region_item : region_json)
+    {
+        if (region_item.is_string())
+        {
+            RegionID region_id = GetRegionID(region_item.get<std::string>());
+            if (region_id != RegionID::UNKNOWN)
+            {
+                region_ids.push_back(region_id);
+            }
+        }
+    }
+}
+
+} // namespace VisionJson
 
 
 

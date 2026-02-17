@@ -66,7 +66,8 @@ def build_engine(model_path):
         "input",
         (1, 3, 224, 224),  # Min: Smallest possible input (standard EfficientNetB0 input)
         (1, 3, 224, 224),  # Opt: Model's default size (what the model optimize for)
-        (8, 3, 512, 512)  # Max: Largest expected input
+        (1, 3, 224, 224),  # Max: Largest expected input
+        # (8, 3, 512, 512)  # Max: Largest expected input, TODO: This seems unnecessary and often breaks conversion
     )
     config.add_optimization_profile(profile)
 
@@ -93,4 +94,5 @@ def build_engine(model_path):
     return engine
 
 if __name__ == '__main__':
-    build_engine( model_path="effnet.onnx")
+    # build_engine( model_path="effnet.onnx")
+    build_engine( model_path="/home/argus/Documents/batch_opt/FSW-Payload-2/effnet_0997acc_fixed.onnx")

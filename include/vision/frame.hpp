@@ -105,7 +105,8 @@ public:
     
     void AddRegion(RegionID region_id);
     void ClearRegions();
-    void AddLandmark(float x, float y, uint16_t class_id, RegionID region_id);
+    void AddLandmark(const Landmark& landmark); 
+    void AddLandmark(float x, float y, uint16_t class_id, RegionID region_id, float height_, float width_, float confidence_);
     void ClearLandmarks();
     void RunPrefiltering();
 

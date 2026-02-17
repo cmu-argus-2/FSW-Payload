@@ -30,7 +30,8 @@ private:
     int num_inference_performed_on_current_frame_ = 0; 
     cv::Mat img_buff_; // Buffer for the current image
 
-    void PreprocessImg(cv::Mat img, cv::Mat& out_chw_img);
+    void RCPreprocessImg(cv::Mat img, cv::Mat& out_chw_img);
+    void LDPreprocessImg(cv::Mat img, cv::Mat& out_chw_img);
     // void PreprocessImgGPU(const cv::Mat& img, cv::Mat& out_chw);
 
     RCNet rc_net_; 

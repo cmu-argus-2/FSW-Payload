@@ -52,11 +52,13 @@ int main(int argc, char** argv)
     }
 
     // Landmark Detection results
-
-
-
-
-
+    std::vector<Landmark> landmarks = frame_ptr->GetLandmarks();
+    spdlog::info("Landmarks found: {}", landmarks.size());
+    for (const auto& landmark : landmarks)
+    {
+        spdlog::info("Landmark - Class ID: {}, Region ID: {}, Confidence: {:.3f}, Position: ({:.2f}, {:.2f}), Size: ({:.2f}, {:.2f})",
+            landmark.class_id, GetRegionString(landmark.region_id), landmark.confidence, landmark.x, landmark.y, landmark.height, landmark.width);
+    }
 
     return 0;
 }

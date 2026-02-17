@@ -3,6 +3,8 @@ PyTorch to TensorRT Converter - State Dict Compatible
 Handles .pth files that contain only state_dict (OrderedDict)
 """
 
+import argparse
+import onnx
 import torch
 import torch.nn as nn
 import torchvision
@@ -60,7 +62,16 @@ def check_pt_content(pt_path):
         print(f"  ⚠ Unknown format: {type(checkpoint)}")
         return 'unknown', checkpoint
 
-def pt_to_trt(model_path, input_shape, model_architecture, device=None, fp16=True):
+
+def check_onnx(onnx_path):
+    try:
+        model = onnx.load(onnx_path)
+        onnx.checker.check_model(model)
+        print("✓ ONNX model is valid")
+    except Exception as e:
+        print(f"✗ ONNX model validation failed: {e}")
+
+def pt_to_trt(model_path, device=None, fp16=False):
     """
     Convert PyTorch .pt model to TensorRT .trt engine
     
@@ -100,46 +111,26 @@ def pt_to_trt(model_path, input_shape, model_architecture, device=None, fp16=Tru
         print(f"\n{'='*60}")
         print(f"Converting {pt_path} to {trt_path}")
         print(f"Device: {device}")
-        print(f"Input shape: {input_shape}")
         print(f"FP16 mode: {fp16}")
         print(f"{'='*60}\n")
         
         # Step 1: Load PyTorch model
         print("Step 1/3: Loading PyTorch model...")
         
-        # Check what's in the file
-        content_type, content = check_pt_content(pt_path)
+        model = create_model_architecture(pt_path)
         
-        if content_type == 'model':
-            # Complete model loaded
-            model = content
-        elif content_type in ['state_dict', 'checkpoint']:
-            # Need to load into architecture
-            if model_architecture is None:
-                print("\n✗ Error: state_dict found but no model architecture provided!")
-                print("\nYou need to define your model architecture and pass it as model_architecture parameter.")
-                print("See the example at the bottom of this script.")
-                return False
-            
-            # Initialize model
-            if isinstance(model_architecture, type):
-                # If it's a class, instantiate it
-                model = model_architecture()
-            else:
-                # Already an instance
-                model = model_architecture
-            
-            # Load state dict
-            print("  Loading state_dict into model architecture...")
-            model.load_state_dict(content)
-        else:
-            print(f"\n✗ Error: Unknown .pt file format: {type(content)}")
-            return False
-        
-        model.eval()
+        stride = model.model.stride
+        nc     = model.model.nc
+        imgsz  = model.model.args["imgsz"]
+        print(f"  Model stride: {stride}")
+        print(f"  Model number of classes: {nc}")
+        print(f"  Model image size: {imgsz}")
+        new_imgsz = 4608
+        input_shape = (1, 3, new_imgsz, new_imgsz)
+        # model.eval()
         
         # Convert model to FP32 to avoid dtype mismatches during ONNX export
-        model = model.float()
+        # model = model.float()
         model.to(device)
         print("  ✓ Model loaded successfully (converted to FP32 for export)")
         
@@ -150,23 +141,40 @@ def pt_to_trt(model_path, input_shape, model_architecture, device=None, fp16=Tru
         dummy_input = torch.randn(input_shape).to(device)
         
         # Use legacy TorchScript-based exporter for compatibility
-        with torch.no_grad():
-            torch.onnx.export(
-                model,
-                dummy_input,
-                onnx_path,
-                export_params=True,
-                opset_version=17,
-                do_constant_folding=True,
-                input_names=['l_x_'],        # Must match C++ runtimes.cpp
-                output_names=['sigmoid_1'],  # Must match C++ runtimes.cpp
-                dynamic_axes={
-                    'l_x_': {0: 'batch'},
-                    'sigmoid_1': {0: 'batch'}
-                },
-                verbose=False# ,
-                # dynamo=False  # Use legacy exporter
-            )
+        # with torch.no_grad():
+        #     torch.onnx.export(
+        #         model,
+        #         dummy_input,
+        #         onnx_path,
+        #         export_params=True,
+        #         opset_version=17,
+        #         # do_constant_folding=True,
+        #         verbose=True# ,
+        #         # dynamo=False  # Use legacy exporter
+        #     )
+        parser = argparse.ArgumentParser(description="Convert YOLO models.")
+        parser.add_argument("--format", type=str, default="onnx", help="Format to convert the models to")
+        #parser.add_argument("--imgsz", type=int, default=1216, help="Desired image size for the model input. Can be an integer for square images or a tuple (height, width) for specific dimensions.")
+        parser.add_argument("--half", type=bool, default=False, help="Enables FP16 (half-precision) quantization, reducing model size and potentially speeding up inference on supported hardware.")
+        parser.add_argument("--int8", type=bool, default=False, help="Activates INT8 quantization, further compressing the model and speeding up inference with minimal accuracy loss, primarily for edge devices.")
+        parser.add_argument("--batch", type=int, default=1, help="Specifies export model batch inference size or the max number of images the exported model will process concurrently in predict mode.")
+        parser.add_argument("--optimize", type=bool, default=False, help="Applies optimization for mobile devices when exporting to TorchScript, potentially reducing model size and improving performance.")
+        parser.add_argument("--nms", type=bool, default=False, help="Adds Non-Maximum Suppression (NMS) to the exported model when supported, improving detection post-processing efficiency.")
+        parser.add_argument("--device", type=str, default='cpu', help="Specifies the device for exporting: GPU (device=0), CPU (device=cpu), MPS for Apple silicon (device=mps) or DLA for NVIDIA Jetson (device=dla:0 or device=dla:1). TensorRT exports automatically use GPU.")
+        parser.add_argument("--imgsz", type=int, default=new_imgsz, help="Desired image size for the model input. Can be an integer for square images or a tuple (height, width) for specific dimensions.")
+        parser.add_argument("--dynamic", type=bool, default=False, help="Adds Non-Maximum Suppression (NMS) to the exported model when supported, improving detection post-processing efficiency.")
+        parser.add_argument("--verbose", type=bool, default=True, help="Enables verbose logging during export, providing detailed information about the export process and any potential issues.")
+        parser.add_argument("--input_names", type=list, default=['image'], help="List of input tensor names for the ONNX model.")
+        parser.add_argument("--output_names", type=list, default=['yolo_no_nms'], help="List of output tensor names for the ONNX model.")
+        # parser.add_argument("--workspace", type=int, default=1, help="Sets the maximum workspace size in GiB for TensorRT optimizations, balancing memory usage and performance. Use None for auto-allocation by TensorRT up to device maximum.")
+        config = vars(parser.parse_args())
+        rebuild =  True
+        if not os.path.exists(onnx_path) or rebuild:
+            onnx_path = model.export(**config)
+        else:
+            print(f"ONNX file already exists: {onnx_path}")
+        print(f"ONNX exported to: {onnx_path}")
+        check_onnx(onnx_path)
         print("  ✓ ONNX export successful")
         
         # Step 3: Build TensorRT engine
@@ -189,7 +197,7 @@ def pt_to_trt(model_path, input_shape, model_architecture, device=None, fp16=Tru
         print("  This may take a few minutes...")
         
         try:
-            TRT_LOGGER = trt.Logger(trt.Logger.WARNING)
+            TRT_LOGGER = trt.Logger(trt.Logger.VERBOSE)
             builder = trt.Builder(TRT_LOGGER)
         except Exception as e:
             print(f"  ✗ Failed to create TensorRT builder: {e}")
@@ -221,20 +229,22 @@ def pt_to_trt(model_path, input_shape, model_architecture, device=None, fp16=Tru
         config.set_memory_pool_limit(trt.MemoryPoolType.WORKSPACE, 1 << 30)  # 1GB
         
         # Add optimization profile for dynamic batch size
-        profile = builder.create_optimization_profile()
-        # Set min, optimal, and max batch sizes (using input shape from parameter)
-        min_shape = (1, input_shape[1], input_shape[2], input_shape[3])
-        opt_shape = (1, input_shape[1], input_shape[2], input_shape[3])
-        max_shape = (8, input_shape[1], input_shape[2], input_shape[3])
-        profile.set_shape("l_x_", min_shape, opt_shape, max_shape)  # Must match input name
-        config.add_optimization_profile(profile)
-        print("  ✓ Optimization profile added")
+        # profile = builder.create_optimization_profile()
+        # # Set min, optimal, and max batch sizes (using input shape from parameter)
+        # min_shape = (1, input_shape[1], input_shape[2], input_shape[3])
+        # opt_shape = (1, input_shape[1], input_shape[2], input_shape[3])
+        # max_shape = (8, input_shape[1], input_shape[2], input_shape[3])
+        # # Get the actual input tensor name from the network
+        # input_name = network.get_input(0).name
+        # profile.set_shape(input_name, min_shape, opt_shape, max_shape)
+        # config.add_optimization_profile(profile)
+        # print("  ✓ Optimization profile added")
         
-        if fp16 and builder.platform_has_fast_fp16:
-            config.set_flag(trt.BuilderFlag.FP16)
-            print("  ✓ FP16 mode enabled")
-        elif fp16:
-            print("  ⚠ FP16 requested but not supported on this platform")
+        # if fp16 and builder.platform_has_fast_fp16:
+        #     config.set_flag(trt.BuilderFlag.FP16)
+        #     print("  ✓ FP16 mode enabled")
+        # elif fp16:
+        #     print("  ⚠ FP16 requested but not supported on this platform")
         
         # Build engine
         print("  Building engine (this is the slow part)...")
@@ -278,29 +288,9 @@ def pt_to_trt(model_path, input_shape, model_architecture, device=None, fp16=Tru
 # DEFINE YOUR MODEL ARCHITECTURE HERE
 # ============================================================================
 
-class ClassifierEfficient(nn.Module):
-    """
-    EfficientNet-B0 based classifier for region classification.
-    40 output classes for different geographic regions.
-    """
-    def __init__(self, num_classes=40):
-        super(ClassifierEfficient, self).__init__()
-
-        self.num_classes = num_classes
-        self.device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
-
-        weights = torchvision.models.EfficientNet_B0_Weights.DEFAULT
-        self.efficientnet = torchvision.models.efficientnet_b0(weights=weights)
-        for param in self.efficientnet.features[:3].parameters():
-            param.requires_grad = False
-        num_features = self.efficientnet.classifier[1].in_features
-        self.efficientnet.classifier[1] = nn.Linear(num_features, num_classes)
-        self.sigmoid = nn.Sigmoid()
-
-    def forward(self, x):
-        x = self.efficientnet(x)
-        x = self.sigmoid(x)
-        return x
+def create_model_architecture(path):
+    model = YOLO(path)
+    return model
 
 
 # ============================================================================
@@ -310,16 +300,14 @@ class ClassifierEfficient(nn.Module):
 if __name__ == "__main__":
     
     # ========== CONFIGURATION - MODIFY THESE VALUES ==========
-    MODEL_PATH = "rc_model_weights"
-    INPUT_SHAPE = (1, 3, 224, 224)  # (batch_size, channels, height, width)
+    INPUT_SHAPE = (1, 3, 640, 640)  # (batch_size, channels, height, width)
     
     # Create model architecture instance
     # If your .pth contains only state_dict, you MUST provide the architecture
-    model_architecture = ClassifierEfficient()
     
     # If your .pth contains the complete model, set this to None:
     # model_architecture = None
-    ld_folder = "models/V1/trained-ld/"
+    ld_folder = "models/V2/trained-ld/"
 
     list_folder = os.listdir(ld_folder)
     print(list_folder)
@@ -327,12 +315,9 @@ if __name__ == "__main__":
     for folder in list_folder:
         if not os.path.isdir(os.path.join(ld_folder, folder)):
             continue
-        path = os.path.join(ld_folder, folder, f"{folder}_nadir")
+        path = os.path.join(ld_folder, folder, f"{folder}_weights")
         print(f"Converting model at: {path}")
         pt_to_trt(
             model_path=path,
-            input_shape=INPUT_SHAPE,
-            model_architecture=model_architecture,  # Your model architecture
-            device=None,  # Auto-detect
-            fp16=True     # Enable FP16
+            fp16=False     # Enable FP16
         )

@@ -33,12 +33,13 @@ void Orchestrator::Initialize(const std::string& rc_engine_path, const std::stri
     {
         std::string region_str = std::string(GetRegionString(region_id));
 
+        trt_path = ld_engine_folder_path + "/" + region_str + "/" + region_str + "_weights.trt";
+        csv_path = ld_engine_folder_path + "/" + region_str + "/bounding_boxes.csv";
+        
         // ld_nets_.emplace(region_id, LDNet(region_id));
-        ld_nets_.try_emplace(region_id, region_id); 
+        ld_nets_.try_emplace(region_id, region_id, csv_path);
         //ld_nets_.insert(std::make_pair(region_id, LDNet(region_id)));
 
-        trt_path = ld_engine_folder_path + "/" + region_str + "/" + region_str + "_nadir.trt";
-        csv_path = ld_engine_folder_path + "/" + region_str + "/" + region_str + "_top_salient.csv";
         spdlog::info("Loading model for region {}: TRT path: {}, CSV path: {}", region_str, trt_path, csv_path);
         ld_net_status = ld_nets_.at(region_id).LoadEngine(trt_path);
         if (ld_net_status != EC::OK) 
@@ -74,7 +75,7 @@ size_t Orchestrator::GetMemorySize(const nvinfer1::Dims& dims, size_t element_si
     return size;
 }
 
-void Orchestrator::PreprocessImg(cv::Mat img, cv::Mat& out_chw_img)
+void Orchestrator::RCPreprocessImg(cv::Mat img, cv::Mat& out_chw_img)
 {
     // TODO: optimize and remove copies. Leverage GPU
 
@@ -115,6 +116,16 @@ void Orchestrator::PreprocessImg(cv::Mat img, cv::Mat& out_chw_img)
     for (int i = 0; i < std::min(10, out_chw_img.rows); ++i) {
         spdlog::info("Pixel {}: {}", i, out_chw_img.at<float>(i));
     }*/
+}
+
+void Orchestrator::LDPreprocessImg(cv::Mat img, cv::Mat& out_chw_img)
+{
+    cv::Mat float_img;
+    img.convertTo(float_img, CV_32F, 1.0 / 255.0);  // Correctly normalize
+    // Convert HWC (224x224x3) to CHW (3x224x224)
+    std::vector<cv::Mat> channels(3);
+    cv::split(float_img, channels);  // Split into individual float32 channels
+    cv::vconcat(channels, out_chw_img);  // Stack channels vertically (CHW format)
 }
 
 
@@ -187,7 +198,7 @@ EC Orchestrator::ExecFullInference()
     cv::Mat chw_img;
 
     // Preprocess the image
-    PreprocessImg(img_buff_, chw_img);
+    RCPreprocessImg(img_buff_, chw_img);
     spdlog::info("Image preprocessed to CHW format with shape: {}x{}x{}", chw_img.rows, chw_img.cols, chw_img.channels());
 
     // Run the RC net 
@@ -211,38 +222,52 @@ EC Orchestrator::ExecFullInference()
         }
     }
 
-
-
-    // TODO: LD selection
+    // TODO: Recheck LD selection process
+    spdlog::info("Regions detected in the frame: {}", original_frame_->GetRegionIDs().size());
     std::string trt_path;
     std::string csv_path;
-    for(const auto& region_id : current_frame_->GetRegionIDs())
+    LDNet* ld_net = nullptr;
+    if (original_frame_->GetRegionIDs().empty())
     {
-        std::string region_str = std::string(GetRegionString(region_id));
+        spdlog::warn("No regions detected by RCNet. Skipping LD inference.");
+        return EC::OK; // Not an error, just no regions to run LD on
+    }
+    for(const auto& region_id : original_frame_->GetRegionIDs())
+    {
+        if (ld_nets_.find(region_id) == ld_nets_.end())
+        {
+            spdlog::error("No LDNet found for region: {}", GetRegionString(region_id));
+            continue;
+        }
+        if (!ld_nets_.at(region_id).IsInitialized())
+        {
+            spdlog::error("LDNet for region {} is not initialized.", GetRegionString(region_id));
+            continue;
+        }
+        ld_net = &ld_nets_.at(region_id);
         
-        trt_path = "models/V1/trained-ld/" + region_str + "/" + region_str + "_nadir.trt";
-        csv_path = "models/trained-ld/" + region_str + "/" + region_str + "_top_salient.csv";
-
-        spdlog::info("Loading model for region {}: TRT path: {}, CSV path: {}", region_str, trt_path, csv_path);
-        // if (!orchestrator.LoadModelForRegion(region_id, trt_path, csv_path))
-        // {
-        //     spdlog::error("Failed to load model for region: {}", region_str);
-        //     return 1;
-        // }
+        spdlog::info("Selected LDNet for region: {}", GetRegionString(region_id));
+        break;
     }
 
-    // TODO: LD inference 
-    // auto ld_host_output = std::unique_ptr<float[]>{new float[LD_NUM_CLASSES]};
-    // EC ld_inference_status = ld_net_.Infer(chw_img.data, ld_host_output.get());
-    // if (ld_inference_status != EC::OK) 
-    // {
-    //     spdlog::error("LDNet inference failed with error code: {}", to_uint8(ld_inference_status));
-    //     LogError(ld_inference_status);
-    //     return ld_inference_status;
-    // }
+    // LD inference
+    cv::Mat ld_chw_img;
+    LDPreprocessImg(img_buff_, ld_chw_img);
 
-    // TODO: Populate landmarks
+    int output_size = ld_net->GetOutputSize();
+    auto ld_host_output = std::unique_ptr<float[]>{new float[output_size]};
+    EC ld_inference_status = ld_net->Infer(ld_chw_img.data, ld_host_output.get());
+    if (ld_inference_status != EC::OK) 
+    {
+        spdlog::error("LDNet inference failed with error code: {}", to_uint8(ld_inference_status));
+        LogError(ld_inference_status);
+        return ld_inference_status;
+    } else {
+        spdlog::info("LDNet inference completed successfully. Output size: {}", output_size);
+    }
 
+    // Non-max suppression and populate landmarks
+    ld_net->PostprocessOutput(ld_host_output.get(), original_frame_); // This will populate the landmarks in the original frame based on the LD output
 
     num_inference_performed_on_current_frame_++;
 

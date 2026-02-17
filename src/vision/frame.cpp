@@ -177,10 +177,14 @@ void Frame::AddRegion(RegionID region_id)
     _region_ids.push_back(region_id);
 }
 
-
-void Frame::AddLandmark(float x, float y, uint16_t class_id, RegionID region_id)
+void Frame::AddLandmark(const Landmark& landmark)
 {
-    _landmarks.emplace_back(x, y, class_id, region_id);
+    _landmarks.push_back(landmark);
+}
+
+void Frame::AddLandmark(float x, float y, uint16_t class_id, RegionID region_id, float height_, float width_, float confidence_)
+{
+    _landmarks.emplace_back(x, y, class_id, region_id, height_, width_, confidence_);
 }
 
 void Frame::ClearLandmarks()

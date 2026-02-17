@@ -218,6 +218,7 @@ void Frame::AddRegion(RegionID region_id, float confidence)
 {
     _region_ids.push_back(region_id);
     _region_confidences.push_back(confidence);
+    _rank = 2.0f;
 }
 
 void Frame::ClearRegions()

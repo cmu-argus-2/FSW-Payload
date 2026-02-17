@@ -1,8 +1,10 @@
 [INIT]
 # INT
-collection_period = 10 # sec
+collection_period = 60 # sec
+# img_collection_period = 60 # sec
+# imu_collection_period = 1  # sec
 # INT
-target_samples = 20 # samples 
+target_samples = 10 # samples 
 # INT
 max_collection_time = 3600 # sec
 # INT 
@@ -10,8 +12,18 @@ max_downtime_for_restart_in_minutes = 120 # min : difference of time to allow be
 
 [BATCH_OPT] # Nonlinear Batch-LSQ
 # INT or floating
-tolerance_solver = 0.05 # placeholder
+solver_function_tolerance = 1e-6
+# INT or floating
+solver_parameter_tolerance = 1e-10
+# INT or floating
+solver_gradient_check_relative_precision = 1e-6 # TODO: implement parsing
 # INT
 max_iterations = 10000 # iterations
+# INT
+bias_mode = 1 # 0: no gyro bias; 1: fixed/constant gyro bias; 2: time-varying bias
+# INT or floating
+max_dt = 60.0 # largest time interval between states
+
+
 # TODO
 

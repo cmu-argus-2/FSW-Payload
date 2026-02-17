@@ -1,4 +1,4 @@
-cmake_minimum_required(VERSION 3.11)
+cmake_minimum_required(VERSION 3.16)
 set(CMAKE_CXX_STANDARD 17)
 
 project(PAYLOAD VERSION 1.0 LANGUAGES CXX)
@@ -12,6 +12,7 @@ set(CMAKE_CXX_COMPILER_LAUNCHER ccache)
 
 ##### COMPILE DEFINITIONS
 # Executable directory
+set(CMAKE_EXPORT_COMPILE_COMMANDS ON)
 set(CMAKE_RUNTIME_OUTPUT_DIRECTORY ${CMAKE_SOURCE_DIR}/bin/)
 add_compile_definitions(EXECUTABLE_DIR=\"${CMAKE_RUNTIME_OUTPUT_DIRECTORY}\")
 # Preprocessor definition for the path of the inter-process fifo 
@@ -31,12 +32,21 @@ set(CMAKE_RUNTIME_OUTPUT_DIRECTORY ${CMAKE_SOURCE_DIR}/bin/)
 set(SPDLOG_FMT_EXTERNAL OFF)
 find_package(spdlog REQUIRED)
 find_package(Eigen3 3.3 REQUIRED NO_MODULE)
+include_directories(${EIGEN_INCLUDE_DIR})
+link_directories(${EIGEN_LIBRARY_DIRS})
+find_package(Ceres 2.2.0 REQUIRED)
 find_package(OpenCV REQUIRED)
-find_package(GTest REQUIRED)
-find_package(CUDA REQUIRED)
-# find_library(CUDART_LIBRARY cudart REQUIRED)
-find_library(CUDART_LIBRARY cudart HINTS ENV CUDART_LIBRARY ${CUDA_TOOLKIT_ROOT_DIR}/lib64)
-find_library(NVINFER_LIBRARY nvinfer REQUIRED)
+
+enable_language(C)
+find_package(HDF5 REQUIRED COMPONENTS C CXX HL)
+list(APPEND CMAKE_PREFIX_PATH "${PWD}/depsbuild/install")
+find_package(HighFive REQUIRED)
+if(CUDA_ENABLED)
+    find_package(CUDA REQUIRED)
+    # find_library(CUDART_LIBRARY cudart REQUIRED)
+    find_library(CUDART_LIBRARY cudart HINTS ENV CUDART_LIBRARY ${CUDA_TOOLKIT_ROOT_DIR}/lib64)
+    find_library(NVINFER_LIBRARY nvinfer REQUIRED)
+endif()
 find_package(nlohmann_json REQUIRED)
 
 
@@ -45,7 +55,10 @@ include_directories(SYSTEM ${OpenCV_INCLUDE_DIRS})
 # Include the directories for header files
 include_directories(${PROJECT_SOURCE_DIR}/include)
 include_directories(SYSTEM ${PROJECT_SOURCE_DIR}/external) # ignore warnings from external libraries
-include_directories(SYSTEM ${CUDA_INCLUDE_DIRS})
+if(CUDA_ENABLED)
+    include_directories(SYSTEM ${CUDA_INCLUDE_DIRS})
+    # include_directories(${CUDA_HOME}/include)
+endif()
 # Add the source files subdirectory
 set(CMAKE_POSITION_INDEPENDENT_CODE ON)
 add_subdirectory(src)
@@ -81,8 +94,11 @@ target_link_libraries(${PROJECT_NAME}
     ${OpenCV_LIBS}
     # ${PAYLOAD_CONDITIONAL_LIBS}
 )
-# message(STATUS "NN_ENABLED: ${NN_ENABLED}")
-# target_compile_definitions(${PROJECT_NAME} PRIVATE NN_ENABLED=${NN_ENABLED})
+
+
+message(STATUS "NN_ENABLED: ${NN_ENABLED}")
+target_compile_definitions(${PROJECT_NAME} PRIVATE NN_ENABLED=${NN_ENABLED})
+
 
 ##### COMMAND-LINE INTERFACE
 find_package(Threads REQUIRED)

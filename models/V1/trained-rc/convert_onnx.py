@@ -8,7 +8,7 @@ if __name__ == "__main__":
 
     device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
     model = ClassifierEfficient().to(device)
-    model_weights_path = os.path.join("rc_model_weights.pth")
+    model_weights_path = os.path.join("/models/V1/trained-rc/effnet_0997acc.pth")
     # Load Custom model weights
     model.load_state_dict(torch.load(model_weights_path, map_location=device))
     model.eval()
@@ -20,7 +20,7 @@ if __name__ == "__main__":
     torch.onnx.export(
         model,                  # model to export
         (input_tensor,),        # inputs of the model,
-        "rc_model_weights.onnx",        # filename of the ONNX model
+        "effnet_0997acc.onnx",        # filename of the ONNX model
         input_names=["input"],  # Rename inputs for the ONNX model
         dynamo=True             
     )

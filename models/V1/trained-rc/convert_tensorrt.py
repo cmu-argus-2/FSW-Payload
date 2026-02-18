@@ -93,4 +93,5 @@ def build_engine(model_path):
     return engine
 
 if __name__ == '__main__':
-    build_engine( model_path="effnet.onnx")
+    build_engine( model_path="/home/argus/Documents/batch_opt/FSW3-Payload/effnet_0997acc.onnx")    
+    # build_engine( model_path="effnet.onnx")

@@ -135,4 +135,12 @@ constexpr std::array<std::string_view, 16> GetAllRegionStrings() {
     }};
 }
 
+struct Region
+{
+    RegionID id;
+    float confidence;
+
+    Region(RegionID id_, float confidence_) : id(id_), confidence(confidence_) {}
+};
+
 #endif // REGIONS_HPP

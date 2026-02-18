@@ -76,13 +76,6 @@ inline const char* ProcessingStageToString(ProcessingStage s) {
 class Frame 
 {
 public:
-    struct RegionLandmarkData
-    {
-        RegionID region_id;
-        float region_confidence;
-        std::vector<uint16_t> landmark_ids;
-        std::vector<float> landmark_confidences;
-    };
 
     Frame();
     Frame(int cam_id, const cv::Mat& img, std::uint64_t timestamp);
@@ -110,12 +103,12 @@ public:
     nlohmann::ordered_json toOrderedJson() const;
     void fromJson(const Json& j);
 
-
-    const std::vector<RegionID>& GetRegionIDs() const;
-    const std::vector<float>& GetRegionConfidences() const;
+    const std::vector<Region>& GetRegions() const;
+    const std::vector<RegionID> GetRegionIDs() const;
+    const std::vector<float> GetRegionConfidences() const;
     const std::vector<Landmark>& GetLandmarks() const;
-    std::vector<RegionLandmarkData> GetRegionLandmarkData() const;
     
+    void AddRegion(const Region& region);
     void AddRegion(RegionID region_id, float confidence);
     void ClearRegions();
     void AddLandmark(const Landmark& landmark); 
@@ -133,8 +126,7 @@ private:
     ImageState _annotation_state;
     float _rank; // score to rank images with the same annotation_state (higher = better)
     ProcessingStage _processing_stage;
-    std::vector<RegionID> _region_ids;  // Container for regions
-    std::vector<float> _region_confidences; // Confidence values aligned with _region_ids
+    std::vector<Region> _regions;  // Container for regions
     std::vector<Landmark> _landmarks;  // Container for landmarks
 
     // mutex is not copyable
@@ -145,8 +137,6 @@ private:
 // Helper functions for parsing the output of RC net and LD net
 namespace VisionJson
 {
-
-using Json = nlohmann::json;
 
 inline std::vector<std::string> RegionIdsToStrings(const std::vector<RegionID>& region_ids)
 {

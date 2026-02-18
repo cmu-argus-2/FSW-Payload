@@ -2,6 +2,7 @@
 #include "spdlog/spdlog.h"
 #include "vision/frame.hpp"
 #include "core/data_handling.hpp"
+#include "core/timing.hpp"
 #include "inference/orchestrator.hpp"
 #include "vision/regions.hpp"
 
@@ -27,7 +28,8 @@ int main(int argc, char** argv)
     orchestrator.Initialize(rc_trt_file_path, ld_trt_folder_path);
 
     Frame frame; // empty frame 
-    if (!DH::ReadImageFromDisk(sample_image_path, frame))
+    auto timestamp = timing::GetCurrentTimeMs();
+    if (!DH::ReadImageFromDisk(sample_image_path, frame, 0,  static_cast<uint64_t>(timestamp)))
     {
         spdlog::error("Failed to read image from disk: {}", sample_image_path);
         return 1;

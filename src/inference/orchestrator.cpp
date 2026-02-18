@@ -140,6 +140,8 @@ void Orchestrator::LDPreprocessImg(cv::Mat img, cv::Mat& out_chw_img)
 {
     cv::Mat float_img;
     img.convertTo(float_img, CV_32F, 1.0 / 255.0);  // Correctly normalize
+    // TODO: letterbox the image to 4608 x 4608, or just have the LD nets be trained on the actual image size
+    
     // Convert HWC (224x224x3) to CHW (3x224x224)
     std::vector<cv::Mat> channels(3);
     cv::split(float_img, channels);  // Split into individual float32 channels

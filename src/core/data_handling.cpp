@@ -419,7 +419,7 @@ std::string GetLatestImgBinPath()
 
 }
 
-bool ReadImageFromDisk(const std::string& file_path, Frame& frame_out)
+bool ReadImageFromDisk(const std::string& file_path, Frame& frame_out, int cam_id, std::uint64_t timestamp)
 {
     // Load the image into memory
     cv::Mat img = cv::imread(file_path, cv::IMREAD_COLOR); // Load the image from the file
@@ -431,7 +431,7 @@ bool ReadImageFromDisk(const std::string& file_path, Frame& frame_out)
     }
 
     // TODO: optional metadata extraction
-    frame_out.Update(-1, img, 0);
+    frame_out.Update(cam_id, img, timestamp);
 
     SPDLOG_INFO("Image loaded successfully from disk: {}", file_path);
     return true;

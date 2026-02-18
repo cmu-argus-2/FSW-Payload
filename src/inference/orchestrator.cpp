@@ -1,6 +1,7 @@
 #include "inference/orchestrator.hpp"
 #include "spdlog/spdlog.h"
 
+#include <filesystem>
 #include <opencv2/opencv.hpp>
 // #include <opencv2/core/cuda.hpp>
 // #include <opencv2/cudaarithm.hpp>
@@ -29,18 +30,23 @@ void Orchestrator::Initialize(const std::string& rc_engine_path, const std::stri
     std::string trt_path;
     std::string csv_path;
 
-    // TODO: LD is commented out to compile for now
-    // EC ld_net_status;
-    // for(const auto& region_id : GetAllRegionIDs())
-    // {
-    //     std::string region_str = std::string(GetRegionString(region_id));
+    EC ld_net_status;
+    size_t loaded_ld_nets = 0;
+    for(const auto& region_id : GetAllRegionIDs())
+    {
+        std::string region_str = std::string(GetRegionString(region_id));
 
         trt_path = ld_engine_folder_path + "/" + region_str + "/" + region_str + "_weights.trt";
         csv_path = ld_engine_folder_path + "/" + region_str + "/bounding_boxes.csv";
+
+        if (!std::filesystem::exists(trt_path) || !std::filesystem::exists(csv_path))
+        {
+            spdlog::warn("Skipping region {} (missing LD assets). TRT exists: {}, CSV exists: {}", 
+                        region_str, std::filesystem::exists(trt_path), std::filesystem::exists(csv_path));
+            continue;
+        }
         
-        // ld_nets_.emplace(region_id, LDNet(region_id));
         ld_nets_.try_emplace(region_id, region_id, csv_path);
-        //ld_nets_.insert(std::make_pair(region_id, LDNet(region_id)));
 
         spdlog::info("Loading model for region {}: TRT path: {}, CSV path: {}", region_str, trt_path, csv_path);
         ld_net_status = ld_nets_.at(region_id).LoadEngine(trt_path);
@@ -50,8 +56,18 @@ void Orchestrator::Initialize(const std::string& rc_engine_path, const std::stri
             continue;
         }
 
-    //     spdlog::info("LDNet successfully loaded for region: {}", region_str);
-    // }
+        spdlog::info("LDNet successfully loaded for region: {}", region_str);
+        loaded_ld_nets++;
+    }
+
+    if (loaded_ld_nets == 0)
+    {
+        spdlog::warn("No LD models were loaded from folder: {}", ld_engine_folder_path);
+    }
+    else
+    {
+        spdlog::info("Loaded {} LD model(s) from folder: {}", loaded_ld_nets, ld_engine_folder_path);
+    }
 
 }
 
@@ -195,7 +211,8 @@ EC Orchestrator::ExecFullInference()
         spdlog::warn("Inference already performed on the current frame. This will overwrite.");
         // TODO: clear
     }
-    original_frame_->ClearRegions(); // Is this right? May need to be changed
+    original_frame_->ClearRegions(); // Reset per-frame RC outputs
+    original_frame_->ClearLandmarks(); // Reset per-frame LD outputs
 
     img_buff_ = current_frame_->GetImg();
     cv::Mat chw_img;
@@ -251,6 +268,12 @@ EC Orchestrator::ExecFullInference()
         
         spdlog::info("Selected LDNet for region: {}", GetRegionString(region_id));
         break;
+    }
+
+    if (!ld_net)
+    {
+        spdlog::warn("No initialized LDNet matches RC output regions. Skipping LD inference for this frame.");
+        return EC::OK;
     }
 
     // LD inference

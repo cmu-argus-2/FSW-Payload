@@ -144,6 +144,32 @@ const std::vector<Landmark>& Frame::GetLandmarks() const
     return _landmarks;
 }
 
+std::vector<Frame::RegionLandmarkData> Frame::GetRegionLandmarkData() const
+{
+    std::vector<Frame::RegionLandmarkData> grouped_data;
+    grouped_data.reserve(_region_ids.size());
+
+    for (size_t i = 0; i < _region_ids.size(); ++i)
+    {
+        Frame::RegionLandmarkData region_data;
+        region_data.region_id = _region_ids[i];
+        region_data.region_confidence = (i < _region_confidences.size()) ? _region_confidences[i] : 0.0f;
+
+        for (const auto& landmark : _landmarks)
+        {
+            if (landmark.region_id == region_data.region_id)
+            {
+                region_data.landmark_ids.push_back(landmark.class_id);
+                region_data.landmark_confidences.push_back(landmark.confidence);
+            }
+        }
+
+        grouped_data.push_back(std::move(region_data));
+    }
+
+    return grouped_data;
+}
+
 const ImageState Frame::GetImageState() const
 {
     return _annotation_state;
@@ -173,8 +199,26 @@ nlohmann::ordered_json Frame::toOrderedJson() const // Order the Json keys
         j["annotation_state"] = static_cast<int>(_annotation_state);
         j["processing_stage"] = static_cast<int>(_processing_stage);
         j["rank"] = _rank;
-        j["RC_regions_detected"] = VisionJson::RegionIdsToStrings(_region_ids);
-        j["RC_region_confidences"] = _region_confidences;
+        j["regions_detected"] = VisionJson::RegionIdsToStrings(_region_ids);
+        j["region_confidences"] = _region_confidences;
+
+        // The landmarks are nested arrays with the same indexing as regions_detected and region_confidences
+        nlohmann::ordered_json landmark_ids_by_region = nlohmann::ordered_json::array();
+        nlohmann::ordered_json landmark_confidences_by_region = nlohmann::ordered_json::array();
+        nlohmann::ordered_json landmarks_detected_by_region = nlohmann::ordered_json::array();
+        const auto grouped_data = GetRegionLandmarkData();
+        for (const auto& region_data : grouped_data)
+        {
+            landmarks_detected_by_region.push_back(region_data.landmark_ids.size());
+            landmark_ids_by_region.push_back(region_data.landmark_ids);
+            landmark_confidences_by_region.push_back(region_data.landmark_confidences);
+        }
+
+        j["landmarks_by_region"] = {
+            {"landmarks_detected", landmarks_detected_by_region},
+            {"landmark_ids", landmark_ids_by_region},
+            {"landmark_confidences", landmark_confidences_by_region}
+        };
         
     } catch (const std::exception& e) {
         SPDLOG_ERROR("Failed to convert Frame to JSON: {}", e.what());
@@ -191,14 +235,14 @@ void Frame::fromJson(const Json& j) // Write values to JSON
         _processing_stage = static_cast<ProcessingStage>(j.at("processing_stage").get<int>());
         _rank = j.at("rank").get<float>();
 
-        if (j.contains("RC_regions_detected") && j.at("RC_regions_detected").is_array())
+        if (j.contains("regions_detected") && j.at("regions_detected").is_array())
         {
-            VisionJson::LoadRegionIdsFromJson(j.at("RC_regions_detected"), _region_ids);
+            VisionJson::LoadRegionIdsFromJson(j.at("regions_detected"), _region_ids);
         }
         _region_confidences.clear();
-        if (j.contains("RC_region_confidences") && j.at("RC_region_confidences").is_array())
+        if (j.contains("region_confidences") && j.at("region_confidences").is_array())
         {
-            for (const auto& conf : j.at("RC_region_confidences"))
+            for (const auto& conf : j.at("region_confidences"))
             {
                 _region_confidences.emplace_back(conf.get<float>());
             }
@@ -229,11 +273,19 @@ void Frame::ClearRegions()
 
 void Frame::AddLandmark(const Landmark& landmark)
 {
+    if (_landmarks.empty())
+    {
+    _rank = 3.0f;
+    }
     _landmarks.push_back(landmark);
 }
 
 void Frame::AddLandmark(float x, float y, uint16_t class_id, RegionID region_id, float height_, float width_, float confidence_)
 {
+    if (_landmarks.empty())
+    {
+    _rank = 3.0f;
+    }
     _landmarks.emplace_back(x, y, class_id, region_id, height_, width_, confidence_);
 }
 

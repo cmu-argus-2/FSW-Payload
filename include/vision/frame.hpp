@@ -104,6 +104,7 @@ public:
     std::uint64_t GetTimestamp() const;
     const ImageState GetImageState() const;
     const ProcessingStage GetProcessingStage() const;
+    void SetProcessingStage(ProcessingStage stage);
     const float GetRank() const;
     Json toJson() const;
     nlohmann::ordered_json toOrderedJson() const;

@@ -242,6 +242,8 @@ EC Orchestrator::ExecFullInference()
         }
     }
 
+    original_frame_->SetProcessingStage(ProcessingStage::RCNeted);
+
     // TODO: Recheck LD selection process
     spdlog::info("Regions detected in the frame: {}", original_frame_->GetRegionIDs().size());
     std::string trt_path;
@@ -294,6 +296,7 @@ EC Orchestrator::ExecFullInference()
 
     // Non-max suppression and populate landmarks
     ld_net->PostprocessOutput(ld_host_output.get(), original_frame_); // This will populate the landmarks in the original frame based on the LD output
+    original_frame_->SetProcessingStage(ProcessingStage::LDNeted);
 
     num_inference_performed_on_current_frame_++;
 

@@ -13,7 +13,7 @@ Frame::Frame()
     _timestamp(0),
     _img_mtx(std::make_shared<std::mutex>()),
     _annotation_state(ImageState::NotEarth),
-    _rank(0.0f),
+    _rank(static_cast<float>(ImageState::NotEarth)),
     _processing_stage(ProcessingStage::NotPrefiltered),
     _region_ids({}),
     _region_confidences({}),
@@ -27,7 +27,7 @@ Frame::Frame(int cam_id, const cv::Mat& img, std::uint64_t timestamp)
       _timestamp(timestamp),
       _img_mtx(std::make_shared<std::mutex>()),
       _annotation_state(ImageState::NotEarth),
-      _rank(0.0f),
+    _rank(static_cast<float>(ImageState::NotEarth)),
       _processing_stage(ProcessingStage::NotPrefiltered),
       _region_ids({}),
       _region_confidences({}),
@@ -42,7 +42,7 @@ _img(std::move(img)),
 _timestamp(timestamp),
 _img_mtx(std::make_shared<std::mutex>()),
 _annotation_state(ImageState::NotEarth),
-_rank(0.0f),
+_rank(static_cast<float>(ImageState::NotEarth)),
 _processing_stage(ProcessingStage::NotPrefiltered),
 _region_ids({}),
 _region_confidences({}),
@@ -180,6 +180,11 @@ const ProcessingStage Frame::GetProcessingStage() const
     return _processing_stage;
 }
 
+void Frame::SetProcessingStage(ProcessingStage stage)
+{
+    _processing_stage = stage;
+}
+
 const float Frame::GetRank() const
 {
     return _rank;
@@ -262,7 +267,7 @@ void Frame::AddRegion(RegionID region_id, float confidence)
 {
     _region_ids.push_back(region_id);
     _region_confidences.push_back(confidence);
-    _rank = 2.0f;
+    _rank = static_cast<float>(ImageState::HasRegion);
 }
 
 void Frame::ClearRegions()
@@ -275,7 +280,7 @@ void Frame::AddLandmark(const Landmark& landmark)
 {
     if (_landmarks.empty())
     {
-    _rank = 3.0f;
+    _rank = static_cast<float>(ImageState::HasLandmark);
     }
     _landmarks.push_back(landmark);
 }
@@ -284,7 +289,7 @@ void Frame::AddLandmark(float x, float y, uint16_t class_id, RegionID region_id,
 {
     if (_landmarks.empty())
     {
-    _rank = 3.0f;
+    _rank = static_cast<float>(ImageState::HasLandmark);
     }
     _landmarks.emplace_back(x, y, class_id, region_id, height_, width_, confidence_);
 }
@@ -310,7 +315,7 @@ void Frame::RunPrefiltering()
     else
     {
         _annotation_state = ImageState::NotEarth;
-        _rank = 0.0f;
+        _rank = static_cast<float>(ImageState::NotEarth);
     }
     
     _processing_stage = ProcessingStage::Prefiltered;

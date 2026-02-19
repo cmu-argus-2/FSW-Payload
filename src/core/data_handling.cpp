@@ -30,7 +30,7 @@ bool MakeNewDirectory(std::string_view directory_path)
     } else 
     {
         SPDLOG_CRITICAL("Failed to create folder: {}.", directory_path);
-    }    
+    }
 
     return success;
 
@@ -176,7 +176,7 @@ void StoreFrameMetadataToDisk(Frame& frame, std::string_view target_folder)
     */
     SPDLOG_INFO("Saved metadata to disk: {}", file_path);
     SPDLOG_DEBUG("Metadata file size: {} bytes", GetFileSize(file_path));
-    
+
 }
 
 std::string StoreRawImgToDisk(std::uint64_t timestamp, int cam_id, const cv::Mat& img, std::string_view target_folder)
@@ -203,7 +203,7 @@ bool GetLatestRawFilePath(std::filesystem::directory_entry& latest_file)
     {
         if (entry.is_regular_file()) 
         {
-            
+
             if (!found || entry.last_write_time() > latest_file.last_write_time()) 
             {
                 latest_file = entry;
@@ -635,6 +635,144 @@ EC GetCommsFilePath(std::string& path_out)
     path_out = latest_file.path().string();
 
     return EC::OK;
+}
+
+/* 
+ * PacketizeJsonFile()
+ * 
+ * Function to convert a .JSON (text) file to packets
+ * 
+ * Inputs:
+ *  - json_path : string containing JSON file path
+ *  - output_path : string containing file path to send packets to
+ * 
+ * Outputs:
+ *  - true if conversion and send successful, else false
+ */
+bool PacketizeJsonFile(const std::string& json_path, const std::string& output_path)
+{
+    // Open the JSON file in binary mode to get the raw UTF-8 bytes
+    // exactly as they exist on disk, without any newline translation
+    std::ifstream file(json_path, std::ios::binary);
+    if (!file.is_open())
+    {
+        SPDLOG_ERROR("Failed to open JSON file for packetization: {}", json_path);
+        LogError(EC::FILE_NOT_FOUND);
+        return false;
+    }
+
+    std::vector<uint8_t> raw_bytes(
+        (std::istreambuf_iterator<char>(file)),
+         std::istreambuf_iterator<char>()
+    );
+    file.close();
+
+    if (raw_bytes.empty())
+    {
+        SPDLOG_WARN("JSON file is empty, nothing to packetize: {}", json_path);
+        return false;
+    }
+
+    // Strip UTF-8 BOM (0xEF 0xBB 0xBF) if present — some Windows editors
+    // prepend this and strict JSON parsers will reject it on reassembly
+    if (raw_bytes.size() >= 3 &&
+        raw_bytes[0] == 0xEF &&
+        raw_bytes[1] == 0xBB &&
+        raw_bytes[2] == 0xBF)
+    {
+        SPDLOG_WARN("UTF-8 BOM detected in {}, stripping before packetization", json_path);
+        raw_bytes.erase(raw_bytes.begin(), raw_bytes.begin() + 3);
+    }
+
+    // Split the raw bytes into DH_MAX_PAYLOAD_SIZE chunks
+    std::vector<std::vector<uint8_t>> payloads;
+    size_t offset = 0;
+    while (offset < raw_bytes.size())
+    {
+        size_t chunk_size = std::min(static_cast<size_t>(DH_MAX_PAYLOAD_SIZE),
+                                     raw_bytes.size() - offset);
+        payloads.emplace_back(raw_bytes.begin() + offset,
+                              raw_bytes.begin() + offset + chunk_size);
+        offset += chunk_size;
+    }
+
+    SPDLOG_INFO("Packetizing JSON file '{}' into {} packet(s) -> '{}'",
+                json_path, payloads.size(), output_path);
+
+    if (!WriteFixedPacketFile(output_path, payloads))
+    {
+        SPDLOG_ERROR("Failed to write packetized JSON to: {}", output_path);
+        return false;
+    }
+
+    SPDLOG_INFO("JSON packetization complete. Output size: {} bytes", GetFileSize(output_path));
+
+    return true;
+
+    // TODO: do we need checksums to make sure data is correct?
+}
+
+/* 
+ * DepacketizeJsonFile()
+ * 
+ * Function to convert byte packets back into full .JSON (text) file
+ * 
+ * Inputs:
+ *  - input_path : file path to the packets to be reassembled
+ *  - json_output_path : file path for reconstructed file
+ * 
+ * Outputs:
+ *  - true if reassembly successful, else false
+ */
+bool DepacketizeJsonFile(const std::string& input_path, const std::string& json_output_path)
+{
+    // Read the fixed-packet file back into payload chunks
+    std::vector<std::vector<uint8_t>> payloads;
+    if (!ReadFixedPacketFile(input_path, payloads))
+    {
+        SPDLOG_ERROR("Failed to read packetized file for JSON reassembly: {}", input_path);
+        return false;
+    }
+
+    if (payloads.empty())
+    {
+        SPDLOG_WARN("No payloads found in file: {}", input_path);
+        return false;
+    }
+
+    // Reassemble all payload chunks back into a contiguous byte buffer
+    std::vector<uint8_t> raw_bytes;
+    for (const auto& chunk : payloads)
+        raw_bytes.insert(raw_bytes.end(), chunk.begin(), chunk.end());
+
+    // Validate that the result is plausible UTF-8 JSON before writing
+    // (quick sanity check — looks for opening brace or bracket)
+    if (!raw_bytes.empty() && raw_bytes.front() != '{' && raw_bytes.front() != '[')
+    {
+        SPDLOG_WARN("Reassembled data does not appear to start with a JSON object or array. "
+                    "First byte: 0x{:02X}", raw_bytes.front());
+    }
+
+    // Write the reassembled bytes back out as a .json file
+    std::ofstream out(json_output_path, std::ios::binary | std::ios::trunc);
+    if (!out.is_open())
+    {
+        SPDLOG_ERROR("Failed to open output JSON file for writing: {}", json_output_path);
+        LogError(EC::FILE_NOT_FOUND);
+        return false;
+    }
+
+    out.write(reinterpret_cast<const char*>(raw_bytes.data()), raw_bytes.size());
+    out.close();
+
+    SPDLOG_INFO("JSON reassembly complete: {} packets -> '{}' ({} bytes)",
+                payloads.size(), json_output_path, raw_bytes.size());
+
+    SPDLOG_DEBUG("Output JSON file size: {} bytes", GetFileSize(json_output_path));
+
+    return true;
+
+    // TODO: do we need checksums to make sure data is correct?
 }
 
 } // namespace DH

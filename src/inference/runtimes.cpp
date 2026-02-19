@@ -99,6 +99,19 @@ EC RCNet::LoadEngine(const std::string& engine_path)
     return EC::OK;
 }
 
+EC RCNet::Free()
+{
+    if (context_) context_.reset();
+    if (engine_) engine_.reset();
+    if (runtime_) runtime_.reset();
+    buffers_.free();
+    if (stream_) { cudaStreamDestroy(stream_); stream_ = nullptr; }
+    initialized_ = false;
+    spdlog::info("RCNet freed.");
+    return EC::OK;
+}
+
+
 EC RCNet::Infer(const void* input_data, void* output)
 {
     
@@ -239,6 +252,18 @@ EC LDNet::LoadEngine(const std::string& engine_path)
 
     initialized_ = true;
 
+    return EC::OK;
+}
+
+EC LDNet::Free()
+{
+    if (context_) context_.reset();
+    if (engine_) engine_.reset();
+    if (runtime_) runtime_.reset();
+    buffers_.free();
+    if (stream_) { cudaStreamDestroy(stream_); stream_ = nullptr; }
+    initialized_ = false;
+    spdlog::info("LDNet freed.");
     return EC::OK;
 }
 

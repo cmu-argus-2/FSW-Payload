@@ -16,6 +16,20 @@ Orchestrator::Orchestrator()
 
 }
 
+void Orchestrator::FreeEngines()
+{
+    rc_net_.Free();
+    ld_nets_.clear();
+    current_frame_ = nullptr;
+    original_frame_ = nullptr;
+    spdlog::info("Orchestrator engines freed.");
+}
+
+Orchestrator::~Orchestrator()
+{
+    FreeEngines();
+}
+
 void Orchestrator::Initialize(const std::string& rc_engine_path, const std::string& ld_engine_folder_path)
 {
     // Initialize the RCNet runtime

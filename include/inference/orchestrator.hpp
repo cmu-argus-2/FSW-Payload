@@ -12,7 +12,9 @@ class Orchestrator
 
 public:
     Orchestrator();
-    // ~Orchestrator();
+    ~Orchestrator();
+
+    void FreeEngines();
 
     void Initialize(const std::string& rc_engine_path, const std::string& ld_engine_folder_path);  
 

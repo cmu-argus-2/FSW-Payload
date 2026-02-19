@@ -58,6 +58,7 @@ public:
     ~RCNet();
 
     EC LoadEngine(const std::string& engine_path);
+    EC Free();
     bool IsInitialized() const { return initialized_; }
     EC Infer(const void* input_data, void* output);
 
@@ -95,6 +96,7 @@ public:
 
     EC LoadEngine(const std::string& engine_path);
     bool IsInitialized() const { return initialized_; }
+    EC Free();
     EC Infer(const void* input_data, void* output);
     int GetNumLandmarks() const { return num_landmarks_; }
     int GetOutputSize() const { return output_size_; }

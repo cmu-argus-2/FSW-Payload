@@ -170,67 +170,78 @@ void CameraManager::RunLoop()
                 break;
             }
 
-            case CAPTURE_MODE::PERIODIC_ROI:
+            case CAPTURE_MODE::PERIODIC_ROI: 
             {
+                static Inference::Orchestrator orchestrator;
+                static bool orchestrator_initialized = false;
+                if (!orchestrator_initialized) {
+                    orchestrator.Initialize("", ""); // TODO: set correct model paths
+                    orchestrator_initialized = true;
+                }
 
-                // std::string trt_file_path = ""; //TODO: set path
-                
+                current_capture_time = std::chrono::high_resolution_clock::now();
+                auto elapsed_seconds = std::chrono::duration_cast<std::chrono::seconds>(current_capture_time - last_capture_time).count();
+                if (elapsed_seconds >= periodic_capture_rate)
+                {
+                    uint8_t roi_frames_captured = 0;
 
-                // Inference::Orchestrator orchestrator;
-                // orchestrator.Initialize(trt_file_path);
-                
-                // current_capture_time = std::chrono::high_resolution_clock::now();
-                // auto elapsed_seconds = std::chrono::duration_cast<std::chrono::seconds>(current_capture_time - last_capture_time).count();
-                // if (elapsed_seconds >= periodic_capture_rate) 
-                // {
-                //     // From above: only take images with earth
-                //     bool only_earth = true;
-                //     periodic_frames_captured += SaveLatestFrames(only_earth);
-                //     std::string sample_image_path = ""; //TODO: set path to whatever was actually captured
-                //     SPDLOG_INFO("Periodic capture request: {}/{} frames captured", periodic_frames_captured, periodic_frames_to_capture);
+                    for (std::size_t i = 0; i < NUM_CAMERAS; ++i)
+                    {
+                        if (cameras[i].GetStatus() == CAM_STATUS::ACTIVE && cameras[i].IsNewFrameAvailable())
+                        {
+                            Frame buffer_frame = cameras[i].GetBufferFrame();
 
-                //     // Inference part
-                //     //TODO loop on all?
-                //     Frame frame; // empty frame 
-                //     if (!DH::ReadImageFromDisk(sample_image_path, frame))
-                //     {
-                //         spdlog::error("Failed to read image from disk: {}", sample_image_path);
-                //         return 1;
-                //     }
+                            // code from save latest frames without saving to disk (need frame in memory for inference)
+                            if (buffer_frame.GetProcessingStage() == ProcessingStage::NotPrefiltered)
+                            {
+                                buffer_frame.RunPrefiltering();
+                            }
 
-                //     std::shared_ptr<Frame> frame_ptr = std::make_shared<Frame>(frame);
+                            // Skip non-Earth frames (same as SaveLatestFrames with only_earth=true)
+                            if (buffer_frame.GetImageState() < ImageState::Earth)
+                            {
+                                SPDLOG_INFO("CAM{}: Frame skipped (not Earth)", cameras[i].GetID());
+                                cameras[i].SetOffNewFrameFlag();
+                                continue;
+                            }
 
-                //     orchestrator.GrabNewImage(frame_ptr); 
-                //     spdlog::info("Running inference on the frame...");
-                //     EC status = orchestrator.ExecFullInference();
-                //     if (status != EC::OK)
-                //     {
-                //         spdlog::error("Inference failed with error code: {}", to_uint8(status));
-                //         return 1;
-                //     }
+                            // save to disk but it's still in memory
+                            DH::StoreFrameToDisk(buffer_frame, IMAGES_FOLDER); 
 
-                //     //TODO: Save to image metadata, not just printing 
-                //     spdlog::info("Inference completed successfully.");
-                //     spdlog::info("Regions found: {}", frame_ptr->GetRegionIDs().size());
+                            // Run inference
+                            std::shared_ptr<Frame> frame_ptr = std::make_shared<Frame>(buffer_frame);
+                            orchestrator.GrabNewImage(frame_ptr);
+                            spdlog::info("Running ROI inference on camera {}", cameras[i].GetID());
+                            EC status = orchestrator.ExecFullInference();
+                            if (status == EC::OK)
+                            {
+                                DH::StoreFrameMetadataToDisk(*frame_ptr);
+                                spdlog::info("Frame metadata JSON saved for camera {}", cameras[i].GetID());
+                                roi_frames_captured++;
+                            }
+                            else
+                            {
+                                spdlog::error("ROI inference failed for camera {} with error code: {}", cameras[i].GetID(), to_uint8(status));
+                            }
 
-                //     for (const auto& region_id : frame_ptr->GetRegionIDs())
-                //     {
-                //         spdlog::info("Region ID: {}", GetRegionString(region_id));
-                //     }
+                            cameras[i].SetOffNewFrameFlag();
+                        }
+                    }
 
-                //     // Switch to camera idle, not actively taking photos?
-                //     if (periodic_frames_captured >= periodic_frames_to_capture)
-                //     {
-                //         SPDLOG_INFO("Periodic capture request completed");
-                //         SetCaptureMode(CAPTURE_MODE::IDLE);
-                //         periodic_frames_captured = 0;
-                //         periodic_frames_to_capture = DEFAULT_PERIODIC_FRAMES_TO_CAPTURE; // Reset to default
-                //         break;
-                //     }
-                //     last_capture_time = current_capture_time; // Update last capture time
+                    periodic_frames_captured += roi_frames_captured;
+                    spdlog::info("Periodic ROI capture: {}/{} frames processed", periodic_frames_captured, periodic_frames_to_capture);
 
-                // }
-            
+                    if (periodic_frames_captured >= periodic_frames_to_capture)
+                    {
+                        spdlog::info("Periodic ROI capture request completed");
+                        SetCaptureMode(CAPTURE_MODE::IDLE);
+                        periodic_frames_captured = 0;
+                        periodic_frames_to_capture = DEFAULT_PERIODIC_FRAMES_TO_CAPTURE;
+                        break;
+                    }
+
+                    last_capture_time = current_capture_time;
+                }
                 break;
             }
 

@@ -2,6 +2,8 @@
 #include "payload.hpp"
 #include "core/data_handling.hpp"
 #include "core/timing.hpp"
+#include "image_sender.hpp"
+
 
 const char* ToString(PayloadState state) {
     switch (state) {

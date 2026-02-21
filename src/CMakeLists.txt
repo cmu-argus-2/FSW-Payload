@@ -6,7 +6,7 @@ add_subdirectory(navigation)
 add_subdirectory(vision)
 add_subdirectory(imu)
 add_subdirectory(communication)
-add_subdirectory(inference)
+# add_subdirectory(inference)
 
 add_library(PAYLOAD_LIB SHARED
     commands.cpp
@@ -14,9 +14,10 @@ add_library(PAYLOAD_LIB SHARED
     payload.cpp
     queues.cpp
     configuration.cpp
+    image_sender.cpp
 )
 
 # Link libraries to PAYLOAD_LIB
 target_link_libraries(PAYLOAD_LIB
-    PUBLIC core navigation vision imu communication telemetry inference
+    PUBLIC core navigation vision imu communication telemetry tilepack inference 
 )

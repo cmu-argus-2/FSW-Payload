@@ -39,6 +39,8 @@
 #define BMI160_H
 
 #include <cstdint>
+#include <string_view>
+
 /**
 @brief The BMI160 is a small, low power, low noise 16-bit inertial measurement
 unit designed for use in mobile applications like augmented reality or indoor
@@ -57,7 +59,8 @@ class BMI160
 public:
 
     ///Return value on success.
-    static const uint8_t RTN_NO_ERROR = 0;
+    // static const uint8_t RTN_NO_ERROR = 0;
+    inline static constexpr int32_t RTN_NO_ERROR = 0;
     
     ///Sensor types
     enum Sensors
@@ -632,6 +635,54 @@ public:
     ///
     ///@returns 0 on success, non 0 on failure
     int32_t getSensorStatus(uint8_t *status);
+
+    ///@brief Decode Error Status.\n
+    ///
+    ///On Entry:
+    ///@param[in] errReg - pointer to uint8_t for error register
+    ///
+    ///On Exit:
+    /// @param[out] fatalError - on success, holds the fatal error flag
+    /// @param[out] errorCode - on success, holds the error code
+    /// @param[out] dropCmdError - on success, holds the drop command error flag
+    /// @param[out] i2cFailError - on success, holds the I2C fail error flag
+    /// @param[out] magDrdyError - on success, holds the magnetometer data ready error flag
+    ///
+    ///@returns none
+    static void decodeErrorStatus(uint8_t errReg, bool *fatalError, BMI160::ErrorCodes *errorCode, bool *dropCmdError, bool *i2cFailError, bool *magDrdyError);
+
+    ///@brief Decode Power Mode Status.\n
+    ///
+    /// bit 0-1: mag status
+    /// bit 2-3: gyro status
+    /// bit 4-5: accel status
+    /// suspend, normal, low power, fast start-up
+    /// gyro has no low power, acc and mag have no fast start-up
+    /// we don't really care about the accel
+    ///On Entry:
+    ///@param[in] pmuStatus - pointer to uint8_t for power mode status
+    ///
+    ///On Exit:
+    ///@param[out] magStatus - on success, holds the magnetometer power mode status
+    ///@param[out] gyroStatus - on success, holds the gyroscope power mode status
+    ///
+    ///@returns none
+    static void decodePowerModeStatus(uint8_t pmuStatus, BMI160::PowerModes *magStatus, BMI160::PowerModes *gyroStatus, BMI160::PowerModes *accStatus);
+
+    ///@brief Decode sensor status.\n
+    ///
+    ///On Entry:
+    ///@param[in] sensorStatus - pointer to uint8_t for sensor status
+    ///
+    ///On Exit:
+    /// Nothing, just prints the interpretation of the sensor status to the console.
+    ///
+    ///@returns none
+    static void decodeSensorStatus(uint8_t sensorStatus, bool *gyrSelfTestOk, bool *magManOp, bool *focRdy, bool *nvmRdy, bool *drdyMag, bool *drdyGyr, bool *drdyAcc);
+
+    static std::string_view GetErrorCode(BMI160::ErrorCodes EC);
+
+    static std::string_view GetPowerMode(BMI160::PowerModes PM);
 };
 
 

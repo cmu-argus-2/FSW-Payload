@@ -19,6 +19,15 @@ enum class IMU_STATE : uint8_t
     ERROR = 2    // Error state, check IMU status for details
 };
 
+constexpr std::string_view GetIMUState(IMU_STATE state) {
+    switch (state) {
+        case IMU_STATE::IDLE: return "IDLE";
+        case IMU_STATE::COLLECT: return "COLLECT";
+        case IMU_STATE::ERROR: return "ERROR";
+        default: return "UNKNOWN";
+    }
+}
+
 struct IMUData
 {
 
@@ -46,6 +55,8 @@ class IMUManager
 
         // getters
         uint8_t GetIMUManagerStatus();
+        float GetSampleRate() const { return sample_rate_hz; }
+        std::string GetLogFile() const { return log_file; }
 
         // IMU Manager main loop control
         void RunLoop();
@@ -60,14 +71,16 @@ class IMUManager
         int32_t ReadGyroData(BMI160::SensorData &gyroData, BMI160::GyroConfig gcfg= BMI160::DEFAULT_GYRO_CONFIG);
         int32_t ReadMagnetometerData(BMI160::SensorData &magData);
         int32_t ReadTemperatureData(float *temperature);
-        int32_t ReadErrorStatus(uint8_t *errReg);
         int32_t ReadPowerModeStatus(uint8_t *pmuStatus);
-        int32_t ReadSensorStatus(uint8_t *sensorStatus);
-
+        
+    private:
+        // Should only be used for debugging, not intended for regular verification
+        int32_t ReadErrorStatus(uint8_t *errReg);
+        // May become useful internally for debugging
+        int32_t ReadSensorStatus(bool *gyrSelfTestOk, bool *magManOp, bool *focRdy, bool *nvmRdy, bool *drdyMag, bool *drdyGyr, bool *drdyAcc);
         // Data Logging
         void LogSensorData(uint64_t timestamp, const BMI160::SensorData &gyroData, const BMI160::SensorData &magData, float temperature);
 
-    private:
         BMI160_I2C bmi160;
 
         std::atomic<IMU_STATE> state;

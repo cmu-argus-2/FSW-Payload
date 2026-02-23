@@ -310,6 +310,8 @@ int32_t BMI160::getSensorXYZ(SensorData &data, AccRange range)
 }
 
 // IMU error codes, flag resets when read
+// The register is meant for debug purposes, not for regular verification 
+// if an operation completed successfully.
 int32_t BMI160::getErrorStatus(uint8_t *errReg)
 {
     int32_t rtnVal = readRegister(ERR_REG, errReg);
@@ -327,6 +329,56 @@ int32_t BMI160::getSensorStatus(uint8_t *sensorStatus)
     int32_t rtnVal = readRegister(STATUS, sensorStatus);
     return rtnVal;
 }
+
+void BMI160::decodeErrorStatus(uint8_t errReg, bool *fatalError, BMI160::ErrorCodes *errorCode, bool *dropCmdError, bool *i2cFailError, bool *magDrdyError) {
+    *fatalError = (errReg & FATAL_ERR_MASK) != 0;
+    *errorCode = static_cast<BMI160::ErrorCodes>((errReg & ERR_CODE_MASK) >> ERR_CODE_POS);
+    *errorCode = static_cast<BMI160::ErrorCodes>(*errorCode & 0x0F);
+    *dropCmdError = (errReg & DROP_CMD_ERR_MASK) != 0;
+    *i2cFailError = (errReg & I2C_FAIL_ERR_MASK) != 0;
+    *magDrdyError = (errReg & MAG_DRDY_ERR_MASK) != 0;
+}
+
+void BMI160::decodePowerModeStatus(uint8_t pmuStatus, BMI160::PowerModes *magStatus, BMI160::PowerModes *gyroStatus, BMI160::PowerModes *accStatus) {
+    *magStatus = static_cast<BMI160::PowerModes>(pmuStatus & 0x03); // bits 0-1
+    *gyroStatus = static_cast<BMI160::PowerModes>((pmuStatus >> 2) & 0x03);
+    *accStatus = static_cast<BMI160::PowerModes>((pmuStatus >> 4) & 0x03);
+}
+
+void BMI160::decodeSensorStatus(uint8_t sensorStatus, bool *gyrSelfTestOk, bool *magManOp, bool *focRdy, bool *nvmRdy, bool *drdyMag, bool *drdyGyr, bool *drdyAcc) {
+    *gyrSelfTestOk = (sensorStatus & 0x02) != 0;    
+    *magManOp = (sensorStatus & 0x04) != 0;    
+    *focRdy = (sensorStatus & 0x08) != 0;    
+    *nvmRdy = (sensorStatus & 0x10) != 0;    
+    *drdyMag = (sensorStatus & 0x20) != 0;    
+    *drdyGyr = (sensorStatus & 0x40) != 0;    
+    *drdyAcc = (sensorStatus & 0x80) != 0;
+}
+
+std::string_view BMI160::GetErrorCode(BMI160::ErrorCodes EC) {
+    switch (EC) {
+        case BMI160::NO_ERROR: return "NO_ERROR";
+        case BMI160::ERROR_1: return "ERROR_1";
+        case BMI160::ERROR_2: return "ERROR_2";
+        case BMI160::LPM_INT_PFD: return "Low-power mode and interrupt uses pre-filtered data";
+        case BMI160::ODR_MISMATCH: return "ODRs of enabled sensors in headerless mode do not match";
+        case BMI160::PFD_USED_LPM: return "Pre-filtered data are used in low power mode";
+        default: return "UNKNOWN_ERROR_CODE";
+    }
+}
+
+
+std::string_view BMI160::GetPowerMode(BMI160::PowerModes PM) {
+    switch (PM) {
+        case BMI160::SUSPEND: return "SUSPEND";
+        case BMI160::NORMAL: return "NORMAL";
+        case BMI160::LOW_POWER: return "LOW_POWER";
+        case BMI160::FAST_START_UP: return "FAST_START_UP";
+        default: return "UNKNOWN_POWER_MODE";
+    }
+}
+
+
 
 //*****************************************************************************
 int32_t BMI160::getSensorXYZ(SensorData &data, GyroRange range)

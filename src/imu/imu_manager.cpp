@@ -10,6 +10,18 @@ IMUManager::IMUManager() : bmi160("/dev/i2c-7", BMI160_I2C::I2C_ADRS_SDO_LO), st
 IMUManager::~IMUManager() {
 }
 
+void IMUManager::SetSampleRate(float rate_hz) {
+    sample_rate_hz = rate_hz;
+}
+
+void IMUManager::SetLogFile(const std::string& file_path) {
+    log_file = file_path;
+}
+
+uint8_t IMUManager::GetIMUManagerStatus() {
+    return static_cast<uint8_t>(state.load()); // Return current state of the IMU
+}
+
 void IMUManager::RunLoop() {
     // based on camera manager
     loop_flag.store(true);
@@ -22,6 +34,9 @@ void IMUManager::RunLoop() {
     BMI160::SensorData gyroData;
     BMI160::SensorData magData;
     float temperature;
+    uint8_t errReg;
+    int32_t ret;
+    uint64_t timestamp;
     
     while (loop_flag.load()) 
     {
@@ -35,8 +50,8 @@ void IMUManager::RunLoop() {
 
             case IMU_STATE::COLLECT:
             {
-                auto timestamp = timing::GetCurrentTimeMs();
-                int32_t ret = ReadSensorData(gyroData, magData, &temperature);
+                timestamp = timing::GetCurrentTimeMs();
+                ret = ReadSensorData(gyroData, magData, &temperature);
                 if (ret != BMI160::RTN_NO_ERROR) {
                     std::cerr << "Read Sensor data failed, code " << ret << "\n";
                     ofs << timestamp << " ms, ERROR " << ret << '\n';
@@ -48,8 +63,9 @@ void IMUManager::RunLoop() {
 
             case IMU_STATE::ERROR:
             {
-                // TODO: General error handling for the IMU manager
                 spdlog::error("IMU Manager in ERROR state, suspending for now");
+                ReadErrorStatus(&errReg);
+                // TODO: Error handling for the IMU manager
                 Suspend(); // Put sensors in low power mode
                 // loop_flag.store(false);
                 break;
@@ -73,7 +89,9 @@ int IMUManager::StartCollection() {
 
     // 1. Set Sensor Power modes
     if (bmi160.setSensorPowerMode(BMI160::GYRO, BMI160::NORMAL) != BMI160::RTN_NO_ERROR) {
-        state = IMU_STATE::ERROR; // Update state to error
+        state.store(IMU_STATE::ERROR); // Update state to error
+        spdlog::error("Failed to set gyro power mode to NORMAL");
+        spdlog::info("IMU Manager status set to: {}", GetIMUState(state.load()));
         return 1; // Error setting gyro power mode
     }
 
@@ -82,12 +100,15 @@ int IMUManager::StartCollection() {
     bmi160.setSensorPowerMode(BMI160::MAG, BMI160::NORMAL);
     
     // gyro startup delay
+    // if gyro is in suspend, it takes 55ms, if its in fast start up mode, it takes 10 ms
+    // when not used, gyro is in fast start up mode
     std::this_thread::sleep_for(std::chrono::milliseconds(30));
     
     // 2. Configure gyro: range=±125 dps, BW=OSR2, ODR=25 Hz
     if (bmi160.setSensorConfig(BMI160::DEFAULT_GYRO_CONFIG) != BMI160::RTN_NO_ERROR) {
-        std::cerr << "Failed to configure gyro\n";
-        state = IMU_STATE::ERROR; // Update state to error
+        spdlog::error("Failed to configure gyro");
+        state.store(IMU_STATE::ERROR); // Update state to error
+        spdlog::info("IMU Manager status set to: {}", GetIMUState(state.load()));
         return 1;
     }
     bmi160.setMagnConf();
@@ -96,13 +117,15 @@ int IMUManager::StartCollection() {
     ofs.open(log_file, std::ios::app);
     if (!ofs) {
         spdlog::error("Failed to open {} for writing", log_file);
-        state = IMU_STATE::ERROR; // Update state to error
+        state.store(IMU_STATE::ERROR); // Update state to error
+        spdlog::info("IMU Manager status set to: {}", GetIMUState(state.load()));
         return 1;
     } else {
         spdlog::info("Logging gyro data to {}", log_file);
     }
     
-    state = IMU_STATE::COLLECT; // Update state to collecting
+    state.store(IMU_STATE::COLLECT); // Update state to collecting
+    spdlog::info("IMU Manager status set to: {}", GetIMUState(state.load()));
 
     return 0; // Success
 }
@@ -117,7 +140,42 @@ int IMUManager::Suspend() {
     // Close file logging stream if open
     ofs.close();
     
-    state = IMU_STATE::IDLE; // Update state to idle
+    state.store(IMU_STATE::IDLE); // Update state to idle
+    spdlog::info("IMU Manager status set to: {}", GetIMUState(state.load()));
+
+    // if there is data to be read
+    int32_t ret;
+    bool gyrSelfTestOk, magManOp, focRdy, nvmRdy, drdyMag, drdyGyr, drdyAcc;
+    ret = ReadSensorStatus(&gyrSelfTestOk, &magManOp, &focRdy, &nvmRdy, &drdyMag, &drdyGyr, &drdyAcc);
+    if (ret != BMI160::RTN_NO_ERROR) {
+        spdlog::error("Failed to read sensor status during suspend, code {}", ret);
+        return 1; // Error reading sensor status
+    } 
+    
+    if (drdyMag) {
+        BMI160::SensorData magData;
+        ReadMagnetometerData(magData); // Clear mag data if available
+    }
+
+    if (drdyGyr) {
+        BMI160::SensorData gyroData;
+        ReadGyroData(gyroData); // Clear gyro data if available
+    }
+    // check again if it worked
+    ret = ReadSensorStatus(&gyrSelfTestOk, &magManOp, &focRdy, &nvmRdy, &drdyMag, &drdyGyr, &drdyAcc);
+
+    if (ret != BMI160::RTN_NO_ERROR) {
+        spdlog::error("Failed to read sensor status during suspend verification, code {}", ret);
+        return 1; // Error reading sensor status
+    }
+
+    if (drdyMag || drdyGyr) {
+        spdlog::error("Failed to suspend sensors, data still ready - Mag DRDY: {}, Gyro DRDY: {}", drdyMag, drdyGyr);
+        return 1; // Error, sensors not properly suspended
+    } else {
+        spdlog::info("IMU successfully suspended, no data ready");
+    }
+
     return 0; // Success
 }
 
@@ -127,7 +185,9 @@ int32_t IMUManager::ReadSensorData(BMI160::SensorData &gyroData, BMI160::SensorD
     int32_t ret_temp = ReadTemperatureData(temperature);
     int32_t ret = (ret_gyro != BMI160::RTN_NO_ERROR) ? ret_gyro : ((ret_mag != BMI160::RTN_NO_ERROR) ? ret_mag : ret_temp);
     if (ret != BMI160::RTN_NO_ERROR) {
-        state = IMU_STATE::ERROR; // Update state to error if any of the data retrievals failed
+        spdlog::error("Failed to read sensor data - Gyro: {}, Mag: {}, Temp: {}", ret_gyro, ret_mag, ret_temp);
+        state.store(IMU_STATE::ERROR); // Update state to error if any of the data retrievals failed
+        spdlog::info("IMU Manager status set to: {}", GetIMUState(state.load()));
     }
     return ret; // Return the result of the data retrievals
 }
@@ -147,23 +207,39 @@ int32_t IMUManager::ReadTemperatureData(float *temperature) {
 
 int32_t IMUManager::ReadErrorStatus(uint8_t *errReg)
 {
-    return bmi160.getErrorStatus(errReg);
+    int32_t rtnVal = bmi160.getErrorStatus(errReg);
+    bool fatalError;
+    BMI160::ErrorCodes errorCode;
+    bool dropCmdError;
+    bool i2cFailError;
+    bool magDrdyError;
+    bmi160.decodeErrorStatus(*errReg, &fatalError, &errorCode, &dropCmdError, &i2cFailError, &magDrdyError);
+    spdlog::info("Decoded Error Status - Fatal Error: {}, Error Code: {}, Drop Cmd Error: {}, I2C Fail Error: {}, Mag DRDY Error: {}",
+                 fatalError, bmi160.GetErrorCode(static_cast<BMI160::ErrorCodes>(errorCode)), dropCmdError, i2cFailError, magDrdyError);
+    
+    return rtnVal;
+
 }
 
 int32_t IMUManager::ReadPowerModeStatus(uint8_t *pmuStatus)
 {
-    return bmi160.getPowerModeStatus(pmuStatus);
+    int32_t rtnVal = bmi160.getPowerModeStatus(pmuStatus);
+    BMI160::PowerModes magStatus, gyroStatus, accStatus;
+    bmi160.decodePowerModeStatus(*pmuStatus, &magStatus, &gyroStatus, &accStatus);
+    spdlog::info("Decoded Power Mode Status - Mag Status: {}, Gyro Status: {}, Acc Status: {}",
+                 bmi160.GetPowerMode(magStatus), bmi160.GetPowerMode(gyroStatus), bmi160.GetPowerMode(accStatus));
+    return rtnVal;
 }
 
-int32_t IMUManager::ReadSensorStatus(uint8_t *sensorStatus)
+int32_t IMUManager::ReadSensorStatus(bool *gyrSelfTestOk, bool *magManOp, bool *focRdy, bool *nvmRdy, bool *drdyMag, bool *drdyGyr, bool *drdyAcc)
 {
-    return bmi160.getSensorStatus(sensorStatus);
+    uint8_t sensorStatus;
+    int32_t rtnVal = bmi160.getSensorStatus(&sensorStatus);
+    BMI160::decodeSensorStatus(sensorStatus, gyrSelfTestOk, magManOp, focRdy, nvmRdy, drdyMag, drdyGyr, drdyAcc);
+    // spdlog::info("Decoded Sensor Status - Gyro Self Test OK: {}, Mag Man Op: {}, FOC Ready: {}, NVM Ready: {}, Mag DRDY: {}, Gyro DRDY: {}, Acc DRDY: {}",
+    //              *gyrSelfTestOk, *magManOp, *focRdy, *nvmRdy, *drdyMag, *drdyGyr, *drdyAcc);
+    return rtnVal;
 }
-
-uint8_t IMUManager::GetIMUManagerStatus() {
-    return static_cast<uint8_t>(state.load()); // Return current state of the IMU
-}
-
 
 void IMUManager::LogSensorData(uint64_t timestamp, const BMI160::SensorData &gyroData, const BMI160::SensorData &magData, float temperature) {
     ofs << timestamp << " ms, "

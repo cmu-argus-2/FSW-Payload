@@ -112,8 +112,8 @@ endif()
 
 ##### IMU
 
-add_executable(imu_test src/imu/test_imu.cpp)
-target_link_libraries(imu_test PRIVATE PAYLOAD_LIB)
+add_executable(imu_run src/imu/run_imu.cpp)
+target_link_libraries(imu_run PRIVATE PAYLOAD_LIB)
 
 ##### TESTS
 

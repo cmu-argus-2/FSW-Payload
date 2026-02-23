@@ -85,7 +85,7 @@ TEST(IMUManagerTest, DataCollectionAndLogging)
     std::thread imuThread(&IMUManager::RunLoop, &imuManager);
 
     imuManager.SetSampleRate(25.0f);
-    imuManager.SetLogFile("test_imu_log.txt");
+    imuManager.SetLogFile("test_imu_log.csv");
     imuManager.StartCollection();
     
     // Let it collect for a short duration
@@ -98,12 +98,18 @@ TEST(IMUManagerTest, DataCollectionAndLogging)
     }
     
     // Check that the log file was created and has content
-    std::ifstream logFile("test_imu_log.txt");
+    std::ifstream logFile("test_imu_log.csv");
     EXPECT_TRUE(logFile.is_open());
     std::string line;
     int lineCount = 0;
     // TODO: Implement function to parse imu log file for a dataset
     while (std::getline(logFile, line)) {
+        if (lineCount == 0) {
+            // Check header line
+            EXPECT_EQ(line, "Timestamp_ms, Gyro_X_dps, Gyro_Y_dps, Gyro_Z_dps, Mag_X_uT, Mag_Y_uT, Mag_Z_uT, Temperature_C");
+            lineCount++;
+            continue;
+        }
         lineCount++;
         // timestamp, gyro x, gyro y, gyro z, mag x, mag y, mag z, temperature
         std::istringstream iss(line);
@@ -114,11 +120,20 @@ TEST(IMUManagerTest, DataCollectionAndLogging)
             // If parsing fails, the line format is incorrect
             FAIL() << "Log line format incorrect: " << line;
         }
+        // data range checks (gyro range ±125 dps, mag range ±1000 uT, temperature sensor range)
+        EXPECT_LE(std::abs(gyroX), 125.0f);
+        EXPECT_LE(std::abs(gyroY), 125.0f);
+        EXPECT_LE(std::abs(gyroZ), 125.0f);
+        EXPECT_LE(std::abs(magX), 1000.0f);
+        EXPECT_LE(std::abs(magY), 1000.0f);
+        EXPECT_LE(std::abs(magZ), 1000.0f);
+        EXPECT_GE(temperature, -40.0f); // Sensor won't operate below -40C
+        EXPECT_LE(temperature, 85.0f); // Sensor won't operate above 85C
     }
     EXPECT_GT(lineCount, 24); // Expect at least one data line (header + data)
 
     logFile.close();
-    // std::remove("test_imu_log.txt");
+    std::remove("test_imu_log.csv");
 }
 
 // Test Suspend Mode Telemetry data retrieval

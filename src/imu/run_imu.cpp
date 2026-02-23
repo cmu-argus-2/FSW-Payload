@@ -31,7 +31,7 @@ int main(int argc, char** argv) {
             duration_sec = 60;
         }
     }
-    std::string log_file = "./data/datasets/gyro_log.txt";
+    std::string log_file = "./data/datasets/gyro_log.csv";
     if (argc > 2) {
         log_file = argv[2];
 
@@ -39,7 +39,7 @@ int main(int argc, char** argv) {
             fs::path p(log_file);
             if (fs::exists(p) && fs::is_directory(p)) {
                 // If user passed a directory, treat it as destination folder and append filename
-                p /= "gyro_log.txt";
+                p /= "gyro_log.csv";
                 log_file = p.string();
             }
         } catch (const std::exception& e) {

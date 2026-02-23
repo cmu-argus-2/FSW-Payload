@@ -88,7 +88,7 @@ class IMUManager
         std::atomic<bool> loop_flag = false; // flag to control the main loop
         // Latest sensor data pointers
         // TODO: thread safety for these data if they are accessed from multiple threads, consider using mutex or atomic types
-        std::string log_file = "imu_log.txt"; // default log file path
+        std::string log_file = "imu_log.csv"; // default log file path
         std::ofstream ofs; // output file stream for logging
 
 };

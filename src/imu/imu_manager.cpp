@@ -114,7 +114,7 @@ int IMUManager::StartCollection() {
     bmi160.setMagnConf();
 
     // 3. Open log file for writing
-    ofs.open(log_file, std::ios::app);
+    ofs.open(log_file, std::ios::out | std::ios::trunc);
     if (!ofs) {
         spdlog::error("Failed to open {} for writing", log_file);
         state.store(IMU_STATE::ERROR); // Update state to error
@@ -122,6 +122,7 @@ int IMUManager::StartCollection() {
         return 1;
     } else {
         spdlog::info("Logging gyro data to {}", log_file);
+        ofs << "Timestamp_ms, Gyro_X_dps, Gyro_Y_dps, Gyro_Z_dps, Mag_X_uT, Mag_Y_uT, Mag_Z_uT, Temperature_C\n";
     }
     
     state.store(IMU_STATE::COLLECT); // Update state to collecting
@@ -242,14 +243,14 @@ int32_t IMUManager::ReadSensorStatus(bool *gyrSelfTestOk, bool *magManOp, bool *
 }
 
 void IMUManager::LogSensorData(uint64_t timestamp, const BMI160::SensorData &gyroData, const BMI160::SensorData &magData, float temperature) {
-    ofs << timestamp << " ms, "
+    ofs << timestamp << ','
         << std::fixed << std::setprecision(6)
-        << gyroData.xAxis.scaled << ' '
-        << gyroData.yAxis.scaled << ' '
-        << gyroData.zAxis.scaled << ' '
-        << magData.xAxis.scaled << ' '
-        << magData.yAxis.scaled << ' '
-        << magData.zAxis.scaled << ' '
+        << gyroData.xAxis.scaled << ','
+        << gyroData.yAxis.scaled << ','
+        << gyroData.zAxis.scaled << ','
+        << magData.xAxis.scaled << ','
+        << magData.yAxis.scaled << ','
+        << magData.zAxis.scaled << ','
         << temperature << '\n';
 
     ofs.flush();

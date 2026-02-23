@@ -78,6 +78,8 @@ PAYLOAD_STATE(0),
 ACTIVE_CAMERAS(0), 
 CAPTURE_MODE(0),
 CAM_STATUS{0,0,0,0},
+IMU_STATUS(0),
+IMU_TEMPERATURE(0),
 TASKS_IN_EXECUTION(0), 
 DISK_USAGE(0), 
 LATEST_ERROR(0),
@@ -105,6 +107,8 @@ void PrintTelemetryFrame(const TelemetryFrame& tm_frame)
     SPDLOG_INFO("ACTIVE_CAMERAS: {}", tm_frame.ACTIVE_CAMERAS);
     SPDLOG_INFO("CAPTURE_MODE: {}", tm_frame.CAPTURE_MODE);
     SPDLOG_INFO("CAM_STATUS: [{}, {}, {}, {}]", tm_frame.CAM_STATUS[0], tm_frame.CAM_STATUS[1], tm_frame.CAM_STATUS[2], tm_frame.CAM_STATUS[3]);
+    SPDLOG_INFO("IMU_STATUS: {}", tm_frame.IMU_STATUS);
+    SPDLOG_INFO("IMU_TEMPERATURE: {}", tm_frame.IMU_TEMPERATURE);
     SPDLOG_INFO("TASKS_IN_EXECUTION: {}", tm_frame.TASKS_IN_EXECUTION);
     SPDLOG_INFO("DISK_USAGE: {}", tm_frame.DISK_USAGE);
     SPDLOG_INFO("LATEST_ERROR: {}", tm_frame.LATEST_ERROR);
@@ -286,8 +290,11 @@ void Telemetry::_UpdateTmSystemPart()
     tm_frame.ACTIVE_CAMERAS = static_cast<uint8_t>(sys::cameraManager().CountActiveCameras());
     tm_frame.CAPTURE_MODE = static_cast<uint8_t>(sys::cameraManager().GetCaptureMode());
     sys::cameraManager().FillCameraStatus(tm_frame.CAM_STATUS);
-    tm_frame.IMU_STATUS = static_cast<uint8_t>(false); // For now
 
+    tm_frame.IMU_STATUS = static_cast<uint8_t>(sys::imuManager().GetIMUManagerStatus()); // For now
+    float temperature;
+    sys::imuManager().ReadTemperatureData(&temperature);
+    tm_frame.IMU_TEMPERATURE = static_cast<uint16_t>(temperature * 100.0); // cC
     tm_frame.TASKS_IN_EXECUTION = static_cast<uint8_t>(sys::payload().GetNbTasksInExecution());
     int disk_use = DH::GetTotalDiskUsage();
     if (disk_use >= 0)

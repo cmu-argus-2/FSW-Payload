@@ -34,6 +34,7 @@ _running_instance(false),
 config(std::move(_config)),
 communication(std::move(_comms_interface)),
 camera_manager(config->GetCameraConfigs()),
+imu_manager(),
 state(PayloadState::STARTUP),
 thread_pool(std::make_unique<ThreadPool>(5))
 {   
@@ -137,6 +138,9 @@ void Payload::Run()
     // Launch camera system
     StartCameraThread();
 
+    // Launch IMU system
+    StartIMUThread();
+
     // Launch OD system
     StartODThread();
 
@@ -187,6 +191,9 @@ void Payload::Stop()
     // Stop camera system
     StopCameraThread();
 
+    // Stop IMU system
+    StopIMUThread();
+
     // Stop thread pool
     StopThreadPool();
 
@@ -219,7 +226,6 @@ TX_Queue& Payload::GetTxQueue() {
     return tx_queue;
 }
 
-
 const CameraManager& Payload::GetCameraManager() const {
     return camera_manager;
 }
@@ -227,6 +233,15 @@ const CameraManager& Payload::GetCameraManager() const {
 CameraManager& Payload::GetCameraManager() {
     return camera_manager;
 }
+
+const IMUManager& Payload::GetIMUManager() const {
+    return imu_manager;
+}
+
+IMUManager& Payload::GetIMUManager() {
+    return imu_manager;
+}
+
 
 const PayloadState& Payload::GetState() const {
     return state;
@@ -249,6 +264,22 @@ void Payload::StopCameraThread()
         camera_thread.join();
     }
 }
+
+void Payload::StartIMUThread()
+{
+    // Launch IMU thread
+    imu_thread = std::thread(&IMUManager::RunLoop, &imu_manager);
+}
+
+void Payload::StopIMUThread()
+{
+    imu_manager.StopLoop();
+    if (imu_thread.joinable())
+    {
+        imu_thread.join();
+    }
+}
+
 
 void Payload::StopThreadPool()
 {

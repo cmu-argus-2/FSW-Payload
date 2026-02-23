@@ -54,9 +54,9 @@ const struct BMI160::AccConfig BMI160::DEFAULT_ACC_CONFIG = {SENS_2G,
           ACC_ODR_8
 };
 
-const struct BMI160::GyroConfig BMI160::DEFAULT_GYRO_CONFIG = {DPS_2000,
-          GYRO_BWP_2,
-          GYRO_ODR_8
+const struct BMI160::GyroConfig BMI160::DEFAULT_GYRO_CONFIG = {DPS_125,
+          GYRO_BWP_0,
+          GYRO_ODR_6
 };
 
 ///Period of internal counter
@@ -309,6 +309,24 @@ int32_t BMI160::getSensorXYZ(SensorData &data, AccRange range)
     return rtnVal;
 }
 
+// IMU error codes, flag resets when read
+int32_t BMI160::getErrorStatus(uint8_t *errReg)
+{
+    int32_t rtnVal = readRegister(ERR_REG, errReg);
+    return rtnVal;
+}
+
+int32_t BMI160::getPowerModeStatus(uint8_t *pmuStatus)
+{
+    int32_t rtnVal = readRegister(PMU_STATUS, pmuStatus);
+    return rtnVal;
+}
+
+int32_t BMI160::getSensorStatus(uint8_t *sensorStatus)
+{
+    int32_t rtnVal = readRegister(STATUS, sensorStatus);
+    return rtnVal;
+}
 
 //*****************************************************************************
 int32_t BMI160::getSensorXYZ(SensorData &data, GyroRange range)

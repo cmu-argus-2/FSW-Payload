@@ -523,7 +523,6 @@ public:
     int32_t getSensorAxis(SensorAxis axis, AxisData &data, AccRange range);
     int32_t getSensorAxis(SensorAxis axis, AxisData &data, GyroRange range);
     
-    
     ///@brief Get sensor xyz axis.\n
     ///
     ///On Entry:
@@ -599,6 +598,40 @@ public:
     ///
     ///@returns 0 on success, non 0 on failure
     int32_t getTemperature(float *temp);
+
+
+    ///@brief Get Error Status.\n
+    ///
+    ///On Entry:
+    ///@param[in] errReg - pointer to uint8_t for error register
+    ///
+    ///On Exit:
+    ///@param[out] errReg - on success, holds the error register value
+    ///
+    ///@returns 0 on success, non 0 on failure
+    int32_t getErrorStatus(uint8_t *errReg);
+
+    ///@brief Get Power Mode Status.\n
+    ///
+    ///On Entry:
+    ///@param[in] pmuStatus - pointer to uint8_t for power mode status
+    ///
+    ///On Exit:
+    ///@param[out] pmuStatus - on success, holds the power mode status
+    ///
+    ///@returns 0 on success, non 0 on failure
+    int32_t getPowerModeStatus(uint8_t *pmuStatus);
+
+    ///@brief Get sensor status.\n
+    ///
+    ///On Entry:
+    ///@param[in] status - pointer to uint8_t for sensor status
+    ///
+    ///On Exit:
+    ///@param[out] status - on success, holds the sensor status
+    ///
+    ///@returns 0 on success, non 0 on failure
+    int32_t getSensorStatus(uint8_t *status);
 };
 
 

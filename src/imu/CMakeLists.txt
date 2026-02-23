@@ -1,7 +1,7 @@
 
 
 add_library(imu
-    imu.cpp
+    imu_manager.cpp bmx160.cpp
 )
 
 

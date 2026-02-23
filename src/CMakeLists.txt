@@ -6,7 +6,7 @@ add_subdirectory(navigation)
 add_subdirectory(vision)
 add_subdirectory(imu)
 add_subdirectory(communication)
-# add_subdirectory(inference)
+add_subdirectory(inference)
 
 add_library(PAYLOAD_LIB SHARED
     commands.cpp

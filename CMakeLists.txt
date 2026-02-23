@@ -112,8 +112,8 @@ endif()
 
 ##### IMU
 
-add_executable(imu_test_gyro src/imu/test_imu_gyro.cpp src/imu/bmx160.cpp)
-
+add_executable(imu_test src/imu/test_imu.cpp)
+target_link_libraries(imu_test PRIVATE PAYLOAD_LIB)
 
 ##### TESTS
 

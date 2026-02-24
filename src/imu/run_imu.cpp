@@ -4,6 +4,7 @@ Author: Pedro Cachim
 */
 #include "imu/imu_manager.hpp"
 
+#include "spdlog/spdlog.h"
 #include <iostream>
 #include <thread>
 #include <chrono>
@@ -27,7 +28,7 @@ int main(int argc, char** argv) {
             duration_sec = std::stoi(argv[1]);
             if (duration_sec < 0) duration_sec = 0;
         } catch (...) {
-            std::cerr << "Invalid test duration '" << argv[1] << "', using 60 seconds\n";
+            spdlog::error("Invalid test duration '{}', using 60 seconds", argv[1]);
             duration_sec = 60;
         }
     }
@@ -43,7 +44,7 @@ int main(int argc, char** argv) {
                 log_file = p.string();
             }
         } catch (const std::exception& e) {
-            std::cerr << "Filesystem check failed: " << e.what() << '\n';
+            spdlog::error("Filesystem check failed for log file path '{}': {}", log_file, e.what());
         }
 
     }

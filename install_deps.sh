@@ -22,10 +22,18 @@ sudo apt install -y \
   v4l-utils \
   clang \
   libopencv-dev \
+  libgoogle-glog-dev \
+  libgflags-dev \
+  libatlas-base-dev \
   libeigen3-dev \
+  libsuitesparse-dev \
   libreadline-dev \
   libnvinfer-dev \
   nlohmann-json3-dev \
+  libceres-dev \
+  libprotobuf-dev \
+  protobuf-compiler \
+  libhdf5-dev \
   ccache
 
 # Uncomment this line if you get ccache related issues
@@ -54,16 +62,46 @@ make -j
 sudo make install
 cd ../..
 
-cd ..
+# Install HighFive from source
+rm -rf HighFive-src # Remove existing HighFive folder
+git clone --recursive https://github.com/BlueBrain/HighFive.git HighFive-src
+cmake -DHIGHFIVE_EXAMPLES=Off \
+      -DHIGHFIVE_USE_BOOST=Off \
+      -DHIGHFIVE_UNIT_TESTS=Off \
+      -DCMAKE_INSTALL_PREFIX=${HIGHFIVE_INSTALL_PREFIX} \
+      -B HighFive-src/build \
+      HighFive-src
 
+cmake --build HighFive-src/build
+sudo cmake --install HighFive-src/build
+
+# Install Ceres Solver from source
+# Takes a lot of time to build, best not to rebuild if already installed
+if [ ! -d "ceres-solver/.git" ]; then
+    echo "Ceres not found. Cloning..."
+    git clone https://github.com/ceres-solver/ceres-solver.git "ceres-solver"
+else
+    echo "Ceres already cloned — skipping."
+fi
+cd ceres-solver
+git checkout --detach 2.2.0
+mkdir -p build
+cd build
+cmake ..
+make -j3
+# make test
+sudo make install
+cd ../..
+
+cd ..
 
 # Detect CUDA path
 CUDA_PATH=$(dirname $(dirname $(which nvcc)))
+
 export CUDA_HOME=$CUDA_PATH
 export CUDART_LIBRARY=$CUDA_HOME/lib64/libcudart.so
-export LD_LIBRARY_PATH=$CUDA_HOME/lib64:$LD_LIBRARY_PATH
-export CPLUS_INCLUDE_PATH=$CUDA_HOME/include:$CPLUS_INCLUDE_PATH
-
+export LD_LIBRARY_PATH=$CUDA_HOME/lib64: # $LD_LIBRARY_PATH
+export CPLUS_INCLUDE_PATH=$CUDA_HOME/include: # $CPLUS_INCLUDE_PATH
 
 # Check cudart exists
 if [ ! -f "$CUDART_LIBRARY" ]; then

@@ -291,7 +291,7 @@ void Telemetry::_UpdateTmSystemPart()
     tm_frame.CAPTURE_MODE = static_cast<uint8_t>(sys::cameraManager().GetCaptureMode());
     sys::cameraManager().FillCameraStatus(tm_frame.CAM_STATUS);
 
-    tm_frame.IMU_STATUS = static_cast<uint8_t>(sys::imuManager().GetIMUManagerStatus()); // For now
+    tm_frame.IMU_STATUS = static_cast<uint8_t>(sys::imuManager().GetIMUManagerStatus());
     float temperature;
     sys::imuManager().ReadTemperatureData(&temperature);
     tm_frame.IMU_TEMPERATURE = static_cast<uint16_t>(temperature * 100.0); // cC

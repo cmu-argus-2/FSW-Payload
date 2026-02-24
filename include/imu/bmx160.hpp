@@ -709,6 +709,8 @@ public:
     ///@brief Destructor
     virtual ~BMI160_I2C();
 
+    bool deviceFound() const { return found_device; }
+
     // Low-level access that BMI160 uses:
     virtual int32_t readRegister(Registers reg, uint8_t *data);
     virtual int32_t writeRegister(Registers reg, const uint8_t data);
@@ -716,6 +718,7 @@ public:
     virtual int32_t writeBlock(Registers startReg, Registers stopReg, const uint8_t *data);
     
 private:
+    bool    found_device = false;
     int     m_fd;    // file descriptor for /dev/i2c-X
     uint8_t m_addr;  // 7-bit I2C address (0x68 / 0x69)
 };

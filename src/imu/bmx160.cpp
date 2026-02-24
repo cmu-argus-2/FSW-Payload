@@ -711,6 +711,13 @@ BMI160_I2C::BMI160_I2C(const char *i2cDevPath, uint8_t i2cAdrs)
         close(m_fd);
         m_fd = -1;
     }
+    // ping chip id register to verify communication
+    uint8_t chipId = 0;
+    if (readRegister(CHIP_ID, &chipId) < 0 || chipId != 0xD1) {
+        close(m_fd);
+        m_fd = -1;
+    }
+    found_device = (m_fd >= 0);
 }
 
 BMI160_I2C::~BMI160_I2C()

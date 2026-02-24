@@ -16,14 +16,16 @@ enum class IMU_STATE : uint8_t
 {
     IDLE = 0, // Suspended mode
     COLLECT = 1, // Sucessfully initialized and collecting data
-    ERROR = 2    // Error state, check IMU status for details
+    ERROR_DEVICE = 2,    // Error state with operational IMU
+    ERROR_DEVICE_NOT_FOUND = 3 // Device not found
 };
 
 constexpr std::string_view GetIMUState(IMU_STATE state) {
     switch (state) {
         case IMU_STATE::IDLE: return "IDLE";
         case IMU_STATE::COLLECT: return "COLLECT";
-        case IMU_STATE::ERROR: return "ERROR";
+        case IMU_STATE::ERROR_DEVICE: return "ERROR_DEVICE";
+        case IMU_STATE::ERROR_DEVICE_NOT_FOUND: return "ERROR_DEVICE_NOT_FOUND";
         default: return "UNKNOWN";
     }
 }

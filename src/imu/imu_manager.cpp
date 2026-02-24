@@ -4,7 +4,14 @@
 
 IMUManager::IMUManager() : bmi160("/dev/i2c-7", BMI160_I2C::I2C_ADRS_SDO_LO), state(IMU_STATE::IDLE) {
     // Initialize BMI160 with I2C interface, default address
-    Suspend(); // Ensure sensors are in suspend mode on initialization
+    if (!bmi160.deviceFound()) {
+        SPDLOG_ERROR("BMX160 IMU not found on I2C bus");
+        state.store(IMU_STATE::ERROR_DEVICE_NOT_FOUND);
+    } else {
+        SPDLOG_INFO("BMX160 IMU found and initialized");
+        Suspend(); // Ensure sensors are in suspend mode on initialization
+    }
+    
 }
 
 IMUManager::~IMUManager() {
@@ -61,13 +68,19 @@ void IMUManager::RunLoop() {
                 break;
             }
 
-            case IMU_STATE::ERROR:
+            case IMU_STATE::ERROR_DEVICE:
             {
                 SPDLOG_ERROR("IMU Manager in ERROR state, suspending for now");
                 ReadErrorStatus(&errReg);
                 // TODO: Error handling for the IMU manager
                 Suspend(); // Put sensors in low power mode
                 // loop_flag.store(false);
+                break;
+            }
+
+            case IMU_STATE::ERROR_DEVICE_NOT_FOUND:
+            {
+                // For now, loop is still kept running but doing nothing.
                 break;
             }
         }
@@ -86,10 +99,14 @@ void IMUManager::StopLoop() {
 }
 
 int IMUManager::StartCollection() {
+    if (state.load() == IMU_STATE::ERROR_DEVICE_NOT_FOUND) {
+        SPDLOG_ERROR("Cannot start collection, IMU device not found");
+        return 1; // Error, device not found
+    }
 
     // 1. Set Sensor Power modes
     if (bmi160.setSensorPowerMode(BMI160::GYRO, BMI160::NORMAL) != BMI160::RTN_NO_ERROR) {
-        state.store(IMU_STATE::ERROR); // Update state to error
+        state.store(IMU_STATE::ERROR_DEVICE); // Update state to error
         SPDLOG_ERROR("Failed to set gyro power mode to NORMAL");
         SPDLOG_INFO("IMU Manager status set to: {}", GetIMUState(state.load()));
         return 1; // Error setting gyro power mode
@@ -107,7 +124,7 @@ int IMUManager::StartCollection() {
     // 2. Configure gyro: range=±125 dps, BW=OSR2, ODR=25 Hz
     if (bmi160.setSensorConfig(BMI160::DEFAULT_GYRO_CONFIG) != BMI160::RTN_NO_ERROR) {
         SPDLOG_ERROR("Failed to configure gyro");
-        state.store(IMU_STATE::ERROR); // Update state to error
+        state.store(IMU_STATE::ERROR_DEVICE); // Update state to error
         SPDLOG_INFO("IMU Manager status set to: {}", GetIMUState(state.load()));
         return 1;
     }
@@ -117,7 +134,7 @@ int IMUManager::StartCollection() {
     ofs.open(log_file, std::ios::out | std::ios::trunc);
     if (!ofs) {
         SPDLOG_ERROR("Failed to open {} for writing", log_file);
-        state.store(IMU_STATE::ERROR); // Update state to error
+        state.store(IMU_STATE::ERROR_DEVICE); // Update state to error
         SPDLOG_INFO("IMU Manager status set to: {}", GetIMUState(state.load()));
         return 1;
     } else {
@@ -132,6 +149,10 @@ int IMUManager::StartCollection() {
 }
 
 int IMUManager::Suspend() {
+    if (state.load() == IMU_STATE::ERROR_DEVICE_NOT_FOUND) {
+        SPDLOG_ERROR("Cannot suspend, IMU device not found");
+        return 1; // Error, device not found
+    }
     // Set all sensors to suspend mode but gyro to still have access to temperature data
     // gyro fast start up mode saves power and still allows for power consumption
     bmi160.setSensorPowerMode(BMI160::GYRO, BMI160::FAST_START_UP);
@@ -187,7 +208,7 @@ int32_t IMUManager::ReadSensorData(BMI160::SensorData &gyroData, BMI160::SensorD
     int32_t ret = (ret_gyro != BMI160::RTN_NO_ERROR) ? ret_gyro : ((ret_mag != BMI160::RTN_NO_ERROR) ? ret_mag : ret_temp);
     if (ret != BMI160::RTN_NO_ERROR) {
         SPDLOG_ERROR("Failed to read sensor data - Gyro: {}, Mag: {}, Temp: {}", ret_gyro, ret_mag, ret_temp);
-        state.store(IMU_STATE::ERROR); // Update state to error if any of the data retrievals failed
+        state.store(IMU_STATE::ERROR_DEVICE); // Update state to error if any of the data retrievals failed
         SPDLOG_INFO("IMU Manager status set to: {}", GetIMUState(state.load()));
     }
     return ret; // Return the result of the data retrievals
@@ -203,6 +224,10 @@ int32_t IMUManager::ReadMagnetometerData(BMI160::SensorData &magData) {
 }
 
 int32_t IMUManager::ReadTemperatureData(float *temperature) {
+    if (state.load() == IMU_STATE::ERROR_DEVICE_NOT_FOUND) {
+        *temperature = 0.0f; // cannot read temperature, dummy value
+        return 0; // cannot read temperature
+    }
     return bmi160.getTemperature(temperature);
 }
 

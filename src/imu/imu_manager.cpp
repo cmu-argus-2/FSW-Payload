@@ -1,11 +1,9 @@
 #include <imu/imu_manager.hpp>
 #include "spdlog/spdlog.h"
-#include <iostream>
+//#include <iostream>
 #include <core/timing.hpp>
-#include <chrono>
-#include <iomanip>
-#include <ctime>
-#include <filesystem>
+#include <iomanip> // for set precision
+//#include <ctime>
 
 IMUManager::IMUManager(const IMUConfig& imu_config) : 
 config(imu_config),

@@ -5,13 +5,9 @@ Author: Pedro Cachim
 #include "imu/imu_manager.hpp"
 
 #include "spdlog/spdlog.h"
-#include <iostream>
 #include <thread>
 #include <chrono>
 #include <cstdint>
-#include <fstream>
-#include <iomanip>
-#include <ctime>
 #include <filesystem>
 
 namespace fs = std::filesystem;
@@ -19,7 +15,7 @@ namespace fs = std::filesystem;
 int main(int argc, char** argv) {
 
     // parse duration from argv (seconds), default 60
-    int duration_sec = 10*60; // 3600*5;
+    int duration_sec = 10; // 3600*5;
     if (argc > 1) {
         try {
             duration_sec = std::stoi(argv[1]);

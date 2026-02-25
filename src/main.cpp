@@ -47,7 +47,7 @@ int main(int argc, char** argv)
     
     
     SetupLogger();
-    // spdlog::set_level(spdlog::level::warn);
+    spdlog::set_level(spdlog::level::info);
 
 
     ////// LOADING CONFIGURATION

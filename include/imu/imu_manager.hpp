@@ -1,16 +1,11 @@
-/**/
+#ifndef IMU_MANAGER_HPP
+#define IMU_MANAGER_HPP
+
 #include <imu/bmx160.hpp>
 #include <string>
 #include <atomic>
-#include <core/timing.hpp>
 // TODO: recheck for unnecessary includes
-#include "spdlog/spdlog.h"
-#include <iostream>
-#include <chrono>
 #include <fstream>
-#include <iomanip>
-#include <ctime>
-#include <filesystem>
 
 enum class IMU_STATE : uint8_t 
 {
@@ -30,9 +25,16 @@ constexpr std::string_view GetIMUState(IMU_STATE state) {
     }
 }
 
+struct IMUConfig
+{
+    uint8_t chipid;
+    uint8_t i2c_addr;
+    std::string i2c_path;
+};
+
+// currently unused, may be useful for dataset/od and serves as documentation
 struct IMUData
 {
-
     float gyro_x_dps;
     float gyro_y_dps;
     float gyro_z_dps;
@@ -48,7 +50,7 @@ struct IMUData
 class IMUManager
 {
     public:
-        IMUManager();
+        IMUManager(const IMUConfig& imu_config);
         ~IMUManager();
 
         // setters
@@ -85,6 +87,8 @@ class IMUManager
 
         BMI160_I2C bmi160;
 
+        IMUConfig config;
+
         std::atomic<IMU_STATE> state;
         float sample_rate_hz= 1.0f; // default sample rate
         std::atomic<bool> loop_flag = false; // flag to control the main loop
@@ -94,3 +98,5 @@ class IMUManager
         std::ofstream ofs; // output file stream for logging
 
 };
+
+#endif // IMU_MANAGER_HPP

@@ -695,8 +695,8 @@ void BMI160::setMagnConf()
 // Linux I2C implementation for BMI160_I2C (written with ChatGPT)
 // ---------------------------------------------------------
 
-BMI160_I2C::BMI160_I2C(const char *i2cDevPath, uint8_t i2cAdrs)
-    : m_fd(-1), m_addr(i2cAdrs)
+BMI160_I2C::BMI160_I2C(const char *i2cDevPath, uint8_t i2cAdrs, uint8_t chipIdReg)
+    : m_fd(-1), m_addr(i2cAdrs), m_chipIdReg(chipIdReg)
 {
     // Open the Linux I2C device, e.g. "/dev/i2c-7"
     m_fd = open(i2cDevPath, O_RDWR);
@@ -713,7 +713,7 @@ BMI160_I2C::BMI160_I2C(const char *i2cDevPath, uint8_t i2cAdrs)
     }
     // ping chip id register to verify communication
     uint8_t chipId = 0;
-    if (readRegister(CHIP_ID, &chipId) < 0 || chipId != 0xD1) {
+    if (readRegister(CHIP_ID, &chipId) < 0 || chipId != chipIdReg) {
         close(m_fd);
         m_fd = -1;
     }

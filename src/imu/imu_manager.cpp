@@ -1,8 +1,16 @@
-/**/
-// task to get and collect timestamped data from the imu sensor
 #include <imu/imu_manager.hpp>
+#include "spdlog/spdlog.h"
+#include <iostream>
+#include <core/timing.hpp>
+#include <chrono>
+#include <iomanip>
+#include <ctime>
+#include <filesystem>
 
-IMUManager::IMUManager() : bmi160("/dev/i2c-7", BMI160_I2C::I2C_ADRS_SDO_LO), state(IMU_STATE::IDLE) {
+IMUManager::IMUManager(const IMUConfig& imu_config) : 
+config(imu_config),
+bmi160(imu_config.i2c_path.c_str(), imu_config.i2c_addr, imu_config.chipid), 
+state(IMU_STATE::IDLE) {
     // Initialize BMI160 with I2C interface, default address
     if (!bmi160.deviceFound()) {
         SPDLOG_ERROR("BMX160 IMU not found on I2C bus");
@@ -11,7 +19,6 @@ IMUManager::IMUManager() : bmi160("/dev/i2c-7", BMI160_I2C::I2C_ADRS_SDO_LO), st
         SPDLOG_INFO("BMX160 IMU found and initialized");
         Suspend(); // Ensure sensors are in suspend mode on initialization
     }
-    
 }
 
 IMUManager::~IMUManager() {
@@ -81,6 +88,7 @@ void IMUManager::RunLoop() {
             case IMU_STATE::ERROR_DEVICE_NOT_FOUND:
             {
                 // For now, loop is still kept running but doing nothing.
+                // TODO: Revise error handling for IMU
                 break;
             }
         }
@@ -262,8 +270,7 @@ int32_t IMUManager::ReadSensorStatus(bool *gyrSelfTestOk, bool *magManOp, bool *
     uint8_t sensorStatus;
     int32_t rtnVal = bmi160.getSensorStatus(&sensorStatus);
     BMI160::decodeSensorStatus(sensorStatus, gyrSelfTestOk, magManOp, focRdy, nvmRdy, drdyMag, drdyGyr, drdyAcc);
-    // SPDLOG_INFO("Decoded Sensor Status - Gyro Self Test OK: {}, Mag Man Op: {}, FOC Ready: {}, NVM Ready: {}, Mag DRDY: {}, Gyro DRDY: {}, Acc DRDY: {}",
-    //              *gyrSelfTestOk, *magManOp, *focRdy, *nvmRdy, *drdyMag, *drdyGyr, *drdyAcc);
+    
     return rtnVal;
 }
 

@@ -704,7 +704,8 @@ public:
     ///On Entry:
     ///@param[in] i2cDevPath - path to i2c device, e.g. "/dev/i2c-7"
     ///@param[in] i2cAdrs    - 7-bit I2C address (0x68 or 0x69)
-    BMI160_I2C(const char *i2cDevPath, uint8_t i2cAdrs);
+    ///@param[in] chipIdReg  - expected chip ID for verification (default: 0xD8)
+    BMI160_I2C(const char *i2cDevPath, uint8_t i2cAdrs, uint8_t chipIdReg = 0xD8);
 
     ///@brief Destructor
     virtual ~BMI160_I2C();
@@ -721,6 +722,7 @@ private:
     bool    found_device = false;
     int     m_fd;    // file descriptor for /dev/i2c-X
     uint8_t m_addr;  // 7-bit I2C address (0x68 / 0x69)
+    uint8_t m_chipIdReg; // expected chip ID for verification
 };
 
 #endif /* BMI160_H */

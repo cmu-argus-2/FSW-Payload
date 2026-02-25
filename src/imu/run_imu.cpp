@@ -13,9 +13,6 @@ Author: Pedro Cachim
 #include <iomanip>
 #include <ctime>
 #include <filesystem>
-#include <vector>
-#include <cmath>
-#include <thread>
 
 namespace fs = std::filesystem;
 
@@ -49,11 +46,15 @@ int main(int argc, char** argv) {
 
     }
     
-    std::cout << "Test duration: " << duration_sec << " seconds\n";
+    spdlog::info("Test duration: {} seconds", duration_sec);
     
-    std::cout << "Starting BMX160 gyro-only test..." << std::endl;
+    spdlog::info("Starting BMX160 gyro-only test...");
 
-    IMUManager imuManager;
+    IMUManager imuManager(IMUConfig{
+        .chipid = 0xD8,
+        .i2c_addr = 0x68,
+        .i2c_path = "/dev/i2c-7"
+    });
 
     // Create RunLoop thread
     std::thread imu_thread = std::thread(&IMUManager::RunLoop, &imuManager);

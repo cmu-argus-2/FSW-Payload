@@ -1,10 +1,16 @@
 #include <gtest/gtest.h>
 #include <imu/imu_manager.hpp>
+#include "spdlog/spdlog.h"
+#include "thread"
 
 // Test Data Collection configuration
 TEST(IMUManagerTest, DataCollectionConfig) 
 {
-    IMUManager imuManager;
+    IMUManager imuManager(IMUConfig{
+        .chipid = 0xD8,
+        .i2c_addr = 0x68,
+        .i2c_path = "/dev/i2c-7"
+    });
 
     // Test setters
     imuManager.SetSampleRate(25.0f);
@@ -56,7 +62,11 @@ TEST(IMUManagerTest, DataCollectionConfig)
 TEST(IMUManagerTest, SuspendModeSetup) 
 {
     // Its initialized in IDLE mode. Suspend method runs on initialization
-    IMUManager imuManager;
+    IMUManager imuManager(IMUConfig{
+        .chipid = 0xD8,
+        .i2c_addr = 0x68,
+        .i2c_path = "/dev/i2c-7"
+    });
     EXPECT_EQ(imuManager.GetIMUManagerStatus(), static_cast<uint8_t>(IMU_STATE::IDLE));
 
     // Test that the power mode status function works while idle
@@ -81,7 +91,11 @@ TEST(IMUManagerTest, SuspendModeSetup)
 // Test Data Collection and Logging
 TEST(IMUManagerTest, DataCollectionAndLogging) 
 {
-    IMUManager imuManager;
+    IMUManager imuManager(IMUConfig{
+        .chipid = 0xD8,
+        .i2c_addr = 0x68,
+        .i2c_path = "/dev/i2c-7"
+    });
     std::thread imuThread(&IMUManager::RunLoop, &imuManager);
 
     imuManager.SetSampleRate(25.0f);
@@ -139,7 +153,11 @@ TEST(IMUManagerTest, DataCollectionAndLogging)
 // Test Suspend Mode Telemetry data retrieval
 TEST(IMUManagerTest, SuspendModeTelemetryDataRetrieval) 
 {
-    IMUManager imuManager;
+    IMUManager imuManager(IMUConfig{
+        .chipid = 0xD8,
+        .i2c_addr = 0x68,
+        .i2c_path = "/dev/i2c-7"
+    });
     imuManager.Suspend();
     // get temperature and imu manager status
     EXPECT_TRUE(true); // Placeholder assertion to ensure test runs

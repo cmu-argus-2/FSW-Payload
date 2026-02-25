@@ -22,7 +22,7 @@ namespace fs = std::filesystem;
 int main(int argc, char** argv) {
 
     // parse duration from argv (seconds), default 60
-    int duration_sec = 10;
+    int duration_sec = 10*60; // 3600*5;
     if (argc > 1) {
         try {
             duration_sec = std::stoi(argv[1]);
@@ -32,7 +32,7 @@ int main(int argc, char** argv) {
             duration_sec = 60;
         }
     }
-    std::string log_file = "./data/datasets/gyro_log.csv";
+    std::string log_file = "./data/datasets/gyro_log_" + std::to_string(std::time(nullptr)) + ".csv";
     if (argc > 2) {
         log_file = argv[2];
 
@@ -68,9 +68,9 @@ int main(int argc, char** argv) {
 
     uint8_t pmu_status;
     if (imuManager.ReadPowerModeStatus(&pmu_status) == 0) {
-        spdlog::info("IMU Power Mode Status after suspension: 0x{:02X}", pmu_status);
+        spdlog::info("IMU Power Mode Status while collecting: 0x{:02X}", pmu_status);
     } else {
-        spdlog::error("Failed to read IMU power mode status after suspension");
+        spdlog::error("Failed to read IMU power mode status while collecting");
     }
 
     // After duration, stop the loop and exit

@@ -1,3 +1,13 @@
-torch
-onnx==1.17.1
+git+https://github.com/cmu-argus-1/custom_ultralytics.git@main
+onnx # ==1.14.1
+protobuf==3.20.3
 onnxscript
+./torch-2.3.0-cp310-cp310-linux_aarch64.whl
+./torchvision-0.18.0a0+6043bc2-cp310-cp310-linux_aarch64.whl
+./onnxruntime_gpu-1.19.0-cp310-cp310-linux_aarch64.whl
+matplotlib
+pyquaternion
+numpy<2
+h5py
+dill
+pycuda

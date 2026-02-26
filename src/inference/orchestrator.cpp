@@ -150,16 +150,74 @@ void Orchestrator::RCPreprocessImg(cv::Mat img, cv::Mat& out_chw_img)
     }*/
 }
 
-void Orchestrator::LDPreprocessImg(cv::Mat img, cv::Mat& out_chw_img)
+// Source: https://stackoverflow.com/questions/28562401/resize-an-image-to-a-square-but-keep-aspect-ratio-c-opencv
+void Orchestrator::LDPreprocessImg(cv::Mat img, cv::Mat& out_chw_img, int target_width)
 {
+    spdlog::info("Starting LDPreprocessImg");
     cv::Mat float_img;
     img.convertTo(float_img, CV_32F, 1.0 / 255.0);  // Correctly normalize
-    // TODO: letterbox the image to 4608 x 4608, or just have the LD nets be trained on the actual image size
+    spdlog::info("Image converted to float32, shape: {}x{}x{}", float_img.rows, float_img.cols, float_img.channels());
     
-    // Convert HWC (224x224x3) to CHW (3x224x224)
+    // TODO: letterbox the image to 4608 x 4608, or just have the LD nets be trained on the actual image size
+    cv::Mat letterboxed_img = cv::Mat::zeros(target_width, target_width, float_img.type() );
+    spdlog::info("Created letterboxed image with size: {}x{}x{}", letterboxed_img.rows, letterboxed_img.cols, letterboxed_img.channels());
+
+    int max_dim = ( img.cols >= img.rows ) ? img.cols : img.rows;
+    spdlog::info("Max dimension: {}", max_dim);
+    
+    float scale = ( ( float ) target_width ) / max_dim;
+    spdlog::info("Scale factor: {}", scale);
+
+    cv::Rect roi;
+    if ( img.cols >= img.rows )
+    {
+        roi.width = target_width;
+        roi.x = 0;
+        roi.height = img.rows * scale;
+        roi.y = ( target_width - roi.height ) / 2;
+        spdlog::info("Landscape image - ROI: x={}, y={}, width={}, height={}", roi.x, roi.y, roi.width, roi.height);
+    }
+    else
+    {
+        roi.y = 0;
+        roi.height = target_width;
+        roi.width = img.cols * scale;
+        roi.x = ( target_width - roi.width ) / 2;
+        spdlog::info("Portrait image - ROI: x={}, y={}, width={}, height={}", roi.x, roi.y, roi.width, roi.height);
+    }
+    
+    cv::resize( float_img, letterboxed_img( roi ), roi.size() );
+    spdlog::info("Image resized and placed in letterboxed image");
+    spdlog::info("Letterboxed image shape: {}x{}x{}", letterboxed_img.rows, letterboxed_img.cols, letterboxed_img.channels());
+
+    // int y_offset = (4608 - float_img.rows) / 2;
+    // int x_offset = (4608 - float_img.cols) / 2;
+    // float_img.copyTo(letterboxed_img(cv::Rect(x_offset, y_offset, float_img.cols, float_img.rows)));
+    // float_img = letterboxed_img;
+    
+    // Convert HWC (4608x4608x3) to CHW (3x4608x4608)
+    // int siz[] = {3, float_img.rows, float_img.cols};
+    // out_chw_img.create(3, siz, CV_32F);
+    // std::vector<cv::Mat> planes = {
+    //     cv::Mat(float_img.rows, float_img.cols, float_img.type(), out_chw_img.ptr(0)), // swap 0 and 2 and you can avoid the bgr->rgb conversion !
+    //     cv::Mat(float_img.rows, float_img.cols, float_img.type(), out_chw_img.ptr(1)),
+    //     cv::Mat(float_img.rows, float_img.cols, float_img.type(), out_chw_img.ptr(2))
+    // };
+    // split(float_img, planes);
+    // out_chw_img.convertTo(out_chw_img, CV_32F);
+    // transposeND(letterboxed_img, {2, 0, 1}, out_chw_img); // only for single channel images
+
     std::vector<cv::Mat> channels(3);
-    cv::split(float_img, channels);  // Split into individual float32 channels
+    cv::split(letterboxed_img, channels);  // Split into individual float32 channels
+    // std::vector<cv::Mat> chwchannels(3);
+    // transposeND(hwcchannels[0], {2, 0, 1}, chwchannels[0]);
+    // transposeND(hwcchannels[1], {2, 0, 1}, chwchannels[1]);
+    // transposeND(hwcchannels[2], {2, 0, 1}, chwchannels[2]);
+    // // spdlog::info("Split into {} channels", channels.size());
+    // cv::merge(chwchannels, out_chw_img);    
+    // // cv::dnn::blobFromImage(letterboxed_img, out_chw_img); // doesn't work
     cv::vconcat(channels, out_chw_img);  // Stack channels vertically (CHW format)
+    spdlog::info("Stacked channels to CHW format, final shape: {}x{}x{}", out_chw_img.rows, out_chw_img.cols, out_chw_img.channels());
 }
 
 

@@ -140,7 +140,7 @@ struct Region
     RegionID id;
     float confidence;
 
-    Region(RegionID id_, float confidence_) : id(id_), confidence(confidence_) {}
+    Region(RegionID regionId, float conf) : id(regionId), confidence(conf) {}
 };
 
 #endif // REGIONS_HPP

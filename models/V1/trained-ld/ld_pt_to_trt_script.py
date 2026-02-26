@@ -159,7 +159,7 @@ def pt_to_trt(model_path, device=None, fp16=False):
         parser.add_argument("--int8", type=bool, default=False, help="Activates INT8 quantization, further compressing the model and speeding up inference with minimal accuracy loss, primarily for edge devices.")
         parser.add_argument("--batch", type=int, default=1, help="Specifies export model batch inference size or the max number of images the exported model will process concurrently in predict mode.")
         parser.add_argument("--optimize", type=bool, default=False, help="Applies optimization for mobile devices when exporting to TorchScript, potentially reducing model size and improving performance.")
-        parser.add_argument("--nms", type=bool, default=False, help="Adds Non-Maximum Suppression (NMS) to the exported model when supported, improving detection post-processing efficiency.")
+        parser.add_argument("--nms", type=bool, default=True, help="Adds Non-Maximum Suppression (NMS) to the exported model when supported, improving detection post-processing efficiency.")
         parser.add_argument("--device", type=str, default='cpu', help="Specifies the device for exporting: GPU (device=0), CPU (device=cpu), MPS for Apple silicon (device=mps) or DLA for NVIDIA Jetson (device=dla:0 or device=dla:1). TensorRT exports automatically use GPU.")
         parser.add_argument("--imgsz", type=int, default=new_imgsz, help="Desired image size for the model input. Can be an integer for square images or a tuple (height, width) for specific dimensions.")
         parser.add_argument("--dynamic", type=bool, default=False, help="Adds Non-Maximum Suppression (NMS) to the exported model when supported, improving detection post-processing efficiency.")
@@ -226,7 +226,7 @@ def pt_to_trt(model_path, device=None, fp16=False):
         
         # Configure builder
         config = builder.create_builder_config()
-        config.set_memory_pool_limit(trt.MemoryPoolType.WORKSPACE, 1 << 30)  # 1GB
+        config.set_memory_pool_limit(trt.MemoryPoolType.WORKSPACE, 2 << 30)  # 1GB
         
         # Add optimization profile for dynamic batch size
         # profile = builder.create_optimization_profile()
@@ -299,9 +299,7 @@ def create_model_architecture(path):
 
 if __name__ == "__main__":
     
-    # ========== CONFIGURATION - MODIFY THESE VALUES ==========
-    INPUT_SHAPE = (1, 3, 640, 640)  # (batch_size, channels, height, width)
-    
+    # ========== CONFIGURATION - MODIFY THESE VALUES ==========    
     # Create model architecture instance
     # If your .pth contains only state_dict, you MUST provide the architecture
     
@@ -313,7 +311,7 @@ if __name__ == "__main__":
     print(list_folder)
 
     for folder in list_folder:
-        if not os.path.isdir(os.path.join(ld_folder, folder)):
+        if not os.path.isdir(os.path.join(ld_folder, folder)) and not folder.startswith("17R"):
             continue
         path = os.path.join(ld_folder, folder, f"{folder}_weights")
         

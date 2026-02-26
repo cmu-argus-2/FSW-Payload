@@ -445,7 +445,7 @@ def compute_iou(box1, boxes2):
 
 if __name__ == "__main__":
     # Paths
-    model_version = "V2"
+    model_version = "V1"
     region_id = "17T"
     pt_model_path = f"models/{model_version}/trained-ld/{region_id}/{region_id}_weights.pt"
     trt_engine_path = f"models/{model_version}/trained-ld/{region_id}/{region_id}_weights.trt"

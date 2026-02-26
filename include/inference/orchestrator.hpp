@@ -33,7 +33,7 @@ private:
     cv::Mat img_buff_; // Buffer for the current image
 
     void RCPreprocessImg(cv::Mat img, cv::Mat& out_chw_img);
-    void LDPreprocessImg(cv::Mat img, cv::Mat& out_chw_img);
+    void LDPreprocessImg(cv::Mat img, cv::Mat& out_chw_img, int target_width=4608);
     // void PreprocessImgGPU(const cv::Mat& img, cv::Mat& out_chw);
 
     RCNet rc_net_; 

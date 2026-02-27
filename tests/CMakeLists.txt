@@ -71,3 +71,13 @@ target_link_libraries(test_jacobians
     Ceres::ceres
     Eigen3::Eigen
 )
+
+# Temporary executable to test the dataset class
+add_executable(test_dataset
+    test_dataset.cpp
+)
+target_link_libraries(test_dataset
+    PRIVATE
+    spdlog::spdlog
+    PAYLOAD_LIB
+)

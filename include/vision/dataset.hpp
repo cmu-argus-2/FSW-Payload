@@ -1,6 +1,9 @@
 #ifndef DATASET_HPP
 #define DATASET_HPP
 
+
+#include <vision/camera_manager.hpp>
+#include <imu/imu_manager.hpp>
 #include <vector>
 #include <string>
 #include <cstdint>
@@ -17,6 +20,7 @@
 #define TIMEOUT_NO_DATA 500 
 #define DEFAULT_COLLECTION_PERIOD 10
 #define ABSOLUTE_MINIMUM_PERIOD 0.1
+#define ABSOLUTE_MAXIMUM_PERIOD 10800 // 3h
 #define DEFAULT_DS_KEY "None"
 
 // Error codes TODO with framework
@@ -34,17 +38,10 @@ struct DatasetProgress
     void Update(uint16_t nb_new_frames, double instant_hit_ratio = 1.0f);
 };
 
-enum class DatasetType
+inline bool IsValidCaptureMode(CAPTURE_MODE value)
 {
-    ANY = 0,
-    EARTH_ONLY = 1,
-    LANDMARKS = 2,
-};
-
-inline bool IsValidDatasetType(DatasetType value)
-{
-    return (value >= DatasetType::ANY && 
-            value <= DatasetType::LANDMARKS);
+    return (value >= CAPTURE_MODE::PERIODIC && 
+            value <= CAPTURE_MODE::PERIODIC_LDMK);
 }
 
 class DatasetManager
@@ -55,9 +52,10 @@ public:
     // Static methods
 
     // It is recommended to have the Create functions under a try-except to catch instantiation failures
-    static std::shared_ptr<DatasetManager> Create(double min_period, uint16_t nb_frames, DatasetType type, std::string ds_key = DEFAULT_DS_KEY); // fine to pass string by value/copy
+    static std::shared_ptr<DatasetManager> Create(double min_period, uint16_t nb_frames, CAPTURE_MODE capture_mode, std::string ds_key, 
+        CameraManager& cam_manager, IMUManager& imu_manager); // fine to pass string by value/copy
     // If the folder path does not exist or does not contain a config file, it throws.
-    static std::shared_ptr<DatasetManager> Create(const std::string& folder_path, std::string key = DEFAULT_DS_KEY);
+    static std::shared_ptr<DatasetManager> Create(const std::string& folder_path, std::string key);
 
     static std::shared_ptr<DatasetManager> GetActiveDataset(const std::string& key);
     static void StopDataset(const std::string& key);
@@ -73,11 +71,13 @@ public:
     // Copy is easier (and cheap here), instead of dealing with all the multithreading
     DatasetProgress QueryProgress() const;
 
-
+    CameraManager& getCameraManager() { return cameraManager; }
+    IMUManager& getIMUManager() { return imuManager; }
 
 
     // Actual constructors ~ not to be used
-    DatasetManager(double min_period, uint16_t nb_frames, DatasetType type);
+    DatasetManager(double max_period, uint16_t nb_frames, CAPTURE_MODE capture_mode, 
+                    CameraManager& cam_manager, IMUManager& imu_manager);
     // If the folder path does not exist or does not contain a config file, it throws.
     DatasetManager(const std::string& folder_path);
 
@@ -87,9 +87,18 @@ private:
 
     uint64_t created_at;
     std::string folder_path;
-    double minimum_period;
+    
+    // uint64_t capture_start_time; // unix in ms. For scheduling
+    double maximum_period;
     uint16_t target_frame_nb;
-    DatasetType dataset_type;
+    CAPTURE_MODE dataset_capture_mode; // TODO: can't be idle or capture single
+    // uint8_t imu capture mode; // none, gyro only, gyro + temp, gyro + temp + mag
+    // capture rate camera and imu
+    // target processing of camera data before saving (e.g. prefiltering, compression...)
+
+    // will this be an issue in terms of memory efficiency?
+    CameraManager& cameraManager;
+    IMUManager& imuManager;
 
     DatasetProgress progress;
 
@@ -111,6 +120,5 @@ private:
     // DataFormatter
 
 };
-
 
 #endif // DATASET_HPP

@@ -36,9 +36,10 @@ std::mutex DatasetManager::datasets_mtx;
 
 
 
-std::shared_ptr<DatasetManager> DatasetManager::Create(double min_period, uint16_t nb_frames, DatasetType type, std::string ds_key)
+std::shared_ptr<DatasetManager> DatasetManager::Create(double min_period, uint16_t nb_frames, CAPTURE_MODE capture_mode, std::string ds_key,
+                                                        CameraManager& cam_manager=sys::cameraManager(), IMUManager& imu_manager=sys::imuManager())
 {
-    auto instance = std::make_shared<DatasetManager>(min_period, nb_frames, type);
+    auto instance = std::make_shared<DatasetManager>(min_period, nb_frames, capture_mode, cam_manager, imu_manager);
     std::lock_guard<std::mutex> lock(datasets_mtx);
     if (ds_key == DEFAULT_DS_KEY)
     {
@@ -48,7 +49,7 @@ std::shared_ptr<DatasetManager> DatasetManager::Create(double min_period, uint16
     return instance;
 }
 
-std::shared_ptr<DatasetManager> DatasetManager::Create(const std::string& folder_path, std::string ds_key)
+std::shared_ptr<DatasetManager> DatasetManager::Create(const std::string& folder_path, std::string ds_key = DEFAULT_DS_KEY)
 {
     auto instance = std::make_shared<DatasetManager>(folder_path);
     std::lock_guard<std::mutex> lock(datasets_mtx);
@@ -60,7 +61,8 @@ std::shared_ptr<DatasetManager> DatasetManager::Create(const std::string& folder
     return instance;
 }
 
-std::shared_ptr<DatasetManager> DatasetManager::GetActiveDataset(const std::string& key)
+
+std::shared_ptr<DatasetManager> DatasetManager::GetActiveDataset(const std::string& key = DEFAULT_DS_KEY)
 {
     std::lock_guard<std::mutex> lock(datasets_mtx);
     auto it = active_datasets.find(key);
@@ -106,12 +108,16 @@ std::vector<std::string> DatasetManager::ListAllStoredDatasets()
 
 
 
-DatasetManager::DatasetManager(double min_period, uint16_t nb_frames, DatasetType type)
+DatasetManager::DatasetManager(double max_period, uint16_t nb_frames, CAPTURE_MODE capture_mode, 
+                                CameraManager& cam_manager=sys::cameraManager(), 
+                                IMUManager& imu_manager=sys::imuManager())
 :
-minimum_period(min_period),
+maximum_period(max_period),
 target_frame_nb(nb_frames),
-dataset_type(type),
-progress(nb_frames)
+dataset_capture_mode(capture_mode),
+progress(nb_frames),
+cameraManager(cam_manager),
+imuManager(imu_manager)
 {
     created_at = timing::GetCurrentTimeMs();
     folder_path = DATASETS_FOLDER + std::to_string(created_at) + "/";
@@ -127,10 +133,12 @@ progress(nb_frames)
 
 DatasetManager::DatasetManager(const std::string& folder_path)
 :
-minimum_period(DEFAULT_COLLECTION_PERIOD), // default
+maximum_period(DEFAULT_COLLECTION_PERIOD), // default
 target_frame_nb(MAX_SAMPLES), // default
-dataset_type(DatasetType::EARTH_ONLY), // default
-progress(target_frame_nb)
+dataset_capture_mode(CAPTURE_MODE::PERIODIC), // default
+progress(target_frame_nb),
+cameraManager(sys::cameraManager()),
+imuManager(sys::imuManager())
 {
     
     std::string candidate_folder = folder_path;
@@ -153,16 +161,22 @@ progress(target_frame_nb)
     {
         toml::table config = toml::parse_file(candidate_folder + DATASET_CONFIG_FILE_NAME);
 
-        std::optional<double> min_period = config["minimum_period"].value<double>();
-        if (!min_period)
+        std::optional<double> max_period = config["maximum_period"].value<double>();
+        if (!max_period)
         {
-            throw std::invalid_argument("Missing or invalid 'minimum_period' in configuration.");
+            throw std::invalid_argument("Missing or invalid 'maximum_period' in configuration.");
         }
-        minimum_period = *min_period; // dereference the contained value
-        if (minimum_period < ABSOLUTE_MINIMUM_PERIOD)
+        maximum_period = *max_period; // dereference the contained value
+        if (maximum_period < ABSOLUTE_MINIMUM_PERIOD)
         {
-            SPDLOG_ERROR("Minimum period {} is below the absolute minimum period {}", minimum_period, ABSOLUTE_MINIMUM_PERIOD);
-            throw std::invalid_argument("Minimum period is below the absolute minimum period.");
+            SPDLOG_ERROR("Maximum period {} is below the absolute minimum period {}", maximum_period, ABSOLUTE_MINIMUM_PERIOD);
+            throw std::invalid_argument("Maximum period is below the absolute minimum period.");
+        }
+
+        if (maximum_period > ABSOLUTE_MAXIMUM_PERIOD)
+        {
+            SPDLOG_ERROR("Maximum period {} is above the absolute maximum period {}", maximum_period, ABSOLUTE_MAXIMUM_PERIOD);
+            throw std::invalid_argument("Maximum period is above the absolute maximum period.");
         }
 
         std::optional<uint64_t> target_frames = config["target_frames"].value<uint64_t>();
@@ -177,16 +191,16 @@ progress(target_frame_nb)
             throw std::invalid_argument("Target frame number exceeds the maximum allowed.");
         }
 
-        std::optional<uint64_t> dataset_type_val = config["dataset_type"].value<uint64_t>();
-        if (!dataset_type_val)
+        std::optional<uint64_t> dataset_capture_mode_val = config["dataset_capture_mode"].value<uint64_t>();
+        if (!dataset_capture_mode_val)
         {
-            throw std::invalid_argument("Missing or invalid 'dataset_type' in configuration.");
+            throw std::invalid_argument("Missing or invalid 'dataset_capture_mode' in configuration.");
         }
-        dataset_type = static_cast<DatasetType>(*dataset_type_val);
-        if (IsValidDatasetType(dataset_type))
+        dataset_capture_mode = static_cast<CAPTURE_MODE>(*dataset_capture_mode_val);
+        if (!IsValidCaptureMode(dataset_capture_mode))
         {
-            SPDLOG_ERROR("Invalid dataset type {}", static_cast<int>(dataset_type));
-            throw std::invalid_argument("Invalid dataset type.");
+            SPDLOG_ERROR("Invalid dataset capture mode {}", static_cast<int>(dataset_capture_mode));
+            throw std::invalid_argument("Invalid dataset capture mode.");
         }
     }
     catch (const std::exception& e)
@@ -202,9 +216,9 @@ progress(target_frame_nb)
 void DatasetManager::CreateConfigurationFile()
 {
     auto tbl = toml::table{
-        {"minimum_period", minimum_period},
+        {"maximum_period", maximum_period},
         {"target_frames", target_frame_nb},
-        {"dataset_type", dataset_type}
+        {"dataset_capture_mode", dataset_capture_mode}
     };
 
     // Write to file
@@ -243,7 +257,8 @@ bool DatasetManager::StartCollection()
 
     loop_flag.store(true);
     // Launch the collection thread
-    collection_thread = std::thread(&DatasetManager::CollectionLoop, this);
+    CollectionLoop();
+    // collection_thread = std::thread(&DatasetManager::CollectionLoop, this);
 
     return true;
 }
@@ -276,7 +291,13 @@ bool DatasetManager::CheckTermination()
 
 void DatasetManager::CollectionLoop()
 {
+    // TODO: Image capture will be handled by the CameraManager
+    // IMU data collection will be handled by the IMUManager
+    // To consider: No two datasets will collect at the same time. 
+    // Will have to be careful to guarantee the CameraManager is correctly configured
+    // at the right time
     
+    /*
     // Prepare earth flag
     bool earth_flag = false;
     if ((dataset_type == DatasetType::EARTH_ONLY) || (dataset_type == DatasetType::LANDMARKS))
@@ -306,7 +327,7 @@ void DatasetManager::CollectionLoop()
         }
 
         // Check if any camera is active 
-        if (!sys::cameraManager().CountActiveCameras())
+        if (!getCameraManager().CountActiveCameras())
         {
             // TODO: Error code 
             SPDLOG_WARN("No active cameras.");
@@ -315,7 +336,7 @@ void DatasetManager::CollectionLoop()
         }
 
         // Copy the latest frames 
-        uint8_t nb_copied_frames = sys::cameraManager().CopyFrames(buffer_frames, earth_flag);
+        uint8_t nb_copied_frames = getCameraManager().CopyFrames(buffer_frames, earth_flag);
         SPDLOG_WARN("Number of copied frames {}", nb_copied_frames);
 
         if (nb_copied_frames > 0)
@@ -367,5 +388,5 @@ void DatasetManager::CollectionLoop()
     
 
     loop_flag.store(false);
-
+    */
 }

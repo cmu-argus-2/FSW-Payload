@@ -38,7 +38,8 @@ std::array<CommandFunction, COMMAND_NUMBER> COMMAND_FUNCTIONS =
     full_reset, // FULL_RESET (no implementation provided)
     debug_display_camera, // DEBUG_DISPLAY_CAMERA
     debug_stop_display, // DEBUG_STOP_DISPLAY
-    request_next_file_packets // REQUEST_NEXT_FILE_PACKETS
+    request_next_file_packets, // REQUEST_NEXT_FILE_PACKETS
+    start_roi_capture // START_ROI_CAPTURE
 };
 
 // Define the array of strings mapping CommandID to command names
@@ -62,7 +63,8 @@ std::array<std::string_view, COMMAND_NUMBER> COMMAND_NAMES = {
     "FULL_RESET",
     "DEBUG_DISPLAY_CAMERA",
     "DEBUG_STOP_DISPLAY",
-    "REQUEST_NEXT_FILE_PACKETS"
+    "REQUEST_NEXT_FILE_PACKETS",
+    "START_ROI_CAPTURE"
 };
 
 void ping_ack([[maybe_unused]] std::vector<uint8_t>& data)
@@ -708,4 +710,17 @@ void request_next_file_packets(std::vector<uint8_t>& data)
     }
 
     sys::payload().SetLastExecutedCmdID(CommandID::REQUEST_NEXT_FILE_PACKETS);
+}
+
+// demo 2 only: inference to mainboard
+void start_roi_capture([[maybe_unused]] std::vector<uint8_t>& data)
+{
+    SPDLOG_INFO("Starting periodic ROI capture..");
+
+    sys::cameraManager().SetCaptureMode(CAPTURE_MODE::PERIODIC_ROI);
+
+    std::shared_ptr<Message> msg = CreateSuccessAckMessage(CommandID::START_ROI_CAPTURE);
+    sys::payload().TransmitMessage(msg);
+
+    sys::payload().SetLastExecutedCmdID(CommandID::START_ROI_CAPTURE);
 }

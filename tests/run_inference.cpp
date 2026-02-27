@@ -2,6 +2,7 @@
 #include "spdlog/spdlog.h"
 #include "vision/frame.hpp"
 #include "core/data_handling.hpp"
+#include "core/timing.hpp"
 #include "inference/orchestrator.hpp"
 #include "vision/regions.hpp"
 
@@ -14,19 +15,21 @@
 
 int main(int argc, char** argv)
 {
-    if (argc < 3)
+    if (argc < 4)
     {
-        spdlog::error("Usage: {} <path_to_trt_file> <path_to_sample_image>", argv[0]);
+        spdlog::error("Usage: {} <path_to_rc_trt_file> <path_to_ld_trt_folder> <path_to_sample_image>", argv[0]);
         return 1;
     }
-    std::string trt_file_path = argv[1];
-    std::string sample_image_path = argv[2];
+    std::string rc_trt_file_path = argv[1];
+    std::string ld_trt_folder_path = argv[2];
+    std::string sample_image_path = argv[3];
 
     Inference::Orchestrator orchestrator;
-    orchestrator.Initialize(trt_file_path);
+    orchestrator.Initialize(rc_trt_file_path, ld_trt_folder_path);
 
     Frame frame; // empty frame 
-    if (!DH::ReadImageFromDisk(sample_image_path, frame))
+    auto timestamp = timing::GetCurrentTimeMs();
+    if (!DH::ReadImageFromDisk(sample_image_path, frame, 0,  static_cast<uint64_t>(timestamp)))
     {
         spdlog::error("Failed to read image from disk: {}", sample_image_path);
         return 1;
@@ -48,6 +51,18 @@ int main(int argc, char** argv)
     for (const auto& region_id : frame_ptr->GetRegionIDs())
     {
         spdlog::info("Region ID: {}", GetRegionString(region_id));
+    }
+
+    DH::StoreFrameMetadataToDisk(*frame_ptr); // Test for now
+    spdlog::info("Frame metadata JSON saved to data/images/");
+
+    // Landmark Detection results
+    std::vector<Landmark> landmarks = frame_ptr->GetLandmarks();
+    spdlog::info("Landmarks found: {}", landmarks.size());
+    for (const auto& landmark : landmarks)
+    {
+        spdlog::info("Landmark - Class ID: {}, Region ID: {}, Confidence: {:.3f}, Position: ({:.2f}, {:.2f}), Size: ({:.2f}, {:.2f})",
+            landmark.class_id, GetRegionString(landmark.region_id), landmark.confidence, landmark.x, landmark.y, landmark.height, landmark.width);
     }
 
     return 0;

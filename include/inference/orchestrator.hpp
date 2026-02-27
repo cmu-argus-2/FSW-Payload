@@ -12,9 +12,11 @@ class Orchestrator
 
 public:
     Orchestrator();
-    // ~Orchestrator();
+    ~Orchestrator();
 
-    void Initialize(const std::string& rc_engine_path);  
+    void FreeEngines();
+
+    void Initialize(const std::string& rc_engine_path, const std::string& ld_engine_folder_path);  
 
     void GrabNewImage(std::shared_ptr<Frame> frame);
 
@@ -30,10 +32,13 @@ private:
     int num_inference_performed_on_current_frame_ = 0; 
     cv::Mat img_buff_; // Buffer for the current image
 
-    void PreprocessImg(cv::Mat img, cv::Mat& out_chw_img);
+    void RCPreprocessImg(cv::Mat img, cv::Mat& out_chw_img);
+    void LDPreprocessImg(cv::Mat img, cv::Mat& out_chw_img, int target_width=4608);
     // void PreprocessImgGPU(const cv::Mat& img, cv::Mat& out_chw);
 
     RCNet rc_net_; 
+    
+    std::map<RegionID, LDNet> ld_nets_;
 
 };
 

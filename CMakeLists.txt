@@ -31,6 +31,11 @@ set(CMAKE_RUNTIME_OUTPUT_DIRECTORY ${CMAKE_SOURCE_DIR}/bin/)
 
 set(SPDLOG_FMT_EXTERNAL OFF)
 find_package(spdlog REQUIRED)
+if(TARGET spdlog::spdlog_header_only)
+    set(PAYLOAD_SPDLOG_TARGET spdlog::spdlog_header_only)
+else()
+    set(PAYLOAD_SPDLOG_TARGET spdlog::spdlog)
+endif()
 find_package(Eigen3 3.3 REQUIRED NO_MODULE)
 include_directories(${EIGEN_INCLUDE_DIR})
 link_directories(${EIGEN_LIBRARY_DIRS})
@@ -41,6 +46,14 @@ enable_language(C)
 find_package(HDF5 REQUIRED COMPONENTS C CXX HL)
 list(APPEND CMAKE_PREFIX_PATH "${PWD}/depsbuild/install")
 find_package(HighFive REQUIRED)
+
+find_package(CUDA)
+if(CUDA_FOUND)
+    set(CUDA_ENABLED ON)
+else()
+    set(CUDA_ENABLED OFF)
+endif()
+
 if(CUDA_ENABLED)
     find_package(CUDA REQUIRED)
     # find_library(CUDART_LIBRARY cudart REQUIRED)
@@ -89,7 +102,7 @@ add_executable(${PROJECT_NAME} src/main.cpp)
 
 target_link_libraries(${PROJECT_NAME}
     PRIVATE
-    spdlog::spdlog
+    ${PAYLOAD_SPDLOG_TARGET} # This is now set to either spdlog::spdlog_header_only, may need to be changed back to spdlog::spdlog 
     PAYLOAD_LIB
     ${OpenCV_LIBS}
     # ${PAYLOAD_CONDITIONAL_LIBS}

@@ -2,6 +2,7 @@
 #define FRAME_HPP
 
 #include <cstdint>
+#include <string>
 #include <vector>
 #include <mutex>
 #include <memory>
@@ -75,6 +76,7 @@ inline const char* ProcessingStageToString(ProcessingStage s) {
 class Frame 
 {
 public:
+
     Frame();
     Frame(int cam_id, const cv::Mat& img, std::uint64_t timestamp);
     Frame(int cam_id, cv::Mat&& img, std::uint64_t timestamp);
@@ -95,17 +97,22 @@ public:
     std::uint64_t GetTimestamp() const;
     const ImageState GetImageState() const;
     const ProcessingStage GetProcessingStage() const;
+    void SetProcessingStage(ProcessingStage stage);
     const float GetRank() const;
     Json toJson() const;
+    nlohmann::ordered_json toOrderedJson() const;
     void fromJson(const Json& j);
 
-
-    const std::vector<RegionID>& GetRegionIDs() const;
+    const std::vector<Region>& GetRegions() const;
+    const std::vector<RegionID> GetRegionIDs() const;
+    const std::vector<float> GetRegionConfidences() const;
     const std::vector<Landmark>& GetLandmarks() const;
     
-    void AddRegion(RegionID region_id);
+    void AddRegion(const Region& region);
+    void AddRegion(RegionID region_id, float confidence);
     void ClearRegions();
-    void AddLandmark(float x, float y, uint16_t class_id, RegionID region_id);
+    void AddLandmark(const Landmark& landmark); 
+    void AddLandmark(float x, float y, uint16_t class_id, RegionID region_id, float height_, float width_, float confidence_);
     void ClearLandmarks();
     void RunPrefiltering();
 
@@ -119,7 +126,7 @@ private:
     ImageState _annotation_state;
     float _rank; // score to rank images with the same annotation_state (higher = better)
     ProcessingStage _processing_stage;
-    std::vector<RegionID> _region_ids;  // Container for regions
+    std::vector<Region> _regions;  // Container for regions
     std::vector<Landmark> _landmarks;  // Container for landmarks
 
     // mutex is not copyable
@@ -127,6 +134,43 @@ private:
 };
 
 
+// Helper functions for parsing the output of RC net and LD net
+namespace VisionJson
+{
+
+inline std::vector<std::string> RegionIdsToStrings(const std::vector<RegionID>& region_ids)
+{
+    std::vector<std::string> region_codes;
+    region_codes.reserve(region_ids.size());
+    for (const auto& region_id : region_ids)
+    {
+        region_codes.emplace_back(GetRegionString(region_id));
+    }
+    return region_codes;
+}
+
+inline void LoadRegionIdsFromJson(const Json& region_json, std::vector<RegionID>& region_ids)
+{
+    region_ids.clear();
+    if (!region_json.is_array())
+    {
+        return;
+    }
+
+    for (const auto& region_item : region_json)
+    {
+        if (region_item.is_string())
+        {
+            RegionID region_id = GetRegionID(region_item.get<std::string>());
+            if (region_id != RegionID::UNKNOWN)
+            {
+                region_ids.push_back(region_id);
+            }
+        }
+    }
+}
+
+} // namespace VisionJson
 
 
 

@@ -3,7 +3,7 @@
 
 #include <string>
 #include <string_view>
-
+#include <array>
 
 /*
 Currently supported regions (V1):
@@ -115,6 +115,32 @@ constexpr std::string_view GetRegionLocation(RegionID id) {
     }
 }
 
+// Get all valid region IDs (excluding UNKNOWN)
+constexpr std::array<RegionID, 16> GetAllRegionIDs() {
+    return {{
+        RegionID::R_10S, RegionID::R_10T, RegionID::R_11R, RegionID::R_12R,
+        RegionID::R_16T, RegionID::R_17R, RegionID::R_17T, RegionID::R_18S,
+        RegionID::R_32S, RegionID::R_32T, RegionID::R_33S, RegionID::R_33T,
+        RegionID::R_52S, RegionID::R_53S, RegionID::R_54S, RegionID::R_54T
+    }};
+}
 
+// Get all region code strings (excluding UNKNOWN)
+constexpr std::array<std::string_view, 16> GetAllRegionStrings() {
+    return {{
+        "10S", "10T", "11R", "12R",
+        "16T", "17R", "17T", "18S",
+        "32S", "32T", "33S", "33T",
+        "52S", "53S", "54S", "54T"
+    }};
+}
+
+struct Region
+{
+    RegionID id;
+    float confidence;
+
+    Region(RegionID regionId, float conf) : id(regionId), confidence(conf) {}
+};
 
 #endif // REGIONS_HPP

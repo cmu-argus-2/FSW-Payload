@@ -67,7 +67,7 @@ int main(int argc, char** argv)
     SPDLOG_INFO("Starting dataset collection (type {}) for {} frames at a period of {} seconds.", static_cast<uint8_t>(capture_mode), nb_frames, period);
 
     ds = DatasetManager::Create(period, nb_frames, capture_mode, timing::GetCurrentTimeMs(),
-                                IMU_COLLECTION_MODE::GYRO_MAG_TEMP, uint8_t(60), 1.0f, ProcessingStage::NotPrefiltered,
+                                IMU_COLLECTION_MODE::GYRO_MAG_TEMP, uint8_t(30), 1.0f, ProcessingStage::NotPrefiltered,
                                 DATASET_KEY_CMD, camera_manager, imu_manager);
     ds->StartCollection();
 

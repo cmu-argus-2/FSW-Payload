@@ -347,9 +347,9 @@ void DatasetManager::CollectionLoop()
 
     // terminate data collection
     cameraManager.SetCaptureMode(CAPTURE_MODE::IDLE);
-    cameraManager.SetStorageFolder(IMAGES_FOLDER); // Reset to default folder
     imuManager.Suspend();
 
+    // 
     loop_flag.store(false);
     /*
     // Prepare earth flag

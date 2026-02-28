@@ -2,6 +2,7 @@
 #include "messages.hpp"
 #include "payload.hpp"
 #include "core/data_handling.hpp"
+#include "core/timing.hpp"
 #include "telemetry/telemetry.hpp"
 #include "vision/dataset.hpp"
 #include "core/errors.hpp"
@@ -25,8 +26,8 @@ std::array<CommandFunction, COMMAND_NUMBER> COMMAND_FUNCTIONS =
     enable_cameras, // ENABLE_CAMERAS
     disable_cameras, // DISABLE_CAMERAS
     capture_images, // CAPTURE_IMAGES
-    start_capture_images_periodically, // START_CAPTURE_IMAGES_PERIODICALLY
-    stop_capture_images, // STOP_CAPTURE_IMAGES
+    start_capture_dataset, // START_CAPTURE_DATASET
+    stop_capture_dataset, // STOP_CAPTURE_DATASET
     request_storage_info, // REQUEST_STORAGE_INFO
     request_image, // REQUEST_IMAGE
     request_next_file_packet, // REQUEST_NEXT_FILE_PACKET
@@ -49,8 +50,8 @@ std::array<std::string_view, COMMAND_NUMBER> COMMAND_NAMES = {
     "ENABLE_CAMERAS",
     "DISABLE_CAMERAS",
     "CAPTURE_IMAGES",
-    "START_CAPTURE_IMAGES_PERIODICALLY",
-    "STOP_CAPTURE_IMAGES",
+    "START_CAPTURE_DATASET",
+    "STOP_CAPTURE_DATASET",
     "REQUEST_STORAGE_INFO",
     "REQUEST_IMAGE",
     "REQUEST_NEXT_FILE_PACKET",
@@ -223,36 +224,34 @@ void capture_images([[maybe_unused]] std::vector<uint8_t>& data)
     sys::payload().SetLastExecutedCmdID(CommandID::CAPTURE_IMAGES);
 }
 
-void start_capture_images_periodically([[maybe_unused]] std::vector<uint8_t>& data)
+void start_capture_dataset([[maybe_unused]] std::vector<uint8_t>& data)
 {
-    SPDLOG_INFO("Starting capture images every X seconds..");
+    SPDLOG_INFO("Starting dataset capture..");
 
-    /*if (!data.empty()) {
-        uint8_t period = data[0]; // Period in seconds
-        sys::cameraManager().SetPeriodicCaptureRate(period);
-
-        if (data.size() > 1) {
-            uint8_t frames = data[1]; // Number of frames to capture
-            sys::cameraManager().SetPeriodicFramesToCapture(frames);
-        }
-    }
-
-    sys::cameraManager().SetCaptureMode(CAPTURE_MODE::PERIODIC);*/
-
-    // 1 byte for type
-    // 2 bytes period (for now)
+    // 1 byte for Image Capture Mode
+    // 2 bytes max period (for now)
     // 2 bytes nb_frames
-    DatasetType dataset_type = static_cast<DatasetType>(data[0]);
-    double period = static_cast<double>((data[1] << 8) | data[2]);
-    uint16_t nb_frames = (data[3] << 8) | data[4];
+    // 4 bytes capture start time - unix timestamp in s. If less than current time, will be overridden to current time
+    // 1 byte IMU collection mode
+    // 1 byte image capture rate (for periodic mode)
+    // 1 byte IMU sample rate in 0.1Hz (max 25 Hz)
+    // 1 byte target processing stage for the dataset (e.g. prefilter, RCNet, LDNet, etc.)
 
+    CAPTURE_MODE capture_mode = static_cast<CAPTURE_MODE>(data[0]);
+    double max_period = static_cast<double>((data[1] << 8) | data[2]);
+    uint16_t target_frame_nb = (data[3] << 8) | data[4];
+    uint64_t capture_start_time = timing::GetCurrentTimeMs();
+    IMU_COLLECTION_MODE imu_collection_mode = static_cast<IMU_COLLECTION_MODE>(data[5]);
+    uint8_t image_capture_rate = data[6];
+    float imu_sample_rate_hz = static_cast<float>(data[7]) / 10.0f;
+    ProcessingStage target_processing_stage = static_cast<ProcessingStage>(data[8]);
 
-    if (period == 0.0 || nb_frames == 0)
+    if (max_period == 0.0 || target_frame_nb == 0)
     {
         // TODO: Send Error ACK
         uint8_t ERR_PERIODIC = 0x20; // TODO define elsewhere
-        SPDLOG_ERROR("Invalid data for START_CAPTURE_IMAGES_PERIODICALLY command");
-        std::shared_ptr<Message> msg = CreateErrorAckMessage(CommandID::START_CAPTURE_IMAGES_PERIODICALLY, 0x20);
+        SPDLOG_ERROR("Invalid data for START_CAPTURE_DATASET command");
+        std::shared_ptr<Message> msg = CreateErrorAckMessage(CommandID::START_CAPTURE_DATASET, 0x20);
         sys::payload().TransmitMessage(msg);
         return;
     }
@@ -274,31 +273,33 @@ void start_capture_images_periodically([[maybe_unused]] std::vector<uint8_t>& da
     }
 
     // Create a new Dataset
-    SPDLOG_INFO("Starting dataset collection (type {}) for {} frames at a period of {} seconds.", static_cast<uint8_t>(dataset_type), nb_frames, period);
+    SPDLOG_INFO("Starting dataset collection (type {}) for {} frames at a max period of {} seconds.", static_cast<uint8_t>(capture_mode), target_frame_nb, max_period);
 
     try
     {
-        ds = DatasetManager::Create(period, nb_frames, dataset_type, DATASET_KEY_CMD);
+        ds = DatasetManager::Create(max_period, target_frame_nb, capture_mode, capture_start_time,
+                                    imu_collection_mode, image_capture_rate, imu_sample_rate_hz, 
+                                    target_processing_stage, DATASET_KEY_CMD, sys::cameraManager(), sys::imuManager());
         ds->StartCollection();
     }
     catch(const std::exception& e)
     {
         
         SPDLOG_ERROR("Failed to start dataset collection: {}", e.what());
-        std::shared_ptr<Message> msg = CreateErrorAckMessage(CommandID::START_CAPTURE_IMAGES_PERIODICALLY, 0x21); // TODO example error code
+        std::shared_ptr<Message> msg = CreateErrorAckMessage(CommandID::START_CAPTURE_DATASET, 0x21); // TODO example error code
         sys::payload().TransmitMessage(msg);
     }
     
     // All good
-    std::shared_ptr<Message> msg = CreateSuccessAckMessage(CommandID::START_CAPTURE_IMAGES_PERIODICALLY);
+    std::shared_ptr<Message> msg = CreateSuccessAckMessage(CommandID::START_CAPTURE_DATASET);
     sys::payload().TransmitMessage(msg);
 
-    sys::payload().SetLastExecutedCmdID(CommandID::START_CAPTURE_IMAGES_PERIODICALLY);
+    sys::payload().SetLastExecutedCmdID(CommandID::START_CAPTURE_DATASET);
 }
 
-void stop_capture_images([[maybe_unused]] std::vector<uint8_t>& data)
+void stop_capture_dataset([[maybe_unused]] std::vector<uint8_t>& data)
 {
-    SPDLOG_INFO("Stopping capture images..");
+    SPDLOG_INFO("Stopping dataset capture..");
 
     // sys::cameraManager().SetCaptureMode(CAPTURE_MODE::IDLE);
     // TODO return true or false based on the success of the operations
@@ -320,19 +321,19 @@ void stop_capture_images([[maybe_unused]] std::vector<uint8_t>& data)
         transmit_data.push_back(ACK_SUCCESS);
         transmit_data.push_back(completion);
         SerializeToBytes(nb_frames, transmit_data);
-        std::shared_ptr<Message> msg = CreateMessage(CommandID::STOP_CAPTURE_IMAGES, transmit_data);
+        std::shared_ptr<Message> msg = CreateMessage(CommandID::STOP_CAPTURE_DATASET, transmit_data);
         sys::payload().TransmitMessage(msg);
     }
     else
     {
         // Return (error) ACK telling that no dataset is running
         SPDLOG_ERROR("No dataset collection has been started on the command side");
-        std::shared_ptr<Message> msg = CreateErrorAckMessage(CommandID::STOP_CAPTURE_IMAGES, 0x22); // TODO
+        std::shared_ptr<Message> msg = CreateErrorAckMessage(CommandID::STOP_CAPTURE_DATASET, 0x22); // TODO
         sys::payload().TransmitMessage(msg);
 
     }
 
-    sys::payload().SetLastExecutedCmdID(CommandID::STOP_CAPTURE_IMAGES);
+    sys::payload().SetLastExecutedCmdID(CommandID::STOP_CAPTURE_DATASET);
 }
 
 void request_storage_info([[maybe_unused]] std::vector<uint8_t>& data)

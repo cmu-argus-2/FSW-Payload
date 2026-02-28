@@ -110,6 +110,12 @@ if [ ! -f "$CUDART_LIBRARY" ]; then
 fi
 
 
-# TODO: IMX708 sensor 
+# Install Spice toolkit (for time and coordinate transformations)
+echo "Downloading physics model data files (may take a few minutes) ..."
+mkdir -p deps/data
+curl -O -C - --silent https://ssd.jpl.nasa.gov/ftp/eph/planets/bsp/de440.bsp --output-dir deps/data
+curl -O -C - --silent https://naif.jpl.nasa.gov/pub/naif/generic_kernels/pck/earth_latest_high_prec.bpc --output-dir deps/data
+curl -O -C - --silent https://naif.jpl.nasa.gov/pub/naif/generic_kernels/pck/pck00011.tpc --output-dir deps/data
+curl -O -C - --silent https://naif.jpl.nasa.gov/pub/naif/generic_kernels/lsk/naif0012.tls --output-dir deps/data
 
-
+git submodule update --init --recursive

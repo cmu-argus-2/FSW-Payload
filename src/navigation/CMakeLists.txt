@@ -11,6 +11,6 @@ add_library(navigation
 )
 
 target_link_libraries(navigation 
-        PRIVATE Eigen3::Eigen HighFive::HighFive Ceres::ceres HDF5::HDF5)
+        PRIVATE Eigen3::Eigen HighFive::HighFive Ceres::ceres HDF5::HDF5 spice)
 
 # target_link_libraries(navigation <dependencies>)

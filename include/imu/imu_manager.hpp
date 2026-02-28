@@ -14,6 +14,14 @@ enum class IMU_STATE : uint8_t
     ERROR_DEVICE_NOT_FOUND = 3 // Device not found
 };
 
+enum class IMU_COLLECTION_MODE : uint8_t
+{
+    NONE = 0,
+    GYRO_ONLY = 1,
+    GYRO_TEMP = 2,
+    GYRO_MAG_TEMP = 3,
+};
+
 constexpr std::string_view GetIMUState(IMU_STATE state) {
     switch (state) {
         case IMU_STATE::IDLE: return "IDLE";

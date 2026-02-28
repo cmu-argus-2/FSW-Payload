@@ -4,6 +4,8 @@
 
 #include <vision/camera_manager.hpp>
 #include <imu/imu_manager.hpp>
+#include <vision/frame.hpp>
+
 #include <vector>
 #include <string>
 #include <cstdint>
@@ -18,7 +20,7 @@
 #define DATASET_CONFIG_FILE_NAME "config.toml"
 #define MAX_SAMPLES 1000
 #define TIMEOUT_NO_DATA 500 
-#define DEFAULT_COLLECTION_PERIOD 10
+#define DEFAULT_COLLECTION_PERIOD 600
 #define ABSOLUTE_MINIMUM_PERIOD 0.1
 #define ABSOLUTE_MAXIMUM_PERIOD 10800 // 3h
 #define DEFAULT_DS_KEY "None"
@@ -52,8 +54,9 @@ public:
     // Static methods
 
     // It is recommended to have the Create functions under a try-except to catch instantiation failures
-    static std::shared_ptr<DatasetManager> Create(double min_period, uint16_t nb_frames, CAPTURE_MODE capture_mode, std::string ds_key, 
-        CameraManager& cam_manager, IMUManager& imu_manager); // fine to pass string by value/copy
+    static std::shared_ptr<DatasetManager> Create(double max_period, uint16_t target_frame_nb, CAPTURE_MODE capture_mode, uint64_t capture_start_time,
+                                                  IMU_COLLECTION_MODE imu_collection_mode, uint8_t image_capture_rate, float imu_sample_rate_hz, 
+                                                  ProcessingStage target_processing_stage, std::string ds_key, CameraManager& cam_manager, IMUManager& imu_manager);
     // If the folder path does not exist or does not contain a config file, it throws.
     static std::shared_ptr<DatasetManager> Create(const std::string& folder_path, std::string key);
 
@@ -76,8 +79,9 @@ public:
 
 
     // Actual constructors ~ not to be used
-    DatasetManager(double max_period, uint16_t nb_frames, CAPTURE_MODE capture_mode, 
-                    CameraManager& cam_manager, IMUManager& imu_manager);
+    DatasetManager(double max_period, uint16_t nb_frames, CAPTURE_MODE capture_mode, IMU_COLLECTION_MODE imu_collection_mode,
+                    uint8_t image_capture_rate, float imu_sample_rate_hz, ProcessingStage target_processing_stage,
+                    uint64_t capture_start_time, CameraManager& cam_manager, IMUManager& imu_manager);
     // If the folder path does not exist or does not contain a config file, it throws.
     DatasetManager(const std::string& folder_path);
 
@@ -88,13 +92,14 @@ private:
     uint64_t created_at;
     std::string folder_path;
     
-    // uint64_t capture_start_time; // unix in ms. For scheduling
+    uint64_t capture_start_time; // unix in ms. For scheduling
     double maximum_period;
     uint16_t target_frame_nb;
     CAPTURE_MODE dataset_capture_mode; // TODO: can't be idle or capture single
-    // uint8_t imu capture mode; // none, gyro only, gyro + temp, gyro + temp + mag
-    // capture rate camera and imu
-    // target processing of camera data before saving (e.g. prefiltering, compression...)
+    IMU_COLLECTION_MODE imu_collection_mode; // TODO: define
+    uint8_t image_capture_rate; // [s]
+    float imu_sample_rate_hz; // [hz]
+    ProcessingStage target_processing_stage;
 
     // will this be an issue in terms of memory efficiency?
     CameraManager& cameraManager;

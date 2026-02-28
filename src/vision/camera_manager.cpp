@@ -55,7 +55,7 @@ uint8_t CameraManager::SaveLatestFrames(bool only_earth)
                 cameras[i].SetOffNewFrameFlag();
                 continue;
             }
-            [[maybe_unused]] std::string img_path = DH::StoreFrameToDisk(buffer_frame, IMAGES_FOLDER);
+            [[maybe_unused]] std::string img_path = DH::StoreFrameToDisk(buffer_frame, GetStorageFolder());
             cameras[i].SetOffNewFrameFlag();
             save_count++;
         }  
@@ -258,6 +258,12 @@ CameraConfig* CameraManager::GetCameraConfig(int cam_id)
     return nullptr; // Return nullptr if the ID is not found
 }
 
+int CameraManager::GetCapturedFramesCount() const
+{
+    return periodic_frames_captured.load();
+}
+
+
 void CameraManager::StopLoops()
 {
     display_flag.store(false);
@@ -305,6 +311,28 @@ void CameraManager::SetPeriodicFramesToCapture(uint8_t frames)
 {
     periodic_frames_to_capture = frames;
     SPDLOG_INFO("Periodic frames to capture set to: {}", frames);
+}
+
+
+void CameraManager::SetStorageFolder(const std::string& s)
+{
+    if (!DH::fs::exists(s))
+    {
+        if (!DH::MakeNewDirectory(s))
+        {
+            SPDLOG_ERROR("Failed to create storage folder: {}", s);
+            return;
+        }
+    }
+    std::lock_guard<std::mutex> lock(storage_folder_m);
+    storage_folder = s;
+    SPDLOG_INFO("Camera storage folder set to: {}", s);
+}
+
+std::string CameraManager::GetStorageFolder()
+{
+    std::lock_guard<std::mutex> lock(storage_folder_m);
+    return storage_folder;
 }
 
 

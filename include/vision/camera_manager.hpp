@@ -30,7 +30,8 @@ enum class CAPTURE_MODE : uint8_t {
     CAPTURE_SINGLE = 1,  // Camera system stores the latest frame from each available cameras
     PERIODIC = 2,        // Camera system stores all frames at a fixed frequency
     PERIODIC_EARTH = 3,  // Camera system store frames at a fixed rate, but applies a filter to store only frames with a visible Earth
-    PERIODIC_ROI = 4, // Camera system store frames at a fixed rate, but applies a filter to store only frames with regions of interest
+    PERIODIC_ROI = 4, // Camera system store frames at a fixed rate, but only stores frames with regions of interest
+    PERIODIC_LDMK = 5, // Camera system store frames at a fixed rate, but only stores frames with detected landmarks
 };
 
 
@@ -49,6 +50,7 @@ public:
     void RunDisplayLoop(); // This will block the calling thread until the display flag is set to false or all cameras are turned off
 
     CameraConfig* GetCameraConfig(int cam_id);
+    int GetCapturedFramesCount() const;
 
     void CaptureFrames();
 
@@ -66,6 +68,10 @@ public:
     void SetPeriodicCaptureRate(uint8_t rate);
     // Set the number of frames to capture in PERIODIC mode
     void SetPeriodicFramesToCapture(uint8_t frames);
+    // Set the folder to store the captured images
+    void SetStorageFolder(const std::string& folder);
+
+    std::string GetStorageFolder();
 
     // Returns the number of cameras that were activated
     int EnableCameras(std::array<bool, NUM_CAMERAS>& id_activated_cams);
@@ -81,6 +87,8 @@ public:
 private:
         
     std::atomic<CAPTURE_MODE> capture_mode;
+    std::string storage_folder;
+    std::mutex storage_folder_m;
 
     std::array<CameraConfig, NUM_CAMERAS> camera_configs;
     std::array<Camera, NUM_CAMERAS> cameras;
@@ -97,7 +105,6 @@ private:
 
 
     std::array<CAM_STATUS, NUM_CAMERAS> cam_status;
-
 
 
     void _PerformCameraHealthCheck(); // background watchdog for the cameras

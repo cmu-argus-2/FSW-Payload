@@ -36,10 +36,14 @@ std::mutex DatasetManager::datasets_mtx;
 
 
 
-std::shared_ptr<DatasetManager> DatasetManager::Create(double min_period, uint16_t nb_frames, CAPTURE_MODE capture_mode, std::string ds_key,
+std::shared_ptr<DatasetManager> DatasetManager::Create(double max_period, uint16_t target_frame_nb, CAPTURE_MODE capture_mode, uint64_t capture_start_time,
+                                                        IMU_COLLECTION_MODE imu_collection_mode, uint8_t image_capture_rate, float imu_sample_rate_hz, 
+                                                        ProcessingStage target_processing_stage, std::string ds_key, 
                                                         CameraManager& cam_manager=sys::cameraManager(), IMUManager& imu_manager=sys::imuManager())
 {
-    auto instance = std::make_shared<DatasetManager>(min_period, nb_frames, capture_mode, cam_manager, imu_manager);
+    auto instance = std::make_shared<DatasetManager>(max_period, target_frame_nb, capture_mode, imu_collection_mode, 
+                                                        image_capture_rate, imu_sample_rate_hz, target_processing_stage, 
+                                                        capture_start_time, cam_manager, imu_manager);
     std::lock_guard<std::mutex> lock(datasets_mtx);
     if (ds_key == DEFAULT_DS_KEY)
     {
@@ -107,17 +111,26 @@ std::vector<std::string> DatasetManager::ListAllStoredDatasets()
 }
 
 
-
-DatasetManager::DatasetManager(double max_period, uint16_t nb_frames, CAPTURE_MODE capture_mode, 
+DatasetManager::DatasetManager(double max_period, uint16_t nb_frames, 
+                                CAPTURE_MODE capture_mode,
+                                IMU_COLLECTION_MODE imu_collection_mode,
+                                uint8_t image_capture_rate, float imu_sample_rate_hz, 
+                                ProcessingStage target_processing_stage,
+                                uint64_t capture_start_time=timing::GetCurrentTimeMs(), 
                                 CameraManager& cam_manager=sys::cameraManager(), 
                                 IMUManager& imu_manager=sys::imuManager())
 :
+capture_start_time(capture_start_time),
 maximum_period(max_period),
 target_frame_nb(nb_frames),
 dataset_capture_mode(capture_mode),
 progress(nb_frames),
 cameraManager(cam_manager),
-imuManager(imu_manager)
+imuManager(imu_manager),
+imu_collection_mode(imu_collection_mode),
+image_capture_rate(image_capture_rate),
+imu_sample_rate_hz(imu_sample_rate_hz),
+target_processing_stage(target_processing_stage)
 {
     created_at = timing::GetCurrentTimeMs();
     folder_path = DATASETS_FOLDER + std::to_string(created_at) + "/";
@@ -133,9 +146,14 @@ imuManager(imu_manager)
 
 DatasetManager::DatasetManager(const std::string& folder_path)
 :
+capture_start_time(timing::GetCurrentTimeMs()),
 maximum_period(DEFAULT_COLLECTION_PERIOD), // default
 target_frame_nb(MAX_SAMPLES), // default
 dataset_capture_mode(CAPTURE_MODE::PERIODIC), // default
+imu_collection_mode(IMU_COLLECTION_MODE::GYRO_MAG_TEMP),
+image_capture_rate(60),
+imu_sample_rate_hz(1.0f),
+target_processing_stage(ProcessingStage::NotPrefiltered),
 progress(target_frame_nb),
 cameraManager(sys::cameraManager()),
 imuManager(sys::imuManager())
@@ -256,7 +274,8 @@ bool DatasetManager::StartCollection()
     }
 
     loop_flag.store(true);
-    // Launch the collection thread
+    // Launch the collection thread- is this necessary?
+    // this will be launched from a command, that is in a thread itseld
     CollectionLoop();
     // collection_thread = std::thread(&DatasetManager::CollectionLoop, this);
 
@@ -286,17 +305,52 @@ DatasetProgress DatasetManager::QueryProgress() const
 
 bool DatasetManager::CheckTermination()
 {
-    return (progress.current_frames >= target_frame_nb) || (progress.current_frames >= MAX_SAMPLES);
+    return (progress.current_frames >= target_frame_nb) || (timing::GetCurrentTimeMs() - capture_start_time > maximum_period * 1000);
 }
 
 void DatasetManager::CollectionLoop()
 {
-    // TODO: Image capture will be handled by the CameraManager
-    // IMU data collection will be handled by the IMUManager
     // To consider: No two datasets will collect at the same time. 
     // Will have to be careful to guarantee the CameraManager is correctly configured
     // at the right time
+
+    // wait until 
     
+    while (timing::GetCurrentTimeMs() < capture_start_time)
+    {
+        std::this_thread::sleep_for(std::chrono::milliseconds(100));
+    }
+
+    // configure the imu manager for the dataset collection
+    imuManager.SetLogFile(folder_path + "imu_data.csv");
+    imuManager.SetSampleRate(1.0); // TODO: make this configurable
+    imuManager.StartCollection();
+
+    // configure the camera manager for the dataset collection
+    // TODO:Define folder to store images on
+    cameraManager.SetStorageFolder(folder_path);
+    cameraManager.SetPeriodicCaptureRate(uint8_t(image_capture_rate));
+    cameraManager.SetPeriodicFramesToCapture(target_frame_nb);
+    cameraManager.SetCaptureMode(dataset_capture_mode);
+
+    int no_frame_counter = 0;
+    while (loop_flag.load() && !CheckTermination())
+    {
+        std::this_thread::sleep_for(std::chrono::milliseconds(100));
+        if (no_frame_counter < cameraManager.GetCapturedFramesCount())
+        {
+            no_frame_counter = cameraManager.GetCapturedFramesCount();
+            progress.Update(no_frame_counter, 1.0); // TODO: compute actual hit
+            // TODO: store the frame name information
+        }
+    }
+
+    // terminate data collection
+    cameraManager.SetCaptureMode(CAPTURE_MODE::IDLE);
+    cameraManager.SetStorageFolder(IMAGES_FOLDER); // Reset to default folder
+    imuManager.Suspend();
+
+    loop_flag.store(false);
     /*
     // Prepare earth flag
     bool earth_flag = false;

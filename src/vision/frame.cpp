@@ -3,6 +3,7 @@
 #include "vision/prefiltering.hpp"
 #include <opencv2/opencv.hpp>
 #include <nlohmann/json.hpp>
+#include <cmath>
 using Json = nlohmann::json;
 
 
@@ -353,6 +354,61 @@ void Frame::RunPrefiltering()
     
     _processing_stage = ProcessingStage::Prefiltered;
 }
+
+cv::Vec3d PixelToBodyBearing(float px, float py, const cv::Mat& camera_matrix, const cv::Mat& dist_coeffs)
+{
+    std::vector<cv::Point2f> pts_in = {{px, py}};
+    std::vector<cv::Point2f> pts_out;
+    cv::undistortPoints(pts_in, pts_out, camera_matrix, dist_coeffs);
+
+    // pts_out is in normalized image coordinates (distortion removed, K^-1 applied)
+    cv::Vec3d bearing(static_cast<double>(pts_out[0].x),
+                      static_cast<double>(pts_out[0].y),
+                      1.0);
+    return bearing / cv::norm(bearing);
+}
+
+
+cv::Vec3d LatLonToECI(double unix_timestamp_s, double lat_deg, double lon_deg, double alt_m)
+{
+    constexpr double PI       = 3.14159265358979323846;
+    constexpr double DEG2RAD  = PI / 180.0;
+    constexpr double a        = 6378137.0;         // WGS84 semi-major axis [m]
+    constexpr double e2       = 0.00669437999014;  // WGS84 first eccentricity squared
+
+    const double lat_rad = lat_deg * DEG2RAD;
+    const double lon_rad = lon_deg * DEG2RAD;
+    const double sin_lat = std::sin(lat_rad);
+    const double cos_lat = std::cos(lat_rad);
+
+    // Geodetic to ECEF (WGS84)
+    const double N = a / std::sqrt(1.0 - e2 * sin_lat * sin_lat);
+    const double x_ecef = (N + alt_m) * cos_lat * std::cos(lon_rad);
+    const double y_ecef = (N + alt_m) * cos_lat * std::sin(lon_rad);
+    const double z_ecef = (N * (1.0 - e2) + alt_m) * sin_lat;
+
+    // GMST from UTC Unix timestamp
+    const double JD       = 2440587.5 + unix_timestamp_s / 86400.0;
+    const double d        = JD - 2451545.0;  // days since J2000.0
+    const double T        = d / 36525.0;     // Julian centuries
+    double gmst_deg       = 280.46061837
+                          + 360.98564736629 * d
+                          + 0.000387933 * T * T
+                          - (T * T * T) / 38710000.0;
+    gmst_deg = std::fmod(gmst_deg, 360.0);
+    if (gmst_deg < 0.0) { gmst_deg += 360.0; }
+    const double gmst_rad = gmst_deg * DEG2RAD;
+
+    // ECEF to ECI: rotate around Z-axis by -GMST (undo Earth's sidereal rotation)
+    const double cos_g = std::cos(gmst_rad);
+    const double sin_g = std::sin(gmst_rad);
+    return cv::Vec3d(
+        cos_g * x_ecef - sin_g * y_ecef,
+        sin_g * x_ecef + cos_g * y_ecef,
+        z_ecef
+    );
+}
+
 
 bool Frame::IsBlurred()
 {

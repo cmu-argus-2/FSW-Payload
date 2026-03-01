@@ -4,6 +4,7 @@ add_executable(PAYLOAD_TESTS main.cpp
     test_errors.cpp
     navigation/test_quaternion.cpp
     test_tilepack_dh.cpp
+    vision/test_frame_conversions.cpp
     )
 
 # Link the test executable with Google Test and the PAYLOAD library

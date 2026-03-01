@@ -173,6 +173,16 @@ inline void LoadRegionIdsFromJson(const Json& region_json, std::vector<RegionID>
 } // namespace VisionJson
 
 
+// Converts a pixel coordinate to a unit bearing vector in the camera/body frame.
+// Uses the pinhole camera model with distortion correction.
+// Returns a unit vector [x, y, z] where z points along the optical axis.
+cv::Vec3d PixelToBodyBearing(float px, float py, const cv::Mat& camera_matrix, const cv::Mat& dist_coeffs);
+
+// Converts geodetic position (lat/lon/alt) and a UTC Unix timestamp to an ECI position vector.
+// lat_deg: geodetic latitude in degrees, lon_deg: longitude in degrees, alt_m: altitude in meters
+// unix_timestamp_s: UTC time as Unix timestamp (seconds since 1970-01-01T00:00:00Z)
+// Returns ECI position [x, y, z] in meters using WGS84 ellipsoid and GMST rotation.
+cv::Vec3d LatLonToECI(double unix_timestamp_s, double lat_deg, double lon_deg, double alt_m);
 
 
 #endif // FRAME_HPP

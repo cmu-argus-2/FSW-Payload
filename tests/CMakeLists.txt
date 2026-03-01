@@ -71,3 +71,19 @@ target_link_libraries(test_jacobians
     Ceres::ceres
     Eigen3::Eigen
 )
+
+add_executable(TEST_FRAME_CONVERSTION 
+    navigation/test_frame_conversions.cpp)
+
+target_link_libraries(TEST_FRAME_CONVERSTION
+    PRIVATE
+    spdlog::spdlog
+    GTest::gtest 
+    GTest::gtest_main 
+    PAYLOAD_LIB
+    # HDF5::HDF5           
+    # HighFive::HighFive
+    # Ceres::ceres
+    Eigen3::Eigen
+)
+

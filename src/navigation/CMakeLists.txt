@@ -10,7 +10,7 @@ add_library(navigation
     utils.cpp
 )
 
-target_link_libraries(navigation 
-        PRIVATE Eigen3::Eigen HighFive::HighFive Ceres::ceres HDF5::HDF5 spice)
+target_link_libraries(navigation
+        PRIVATE Eigen3::Eigen HighFive::HighFive Ceres::ceres HDF5::HDF5 spice opencv_calib3d)
 
 # target_link_libraries(navigation <dependencies>)

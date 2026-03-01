@@ -1,4 +1,5 @@
 #include "navigation/utils.hpp"
+#include <opencv2/calib3d.hpp>
 #include <unsupported/Eigen/MatrixFunctions>
 #include <filesystem>
 
@@ -95,4 +96,43 @@ Vector3d LAT2ECEF(Vector3d v_lat) {
     Vector3d ecefcoord (ecef[0], ecef[1], ecef[2]);
     
     return ecefcoord;
+}
+
+Vector3d ECI2LAT(Vector3d v_eci, double t_J2000){
+
+    loadAllKernels();
+    SpiceDouble Rot[3][3];
+    pxform_c("J2000", "ITRF93", t_J2000, Rot);
+
+    Vector3d ecef = Cspice2Eigen(Rot) * v_eci;
+
+    SpiceDouble r, lon, lat;
+    SpiceDouble v[3] = {ecef(0), ecef(1), ecef(2)};
+    reclat_c(v, &r, &lon, &lat);
+
+    return Vector3d(r, lon, lat);
+
+}
+
+Vector3d LAT2ECI(Vector3d v_lat, double t_J2000){
+
+    SpiceDouble ecef[3];
+    latrec_c(v_lat(0), v_lat(1), v_lat(2), ecef);
+
+    loadAllKernels();
+    SpiceDouble Rot[3][3];
+    pxform_c("ITRF93", "J2000", t_J2000, Rot);
+
+    return Cspice2Eigen(Rot) * Vector3d(ecef[0], ecef[1], ecef[2]);
+
+}
+
+Vector3d PixelToBodyBearing(float px, float py, const cv::Mat& camera_matrix, const cv::Mat& dist_coeffs)
+{
+    std::vector<cv::Point2f> pts_in = {{px, py}};
+    std::vector<cv::Point2f> pts_out;
+    cv::undistortPoints(pts_in, pts_out, camera_matrix, dist_coeffs);
+
+    // pts_out is in normalized image coordinates (distortion removed, K^-1 applied)
+    return Vector3d(pts_out[0].x, pts_out[0].y, 1.0).normalized();
 }

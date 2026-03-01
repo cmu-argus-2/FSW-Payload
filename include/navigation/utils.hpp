@@ -3,6 +3,7 @@
 
 #include <eigen3/Eigen/Core>
 #include <eigen3/Eigen/Dense>
+#include <opencv2/calib3d.hpp>
 #include "SpiceUsr.h"
 
 using namespace Eigen;
@@ -74,5 +75,34 @@ Vector3d ECEF2LAT(Vector3d v_ecef);
  * @return vector in ECEF frame [UNITS : m]
  */
 Vector3d LAT2ECEF(Vector3d v_lat);
+
+/**
+ * @brief Transforms a vector in ECI frame to latitudinal coordinates
+ *
+ * @param v_eci - vector in ECI frame [UNITS : m]
+ * @param t_J2000 - seconds past J2000
+ * @return vector in latitudinal coordinates (r, lon, lat) [m, rad, rad]
+ */
+Vector3d ECI2LAT(Vector3d v_eci, double t_J2000);
+
+/**
+ * @brief Transforms a vector in latitudinal coordinates to ECI frame
+ *
+ * @param v_lat - vector in latitudinal coordinates (r, lon, lat) [m, rad, rad]
+ * @param t_J2000 - seconds past J2000
+ * @return vector in ECI frame [UNITS : m]
+ */
+Vector3d LAT2ECI(Vector3d v_lat, double t_J2000);
+
+/**
+ * @brief Computes a unit bearing vector in the camera body frame from a pixel coordinate
+ *
+ * @param px - pixel x coordinate
+ * @param py - pixel y coordinate
+ * @param camera_matrix - 3x3 intrinsic camera matrix (CV_64F)
+ * @param dist_coeffs - distortion coefficients (CV_64F)
+ * @return unit bearing vector in camera body frame
+ */
+Vector3d PixelToBodyBearing(float px, float py, const cv::Mat& camera_matrix, const cv::Mat& dist_coeffs);
 
 #endif // UTILS_HPP

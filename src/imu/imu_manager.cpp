@@ -8,6 +8,7 @@
 IMUManager::IMUManager(const IMUConfig& imu_config) : 
 config(imu_config),
 bmi160(imu_config.i2c_path.c_str(), imu_config.i2c_addr, imu_config.chipid), 
+collection_mode(IMU_COLLECTION_MODE::GYRO_ONLY),
 state(IMU_STATE::IDLE) {
     // Initialize BMI160 with I2C interface, default address
     if (!bmi160.deviceFound()) {
@@ -30,9 +31,41 @@ void IMUManager::SetLogFile(const std::string& file_path) {
     log_file = file_path;
 }
 
+void IMUManager::SetCollectionMode(IMU_COLLECTION_MODE mode) {
+    if (mode < IMU_COLLECTION_MODE::NONE || mode > IMU_COLLECTION_MODE::GYRO_MAG_TEMP) {
+        SPDLOG_ERROR("Invalid IMU collection mode: {}", static_cast<int>(mode));
+        return;
+    }
+
+    if (mode == IMU_COLLECTION_MODE::NONE) {
+        Suspend(); // Put sensors in low power mode
+        state.store(IMU_STATE::IDLE);
+        SPDLOG_INFO("IMU collection mode set to NONE, IMU Manager status set to: {}", GetIMUState(state.load()));
+    } else {
+        if (state.load() == IMU_STATE::IDLE) {
+            StartCollection(); // Start collection if currently idle
+        }
+        // If already in COLLECT mode, just update the collection mode
+    }
+    collection_mode.store(mode);
+}
+
 uint8_t IMUManager::GetIMUManagerStatus() {
     return static_cast<uint8_t>(state.load()); // Return current state of the IMU
 }
+
+float IMUManager::GetSampleRate() const { 
+    return sample_rate_hz; 
+}
+
+std::string IMUManager::GetLogFile() const { 
+    return log_file; 
+}
+
+IMU_COLLECTION_MODE IMUManager::GetCollectionMode() const { 
+    return collection_mode.load(); 
+}
+
 
 void IMUManager::RunLoop() {
     // based on camera manager
@@ -208,14 +241,30 @@ int IMUManager::Suspend() {
 }
 
 int32_t IMUManager::ReadSensorData(BMI160::SensorData &gyroData, BMI160::SensorData &magData, float *temperature) {
+    if (collection_mode.load() == IMU_COLLECTION_MODE::NONE) {
+        SPDLOG_ERROR("Cannot read sensor data, collection mode is NONE");
+        return 1; // Error, not in collection mode
+    }
+
     int32_t ret_gyro = ReadGyroData(gyroData);
-    int32_t ret_mag = ReadMagnetometerData(magData);
-    int32_t ret_temp = ReadTemperatureData(temperature);
-    int32_t ret = (ret_gyro != BMI160::RTN_NO_ERROR) ? ret_gyro : ((ret_mag != BMI160::RTN_NO_ERROR) ? ret_mag : ret_temp);
-    if (ret != BMI160::RTN_NO_ERROR) {
-        SPDLOG_ERROR("Failed to read sensor data - Gyro: {}, Mag: {}, Temp: {}", ret_gyro, ret_mag, ret_temp);
-        state.store(IMU_STATE::ERROR_DEVICE); // Update state to error if any of the data retrievals failed
-        SPDLOG_INFO("IMU Manager status set to: {}", GetIMUState(state.load()));
+    int32_t ret = ret_gyro;
+    if (collection_mode.load() > IMU_COLLECTION_MODE::GYRO_ONLY) {
+        int32_t ret_temp = ReadTemperatureData(temperature);
+        if (ret_temp != BMI160::RTN_NO_ERROR) {
+            SPDLOG_ERROR("Failed to read temperature data, code {}", ret_temp);
+            ret = ret_temp; // Update return value to reflect temperature read failure
+            state.store(IMU_STATE::ERROR_DEVICE); // Update state to error if temperature read failed
+            SPDLOG_INFO("IMU Manager status set to: {}", GetIMUState(state.load()));
+        }
+    }
+    if (collection_mode.load() == IMU_COLLECTION_MODE::GYRO_MAG_TEMP) {
+        int32_t ret_mag = ReadMagnetometerData(magData);
+        if (ret_mag != BMI160::RTN_NO_ERROR) {
+            SPDLOG_ERROR("Failed to read magnetometer data, code {}", ret_mag);
+            ret = ret_mag; // Update return value to reflect magnetometer read failure
+            state.store(IMU_STATE::ERROR_DEVICE); // Update state to error if magnetometer read failed
+            SPDLOG_INFO("IMU Manager status set to: {}", GetIMUState(state.load()));
+        }
     }
     return ret; // Return the result of the data retrievals
 }

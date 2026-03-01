@@ -22,6 +22,7 @@ enum class IMU_COLLECTION_MODE : uint8_t
     GYRO_MAG_TEMP = 3,
 };
 
+
 constexpr std::string_view GetIMUState(IMU_STATE state) {
     switch (state) {
         case IMU_STATE::IDLE: return "IDLE";
@@ -63,11 +64,13 @@ class IMUManager
         // setters
         void SetSampleRate(float rate_hz);
         void SetLogFile(const std::string& file_path);
+        void SetCollectionMode(IMU_COLLECTION_MODE mode);
 
         // getters
         uint8_t GetIMUManagerStatus();
-        float GetSampleRate() const { return sample_rate_hz; }
-        std::string GetLogFile() const { return log_file; }
+        float GetSampleRate() const;
+        std::string GetLogFile() const;
+        IMU_COLLECTION_MODE GetCollectionMode() const;
 
         // IMU Manager main loop control
         void RunLoop();
@@ -97,6 +100,7 @@ class IMUManager
         IMUConfig config;
 
         std::atomic<IMU_STATE> state;
+        std::atomic<IMU_COLLECTION_MODE> collection_mode;
         float sample_rate_hz= 1.0f; // default sample rate
         std::atomic<bool> loop_flag = false; // flag to control the main loop
         // TODO: Error handling, protection for file writing, etc.

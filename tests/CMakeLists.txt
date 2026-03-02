@@ -72,18 +72,19 @@ target_link_libraries(test_jacobians
     Eigen3::Eigen
 )
 
-add_executable(TEST_FRAME_CONVERSTION 
+add_executable(TEST_FRAME_CONVERSION
     navigation/test_frame_conversions.cpp)
 
-target_link_libraries(TEST_FRAME_CONVERSTION
+target_link_libraries(TEST_FRAME_CONVERSION
     PRIVATE
     spdlog::spdlog
-    GTest::gtest 
-    GTest::gtest_main 
-    PAYLOAD_LIB
-    # HDF5::HDF5           
-    # HighFive::HighFive
-    # Ceres::ceres
+    GTest::gtest
+    GTest::gtest_main
+    core
+    navigation
+    vision
+    ${OpenCV_LIBS}
     Eigen3::Eigen
+    spice
 )
 

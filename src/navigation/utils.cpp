@@ -19,7 +19,7 @@ int64_t unixToJ2000(int64_t unixSeconds) {
 void loadAllKernels() {
     std::filesystem::path path(__FILE__);
     std::string root = path.parent_path().parent_path().parent_path().string(); // utils_and_transforms.cpp --> math --> world --> dynamics sim
-    std::string data_folder = root + "/data/";
+    std::string data_folder = root + "/data/kernels/";
 
 
     std::string sol_system_spk = data_folder + "de440.bsp";

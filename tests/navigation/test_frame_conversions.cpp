@@ -6,6 +6,8 @@
 #include <unsupported/Eigen/MatrixFunctions>
 #include <eigen3/Eigen/Core>
 #include <eigen3/Eigen/Dense>
+#include <vision/frame.hpp>
+#include <navigation/utils.hpp>
 
 static const std::string SAMPLE_JSON_PATH =
     std::string(ROOT_DIR) + "/tests/sample_data/frame_example.json";
@@ -45,7 +47,7 @@ TEST(PixelToBodyBearingTest, PrincipalPointGivesOpticalAxis)
     cv::Mat K = MakeK(fx, fy, cx, cy);
     cv::Mat D = ZeroDistortion();
 
-    Vector3d bearing = PixelToBodyBearing(static_cast<float>(cx),
+    Eigen::Vector3d bearing = PixelToBodyBearing(static_cast<float>(cx),
                                            static_cast<float>(cy), K, D);
 
     EXPECT_NEAR(bearing[0], 0.0, 1e-6);
@@ -65,10 +67,32 @@ TEST(PixelToBodyBearingTest, LandmarkPixelsFromJsonAreUnitVectors)
 
     for (const auto& lm : frame.GetLandmarks())
     {
-        cv::Vec3d b = PixelToBodyBearing(lm.x, lm.y, K, D);
-        EXPECT_NEAR(cv::norm(b), 1.0, 1e-9)
+        Eigen::Vector3d b = PixelToBodyBearing(lm.x, lm.y, K, D);
+        EXPECT_NEAR(b.norm(), 1.0, 1e-9)
             << "Not a unit vector for landmark at (" << lm.x << ", " << lm.y << ")";
         EXPECT_GT(b[2], 0.0)
             << "Bearing z should be positive (pointing into scene)";
     }
+}
+
+// ── LAT2ECI ───────────────────────────────────────────────────────────────────
+
+// Timestamp from the JSON (microseconds) converted to J2000 seconds for all ECI tests.
+static double JsonTimestampJ2000()
+{
+    uint64_t ts_us = LoadFrameFromJson().GetTimestamp();
+    int64_t t_unix_s = static_cast<int64_t>(ts_us / 1000000ULL);
+    return static_cast<double>(unixToJ2000(t_unix_s));
+}
+
+// LAT2ECI takes v_lat = (r [m], longitude [rad], latitude [rad]) in SPICE convention.
+static constexpr double EARTH_RADIUS_M = 6378137.0; // WGS84 equatorial radius
+
+TEST(LAT2ECITest, EquatorialMagnitudeEqualsEarthRadius)
+{
+    const double t_j2000 = JsonTimestampJ2000();
+    // lon=0, lat=0 → equatorial prime-meridian point at Earth's surface
+    Eigen::Vector3d v_lat(EARTH_RADIUS_M, 0.0, 0.0);
+    Eigen::Vector3d r = LAT2ECI(v_lat, t_j2000);
+    EXPECT_NEAR(r.norm(), EARTH_RADIUS_M, 1.0);
 }

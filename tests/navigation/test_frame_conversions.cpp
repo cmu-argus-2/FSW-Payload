@@ -75,6 +75,23 @@ TEST(PixelToBodyBearingTest, LandmarkPixelsFromJsonAreUnitVectors)
     }
 }
 
+TEST(PixelToBodyBearingTest, OffAxisPixelCorrectDirection)
+{
+    // One focal length right of principal point:
+    //   normalised coords → (1, 0), bearing (1,0,1)/‖·‖ = (1/√2, 0, 1/√2)
+    const double fx = 4000.0, fy = 4000.0, cx = 2304.0, cy = 1296.0;
+    cv::Mat K = MakeK(fx, fy, cx, cy);
+    cv::Mat D = ZeroDistortion();
+
+    const double expected = 1.0 / std::sqrt(2.0);
+    Eigen::Vector3d bearing = PixelToBodyBearing(static_cast<float>(cx + fx),
+                                                 static_cast<float>(cy), K, D);
+
+    EXPECT_NEAR(bearing[0], expected, 1e-6);
+    EXPECT_NEAR(bearing[1], 0.0,     1e-6);
+    EXPECT_NEAR(bearing[2], expected, 1e-6);
+}
+
 // ── LAT2ECI ───────────────────────────────────────────────────────────────────
 
 // Timestamp from the JSON (microseconds) converted to J2000 seconds for all ECI tests.
@@ -95,4 +112,57 @@ TEST(LAT2ECITest, EquatorialMagnitudeEqualsEarthRadius)
     Eigen::Vector3d v_lat(EARTH_RADIUS_M, 0.0, 0.0);
     Eigen::Vector3d r = LAT2ECI(v_lat, t_j2000);
     EXPECT_NEAR(r.norm(), EARTH_RADIUS_M, 1.0);
+}
+
+
+// Helper: geographic lat/lon (degrees) + altitude (m) → ECI using existing LAT2ECI.
+// LAT2ECI expects (r [m], lon [rad], lat [rad]) in SPICE latitudinal convention.
+static Eigen::Vector3d LatLonAltToECI(double t_j2000, double lat_deg, double lon_deg, double alt_m)
+{
+    double r = EARTH_RADIUS_M + alt_m;
+    Eigen::Vector3d v_lat(r, lon_deg * M_PI / 180.0, lat_deg * M_PI / 180.0);
+    return LAT2ECI(v_lat, t_j2000);
+}
+
+TEST(LatLonToECITest, PolarZComponentEqualsPolarRadius)
+{
+    // The full ECEF→ECI transformation (ITRF93→J2000) includes precession and
+    // nutation, so individual components shift by up to ~14 km.
+    // The one guarantee is that the orthogonal rotation preserves the magnitude.
+    const double t = JsonTimestampJ2000();
+    const double b = 6378137.0 * std::sqrt(1.0 - 0.00669437999014);
+    Eigen::Vector3d v_lat(b, 0.0, M_PI / 2.0);  // r=b, lon=0, lat=90°
+    Eigen::Vector3d r = LAT2ECI(v_lat, t);
+    EXPECT_NEAR(r.norm(), b, 1.0);
+}
+
+TEST(LatLonToECITest, AltitudeIncreasesRadius)
+{
+    const double t     = JsonTimestampJ2000();
+    const double alt_m = 500000.0;
+    Eigen::Vector3d r_surface = LatLonAltToECI(t, 45.0, 90.0, 0.0);
+    Eigen::Vector3d r_orbit   = LatLonAltToECI(t, 45.0, 90.0, alt_m);
+    EXPECT_GT(r_orbit.norm(), r_surface.norm());
+    EXPECT_NEAR(r_orbit.norm() - r_surface.norm(), alt_m, 1000.0);
+}
+
+TEST(LatLonToECITest, MagnitudePreservedAcrossTimestamps)
+{
+    const double t = JsonTimestampJ2000();
+    Eigen::Vector3d r1 = LatLonAltToECI(t,          35.0, 139.0, 400000.0);
+    Eigen::Vector3d r2 = LatLonAltToECI(t + 3600.0, 35.0, 139.0, 400000.0);
+    EXPECT_NEAR(r1.norm(), r2.norm(), 1.0);
+}
+
+TEST(LatLonToECITest, EarthRotationChangesXYNotZ)
+{
+    // Earth rotates ~15°/hour: after 1h the same ECEF point has different ECI x,y.
+    // The full ITRF93→J2000 transformation includes precession/nutation, so z also
+    // shifts slightly; the guaranteed invariant is that the magnitude is preserved.
+    const double t = JsonTimestampJ2000();
+    Eigen::Vector3d r1 = LatLonAltToECI(t,          0.0, 0.0, 0.0);
+    Eigen::Vector3d r2 = LatLonAltToECI(t + 3600.0, 0.0, 0.0, 0.0);
+    EXPECT_NE(r1[0], r2[0]);
+    EXPECT_NE(r1[1], r2[1]);
+    EXPECT_NEAR(r1.norm(), r2.norm(), 1.0);
 }

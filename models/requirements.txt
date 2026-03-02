@@ -11,3 +11,6 @@ numpy<2
 h5py
 dill
 pycuda
+nvidia-cudnn-cu12
+allantools
+Cython

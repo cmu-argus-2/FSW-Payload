@@ -119,6 +119,51 @@ bool InitializeDataStorage()
     // TODO retry if failure
 }
 
+std::string StoreDatasetToDisk(Dataset& dataset) 
+{
+    std::ostringstream oss;
+    oss << DATASETS_FOLDER << "dataset" << DELIMITER << dataset.GetCaptureStartTime() << ".json";
+    std::string dataset_file_path = oss.str();
+    Json j = dataset.toJson();
+
+    std::ofstream ofs(dataset_file_path, std::ios::out | std::ios::trunc);
+    if (!ofs.is_open())
+    {
+        SPDLOG_ERROR("Failed to write dataset to disk: {}", dataset_file_path);
+        return "";
+    }
+
+    ofs << j.dump(4);
+    ofs.close();
+    SPDLOG_INFO("Saved dataset to disk: {}", dataset_file_path);
+    SPDLOG_DEBUG("Dataset file size: {} bytes", GetFileSize(dataset_file_path));
+
+    return dataset_file_path;
+}
+
+bool readDatasetFromDisk(const std::string& dataset_file_path, Dataset& dataset_out)
+{
+    if (!fs::exists(dataset_file_path)) 
+    {
+        SPDLOG_ERROR("Dataset file does not exist: {}", dataset_file_path);
+        return false;
+    }
+    Json j;
+    try
+    {
+        std::ifstream ifs(dataset_file_path);
+        ifs >> j;
+        ifs.close();
+        dataset_out.fromJson(j);
+    }
+    catch (const std::exception& e)
+    {
+        SPDLOG_ERROR("Failed to read dataset from disk {}: {}", dataset_file_path, e.what());
+        return false;
+    }
+    return true;
+}
+
 std::string StoreFrameToDisk(Frame& frame, std::string_view target_folder)
 {
     StoreFrameMetadataToDisk(frame, target_folder);
@@ -129,7 +174,7 @@ void StoreFrameMetadataToDisk(Frame& frame, std::string_view target_folder)
 {
     // Implementation for storing frame metadata to disk
     std::ostringstream oss;
-    oss << target_folder << "raw" << DELIMITER << frame.GetTimestamp() << DELIMITER << frame.GetCamID() << ".json";
+    oss << target_folder << "frame" << DELIMITER << frame.GetTimestamp() << DELIMITER << frame.GetCamID() << ".json";
     std::string file_path = oss.str();
 
     // const cv::Mat& img = frame.GetImg();
@@ -145,35 +190,6 @@ void StoreFrameMetadataToDisk(Frame& frame, std::string_view target_folder)
 
     ofs << j.dump(4);
     ofs.close();
-    /*
-    std::ostringstream oss;
-    oss << target_folder << "raw" << DELIMITER << frame.GetTimestamp() << DELIMITER << frame.GetCamID() << ".png";
-    std::string img_file_path = oss.str();
-
-    j["img_path"] = img_file_path;
-    
-    std::ostringstream js;
-    js << "{\n";
-    js << "  \"timestamp\": " << frame.GetTimestamp() << ",\n";
-    js << "  \"cam_id\": " << frame.GetCamID() << ",\n";
-    // Cast to int to avoid streaming as a `char` (uint8_t prints as character)
-    js << "  \"annotation_state\": " <<  static_cast<int>(frame.GetImageState()) << ",\n";
-    js << "  \"processing_stage\": " << static_cast<int>(frame.GetProcessingStage()) << ",\n";
-    // TODO: regions and landmarks
-    js << "  \"rank\": " << frame.GetRank() << "\n";
-    js << "}\n";
-    
-
-    std::ofstream ofs(file_path, std::ios::out | std::ios::trunc);
-    if (!ofs.is_open())
-    {
-        SPDLOG_ERROR("Failed to write metadata to disk: {}", file_path);
-        return;
-    }
-
-    ofs << js.str();
-    ofs.close();
-    */
     SPDLOG_INFO("Saved metadata to disk: {}", file_path);
     SPDLOG_DEBUG("Metadata file size: {} bytes", GetFileSize(file_path));
     
@@ -435,6 +451,42 @@ bool ReadImageFromDisk(const std::string& file_path, Frame& frame_out)
 
     SPDLOG_INFO("Image loaded successfully from disk: {}", file_path);
     return true;
+}
+
+bool ReadImageFromDisk(std::uint64_t timestamp, int cam_id, Frame& frame_out)
+{
+    std::ostringstream oss;
+    oss << IMAGES_FOLDER << "raw" << DELIMITER << timestamp << DELIMITER << cam_id << ".png";
+    std::string file_path = oss.str();
+    return ReadImageFromDisk(file_path, frame_out);
+}
+
+Json LoadFrameMetadataFromDisk(std::uint64_t timestamp, int cam_id)
+{
+    std::ostringstream oss;
+    oss << IMAGES_FOLDER << "frame" << DELIMITER << timestamp << DELIMITER << cam_id << ".json";
+    std::string file_path = oss.str();
+
+    std::ifstream ifs(file_path);
+    if (!ifs.is_open())
+    {
+        SPDLOG_ERROR("Failed to load frame metadata from disk: {}", file_path);
+        return Json(); // Return empty JSON on failure
+    }
+
+    Json j;
+    try
+    {
+        ifs >> j;
+    }
+    catch (const std::exception& e)
+    {
+        SPDLOG_ERROR("Failed to parse JSON metadata from file {}: {}", file_path, e.what());
+        return Json(); // Return empty JSON on failure
+    }
+
+    SPDLOG_INFO("Frame metadata loaded successfully from disk: {}", file_path);
+    return j;
 }
 
 EC ReadFileChunk(std::string_view file_path, uint32_t start_byte, uint32_t length, std::vector<uint8_t>& data_out)

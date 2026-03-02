@@ -3,7 +3,7 @@
     dataset collection is received.
 */
 #include "spdlog/spdlog.h"
-#include "vision/dataset.hpp"
+#include "vision/dataset_manager.hpp"
 #include "core/timing.hpp"
 #include "configuration.hpp"
 #include <memory>
@@ -47,7 +47,7 @@ int main(int argc, char** argv)
         return 0;
     }
 
-    auto ds = DatasetManager::GetActiveDataset(DATASET_KEY_CMD);
+    auto ds = DatasetManager::GetActiveDatasetManager(DATASET_KEY_CMD);
 
     if (ds) // if already exists
     {
@@ -59,7 +59,7 @@ int main(int argc, char** argv)
         }
         else
         {
-            ds->StopDataset(DATASET_KEY_CMD); // remove it (will create a new one)
+            ds->StopDatasetManager(DATASET_KEY_CMD); // remove it (will create a new one)
         }
     }
 

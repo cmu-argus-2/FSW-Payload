@@ -4,7 +4,7 @@
 #include "core/data_handling.hpp"
 #include "core/timing.hpp"
 #include "telemetry/telemetry.hpp"
-#include "vision/dataset.hpp"
+#include "vision/dataset_manager.hpp"
 #include "core/errors.hpp"
 #include "communication/comms.hpp"
 #include "communication/tilepack.hpp"
@@ -256,7 +256,7 @@ void start_capture_dataset([[maybe_unused]] std::vector<uint8_t>& data)
         return;
     }
 
-    auto ds = DatasetManager::GetActiveDataset(DATASET_KEY_CMD);
+    auto ds = DatasetManager::GetActiveDatasetManager(DATASET_KEY_CMD);
 
     if (ds) // if already exists
     {
@@ -268,7 +268,7 @@ void start_capture_dataset([[maybe_unused]] std::vector<uint8_t>& data)
         }
         else
         {
-            ds->StopDataset(DATASET_KEY_CMD); // remove it (will create a new one)
+            ds->StopDatasetManager(DATASET_KEY_CMD); // remove it (will create a new one)
         }
     }
 
@@ -304,7 +304,7 @@ void stop_capture_dataset([[maybe_unused]] std::vector<uint8_t>& data)
     // sys::cameraManager().SetCaptureMode(CAPTURE_MODE::IDLE);
     // TODO return true or false based on the success of the operations
 
-    auto ds = DatasetManager::GetActiveDataset(DATASET_KEY_CMD);
+    auto ds = DatasetManager::GetActiveDatasetManager(DATASET_KEY_CMD);
     if (ds) // if it exists
     {
         ds->StopCollection();
@@ -314,7 +314,7 @@ void stop_capture_dataset([[maybe_unused]] std::vector<uint8_t>& data)
         uint8_t completion = static_cast<uint8_t>(ds_progress.completion);
 
         // Stop dataset process and remove from registry
-        ds->StopDataset(DATASET_KEY_CMD);
+        ds->StopDatasetManager(DATASET_KEY_CMD);
 
         // Create success ACK message with stats
         std::vector<uint8_t> transmit_data;
@@ -519,7 +519,7 @@ void ping_od_status([[maybe_unused]] std::vector<uint8_t>& data)
         }
         case OD_STATE::INIT:
         {
-            auto ds = DatasetManager::GetActiveDataset(DATASET_KEY_OD);
+            auto ds = DatasetManager::GetActiveDatasetManager(DATASET_KEY_OD);
             if (ds) // if it exists
             {
                 DatasetProgress ds_progress = ds->QueryProgress();

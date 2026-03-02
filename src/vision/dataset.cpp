@@ -6,97 +6,9 @@
 #include "vision/dataset.hpp"
 #include "core/data_handling.hpp"
 #include "core/timing.hpp"
-#include "payload.hpp"
 
 
-DatasetProgress::DatasetProgress(uint16_t target_nb_frames)
-:
-hit_ratio(1.0),
-_progress_calls(0.0),
-completion(0.0),
-current_frames(0),
-target_frames(target_nb_frames)
-{}
-
-void DatasetProgress::Update(uint16_t nb_new_frames, double instant_hit_ratio)
-{
-    current_frames += nb_new_frames;
-    
-    // cumulative average
-    hit_ratio = (instant_hit_ratio + _progress_calls * hit_ratio) / (_progress_calls + 1);
-    _progress_calls++;
-
-    completion = static_cast<double>(current_frames) / static_cast<double>(target_frames);
-    SPDLOG_INFO("Current progress: {} / {}", current_frames, target_frames);
-}
-
-// Registry for the datasets
-std::unordered_map<std::string, std::shared_ptr<DatasetManager>> DatasetManager::active_datasets;
-std::mutex DatasetManager::datasets_mtx;
-
-
-
-std::shared_ptr<DatasetManager> DatasetManager::Create(double max_period, uint16_t target_frame_nb, CAPTURE_MODE capture_mode, uint64_t capture_start_time,
-                                                        IMU_COLLECTION_MODE imu_collection_mode, uint8_t image_capture_rate, float imu_sample_rate_hz, 
-                                                        ProcessingStage target_processing_stage, std::string ds_key, 
-                                                        CameraManager& cam_manager=sys::cameraManager(), IMUManager& imu_manager=sys::imuManager())
-{
-    auto instance = std::make_shared<DatasetManager>(max_period, target_frame_nb, capture_mode, imu_collection_mode, 
-                                                        image_capture_rate, imu_sample_rate_hz, target_processing_stage, 
-                                                        capture_start_time, cam_manager, imu_manager);
-    std::lock_guard<std::mutex> lock(datasets_mtx);
-    if (ds_key == DEFAULT_DS_KEY)
-    {
-        ds_key = std::to_string(instance->created_at);
-    }
-    active_datasets[ds_key] = instance;
-    return instance;
-}
-
-std::shared_ptr<DatasetManager> DatasetManager::Create(const std::string& folder_path, std::string ds_key = DEFAULT_DS_KEY)
-{
-    auto instance = std::make_shared<DatasetManager>(folder_path);
-    std::lock_guard<std::mutex> lock(datasets_mtx);
-    if (ds_key == DEFAULT_DS_KEY)
-    {
-        ds_key = std::to_string(instance->created_at);
-    }
-    active_datasets[ds_key] = instance;
-    return instance;
-}
-
-
-std::shared_ptr<DatasetManager> DatasetManager::GetActiveDataset(const std::string& key = DEFAULT_DS_KEY)
-{
-    std::lock_guard<std::mutex> lock(datasets_mtx);
-    auto it = active_datasets.find(key);
-    return (it != active_datasets.end()) ? it->second : nullptr;
-    // TODO: must check it's actually running (collection in progress)
-}
-
-void DatasetManager::StopDataset(const std::string& key)
-{
-    std::lock_guard<std::mutex> lock(datasets_mtx);
-    auto it = active_datasets.find(key);
-    if (it != active_datasets.end())
-    {
-        it->second->StopCollection();
-        active_datasets.erase(it);
-    }
-}
-
-std::vector<std::string> DatasetManager::ListActiveDatasets()
-{
-    std::lock_guard<std::mutex> lock(datasets_mtx);
-    std::vector<std::string> keys;
-    for (const auto& entry : active_datasets)
-    {
-        keys.push_back(entry.first);
-    }
-    return keys;
-}
-
-std::vector<std::string> DatasetManager::ListAllStoredDatasets()
+std::vector<std::string> Dataset::ListAllStoredDatasets()
 {
     // List all folders in the dataset folder
     std::vector<std::string> dataset_folders;
@@ -111,29 +23,25 @@ std::vector<std::string> DatasetManager::ListAllStoredDatasets()
 }
 
 
-DatasetManager::DatasetManager(double max_period, uint16_t nb_frames, 
+Dataset::Dataset(double max_period, uint16_t nb_frames, 
                                 CAPTURE_MODE capture_mode,
                                 IMU_COLLECTION_MODE imu_collection_mode,
                                 uint8_t image_capture_rate, float imu_sample_rate_hz, 
                                 ProcessingStage target_processing_stage,
-                                uint64_t capture_start_time=timing::GetCurrentTimeMs(), 
-                                CameraManager& cam_manager=sys::cameraManager(), 
-                                IMUManager& imu_manager=sys::imuManager())
+                                uint64_t capture_start_time=timing::GetCurrentTimeMs())
 :
 capture_start_time(capture_start_time),
 maximum_period(max_period),
 target_frame_nb(nb_frames),
 dataset_capture_mode(capture_mode),
-progress(nb_frames),
-cameraManager(cam_manager),
-imuManager(imu_manager),
 imu_collection_mode(imu_collection_mode),
 image_capture_rate(image_capture_rate),
 imu_sample_rate_hz(imu_sample_rate_hz),
 target_processing_stage(target_processing_stage)
 {
-    created_at = timing::GetCurrentTimeMs();
-    folder_path = DATASETS_FOLDER + std::to_string(created_at) + "/";
+    // TODO: may want to rethink this dataset naming approach, since dataset collection will start
+    // with some delay from the creation of this
+    folder_path = DATASETS_FOLDER + std::to_string(capture_start_time) + "/";
 
     bool res = DH::MakeNewDirectory(folder_path);
     if (!res)
@@ -144,7 +52,8 @@ target_processing_stage(target_processing_stage)
     CreateConfigurationFile(); 
 }
 
-DatasetManager::DatasetManager(const std::string& folder_path)
+
+Dataset::Dataset(const std::string& folder_path)
 :
 capture_start_time(timing::GetCurrentTimeMs()),
 maximum_period(DEFAULT_COLLECTION_PERIOD), // default
@@ -153,10 +62,7 @@ dataset_capture_mode(CAPTURE_MODE::PERIODIC), // default
 imu_collection_mode(IMU_COLLECTION_MODE::GYRO_MAG_TEMP),
 image_capture_rate(60),
 imu_sample_rate_hz(1.0f),
-target_processing_stage(ProcessingStage::NotPrefiltered),
-progress(target_frame_nb),
-cameraManager(sys::cameraManager()),
-imuManager(sys::imuManager())
+target_processing_stage(ProcessingStage::NotPrefiltered)
 {
     
     std::string candidate_folder = folder_path;
@@ -231,7 +137,7 @@ imuManager(sys::imuManager())
 
 
 
-void DatasetManager::CreateConfigurationFile()
+void Dataset::CreateConfigurationFile()
 {
     auto tbl = toml::table{
         {"maximum_period", maximum_period},
@@ -255,192 +161,85 @@ void DatasetManager::CreateConfigurationFile()
 }
 
 
-bool DatasetManager::IsCompleted()
+Json Dataset::toJson() const
 {
-    return CheckTermination();
-}
-
-
-bool DatasetManager::StartCollection()
-{
-    // Create folder if it doesn't exists
-    if (!DH::fs::exists(folder_path))
-    {
-        if (!DH::MakeNewDirectory(folder_path))
-        {
-            SPDLOG_ERROR("Failed to create {}", folder_path);
-            return false;
-        }
-    }
-
-    loop_flag.store(true);
-    // Launch the collection thread- is this necessary?
-    // this will be launched from a command, that is in a thread itseld
-    CollectionLoop();
-    // collection_thread = std::thread(&DatasetManager::CollectionLoop, this);
-
-    return true;
-}
-
-
-void DatasetManager::StopCollection()
-{
-    loop_flag.store(false);
-    loop_cv.notify_all();
-    if (collection_thread.joinable())
-    {
-        collection_thread.join();
-    }
-}
-
-bool DatasetManager::Running()
-{
-    return loop_flag.load();
-}
-
-DatasetProgress DatasetManager::QueryProgress() const
-{
-    return progress;
-}
-
-bool DatasetManager::CheckTermination()
-{
-    return (progress.current_frames >= target_frame_nb) || (timing::GetCurrentTimeMs() - capture_start_time > maximum_period * 1000);
-}
-
-void DatasetManager::CollectionLoop()
-{
-    // To consider: No two datasets will collect at the same time. 
-    // Will have to be careful to guarantee the CameraManager is correctly configured
-    // at the right time
-
-    // wait until 
-    
-    while (timing::GetCurrentTimeMs() < capture_start_time)
-    {
-        std::this_thread::sleep_for(std::chrono::milliseconds(100));
-    }
-
-    // configure the imu manager for the dataset collection
-    imuManager.SetLogFile(folder_path + "imu_data.csv");
-    imuManager.SetSampleRate(1.0); // TODO: make this configurable
-    imuManager.StartCollection();
-
-    // configure the camera manager for the dataset collection
-    // TODO:Define folder to store images on
-    cameraManager.SetStorageFolder(folder_path);
-    cameraManager.SetPeriodicCaptureRate(uint8_t(image_capture_rate));
-    cameraManager.SetPeriodicFramesToCapture(target_frame_nb);
-    cameraManager.SetCaptureMode(dataset_capture_mode);
-
-    int no_frame_counter = 0;
-    while (loop_flag.load() && !CheckTermination())
-    {
-        std::this_thread::sleep_for(std::chrono::milliseconds(100));
-        if (no_frame_counter < cameraManager.GetCapturedFramesCount())
-        {
-            no_frame_counter = cameraManager.GetCapturedFramesCount();
-            progress.Update(no_frame_counter, 1.0); // TODO: compute actual hit
-            // TODO: store the frame name information
-        }
-    }
-
-    // terminate data collection
-    cameraManager.SetCaptureMode(CAPTURE_MODE::IDLE);
-    imuManager.Suspend();
-
-    // 
-    loop_flag.store(false);
+    Json j;
+    // Dataset Configuration
+    j["folder_path"] = folder_path;
+    j["capture_start_time"] = capture_start_time;
+    j["maximum_period"] = maximum_period;
+    j["target_frame_nb"] = target_frame_nb;
+    j["dataset_capture_mode"] = dataset_capture_mode;
+    j["imu_collection_mode"] = imu_collection_mode;
+    j["image_capture_rate"] = image_capture_rate;
+    j["imu_sample_rate_hz"] = imu_sample_rate_hz;
+    j["target_processing_stage"] = target_processing_stage;
+    // IMU TODO: Store log file path for reference in dataset
     /*
-    // Prepare earth flag
-    bool earth_flag = false;
-    if ((dataset_type == DatasetType::EARTH_ONLY) || (dataset_type == DatasetType::LANDMARKS))
+    j["imu_log_file_path"] = imuManager.GetLogFile();
+    // IMU number of time stamps collected
+    uint64_t imu_line_count = 0;
+    std::ifstream imu_file(imuManager.GetLogFile());
+    std::string line;
+    while (std::getline(imu_file, line))
     {
-        earth_flag = true;
+        imu_line_count++;
     }
-
-    // Prepare buffer for the frames
-    std::vector<Frame> buffer_frames;
-    buffer_frames.reserve(NUM_CAMERAS); // max possible, should never happen given our camera configuration
-
-    // Error handling
-    int no_frame_counter = 0;
-
-    // Timing stuff
-    const auto interval = std::chrono::duration_cast<timing::Clock::duration>(std::chrono::duration<double>(minimum_period)); // casting set it to nanoseconds given the clock
-    auto next_time = timing::Clock::now();
-
-
-    // Assumes folder exists
-    while (loop_flag.load() && !CheckTermination())
+    j["imu_timestamps_collected"] = imu_line_count;
+    */
+    // Number of frames stored in the dataset
+    j["frames_collected"] = stored_frame_ids.size();
+    j["frame_id_list"] = stored_frame_ids; // list of frame ids (cam_id, timestamp) stored in the dataset
+    int num_frames_prefiltered = 0;
+    int num_frames_rcneted = 0;
+    int num_frames_ldneted = 0;
+    int num_frames_earth = 0;
+    int num_frames_roi = 0;
+    int num_frames_landmarks = 0;
+     for (const auto& frame_id : stored_frame_ids)
     {
-        // Wait for stopping condition or timeout based on the predetermined period 
-        {
-            std::unique_lock<std::mutex> lock(loop_mtx);
-            loop_cv.wait_until(lock, next_time, [this] { return !loop_flag.load(); });
-        }
-
-        // Check if any camera is active 
-        if (!getCameraManager().CountActiveCameras())
-        {
-            // TODO: Error code 
-            SPDLOG_WARN("No active cameras.");
-            // TODO: might need to just continue and wait for the camera monitor to kick in
+        // Load frame metadata from disk using the frame_id (cam_id and timestamp)
+        // Check if the frame meets the criteria for each category and increment the corresponding counters
+        Json frame_metadata = DH::LoadFrameMetadataFromDisk(std::get<1>(frame_id), std::get<0>(frame_id));
+        if (frame_metadata.is_null()) {
+            SPDLOG_WARN("Failed to load metadata for frame ID: ({}, {})", std::get<0>(frame_id), std::get<1>(frame_id));
             continue;
         }
-
-        // Copy the latest frames 
-        uint8_t nb_copied_frames = getCameraManager().CopyFrames(buffer_frames, earth_flag);
-        SPDLOG_WARN("Number of copied frames {}", nb_copied_frames);
-
-        if (nb_copied_frames > 0)
+        if (frame_metadata.contains("processing_stage"))
         {
-            no_frame_counter = 0;
-            int saved_frames = 0;
-
-            // ---- for LANDMARKS --> save the images AND their associated RC and landmark data (as CSV files for a start)
-            if (dataset_type == DatasetType::LANDMARKS) 
-            {
-                // TODO: Neural Engine pass
-                // discard frames that are not ROI here ~ hit ratio for statistics
-
-                // Save the frame and all its associated data in the folder
-            }
-            else // ---- for ANY and EARTH_ONLY --> just save the images 
-            {   
-                for (auto frame : buffer_frames)
-                {
-                    [[maybe_unused]] std::string path = DH::StoreFrameToDisk(frame, folder_path);
-                    saved_frames++;
-                    progress.Update(saved_frames);
-                    SPDLOG_WARN("Number of saved frames {}", saved_frames);
-                }
-            }
-
-            // reset
-            saved_frames = 0;
-            buffer_frames.clear();
-
-            if (CheckTermination())
-            {
-                SPDLOG_INFO("Completed dataset collection!");
-                break;
-            }
-
-            // pause till next period
-            next_time += interval;
-            std::this_thread::sleep_until(next_time);
+            int processing_stage = frame_metadata["processing_stage"].get<int>();
+            if (processing_stage >= 1) num_frames_prefiltered++;
+            if (processing_stage >= 2) num_frames_rcneted++;
+            if (processing_stage >= 3) num_frames_ldneted++;
         }
-        else
+        if (frame_metadata.contains("annotation_state"))
         {
-            no_frame_counter++;
+            int annotation_state = frame_metadata["annotation_state"].get<int>();
+            if (annotation_state >= 1) num_frames_earth++;
+            if (annotation_state >= 2) num_frames_roi++;
+            if (annotation_state >= 3) num_frames_landmarks++;
         }
-
-        // TODO: some logic handling if we never get a frame for too many runs
-
     }
+    j["num_frames_prefiltered"] = num_frames_prefiltered;
+    j["num_frames_rcneted"] = num_frames_rcneted;
+    j["num_frames_ldneted"] = num_frames_ldneted;
+    j["num_frames_earth"] = num_frames_earth;
+    j["num_frames_roi"] = num_frames_roi;
+    j["num_frames_landmarks"] = num_frames_landmarks;
     
+    return j;
+}
 
-    loop_flag.store(false);
-    */
+void Dataset::fromJson(const Json& j)
+{
+    folder_path = j.at("folder_path").get<std::string>();
+    capture_start_time = j.at("capture_start_time").get<uint64_t>();
+    maximum_period = j.at("maximum_period").get<double>();
+    target_frame_nb = j.at("target_frame_nb").get<uint16_t>();
+    dataset_capture_mode = static_cast<CAPTURE_MODE>(j.at("dataset_capture_mode").get<uint64_t>());
+    imu_collection_mode = static_cast<IMU_COLLECTION_MODE>(j.at("imu_collection_mode").get<uint64_t>());
+    image_capture_rate = j.at("image_capture_rate").get<uint8_t>();
+    imu_sample_rate_hz = j.at("imu_sample_rate_hz").get<float>();
+    target_processing_stage = static_cast<ProcessingStage>(j.at("target_processing_stage").get<uint64_t>());
+    // TODO: Complete
 }

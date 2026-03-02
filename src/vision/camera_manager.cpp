@@ -38,6 +38,7 @@ void CameraManager::CaptureFrames()
 uint8_t CameraManager::SaveLatestFrames(bool only_earth)
 {
     uint8_t save_count = 0;
+    buffer_frame_ids.clear();
     for (std::size_t i = 0; i < NUM_CAMERAS; ++i) 
     {
         if (cameras[i].GetStatus() == CAM_STATUS::ACTIVE && cameras[i].IsNewFrameAvailable())
@@ -56,6 +57,7 @@ uint8_t CameraManager::SaveLatestFrames(bool only_earth)
                 continue;
             }
             [[maybe_unused]] std::string img_path = DH::StoreFrameToDisk(buffer_frame, GetStorageFolder());
+            buffer_frame_ids.push_back(std::make_tuple(cameras[i].GetID(), buffer_frame.GetTimestamp()));
             cameras[i].SetOffNewFrameFlag();
             save_count++;
         }  
@@ -263,6 +265,10 @@ int CameraManager::GetCapturedFramesCount() const
     return periodic_frames_captured.load();
 }
 
+std::vector<std::tuple<uint8_t, uint64_t>> CameraManager::GetBufferFrameIDs() const
+{
+    return buffer_frame_ids;
+}
 
 void CameraManager::StopLoops()
 {

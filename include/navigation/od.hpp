@@ -5,7 +5,7 @@
 #include <mutex>
 #include <condition_variable>
 #include <atomic>
-#include <vision/dataset.hpp>
+// #include <vision/dataset_manager.hpp>
 
 #define OD_DEFAULT_COLLECTION_PERIOD 10
 #define OD_DEFAULT_COLLECTION_SAMPLES 30
@@ -90,7 +90,7 @@ private:
     void ReadConfig(const std::string& config_path);
     void LogConfig();
 
-    std::shared_ptr<DatasetManager> dataset_collector;
+    // std::shared_ptr<DatasetManager> dataset_collector;
 
     // Check if the OD is running
     bool PingRunningStatus(); 

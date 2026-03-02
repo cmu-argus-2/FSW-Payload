@@ -51,6 +51,7 @@ public:
 
     CameraConfig* GetCameraConfig(int cam_id);
     int GetCapturedFramesCount() const;
+    std::vector<std::tuple<uint8_t, uint64_t>> GetBufferFrameIDs() const;
 
     void CaptureFrames();
 
@@ -102,6 +103,9 @@ private:
     std::atomic<uint8_t> periodic_capture_rate = 60; // Default rate of 60 seconds
     std::atomic<uint8_t> periodic_frames_to_capture = DEFAULT_PERIODIC_FRAMES_TO_CAPTURE; // After the request is serviced, it gets back to the default value
     std::atomic<uint8_t> periodic_frames_captured = 0;
+
+    // Buffer to store the latest frame IDs (cam_id, timestamp) for each camera. 
+    std::vector<std::tuple<uint8_t, uint64_t>> buffer_frame_ids;
 
 
     std::array<CAM_STATUS, NUM_CAMERAS> cam_status;

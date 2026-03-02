@@ -16,13 +16,11 @@
 #include <unordered_map>
 
 // Move all that to contexpr
-#define DATASET_CONFIG_FILE_NAME "config.toml"
+#define DATASET_CONFIG_FILE_NAME "dataset_config.toml"
 #define MAX_SAMPLES 1000
-#define TIMEOUT_NO_DATA 500 
 #define DEFAULT_COLLECTION_PERIOD 600
 #define ABSOLUTE_MINIMUM_PERIOD 0.1
 #define ABSOLUTE_MAXIMUM_PERIOD 10800 // 3h
-#define DEFAULT_DS_KEY "None"
 
 // Error codes TODO with framework
 
@@ -38,6 +36,10 @@ class Dataset
 public:
     // Static methos
     static std::vector<std::string> ListAllStoredDatasets();
+    static bool isValidConfigurationFile(const std::string& config_file_path);
+    static bool isValidConfiguration(double max_period, uint16_t nb_frames, CAPTURE_MODE capture_mode, IMU_COLLECTION_MODE imu_collection_mode,
+                                    uint8_t image_capture_rate, float imu_sample_rate_hz, ProcessingStage target_processing_stage,
+                                    uint64_t capture_start_time);
 
     // Getters
     uint64_t GetCaptureStartTime() const { return capture_start_time; }
@@ -53,13 +55,16 @@ public:
     std::vector<std::tuple<uint8_t, uint64_t>> GetStoredFrameIDs() const { return stored_frame_ids; }
 
     Json toJson() const;
-    void fromJson(const Json& j);
+    bool fromJson(const Json& j);
+
+    bool OverlapsWith(const Dataset& other) const;
 
     // Actual constructors ~ not to be used
     Dataset(double max_period, uint16_t nb_frames, CAPTURE_MODE capture_mode, IMU_COLLECTION_MODE imu_collection_mode,
             uint8_t image_capture_rate, float imu_sample_rate_hz, ProcessingStage target_processing_stage,
             uint64_t capture_start_time);
-    // If the folder path does not exist or does not contain a config file, it throws.
+
+    // TODO: Rethink if function below is truly needed, seems redundant with json
     Dataset(const std::string& folder_path);
 
 
@@ -79,7 +84,7 @@ private:
 
     std::vector<std::tuple<uint8_t, uint64_t>> stored_frame_ids; // for statistics, not intended to be used for loading frames (too heavy)
 
-    void CreateConfigurationFile();
+    bool CreateConfigurationFile();
     
 };
 

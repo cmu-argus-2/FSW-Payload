@@ -22,13 +22,138 @@ std::vector<std::string> Dataset::ListAllStoredDatasets()
     return dataset_folders;
 }
 
+bool Dataset::isValidConfigurationFile(const std::string& config_file_path)
+{
+    toml::table config = toml::parse_file(config_file_path);
+
+    std::optional<double> max_period = config["maximum_period"].value<double>();
+    if (!max_period)
+    {
+        SPDLOG_ERROR("Missing or invalid 'maximum_period' in configuration.");
+        return false;
+    }
+
+    std::optional<uint64_t> target_frames = config["target_frames"].value<uint64_t>();
+    if (!target_frames)
+    {
+        SPDLOG_ERROR("Missing or invalid 'target_frames' in configuration.");
+        return false;
+    }
+
+    std::optional<uint64_t> dataset_capture_mode_val = config["dataset_capture_mode"].value<uint64_t>();
+    if (!dataset_capture_mode_val)
+    {
+        SPDLOG_ERROR("Missing or invalid 'dataset_capture_mode' in configuration.");
+        return false;
+    }
+
+    // imu collection mode
+    std::optional<uint64_t> imu_collection_mode_val = config["imu_collection_mode"].value<uint64_t>();
+    if (!imu_collection_mode_val)
+    {
+        SPDLOG_ERROR("Missing or invalid 'imu_collection_mode' in configuration.");
+        return false;
+    }
+
+    // image capture rate
+    std::optional<uint64_t> image_capture_rate_val = config["image_capture_rate"].value<uint64_t>();
+    if (!image_capture_rate_val)    {
+        SPDLOG_ERROR("Missing or invalid 'image_capture_rate' in configuration.");
+        return false;
+    }
+
+    // imu sample rate
+    std::optional<double> imu_sample_rate_hz_val = config["imu_sample_rate_hz"].value<double>();
+    if (!imu_sample_rate_hz_val)    {
+        SPDLOG_ERROR("Missing or invalid 'imu_sample_rate_hz' in configuration.");
+        return false;
+    }
+
+    // target processing stage
+    std::optional<uint64_t> target_processing_stage_val = config["target_processing_stage"].value<uint64_t>();
+    if (!target_processing_stage_val)    {
+        SPDLOG_ERROR("Missing or invalid 'target_processing_stage' in configuration.");
+        return false;
+    }
+
+    // imu log file path
+    std::optional<std::string> imu_log_file_path_val = config["imu_log_file_path"].value<std::string>();
+    if (!imu_log_file_path_val)    {
+        SPDLOG_ERROR("Missing or invalid 'imu_log_file_path' in configuration.");
+        return false;
+    }
+
+    return isValidConfiguration(*max_period, static_cast<uint16_t>(*target_frames), 
+                                static_cast<CAPTURE_MODE>(*dataset_capture_mode_val),
+                                static_cast<IMU_COLLECTION_MODE>(*imu_collection_mode_val),
+                                static_cast<uint8_t>(*image_capture_rate_val),
+                                static_cast<float>(*imu_sample_rate_hz_val),
+                                static_cast<ProcessingStage>(*target_processing_stage_val),
+                                timing::GetCurrentTimeMs());
+}
+
+bool Dataset::isValidConfiguration(double max_period, uint16_t nb_frames, CAPTURE_MODE capture_mode, IMU_COLLECTION_MODE imu_collection_mode,
+                                    uint8_t image_capture_rate, float imu_sample_rate_hz, ProcessingStage target_processing_stage,
+                                    uint64_t capture_start_time)
+{
+    if (max_period < ABSOLUTE_MINIMUM_PERIOD)
+    {
+        SPDLOG_ERROR("Maximum period {} is below the absolute minimum period {}", max_period, ABSOLUTE_MINIMUM_PERIOD);
+        return false;
+    }
+
+    if (max_period > ABSOLUTE_MAXIMUM_PERIOD)
+    {
+        SPDLOG_ERROR("Maximum period {} is above the absolute maximum period {}", max_period, ABSOLUTE_MAXIMUM_PERIOD);
+        return false;
+    }
+    
+    if (nb_frames > MAX_SAMPLES)
+    {
+        SPDLOG_ERROR("Target frame number {} exceeds the maximum allowed {}", nb_frames, MAX_SAMPLES);
+        return false;
+    }
+
+    if (!IsValidCaptureMode(capture_mode))
+    {
+        SPDLOG_ERROR("Invalid dataset capture mode {}", static_cast<int>(capture_mode));
+        return false;
+    }
+
+    if (imu_collection_mode > IMU_COLLECTION_MODE::GYRO_MAG_TEMP || imu_collection_mode < IMU_COLLECTION_MODE::NONE)
+    {
+        SPDLOG_ERROR("Invalid IMU collection mode {}", static_cast<int>(imu_collection_mode));
+        return false;
+    }
+
+    if (image_capture_rate <= 0)
+    {
+        SPDLOG_ERROR("Image capture rate cannot be leq zero");
+        return false;
+    }
+
+    if (imu_sample_rate_hz <= 0 || imu_sample_rate_hz > 25.0)
+    {
+        SPDLOG_ERROR("IMU sample rate outside allowed bounds");
+        return false;
+    }
+
+    if (target_processing_stage < ProcessingStage::NotPrefiltered || target_processing_stage > ProcessingStage::LDNeted)
+    {
+        SPDLOG_ERROR("Invalid target processing stage {}", static_cast<int>(target_processing_stage));
+        return false;
+    }
+
+    return true;
+}
+
 
 Dataset::Dataset(double max_period, uint16_t nb_frames, 
-                                CAPTURE_MODE capture_mode,
-                                IMU_COLLECTION_MODE imu_collection_mode,
-                                uint8_t image_capture_rate, float imu_sample_rate_hz, 
-                                ProcessingStage target_processing_stage,
-                                uint64_t capture_start_time=timing::GetCurrentTimeMs())
+                CAPTURE_MODE capture_mode,
+                IMU_COLLECTION_MODE imu_collection_mode,
+                uint8_t image_capture_rate, float imu_sample_rate_hz, 
+                ProcessingStage target_processing_stage,
+                uint64_t capture_start_time=timing::GetCurrentTimeMs())
 :
 capture_start_time(capture_start_time),
 maximum_period(max_period),
@@ -53,20 +178,21 @@ target_processing_stage(target_processing_stage)
 }
 
 
-Dataset::Dataset(const std::string& folder_path)
+Dataset::Dataset(const std::string& folder_path_in)
 :
 capture_start_time(timing::GetCurrentTimeMs()),
 maximum_period(DEFAULT_COLLECTION_PERIOD), // default
 target_frame_nb(MAX_SAMPLES), // default
 dataset_capture_mode(CAPTURE_MODE::PERIODIC), // default
-imu_collection_mode(IMU_COLLECTION_MODE::GYRO_MAG_TEMP),
+imu_collection_mode(IMU_COLLECTION_MODE::GYRO_ONLY),
 image_capture_rate(60),
 imu_sample_rate_hz(1.0f),
 target_processing_stage(ProcessingStage::NotPrefiltered),
-imu_log_file_path(folder_path + "/imu_data.csv")
+folder_path(folder_path_in),
+imu_log_file_path(folder_path_in + "/imu_data.csv")
 {
     
-    std::string candidate_folder = folder_path;
+    std::string candidate_folder = folder_path_in;
     // Correct the folder path if needed
     if (candidate_folder.back() != '/')
     {
@@ -77,68 +203,31 @@ imu_log_file_path(folder_path + "/imu_data.csv")
     if (!DH::fs::exists(candidate_folder + DATASET_CONFIG_FILE_NAME))
     {
         SPDLOG_ERROR("{} does not exist!", candidate_folder + DATASET_CONFIG_FILE_NAME);
-        throw std::invalid_argument("The provided folder path does not exist..."); // throwing is the best way in this case
+        throw std::invalid_argument("Dataset configuration file not found.");
     }
 
     // read config file and fill all parameters
     // TODO: remove this high-level try-catch and throw OR have a default config... (well-documented)
-    try
+    if (!isValidConfigurationFile(candidate_folder + DATASET_CONFIG_FILE_NAME))
     {
-        toml::table config = toml::parse_file(candidate_folder + DATASET_CONFIG_FILE_NAME);
-
-        std::optional<double> max_period = config["maximum_period"].value<double>();
-        if (!max_period)
-        {
-            throw std::invalid_argument("Missing or invalid 'maximum_period' in configuration.");
-        }
-        maximum_period = *max_period; // dereference the contained value
-        if (maximum_period < ABSOLUTE_MINIMUM_PERIOD)
-        {
-            SPDLOG_ERROR("Maximum period {} is below the absolute minimum period {}", maximum_period, ABSOLUTE_MINIMUM_PERIOD);
-            throw std::invalid_argument("Maximum period is below the absolute minimum period.");
-        }
-
-        if (maximum_period > ABSOLUTE_MAXIMUM_PERIOD)
-        {
-            SPDLOG_ERROR("Maximum period {} is above the absolute maximum period {}", maximum_period, ABSOLUTE_MAXIMUM_PERIOD);
-            throw std::invalid_argument("Maximum period is above the absolute maximum period.");
-        }
-
-        std::optional<uint64_t> target_frames = config["target_frames"].value<uint64_t>();
-        if (!target_frames)
-        {
-            throw std::invalid_argument("Missing or invalid 'target_frames' in configuration.");
-        }
-        target_frame_nb = static_cast<uint32_t>(*target_frames);
-        if (target_frame_nb > MAX_SAMPLES)
-        {
-            SPDLOG_ERROR("Target frame number {} exceeds the maximum allowed {}", target_frame_nb, MAX_SAMPLES);
-            throw std::invalid_argument("Target frame number exceeds the maximum allowed.");
-        }
-
-        std::optional<uint64_t> dataset_capture_mode_val = config["dataset_capture_mode"].value<uint64_t>();
-        if (!dataset_capture_mode_val)
-        {
-            throw std::invalid_argument("Missing or invalid 'dataset_capture_mode' in configuration.");
-        }
-        dataset_capture_mode = static_cast<CAPTURE_MODE>(*dataset_capture_mode_val);
-        if (!IsValidCaptureMode(dataset_capture_mode))
-        {
-            SPDLOG_ERROR("Invalid dataset capture mode {}", static_cast<int>(dataset_capture_mode));
-            throw std::invalid_argument("Invalid dataset capture mode.");
-        }
-    }
-    catch (const std::exception& e)
-    {
-        SPDLOG_ERROR("Failed to parse configuration file: {}", e.what());
-        throw std::runtime_error("Failed to parse configuration file or incorrect configuration.");
+        throw std::invalid_argument("Dataset configuration file is invalid.");
     }
 
+    toml::table config = toml::parse_file(candidate_folder + DATASET_CONFIG_FILE_NAME);
+
+    maximum_period          = *(config["maximum_period"].value<double>());
+    target_frame_nb         = static_cast<uint16_t>(*(config["target_frames"].value<uint64_t>()));
+    dataset_capture_mode    = static_cast<CAPTURE_MODE>(*(config["dataset_capture_mode"].value<uint64_t>()));
+    imu_collection_mode     = static_cast<IMU_COLLECTION_MODE>(*(config["imu_collection_mode"].value<uint64_t>()));
+    image_capture_rate      = static_cast<uint8_t>(*(config["image_capture_rate"].value<uint64_t>()));
+    imu_sample_rate_hz      = static_cast<float>(*(config["imu_sample_rate_hz"].value<double>()));
+    target_processing_stage = static_cast<ProcessingStage>(*(config["target_processing_stage"].value<uint64_t>())); // Use uint64_t to match the value type in config
+    
 }
 
 
 
-void Dataset::CreateConfigurationFile()
+bool Dataset::CreateConfigurationFile()
 {
     auto tbl = toml::table{
         {"maximum_period", maximum_period},
@@ -161,8 +250,9 @@ void Dataset::CreateConfigurationFile()
     else
     {
         SPDLOG_ERROR("Failed to open file for writing");
+        return false;
     }
-    // TODO: handle fail cases
+    return true;
 }
 
 
@@ -234,9 +324,18 @@ Json Dataset::toJson() const
     return j;
 }
 
-void Dataset::fromJson(const Json& j)
+bool Dataset::fromJson(const Json& j)
 {
+    if (!j.contains("folder_path") || !j.contains("capture_start_time") || !j.contains("maximum_period") || 
+        !j.contains("target_frame_nb") || !j.contains("dataset_capture_mode") || !j.contains("imu_collection_mode") ||
+        !j.contains("image_capture_rate") || !j.contains("imu_sample_rate_hz") || !j.contains("target_processing_stage")
+        || !j.contains("imu_log_file_path") || !j.contains("frame_id_list"))
+    {
+        SPDLOG_ERROR("JSON object is missing required fields to construct a Dataset.");
+        return false;
+    }
     folder_path = j.at("folder_path").get<std::string>();
+    imu_log_file_path = j.at("imu_log_file_path").get<std::string>();
     capture_start_time = j.at("capture_start_time").get<uint64_t>();
     maximum_period = j.at("maximum_period").get<double>();
     target_frame_nb = j.at("target_frame_nb").get<uint16_t>();
@@ -245,5 +344,14 @@ void Dataset::fromJson(const Json& j)
     image_capture_rate = j.at("image_capture_rate").get<uint8_t>();
     imu_sample_rate_hz = j.at("imu_sample_rate_hz").get<float>();
     target_processing_stage = static_cast<ProcessingStage>(j.at("target_processing_stage").get<uint64_t>());
-    // TODO: Complete
+    stored_frame_ids = j.at("frame_id_list").get<std::vector<std::tuple<uint8_t, uint64_t>>>();
+
+    return true;
+}
+
+
+bool Dataset::OverlapsWith(const Dataset& other) const
+{
+    return (capture_start_time >= other.capture_start_time && capture_start_time <= other.capture_start_time + other.maximum_period * 1000) ||
+           (capture_start_time + maximum_period * 1000 >= other.capture_start_time && capture_start_time + maximum_period * 1000 <= other.capture_start_time + other.maximum_period * 1000);
 }

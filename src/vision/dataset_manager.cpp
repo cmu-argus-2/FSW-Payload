@@ -36,15 +36,32 @@ std::unordered_map<std::string, std::shared_ptr<DatasetManager>> DatasetManager:
 std::mutex DatasetManager::datasets_mtx;
 
 
-
 std::shared_ptr<DatasetManager> DatasetManager::Create(double max_period, uint16_t target_frame_nb, CAPTURE_MODE capture_mode, uint64_t capture_start_time,
-                                                        IMU_COLLECTION_MODE imu_collection_mode, uint8_t image_capture_rate, float imu_sample_rate_hz, 
-                                                        ProcessingStage target_processing_stage, std::string ds_key, 
-                                                        CameraManager& cam_manager=sys::cameraManager(), IMUManager& imu_manager=sys::imuManager())
+                            IMU_COLLECTION_MODE imu_collection_mode, uint8_t image_capture_rate, float imu_sample_rate_hz, 
+                            ProcessingStage target_processing_stage, std::string ds_key = DEFAULT_DS_KEY,
+                            CameraManager& cam_manager = sys::cameraManager(), IMUManager& imu_manager = sys::imuManager())
 {
+    if (!Dataset::isValidConfiguration(max_period, target_frame_nb, capture_mode, imu_collection_mode, 
+                                        image_capture_rate, imu_sample_rate_hz, target_processing_stage, capture_start_time))
+    {
+        SPDLOG_ERROR("Invalid dataset configuration parameters.");
+        // throw or return nul
+        throw std::invalid_argument("Invalid dataset configuration parameters.");
+    }
+
     Dataset dataset = Dataset(max_period, target_frame_nb, capture_mode, imu_collection_mode, 
-                            image_capture_rate, imu_sample_rate_hz, target_processing_stage, 
-                            capture_start_time);
+                                image_capture_rate, imu_sample_rate_hz, target_processing_stage, 
+                                capture_start_time);
+
+    // if dataset overlaps others, return false
+    for (const auto& entry : active_datasets)
+    {
+        auto existing_ds = entry.second;
+        if (dataset.OverlapsWith(existing_ds->current_dataset)) {
+            SPDLOG_ERROR("Failed to create DatasetManager: overlapping with an active dataset (key: {})", entry.first);
+            throw std::invalid_argument("Overlapping dataset.");
+        }
+    }
 
     auto instance = std::make_shared<DatasetManager>(dataset, cam_manager, imu_manager);
     std::lock_guard<std::mutex> lock(datasets_mtx);
@@ -103,8 +120,8 @@ DatasetManager::DatasetManager(Dataset dataset,
                                 CameraManager& cam_manager=sys::cameraManager(), 
                                 IMUManager& imu_manager=sys::imuManager())
 :
-progress(dataset.GetTargetFrameNb()),
 current_dataset(dataset),
+progress(dataset.GetTargetFrameNb()),
 cameraManager(cam_manager),
 imuManager(imu_manager),
 created_at(timing::GetCurrentTimeMs())

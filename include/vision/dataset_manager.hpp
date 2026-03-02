@@ -17,12 +17,7 @@
 #include <unordered_map>
 
 // Move all that to contexpr
-#define DATASET_CONFIG_FILE_NAME "config.toml"
-#define MAX_SAMPLES 1000
 #define TIMEOUT_NO_DATA 500 
-#define DEFAULT_COLLECTION_PERIOD 600
-#define ABSOLUTE_MINIMUM_PERIOD 0.1
-#define ABSOLUTE_MAXIMUM_PERIOD 10800 // 3h
 #define DEFAULT_DS_KEY "None"
 
 // Error codes TODO with framework

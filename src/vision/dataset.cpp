@@ -62,7 +62,8 @@ dataset_capture_mode(CAPTURE_MODE::PERIODIC), // default
 imu_collection_mode(IMU_COLLECTION_MODE::GYRO_MAG_TEMP),
 image_capture_rate(60),
 imu_sample_rate_hz(1.0f),
-target_processing_stage(ProcessingStage::NotPrefiltered)
+target_processing_stage(ProcessingStage::NotPrefiltered),
+imu_log_file_path(folder_path + "/imu_data.csv")
 {
     
     std::string candidate_folder = folder_path;
@@ -142,7 +143,11 @@ void Dataset::CreateConfigurationFile()
     auto tbl = toml::table{
         {"maximum_period", maximum_period},
         {"target_frames", target_frame_nb},
-        {"dataset_capture_mode", dataset_capture_mode}
+        {"dataset_capture_mode", dataset_capture_mode},
+        {"imu_collection_mode", imu_collection_mode},
+        {"image_capture_rate", image_capture_rate},
+        {"imu_sample_rate_hz", imu_sample_rate_hz},
+        {"target_processing_stage", target_processing_stage}
     };
 
     // Write to file
@@ -174,19 +179,18 @@ Json Dataset::toJson() const
     j["image_capture_rate"] = image_capture_rate;
     j["imu_sample_rate_hz"] = imu_sample_rate_hz;
     j["target_processing_stage"] = target_processing_stage;
-    // IMU TODO: Store log file path for reference in dataset
-    /*
-    j["imu_log_file_path"] = imuManager.GetLogFile();
-    // IMU number of time stamps collected
+    // IMU
+    j["imu_log_file_path"] = imu_log_file_path;
+    // IMU number of timestamps collected
     uint64_t imu_line_count = 0;
-    std::ifstream imu_file(imuManager.GetLogFile());
+    std::ifstream imu_file(imu_log_file_path);
     std::string line;
     while (std::getline(imu_file, line))
     {
         imu_line_count++;
     }
     j["imu_timestamps_collected"] = imu_line_count;
-    */
+    
     // Number of frames stored in the dataset
     j["frames_collected"] = stored_frame_ids.size();
     j["frame_id_list"] = stored_frame_ids; // list of frame ids (cam_id, timestamp) stored in the dataset

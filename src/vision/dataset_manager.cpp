@@ -121,6 +121,26 @@ created_at(timing::GetCurrentTimeMs())
 {
 }
 
+DatasetManager::~DatasetManager()
+{
+    if (Running())
+    {
+        StopCollection();
+    }
+    std::lock_guard<std::mutex> lock(datasets_mtx);
+    for (auto it = active_datasets.begin(); it != active_datasets.end(); )
+    {
+        if (it->second.get() == this)
+        {
+            it = active_datasets.erase(it);
+        }
+        else
+        {
+            ++it;
+        }
+    }
+}
+
 
 bool DatasetManager::IsCompleted()
 {
@@ -141,10 +161,8 @@ bool DatasetManager::StartCollection()
     }
 
     loop_flag.store(true);
-    // Launch the collection thread- is this necessary?
-    // this will be launched from a command, that is in a thread itseld
+
     CollectionLoop();
-    // collection_thread = std::thread(&DatasetManager::CollectionLoop, this);
 
     return true;
 }
@@ -152,6 +170,9 @@ bool DatasetManager::StartCollection()
 
 void DatasetManager::StopCollection()
 {
+    cameraManager.SetCaptureMode(CAPTURE_MODE::IDLE);
+    imuManager.Suspend();
+
     loop_flag.store(false);
     loop_cv.notify_all();
 }
@@ -186,8 +207,8 @@ void DatasetManager::CollectionLoop()
     }
 
     // configure the imu manager for the dataset collection
-    imuManager.SetLogFile(current_dataset.GetFolderPath() + "imu_data.csv");
-    imuManager.SetSampleRate(1.0); // TODO: make this configurable
+    imuManager.SetLogFile(current_dataset.GetIMUFilePath());
+    imuManager.SetSampleRate(current_dataset.GetIMUSampleRateHz());
     imuManager.StartCollection();
 
     // configure the camera manager for the dataset collection
@@ -218,9 +239,5 @@ void DatasetManager::CollectionLoop()
     }
 
     // terminate data collection
-    cameraManager.SetCaptureMode(CAPTURE_MODE::IDLE);
-    imuManager.Suspend();
-
-    // 
-    loop_flag.store(false);
+    StopCollection();
 }

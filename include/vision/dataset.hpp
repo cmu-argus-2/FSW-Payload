@@ -49,6 +49,7 @@ public:
     float GetIMUSampleRateHz() const { return imu_sample_rate_hz; }
     ProcessingStage GetTargetProcessingStage() const { return target_processing_stage; }
     std::string GetFolderPath() const { return folder_path; }
+    std::string GetIMUFilePath() const { return imu_log_file_path; }
     std::vector<std::tuple<uint8_t, uint64_t>> GetStoredFrameIDs() const { return stored_frame_ids; }
 
     Json toJson() const;
@@ -65,6 +66,7 @@ public:
 
 private:
     std::string folder_path;
+    std::string imu_log_file_path;
     
     uint64_t capture_start_time; // unix in ms. For scheduling
     double maximum_period;

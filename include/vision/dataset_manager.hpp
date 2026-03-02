@@ -77,6 +77,8 @@ public:
     // If the folder path does not exist or does not contain a config file, it throws.
     DatasetManager(const std::string& folder_path);
 
+    ~DatasetManager();
+
 
 private:
 

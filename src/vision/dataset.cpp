@@ -212,7 +212,11 @@ imu_log_file_path(folder_path_in + "/imu_data.csv")
     {
         throw std::invalid_argument("Dataset configuration file is invalid.");
     }
-
+    // TODO: TOML will only have the initial configuration parameters
+    // To load with results, it should be done with json or the toml should be updated
+    // in which case the other would become redundant
+    // initializing a dataset through a toml could still be done for predefined configurations, 
+    // but then this constructor should receive the toml path, not the folder
     toml::table config = toml::parse_file(candidate_folder + DATASET_CONFIG_FILE_NAME);
 
     maximum_period          = *(config["maximum_period"].value<double>());
@@ -225,6 +229,22 @@ imu_log_file_path(folder_path_in + "/imu_data.csv")
     
 }
 
+Dataset& Dataset::operator=(const Dataset& other)
+{
+    if (this != &other) {
+        folder_path             = other.folder_path; 
+        imu_log_file_path       = other.imu_log_file_path;
+        capture_start_time      = other.capture_start_time;
+        maximum_period          = other.maximum_period;
+        target_frame_nb         = other.target_frame_nb;
+        dataset_capture_mode    = other.dataset_capture_mode;
+        imu_collection_mode     = other.imu_collection_mode;
+        image_capture_rate      = other.image_capture_rate;
+        target_processing_stage = other.target_processing_stage;
+        stored_frame_ids        = other.stored_frame_ids;
+    }
+    return *this;
+}
 
 
 bool Dataset::CreateConfigurationFile()
@@ -240,7 +260,7 @@ bool Dataset::CreateConfigurationFile()
     };
 
     // Write to file
-    std::ofstream file(folder_path + DATASET_CONFIG_FILE_NAME);
+    std::ofstream file(folder_path + DATASET_CONFIG_FILE_NAME, std::ofstream::out | std::ofstream::trunc);
     if (file.is_open())
     {
         file << tbl;

@@ -67,7 +67,7 @@ public:
     // TODO: Rethink if function below is truly needed, seems redundant with json
     Dataset(const std::string& folder_path);
 
-
+    Dataset& operator=(const Dataset& other);
 
 private:
     std::string folder_path;

@@ -10,10 +10,15 @@
 #include <thread>
 #include <array>
 
-#define DATASET_KEY_CMD "CMD"
-
 #include <gtest/gtest.h>
 #include <core/errors.hpp>
+
+#define DATASET_KEY_CMD "CMD"
+
+#define ERASE_TEST_FILES false
+
+namespace fs = std::filesystem;
+
 
 // Test to check that the dataset configuration parameters are correctly validated 
 // and that invalid configurations are rejected
@@ -69,9 +74,20 @@ TEST(DatasetTest, DatasetConfigurationCheck)
     
     // Test input based constructor
     // TODO: Check with invalid configuration that an std::invalid_argument exception is thrown
-    imu_sample_rate_hz = 1.0f; 
-    Dataset dataset(max_period, nb_frames, capture_mode, imu_collection_mode, image_capture_rate, 
-                                                imu_sample_rate_hz, target_processing_stage, capture_start_time);
+    spdlog::info("before assert no throw");
+    imu_sample_rate_hz = 1.0f;
+    ASSERT_NO_THROW(Dataset(max_period, nb_frames, capture_mode, 
+                            imu_collection_mode, image_capture_rate, 
+                            imu_sample_rate_hz, target_processing_stage, 
+                            capture_start_time));
+    spdlog::info("after assert no throw, before redeclaration");
+    // TODO: What if a dataset is created like this, and the folder and config already exist?
+    // Difference between blocking the definition of a new dataset that intersects another 
+    // and allowing the redefinition of an instance from a file. 
+    Dataset dataset(max_period, nb_frames, capture_mode, 
+                    imu_collection_mode, image_capture_rate, 
+                    imu_sample_rate_hz, target_processing_stage, 
+                    capture_start_time);
 
     // Test getters
     EXPECT_EQ(dataset.GetCaptureStartTime(), capture_start_time);
@@ -93,24 +109,130 @@ TEST(DatasetTest, DatasetConfigurationCheck)
     // EXPECT_TRUE(dataset.GetStoredFrameIDs().empty());
     
 
-    // Test CreateConfigurationFile (ran from constructor)
-    EXPECT_TRUE(Dataset::isValidConfigurationFile(folder_path  + "dataset_config.toml"));
+    // Test CreateConfigurationFile (ran from constructor if constructor detects valid config)
+    std::string dataset_config_file_path = folder_path  + "dataset_config.toml";
+    EXPECT_TRUE(Dataset::isValidConfigurationFile(dataset_config_file_path));
+    // Check that below runs without throwing errors
+    ASSERT_NO_THROW(Dataset{folder_path});
 
-    // TODO: change config.toml to check error handling
+    toml::table config = toml::parse_file(dataset_config_file_path);
 
+    config.erase("maximum_period");
+    // save file again
+    std::ofstream file(dataset_config_file_path, std::ofstream::out | std::ofstream::trunc);
+    file << config;
+    file.close();
+    EXPECT_FALSE(Dataset::isValidConfigurationFile(dataset_config_file_path));
+    ASSERT_THROW(Dataset{folder_path}, std::invalid_argument);
+    
+    config.insert("maximum_period", 0.0f);
+    file.open(dataset_config_file_path, std::ofstream::out | std::ofstream::trunc);
+    file << config;
+    file.close();
+    EXPECT_FALSE(Dataset::isValidConfigurationFile(dataset_config_file_path));
+    ASSERT_THROW(Dataset{folder_path}, std::invalid_argument);
 
-    // Test isValidConfigurationFile from generated toml files
-    // std::string valid_config_path = "tests/test_data/valid_dataset_config.toml";
-    // EXPECT_TRUE(isValidConfigurationFile(valid_config_path));
-    // std::string invalid_config_path = "tests/test_data/invalid_dataset_config.toml";
-    // EXPECT_FALSE(isValidConfigurationFile(invalid_config_path));
+    config.erase("maximum_period"); config.insert("maximum_period", 60.0f);
+    config.erase("target_frames"); 
+    file.open(dataset_config_file_path, std::ofstream::out | std::ofstream::trunc);
+    file << config;
+    file.close();
+    EXPECT_FALSE(Dataset::isValidConfigurationFile(dataset_config_file_path));
+    ASSERT_THROW(Dataset{folder_path}, std::invalid_argument);
+    
+    config.insert("target_frames", 0);
+    file.open(dataset_config_file_path, std::ofstream::out | std::ofstream::trunc);
+    file << config;
+    file.close();
+    EXPECT_FALSE(Dataset::isValidConfigurationFile(dataset_config_file_path));
+    ASSERT_THROW(Dataset{folder_path}, std::invalid_argument);
 
-    // Test destructor
+    config.erase("target_frames"); config.insert("target_frames", 100);
+    config.erase("dataset_capture_mode"); 
+    file.open(dataset_config_file_path, std::ofstream::out | std::ofstream::trunc);
+    file << config;
+    file.close();
+    EXPECT_FALSE(Dataset::isValidConfigurationFile(dataset_config_file_path));
+    ASSERT_THROW(Dataset{folder_path}, std::invalid_argument);
+    
+    config.insert("dataset_capture_mode", 0);
+    file.open(dataset_config_file_path, std::ofstream::out | std::ofstream::trunc);
+    file << config;
+    file.close();
+    EXPECT_FALSE(Dataset::isValidConfigurationFile(dataset_config_file_path));
+    ASSERT_THROW(Dataset{folder_path}, std::invalid_argument);
 
-    // Test Configuration file-based constructor
+    config.erase("dataset_capture_mode"); config.insert("dataset_capture_mode", 2);
+    config.erase("imu_collection_mode"); 
+    file.open(dataset_config_file_path, std::ofstream::out | std::ofstream::trunc);
+    file << config;
+    file.close();
+    EXPECT_FALSE(Dataset::isValidConfigurationFile(dataset_config_file_path));
+    ASSERT_THROW(Dataset{folder_path}, std::invalid_argument);
+    
+    config.insert("imu_collection_mode",-1);
+    file.open(dataset_config_file_path, std::ofstream::out | std::ofstream::trunc);
+    file << config;
+    file.close();
+    EXPECT_FALSE(Dataset::isValidConfigurationFile(dataset_config_file_path));
+    ASSERT_THROW(Dataset{folder_path}, std::invalid_argument);
+
+    config.erase("imu_collection_mode"); config.insert("imu_collection_mode", 2);
+    config.erase("image_capture_rate");
+    file.open(dataset_config_file_path, std::ofstream::out | std::ofstream::trunc);
+    file << config;
+    file.close();
+    EXPECT_FALSE(Dataset::isValidConfigurationFile(dataset_config_file_path));
+    ASSERT_THROW(Dataset{folder_path}, std::invalid_argument);
+    
+    config.insert("image_capture_rate",-1);
+    file.open(dataset_config_file_path, std::ofstream::out | std::ofstream::trunc);
+    file << config;
+    file.close();
+    EXPECT_FALSE(Dataset::isValidConfigurationFile(dataset_config_file_path));
+    ASSERT_THROW(Dataset{folder_path}, std::invalid_argument);
+
+    config.erase("image_capture_rate"); config.insert("image_capture_rate", 60);
+    config.erase("imu_sample_rate_hz");
+    file.open(dataset_config_file_path, std::ofstream::out | std::ofstream::trunc);
+    file << config;
+    file.close();
+    EXPECT_FALSE(Dataset::isValidConfigurationFile(dataset_config_file_path));
+    ASSERT_THROW(Dataset{folder_path}, std::invalid_argument);
+    
+    config.insert("imu_sample_rate_hz",-1);
+    file.open(dataset_config_file_path, std::ofstream::out | std::ofstream::trunc);
+    file << config;
+    file.close();
+    EXPECT_FALSE(Dataset::isValidConfigurationFile(dataset_config_file_path));
+    ASSERT_THROW(Dataset{folder_path}, std::invalid_argument);
+
+    config.erase("imu_sample_rate_hz"); config.insert("imu_sample_rate_hz", 1.0f);
+    config.erase("target_processing_stage");
+    file.open(dataset_config_file_path, std::ofstream::out | std::ofstream::trunc);
+    file << config;
+    file.close();
+    EXPECT_FALSE(Dataset::isValidConfigurationFile(dataset_config_file_path));
+    ASSERT_THROW(Dataset{folder_path}, std::invalid_argument);
+    
+    config.insert("target_processing_stage",-1);
+    file.open(dataset_config_file_path, std::ofstream::out | std::ofstream::trunc);
+    file << config;
+    file.close();
+    EXPECT_FALSE(Dataset::isValidConfigurationFile(dataset_config_file_path));
+    ASSERT_THROW(Dataset{folder_path}, std::invalid_argument);
 
     // Option to delete generated test data
-
+    if (ERASE_TEST_FILES) {
+        try {
+            // remove_all recursively deletes all contents and the folder itself
+            unsigned long long count = fs::remove_all(folder_path); 
+            std::cout << "Successfully deleted " << count << " items in " << folder_path << std::endl;
+        } catch (const fs::filesystem_error& e) {
+            std::cerr << "Error deleting folder: " << e.what() << std::endl;
+        }
+    }
+    
 }
 
 /**/

@@ -18,7 +18,7 @@ int64_t unixToJ2000(int64_t unixSeconds) {
 // Basic Utility functions
 void loadAllKernels() {
     std::filesystem::path path(__FILE__);
-    std::string root = path.parent_path().parent_path().parent_path().string(); // utils_and_transforms.cpp --> math --> world --> dynamics sim
+    std::string root = path.parent_path().parent_path().parent_path().string(); // utils.cpp --> navigation --> src --> root
     std::string data_folder = root + "/data/kernels/";
 
 

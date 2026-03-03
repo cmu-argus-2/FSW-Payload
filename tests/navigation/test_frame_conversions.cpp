@@ -109,8 +109,9 @@ TEST(LAT2ECITest, EquatorialMagnitudeEqualsEarthRadius)
 {
     const double t_j2000 = JsonTimestampJ2000();
     // lon=0, lat=0 → equatorial prime-meridian point at Earth's surface
+    bool geoc = true; // geocentric coordinates
     Eigen::Vector3d v_lat(EARTH_RADIUS_M, 0.0, 0.0);
-    Eigen::Vector3d r = LAT2ECI(v_lat, t_j2000);
+    Eigen::Vector3d r = LAT2ECI(v_lat, t_j2000, geoc);
     EXPECT_NEAR(r.norm(), EARTH_RADIUS_M, 1.0);
 }
 
@@ -121,7 +122,8 @@ static Eigen::Vector3d LatLonAltToECI(double t_j2000, double lat_deg, double lon
 {
     double r = EARTH_RADIUS_M + alt_m;
     Eigen::Vector3d v_lat(r, lon_deg * M_PI / 180.0, lat_deg * M_PI / 180.0);
-    return LAT2ECI(v_lat, t_j2000);
+    bool geoc = true; // geocentric coordinates
+    return LAT2ECI(v_lat, t_j2000, geoc);
 }
 
 TEST(LatLonToECITest, PolarZComponentEqualsPolarRadius)
@@ -132,7 +134,8 @@ TEST(LatLonToECITest, PolarZComponentEqualsPolarRadius)
     const double t = JsonTimestampJ2000();
     const double b = 6378137.0 * std::sqrt(1.0 - 0.00669437999014);
     Eigen::Vector3d v_lat(b, 0.0, M_PI / 2.0);  // r=b, lon=0, lat=90°
-    Eigen::Vector3d r = LAT2ECI(v_lat, t);
+    bool geoc = true; // geocentric coordinates
+    Eigen::Vector3d r = LAT2ECI(v_lat, t, geoc);
     EXPECT_NEAR(r.norm(), b, 1.0);
 }
 

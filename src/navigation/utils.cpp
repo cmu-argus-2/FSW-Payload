@@ -24,7 +24,6 @@ void loadAllKernels() {
 
     std::string sol_system_spk = data_folder + "de440.bsp";
     std::string earth_rotation_pck = data_folder + "earth_latest_high_prec.bpc";
-    std::string earth_dimensions_pck = data_folder + "pck00011.tpc";
     std::string leap_seconds_lsk = data_folder + "pck00011.tpc";
     std::string leap_seconds_lsk2 = data_folder + "naif0012.tls";
     
@@ -34,7 +33,6 @@ void loadAllKernels() {
     if (count == 0) {
         furnsh_c(sol_system_spk.c_str());
         furnsh_c(earth_rotation_pck.c_str());
-        furnsh_c(earth_dimensions_pck.c_str());
         furnsh_c(leap_seconds_lsk.c_str());
         furnsh_c(leap_seconds_lsk2.c_str());
     }; // only load kernel if not already loaded
@@ -69,36 +67,63 @@ Matrix3d ECEF2ECI(double t_J2000) {
     return Cspice2Eigen(Rot);
 }
 
-Vector3d ECEF2LAT(Vector3d v_ecef) {
-
+Vector3d ECEF2LAT(Vector3d v_ecef, bool geoc) {
+    
     SpiceDouble v[3]; //ECEF vector as a spice double
 
-    SpiceDouble r, lon, lat;
-
     loadAllKernels();
+
+    SpiceDouble r_alt, lon, lat;
     
     vpack_c(v_ecef(0), v_ecef(1), v_ecef(2), v); // cast Vector 3 to SpiceDouble[3]
-    reclat_c(v, &r, &lon, &lat);
-    // r [input units], longitude [rad], latitude [rad]
-    Vector3d latcoord (r, lon, lat);
-    
+
+    if (geoc) { // geocentric
+        // radius [input units], longitude [rad], latitude [rad]
+        reclat_c(v, &r_alt, &lon, &lat);
+    } else { // geodetic
+        SpiceDouble radii[3];
+        SpiceDouble f, re, rp;
+        SpiceInt n;
+        bodvrd_c ( "EARTH", "RADII", 3, &n, radii );
+
+        re  =  radii[0];
+        rp  =  radii[2];
+        f   =  ( re - rp ) / re;
+        // altitude [input units], longitude [rad], latitude [rad]
+        recgeo_c(v, re, f, &lon, &lat, &r_alt);
+    }
+    Vector3d latcoord(r_alt, lon, lat);
     return latcoord;
 }
 
-Vector3d LAT2ECEF(Vector3d v_lat) {
+Vector3d LAT2ECEF(Vector3d v_lat, bool geoc) {
 
     SpiceDouble ecef[3]; //ECEF vector output
 
     loadAllKernels();
-    // r, lon, lat
-    latrec_c(v_lat(0), v_lat(1), v_lat(2), ecef); // r [input units], longitude [rad], latitude [rad]
+    if (geoc) { // geocentric
+        // input v_lat(0) must be radius
+        latrec_c(v_lat(0), v_lat(1), v_lat(2), ecef); // r [input units], longitude [rad], latitude [rad]
+    } else {
+        SpiceDouble radii[3];
+        SpiceDouble f, re, rp;
+        SpiceInt n;
+        bodvrd_c ( "EARTH", "RADII", 3, &n, radii );
+
+         re  =  radii[0];
+         rp  =  radii[2];
+         f   =  ( re - rp ) / re;
+
+        // input v_lat(0) must be altitude, not radius if !geoc / geodetic coordinates
+         georec_c (v_lat(1), v_lat(2), v_lat(0), radii[0], f, ecef);
+    }
     // r [input units], longitude [rad], latitude [rad]
     Vector3d ecefcoord (ecef[0], ecef[1], ecef[2]);
     
     return ecefcoord;
 }
 
-Vector3d ECI2LAT(Vector3d v_eci, double t_J2000){
+Vector3d ECI2LAT(Vector3d v_eci, double t_J2000, bool geoc){
 
     loadAllKernels();
     SpiceDouble Rot[3][3];
@@ -106,24 +131,19 @@ Vector3d ECI2LAT(Vector3d v_eci, double t_J2000){
 
     Vector3d ecef = Cspice2Eigen(Rot) * v_eci;
 
-    SpiceDouble r, lon, lat;
-    SpiceDouble v[3] = {ecef(0), ecef(1), ecef(2)};
-    reclat_c(v, &r, &lon, &lat);
-
-    return Vector3d(r, lon, lat);
+    return ECEF2LAT(ecef, geoc);
 
 }
 
-Vector3d LAT2ECI(Vector3d v_lat, double t_J2000){
+Vector3d LAT2ECI(Vector3d v_lat, double t_J2000, bool geoc){
 
-    SpiceDouble ecef[3];
-    latrec_c(v_lat(0), v_lat(1), v_lat(2), ecef);
+    Vector3d ecef = LAT2ECEF(v_lat, geoc);
 
     loadAllKernels();
     SpiceDouble Rot[3][3];
     pxform_c("ITRF93", "J2000", t_J2000, Rot);
 
-    return Cspice2Eigen(Rot) * Vector3d(ecef[0], ecef[1], ecef[2]);
+    return Cspice2Eigen(Rot) * ecef;
 
 }
 

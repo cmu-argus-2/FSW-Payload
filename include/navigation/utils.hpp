@@ -64,35 +64,43 @@ Matrix3d ECEF2ECI(double t_J2000);
  * @brief Transforms a vector in ECEF frame to latitudinal coordinates
  *
  * @param v_ecef - vector in ECEF frame [UNITS : m]
- * @return vector in latitudinal coordinates (r, lon, lat) [m, rad, rad]
+ * @param geoc - If true, the latitudinal coordinates will be geocentric, if not, geodetic
+ * @return vector in latitudinal coordinates (r, lon, lat) [m, rad, rad] if geocentric
+                                           (alt, lon, lat) [m, rad, rad] if geodetic
  */
-Vector3d ECEF2LAT(Vector3d v_ecef);
+Vector3d ECEF2LAT(Vector3d v_ecef, bool geoc);
 
 /**
  * @brief Transforms a vector in latitudinal coordinates to ECEF frame
  *
- * @param v_lat - vector in latitudinal coordinates (r, lon, lat) [m, rad, rad]
+ * @param v_lat - vector in latitudinal coordinates (r, lon, lat) [m, rad, rad] if geocentric
+                                                  (alt, lon, lat) [m, rad, rad] if geodetic
+ * @param geoc - If true, the latitudinal coordinates will be geocentric, if not, geodetic
  * @return vector in ECEF frame [UNITS : m]
  */
-Vector3d LAT2ECEF(Vector3d v_lat);
+Vector3d LAT2ECEF(Vector3d v_lat, bool geoc);
 
 /**
  * @brief Transforms a vector in ECI frame to latitudinal coordinates
  *
  * @param v_eci - vector in ECI frame [UNITS : m]
+ * @param geoc - If true, the latitudinal coordinates will be geocentric, if not, geodetic
  * @param t_J2000 - seconds past J2000
- * @return vector in latitudinal coordinates (r, lon, lat) [m, rad, rad]
+ * @return vector in latitudinal coordinates (r, lon, lat) [m, rad, rad] if geocentric
+                                           (alt, lon, lat) [m, rad, rad] if geodetic
  */
-Vector3d ECI2LAT(Vector3d v_eci, double t_J2000);
+Vector3d ECI2LAT(Vector3d v_eci, double t_J2000, bool geoc);
 
 /**
  * @brief Transforms a vector in latitudinal coordinates to ECI frame
  *
- * @param v_lat - vector in latitudinal coordinates (r, lon, lat) [m, rad, rad]
+ * @param v_lat - vector in latitudinal coordinates (r, lon, lat) [m, rad, rad] if geocentric
+                                                  (alt, lon, lat) [m, rad, rad] if geodetic
  * @param t_J2000 - seconds past J2000
+ * @param geoc - If true, the latitudinal coordinates will be geocentric, if not, geodetic
  * @return vector in ECI frame [UNITS : m]
  */
-Vector3d LAT2ECI(Vector3d v_lat, double t_J2000);
+Vector3d LAT2ECI(Vector3d v_lat, double t_J2000, bool geoc);
 
 /**
  * @brief Computes a unit bearing vector in the camera body frame from a pixel coordinate

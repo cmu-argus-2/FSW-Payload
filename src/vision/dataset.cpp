@@ -76,13 +76,6 @@ bool Dataset::isValidConfigurationFile(const std::string& config_file_path)
         return false;
     }
 
-    // imu log file path
-    std::optional<std::string> imu_log_file_path_val = config["imu_log_file_path"].value<std::string>();
-    if (!imu_log_file_path_val)    {
-        SPDLOG_ERROR("Missing or invalid 'imu_log_file_path' in configuration.");
-        return false;
-    }
-
     return isValidConfiguration(*max_period, static_cast<uint16_t>(*target_frames), 
                                 static_cast<CAPTURE_MODE>(*dataset_capture_mode_val),
                                 static_cast<IMU_COLLECTION_MODE>(*imu_collection_mode_val),
@@ -108,7 +101,7 @@ bool Dataset::isValidConfiguration(double max_period, uint16_t nb_frames, CAPTUR
         return false;
     }
     
-    if (nb_frames > MAX_SAMPLES)
+    if (nb_frames > MAX_SAMPLES || nb_frames <= 0)
     {
         SPDLOG_ERROR("Target frame number {} exceeds the maximum allowed {}", nb_frames, MAX_SAMPLES);
         return false;
@@ -164,6 +157,12 @@ image_capture_rate(image_capture_rate),
 imu_sample_rate_hz(imu_sample_rate_hz),
 target_processing_stage(target_processing_stage)
 {
+    if (!isValidConfiguration(max_period, nb_frames, capture_mode, imu_collection_mode,
+                                image_capture_rate, imu_sample_rate_hz, 
+                                target_processing_stage, capture_start_time))
+    {
+        throw std::invalid_argument("Invalid dataset configuration parameters.");
+    }
     // TODO: may want to rethink this dataset naming approach, since dataset collection will start
     // with some delay from the creation of this
     folder_path = DATASETS_FOLDER + std::to_string(capture_start_time) + "/";
@@ -175,6 +174,7 @@ target_processing_stage(target_processing_stage)
     }
 
     CreateConfigurationFile(); 
+    imu_log_file_path = folder_path + "imu_data.csv";
 }
 
 

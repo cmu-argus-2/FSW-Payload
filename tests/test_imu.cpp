@@ -15,8 +15,10 @@ TEST(IMUManagerTest, DataCollectionConfig)
     // Test setters
     imuManager.SetSampleRate(25.0f);
     EXPECT_EQ(imuManager.GetSampleRate(), 25.0f);
-    imuManager.SetLogFile("test_imu_log.txt");
-    EXPECT_EQ(imuManager.GetLogFile(), "test_imu_log.txt");
+    imuManager.SetLogFile("test_imu_log.csv");
+    EXPECT_EQ(imuManager.GetLogFile(), "test_imu_log.csv");
+    imuManager.SetCollectionMode(IMU_COLLECTION_MODE::GYRO_MAG_TEMP);
+    EXPECT_EQ(imuManager.GetCollectionMode(), IMU_COLLECTION_MODE::GYRO_MAG_TEMP);
 
     imuManager.StartCollection();
     ASSERT_EQ(imuManager.GetIMUManagerStatus(), static_cast<uint8_t>(IMU_STATE::COLLECT));
@@ -104,6 +106,9 @@ TEST(IMUManagerTest, DataCollectionAndLogging)
     
     // Let it collect for a short duration
     std::this_thread::sleep_for(std::chrono::seconds(1));
+
+    // TODO: changing collection mode should fail while collecting
+    // TODO: Implement this in a loop that runs over all collection modes
     
     imuManager.Suspend();
     imuManager.StopLoop();

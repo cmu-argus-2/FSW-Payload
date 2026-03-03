@@ -5,6 +5,7 @@ add_executable(PAYLOAD_TESTS main.cpp
     navigation/test_quaternion.cpp
     test_tilepack_dh.cpp
     test_imu.cpp
+    test_dataset.cpp
 )
 
 # Link the test executable with Google Test and the PAYLOAD library
@@ -73,10 +74,10 @@ target_link_libraries(test_jacobians
 )
 
 # Temporary executable to test the dataset class
-add_executable(test_dataset
-    test_dataset.cpp
+add_executable(run_dataset
+    run_dataset.cpp
 )
-target_link_libraries(test_dataset
+target_link_libraries(run_dataset
     PRIVATE
     spdlog::spdlog
     PAYLOAD_LIB

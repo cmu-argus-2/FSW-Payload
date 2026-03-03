@@ -41,13 +41,6 @@ std::shared_ptr<DatasetManager> DatasetManager::Create(double max_period, uint16
                             ProcessingStage target_processing_stage, std::string ds_key = DEFAULT_DS_KEY,
                             CameraManager& cam_manager = sys::cameraManager(), IMUManager& imu_manager = sys::imuManager())
 {
-    if (!Dataset::isValidConfiguration(max_period, target_frame_nb, capture_mode, imu_collection_mode, 
-                                        image_capture_rate, imu_sample_rate_hz, target_processing_stage, capture_start_time))
-    {
-        SPDLOG_ERROR("Invalid dataset configuration parameters.");
-        // throw or return nul
-        throw std::invalid_argument("Invalid dataset configuration parameters.");
-    }
 
     Dataset dataset = Dataset(max_period, target_frame_nb, capture_mode, imu_collection_mode, 
                                 image_capture_rate, imu_sample_rate_hz, target_processing_stage, 

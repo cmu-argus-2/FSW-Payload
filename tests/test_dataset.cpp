@@ -12,71 +12,131 @@
 
 #define DATASET_KEY_CMD "CMD"
 
+#include <gtest/gtest.h>
+#include <core/errors.hpp>
 
-int main(int argc, char** argv)
+// Test to check that the dataset configuration parameters are correctly validated 
+// and that invalid configurations are rejected
+TEST(DatasetTest, DatasetConfigurationCheck) 
 {
-    // Dataset collection configuration flag
-    auto config = std::make_unique<Configuration>();
-    config->LoadConfiguration("config/config.toml");
+    // configuration parameters
+    double max_period = 60.0;
+    uint16_t nb_frames = 100;
+    CAPTURE_MODE capture_mode = CAPTURE_MODE::PERIODIC;
+    IMU_COLLECTION_MODE imu_collection_mode = IMU_COLLECTION_MODE::GYRO_ONLY;
+    uint8_t image_capture_rate = 60;
+    float imu_sample_rate_hz = 1.0f;
+    ProcessingStage target_processing_stage = ProcessingStage::NotPrefiltered;
+    uint64_t capture_start_time = timing::GetCurrentTimeMs();
 
-    CAPTURE_MODE capture_mode = CAPTURE_MODE::PERIODIC; // default to periodic
-    double period = 60.0; // default to 60s
-    uint16_t nb_frames = 4;
+    EXPECT_TRUE(Dataset::isValidConfiguration(max_period, nb_frames, capture_mode, imu_collection_mode, image_capture_rate, 
+                                                imu_sample_rate_hz, target_processing_stage, capture_start_time));
+    
+    max_period = 0.0;
+    EXPECT_FALSE(Dataset::isValidConfiguration(max_period, nb_frames, capture_mode, imu_collection_mode, image_capture_rate, 
+                                                imu_sample_rate_hz, target_processing_stage, capture_start_time));
+    
+    max_period = 60.0; nb_frames  = 0;
+    EXPECT_FALSE(Dataset::isValidConfiguration(max_period, nb_frames, capture_mode, imu_collection_mode, image_capture_rate, 
+                                                imu_sample_rate_hz, target_processing_stage, capture_start_time));
+    
+    nb_frames = 11000;                    
+    EXPECT_FALSE(Dataset::isValidConfiguration(max_period, nb_frames, capture_mode, imu_collection_mode, image_capture_rate, 
+                                                imu_sample_rate_hz, target_processing_stage, capture_start_time));
 
-    // collect IMU data or not flag
-    const auto& imu_config = config->GetIMUConfig();
-    IMUManager imu_manager(imu_config);
+    // should it be possible to collect a dataset with no images? could still capture imu data
+    nb_frames = 100; capture_mode = CAPTURE_MODE::IDLE; 
+    EXPECT_FALSE(Dataset::isValidConfiguration(max_period, nb_frames, capture_mode, imu_collection_mode, image_capture_rate, 
+                                                imu_sample_rate_hz, target_processing_stage, capture_start_time));
+    
+    capture_mode = CAPTURE_MODE::CAPTURE_SINGLE;
+    EXPECT_FALSE(Dataset::isValidConfiguration(max_period, nb_frames, capture_mode, imu_collection_mode, image_capture_rate, 
+                                                imu_sample_rate_hz, target_processing_stage, capture_start_time));
 
-    const auto& cam_configs = config->GetCameraConfigs();
-    CameraManager camera_manager(cam_configs);
+    capture_mode = CAPTURE_MODE::PERIODIC;
+    EXPECT_TRUE(Dataset::isValidConfiguration(max_period, nb_frames, capture_mode, imu_collection_mode, image_capture_rate, 
+                                                imu_sample_rate_hz, target_processing_stage, capture_start_time));
+    
+    image_capture_rate = 0;
+    EXPECT_FALSE(Dataset::isValidConfiguration(max_period, nb_frames, capture_mode, imu_collection_mode, image_capture_rate, 
+                                                imu_sample_rate_hz, target_processing_stage, capture_start_time));
+    
+    imu_sample_rate_hz = 0.0f; image_capture_rate = 60;
+    EXPECT_FALSE(Dataset::isValidConfiguration(max_period, nb_frames, capture_mode, imu_collection_mode, image_capture_rate, 
+                                                imu_sample_rate_hz, target_processing_stage, capture_start_time));
 
-    // TODO: Create the IMUManager and CameraManager instances and threads for the 
-    // datasetManager to interface with, preferably without having to create 
-    // a payload instance for this test
-    std::thread imu_thread = std::thread(&IMUManager::RunLoop, &imu_manager);
+    // should there be error handling for capture_start_time?
+    
+    // Test input based constructor
+    // TODO: Check with invalid configuration that an std::invalid_argument exception is thrown
+    imu_sample_rate_hz = 1.0f; 
+    Dataset dataset(max_period, nb_frames, capture_mode, imu_collection_mode, image_capture_rate, 
+                                                imu_sample_rate_hz, target_processing_stage, capture_start_time);
 
-    std::array<bool, NUM_CAMERAS> temp;
-    [[maybe_unused]] int nb_enabled_cams = camera_manager.EnableCameras(temp);
-    std::thread camera_thread = std::thread(&CameraManager::RunLoop, &camera_manager);
+    // Test getters
+    EXPECT_EQ(dataset.GetCaptureStartTime(), capture_start_time);
+    EXPECT_EQ(dataset.GetTargetFrameNb(), nb_frames);
+    EXPECT_EQ(dataset.GetMaximumPeriod(), max_period);
+    EXPECT_EQ(dataset.GetDatasetCaptureMode(), capture_mode);
+    EXPECT_EQ(dataset.GetIMUCollectionMode(), imu_collection_mode);
+    EXPECT_EQ(dataset.GetImageCaptureRate(), image_capture_rate);
+    EXPECT_EQ(dataset.GetIMUSampleRateHz(), imu_sample_rate_hz);
+    EXPECT_EQ(dataset.GetTargetProcessingStage(), target_processing_stage);
 
-    // how to make the above accessible to the dataset manager through the sys namespace?
+    std::string folder_path   = "data/datasets/" + std::to_string(capture_start_time) + "/";
+    std::string imu_file_path = folder_path + "imu_data.csv";
 
-    if (period == 0.0 || nb_frames == 0)
-    {
-        spdlog::error("Invalid parameters for dataset collection command");
-        return 0;
-    }
+    EXPECT_EQ(dataset.GetFolderPath(), folder_path);
+    EXPECT_EQ(dataset.GetIMUFilePath(), imu_file_path);
+    // TODO: calling GetStoredFrameIDs when stored_frame_ids hasn't been initialized results in segmentation fault.
+    // Need to handle that
+    // EXPECT_TRUE(dataset.GetStoredFrameIDs().empty());
+    
 
-    auto ds = DatasetManager::GetActiveDatasetManager(DATASET_KEY_CMD);
+    // Test CreateConfigurationFile (ran from constructor)
+    EXPECT_TRUE(Dataset::isValidConfigurationFile(folder_path  + "dataset_config.toml"));
 
-    if (ds) // if already exists
-    {
-        // need to ensure it's actually running
-        if (ds->Running())
-        {
-            // if running: TODO: return ERROR ACK saying that a dataset is already running
-            // If completed, stop it then too
-        }
-        else
-        {
-            ds->StopDatasetManager(DATASET_KEY_CMD); // remove it (will create a new one)
-        }
-    }
+    // TODO: change config.toml to check error handling
 
-    // Create a new Dataset
-    SPDLOG_INFO("Starting dataset collection (type {}) for {} frames at a period of {} seconds.", static_cast<uint8_t>(capture_mode), nb_frames, period);
 
-    ds = DatasetManager::Create(period, nb_frames, capture_mode, timing::GetCurrentTimeMs(),
-                                IMU_COLLECTION_MODE::GYRO_MAG_TEMP, uint8_t(30), 1.0f, ProcessingStage::NotPrefiltered,
-                                DATASET_KEY_CMD, camera_manager, imu_manager);
-    ds->StartCollection();
+    // Test isValidConfigurationFile from generated toml files
+    // std::string valid_config_path = "tests/test_data/valid_dataset_config.toml";
+    // EXPECT_TRUE(isValidConfigurationFile(valid_config_path));
+    // std::string invalid_config_path = "tests/test_data/invalid_dataset_config.toml";
+    // EXPECT_FALSE(isValidConfigurationFile(invalid_config_path));
 
-    // close threads
-    imu_manager.StopLoop();
-    if (imu_thread.joinable()) imu_thread.join();
+    // Test destructor
 
-    camera_manager.StopLoops();
-    if (camera_thread.joinable()) camera_thread.join();
+    // Test Configuration file-based constructor
 
-    return 0;
+    // Option to delete generated test data
+
+}
+
+/**/
+
+TEST(DatasetTest, DatasetStorageAndRetrieval) 
+{
+    // Test that dataset is stored in the right place
+
+    // Test that dataset can be retrieved from folder path and that parameters are correctly read
+
+    // Error handling: dataset doesn't exist
+
+    // Test that dataset can be converted to and from json correctly
+}
+
+
+// Test to check that the dataset manager configuration parameters are correctly validated 
+// and that invalid configurations are rejected
+TEST(DatasetTest, DatasetManagerConfigurationCheck) 
+{
+    // Test error handling of definition of two overlapping datasets
+    // Test configuration of two datasets sequentially not overlapping, and that active datasets outputs the right values
+    // Optional: Test that a dataset can handle its images/data no longer being available
+}
+
+TEST(DatasetTest, DatasetReprocessing) 
+{
+    // Test reprocessing a dataset
 }

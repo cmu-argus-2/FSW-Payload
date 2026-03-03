@@ -111,7 +111,6 @@ fi
 
 # Install Spice toolkit (for time and coordinate transformations)
 echo "Downloading physics model data files (may take a few minutes) ..."
-cd ..
 
 mkdir -p data/kernels
 curl -O -C - --silent https://ssd.jpl.nasa.gov/ftp/eph/planets/bsp/de440.bsp --output-dir data/kernels

@@ -168,7 +168,7 @@ def pt_to_trt(model_path, device=None, fp16=False):
         # parser.add_argument("--output_names", type=list, default=['yolo_no_nms'], help="List of output tensor names for the ONNX model.")
         # parser.add_argument("--workspace", type=int, default=1, help="Sets the maximum workspace size in GiB for TensorRT optimizations, balancing memory usage and performance. Use None for auto-allocation by TensorRT up to device maximum.")
         config = vars(parser.parse_args())
-        rebuild =  True
+        rebuild =  False
         if not os.path.exists(onnx_path) or rebuild:
             onnx_path = model.export(**config)
         else:
@@ -229,16 +229,16 @@ def pt_to_trt(model_path, device=None, fp16=False):
         config.set_memory_pool_limit(trt.MemoryPoolType.WORKSPACE, 2 << 30)  # 1GB
         
         # Add optimization profile for dynamic batch size
-        # profile = builder.create_optimization_profile()
-        # # Set min, optimal, and max batch sizes (using input shape from parameter)
-        # min_shape = (1, input_shape[1], input_shape[2], input_shape[3])
-        # opt_shape = (1, input_shape[1], input_shape[2], input_shape[3])
-        # max_shape = (8, input_shape[1], input_shape[2], input_shape[3])
-        # # Get the actual input tensor name from the network
-        # input_name = network.get_input(0).name
-        # profile.set_shape(input_name, min_shape, opt_shape, max_shape)
-        # config.add_optimization_profile(profile)
-        # print("  ✓ Optimization profile added")
+        profile = builder.create_optimization_profile()
+        # Set min, optimal, and max batch sizes (using input shape from parameter)
+        min_shape = (1, input_shape[1], input_shape[2], input_shape[3])
+        opt_shape = (1, input_shape[1], input_shape[2], input_shape[3])
+        max_shape = (1, input_shape[1], input_shape[2], input_shape[3])
+        # Get the actual input tensor name from the network
+        input_name = network.get_input(0).name
+        profile.set_shape(input_name, min_shape, opt_shape, max_shape)
+        config.add_optimization_profile(profile)
+        print("  ✓ Optimization profile added")
         
         # if fp16 and builder.platform_has_fast_fp16:
         #     config.set_flag(trt.BuilderFlag.FP16)
@@ -311,7 +311,7 @@ if __name__ == "__main__":
     print(list_folder)
 
     for folder in list_folder:
-        if not os.path.isdir(os.path.join(ld_folder, folder)) and not folder.startswith("17R"):
+        if not os.path.isdir(os.path.join(ld_folder, folder)) or not folder.startswith("17R"):
             continue
         path = os.path.join(ld_folder, folder, f"{folder}_weights")
         

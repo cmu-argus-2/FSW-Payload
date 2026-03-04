@@ -140,9 +140,9 @@ void Orchestrator::RCPreprocessImg(cv::Mat img, cv::Mat& out_chw_img)
     // Stack back to CHW
     // spdlog::info("Stacking channels to CHW format, current shape: {}x{}x{}", channels[0].rows, channels[0].cols, channels.size());
 
-    // spdlog::info("Size of out_chw_img before: {}x{}x{}", out_chw_img.rows, out_chw_img.cols, out_chw_img.channels());
+    spdlog::info("Size of out_chw_img before: {}x{}x{}", out_chw_img.rows, out_chw_img.cols, out_chw_img.channels());
     cv::vconcat(channels, out_chw_img);  // Stack channels vertically (CHW format)
-    // spdlog::info("Size of out_chw_img after: {}x{}x{}", out_chw_img.rows, out_chw_img.cols, out_chw_img.channels());
+    spdlog::info("Size of out_chw_img after: {}x{}x{}", out_chw_img.rows, out_chw_img.cols, out_chw_img.channels());
     // Print the first 10 pixels of the preprocessed image
     /*spdlog::info("First 10 pixels of the preprocessed image:");
     for (int i = 0; i < std::min(10, out_chw_img.rows); ++i) {
@@ -217,6 +217,8 @@ void Orchestrator::LDPreprocessImg(cv::Mat img, cv::Mat& out_chw_img, int target
     // cv::merge(chwchannels, out_chw_img);    
     // // cv::dnn::blobFromImage(letterboxed_img, out_chw_img); // doesn't work
     cv::vconcat(channels, out_chw_img);  // Stack channels vertically (CHW format)
+
+    // cv::Mat M(3,4608,4608,CV_32F);
     spdlog::info("Stacked channels to CHW format, final shape: {}x{}x{}", out_chw_img.rows, out_chw_img.cols, out_chw_img.channels());
 }
 
@@ -296,83 +298,83 @@ EC Orchestrator::ExecFullInference()
     spdlog::info("Image preprocessed to CHW format with shape: {}x{}x{}", chw_img.rows, chw_img.cols, chw_img.channels());
 
     // Run the RC net 
-    auto host_output = std::unique_ptr<float[]>{new float[RC_NUM_CLASSES]};
-    EC rc_inference_status = rc_net_.Infer(chw_img.data, host_output.get());
-    if (rc_inference_status != EC::OK) 
-    {
-        spdlog::error("RCNet inference failed with error code: {}", to_uint8(rc_inference_status));
-        LogError(rc_inference_status);
-        return rc_inference_status;
-    }
+    // auto host_output = std::unique_ptr<float[]>{new float[RC_NUM_CLASSES]};
+    // EC rc_inference_status = rc_net_.Infer(chw_img.data, host_output.get());
+    // if (rc_inference_status != EC::OK) 
+    // {
+    //     spdlog::error("RCNet inference failed with error code: {}", to_uint8(rc_inference_status));
+    //     LogError(rc_inference_status);
+    //     return rc_inference_status;
+    // }
 
-    // Populate the RC ID to original frame
-    static constexpr float RC_THRESHOLD = 0.5f; // Threshold for region classification TODO Change this later on validation
-    for (uint8_t i = 0; i < RC_NUM_CLASSES; i++) 
-    {
-        spdlog::info("RC output for class {}: {:.3f}", i, host_output[i]);
-        if (host_output[i] > RC_THRESHOLD) 
-        {
-            original_frame_->AddRegion(static_cast<RegionID>(i), host_output[i]); 
-        }
-    }
+    // // Populate the RC ID to original frame
+    // static constexpr float RC_THRESHOLD = 0.5f; // Threshold for region classification TODO Change this later on validation
+    // for (uint8_t i = 0; i < RC_NUM_CLASSES; i++) 
+    // {
+    //     spdlog::info("RC output for class {}: {:.3f}", i, host_output[i]);
+    //     if (host_output[i] > RC_THRESHOLD) 
+    //     {
+    //         original_frame_->AddRegion(static_cast<RegionID>(i), host_output[i]); 
+    //     }
+    // }
 
-    original_frame_->SetProcessingStage(ProcessingStage::RCNeted);
+    // original_frame_->SetProcessingStage(ProcessingStage::RCNeted);
 
-    // TODO: Recheck LD selection process
-    spdlog::info("Regions detected in the frame: {}", original_frame_->GetRegionIDs().size());
-    std::string trt_path;
-    std::string csv_path;
-    LDNet* ld_net = nullptr;
-    if (original_frame_->GetRegionIDs().empty())
-    {
-        spdlog::warn("No regions detected by RCNet. Skipping LD inference.");
-        return EC::OK; // Not an error, just no regions to run LD on
-    }
-    for(const auto& region_id : original_frame_->GetRegionIDs())
-    {
-        if (ld_nets_.find(region_id) == ld_nets_.end())
-        {
-            spdlog::error("No LDNet found for region: {}", GetRegionString(region_id));
-            continue;
-        }
-        if (!ld_nets_.at(region_id).IsInitialized())
-        {
-            spdlog::error("LDNet for region {} is not initialized.", GetRegionString(region_id));
-            continue;
-        }
-        ld_net = &ld_nets_.at(region_id);
+    // // TODO: Recheck LD selection process
+    // spdlog::info("Regions detected in the frame: {}", original_frame_->GetRegionIDs().size());
+    // std::string trt_path;
+    // std::string csv_path;
+    // LDNet* ld_net = nullptr;
+    // if (original_frame_->GetRegionIDs().empty())
+    // {
+    //     spdlog::warn("No regions detected by RCNet. Skipping LD inference.");
+    //     return EC::OK; // Not an error, just no regions to run LD on
+    // }
+    // for(const auto& region_id : original_frame_->GetRegionIDs())
+    // {
+    //     if (ld_nets_.find(region_id) == ld_nets_.end())
+    //     {
+    //         spdlog::error("No LDNet found for region: {}", GetRegionString(region_id));
+    //         continue;
+    //     }
+    //     if (!ld_nets_.at(region_id).IsInitialized())
+    //     {
+    //         spdlog::error("LDNet for region {} is not initialized.", GetRegionString(region_id));
+    //         continue;
+    //     }
+    //     ld_net = &ld_nets_.at(region_id);
         
-        spdlog::info("Selected LDNet for region: {}", GetRegionString(region_id));
-        break;
-    }
+    //     spdlog::info("Selected LDNet for region: {}", GetRegionString(region_id));
+    //     break;
+    // }
 
-    if (!ld_net)
-    {
-        spdlog::warn("No initialized LDNet matches RC output regions. Skipping LD inference for this frame.");
-        return EC::OK;
-    }
+    // if (!ld_net)
+    // {
+    //     spdlog::warn("No initialized LDNet matches RC output regions. Skipping LD inference for this frame.");
+    //     return EC::OK;
+    // }
 
     // LD inference
     cv::Mat ld_chw_img;
     LDPreprocessImg(img_buff_, ld_chw_img);
 
-    int output_size = ld_net->GetOutputSize();
-    auto ld_host_output = std::unique_ptr<float[]>{new float[output_size]};
-    EC ld_inference_status = ld_net->Infer(ld_chw_img.data, ld_host_output.get());
-    if (ld_inference_status != EC::OK) 
-    {
-        spdlog::error("LDNet inference failed with error code: {}", to_uint8(ld_inference_status));
-        LogError(ld_inference_status);
-        return ld_inference_status;
-    } else {
-        spdlog::info("LDNet inference completed successfully. Output size: {}", output_size);
-    }
+    // int output_size = ld_net->GetOutputSize();
+    // auto ld_host_output = std::unique_ptr<float[]>{new float[output_size]};
+    // EC ld_inference_status = ld_net->Infer(ld_chw_img.data, ld_host_output.get());
+    // if (ld_inference_status != EC::OK) 
+    // {
+    //     spdlog::error("LDNet inference failed with error code: {}", to_uint8(ld_inference_status));
+    //     LogError(ld_inference_status);
+    //     return ld_inference_status;
+    // } else {
+    //     spdlog::info("LDNet inference completed successfully. Output size: {}", output_size);
+    // }
 
-    // Non-max suppression and populate landmarks
-    ld_net->PostprocessOutput(ld_host_output.get(), original_frame_); // This will populate the landmarks in the original frame based on the LD output
-    original_frame_->SetProcessingStage(ProcessingStage::LDNeted);
+    // // Non-max suppression and populate landmarks
+    // ld_net->PostprocessOutput(ld_host_output.get(), original_frame_); // This will populate the landmarks in the original frame based on the LD output
+    // original_frame_->SetProcessingStage(ProcessingStage::LDNeted);
 
-    num_inference_performed_on_current_frame_++;
+    // num_inference_performed_on_current_frame_++;
 
     return EC::OK;
 }

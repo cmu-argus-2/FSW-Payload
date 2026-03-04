@@ -14,3 +14,4 @@ pycuda
 nvidia-cudnn-cu12
 allantools
 Cython
+pandas==1.4.3

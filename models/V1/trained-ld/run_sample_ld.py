@@ -12,7 +12,8 @@ from typing import Dict, List, Sequence
 from torchvision.ops import nms
 import pycuda.driver as cuda
 import pycuda.autoinit
-
+import matplotlib.pyplot as plt
+import matplotlib.patches as patches
 
 @dataclass
 class Frame:
@@ -378,12 +379,12 @@ def decode_yolo_predictions(output, conf_threshold=0.5, iou_treshold=0.45, num_c
     
     # Convert from center format (x, y, w, h) to corner (x1, y1, x2, y2)
     x, y, w, h = boxes_xywh[:, 0], boxes_xywh[:, 1], boxes_xywh[:, 2], boxes_xywh[:, 3]
-    x1 = x - w / 2
-    y1 = y - h / 2
-    x2 = x + w / 2
-    y2 = y + h / 2
+    # x1 = x - w / 2
+    # y1 = y - h / 2
+    # x2 = x + w / 2
+    # y2 = y + h / 2
     
-    boxes = np.stack([x1, y1, x2, y2], axis=1)
+    boxes = np.stack([x, y, w, h], axis=1)
     
     if len(boxes) == 0:
         return boxes, confidences, class_ids
@@ -446,11 +447,17 @@ def compute_iou(box1, boxes2):
 if __name__ == "__main__":
     # Paths
     model_version = "V1"
-    region_id = "17T"
+    region_id = "17R"
+    image_id = "00040"
     pt_model_path = f"models/{model_version}/trained-ld/{region_id}/{region_id}_weights.pt"
     trt_engine_path = f"models/{model_version}/trained-ld/{region_id}/{region_id}_weights.trt"
     bbox_path = f"models/{model_version}/trained-ld/{region_id}/bounding_boxes.csv"
-    image_path = f"models/{model_version}/sample_images/l8_{region_id}_00277.png"
+    image_path = f"models/{model_version}/sample_images/l8_{region_id}_{image_id}.png"
+    label_path = f"models/{model_version}/sample_images/l8_{region_id}_{image_id}.txt"
+    
+    labels = np.loadtxt(label_path, ndmin=2)
+    
+    
     
     
     img = Image.open(image_path).convert("RGB")
@@ -458,20 +465,31 @@ if __name__ == "__main__":
     # Crop image to 4608x2592 and letterbox to 4608x4608
     img_array = np.array(img)
     height, width = img_array.shape[:2]
-
-    # Crop to 4608x2592
-    crop_width, crop_height = 4608, 2592
-    left = (width - crop_width) // 2
-    top = (height - crop_height) // 2
-    img_cropped = img_array[top:top + crop_height, left:left + crop_width]
-
-    # Letterbox to 4608x4608
+    labels = np.loadtxt(label_path, ndmin=2)
+    pt_labels = labels * np.array([1,width, height, width, height])  # Scale normalized coordinates to pixel values
+    
+    trt_labels = np.array([0,0, 1008, 0, 0]) + labels * np.array([1,4608, 2592, 4608, 2592])  # Scale normalized coordinates to pixel values
+    # Crop to max 4608
     target_size = 4608
-    pad_top = (target_size - crop_height) // 2
-    pad_bottom = target_size - crop_height - pad_top
-    img_letterboxed = np.pad(img_cropped, ((pad_top, pad_bottom), (0, 0), (0, 0)), mode='constant', constant_values=0)
+    crop_width, crop_height = 4608, 2592
+    if height > target_size:
+        top = (height - target_size) // 2
+        img_array = img_array[top:top + target_size,:]
+    
+    if width > target_size:
+        left = (width - target_size) // 2
+        img_array = img_array[:, left:left + target_size]
 
-    img = Image.fromarray(img_letterboxed)
+    height, width = img_array.shape[:2]
+    
+    # Letterbox to 4608x4608
+    pad_top = np.max((target_size - height) // 2,0)
+    pad_bottom = target_size - height - pad_top
+    pad_left = np.max((target_size - width) // 2,0)
+    pad_right = target_size - width - pad_left
+    img_letterboxed = np.pad(img_array, ((pad_top, pad_bottom), (pad_left, pad_right), (0, 0)), mode='constant', constant_values=0)
+
+    # img = Image.fromarray(img_letterboxed)
     
     batch_size = 1
     img_letterboxed = np.expand_dims(img_letterboxed, axis=0)
@@ -496,7 +514,7 @@ if __name__ == "__main__":
     IMAGE_WIDTH = 2592
     IMAGE_HEIGHT = 4608
     model = YOLO(pt_model_path)
-    ground_truth = np.loadtxt(bbox_path, delimiter=",", skiprows=1)
+    bboxes = np.loadtxt(bbox_path, delimiter=",", skiprows=1)
     
     # transformations = torchvision.transforms.Compose(
     #     [
@@ -551,7 +569,7 @@ if __name__ == "__main__":
 
     landmark_detections = LandmarkDetections(
         pixel_coordinates=xywh[:, :2],
-        latlons=ground_truth[class_ids, :2],
+        latlons=bboxes[class_ids, :2],
         class_ids=class_ids,
         region_ids=np.array([region_id] * len(class_ids)),
         confidences=confidences,
@@ -563,6 +581,7 @@ if __name__ == "__main__":
     trt_sort_idx = np.argsort(trt_class_ids)
     
     pt_sorted = landmark_detections[pt_sort_idx]
+    pt_sorted_boxes = xywh[pt_sort_idx,:]
     trt_sorted_class_ids = trt_class_ids[trt_sort_idx]
     trt_sorted_confidences = trt_confidences[trt_sort_idx]
     trt_sorted_boxes = trt_boxes[trt_sort_idx]
@@ -576,3 +595,28 @@ if __name__ == "__main__":
         if i < len(trt_sorted_class_ids):
             print(f"TensorRT [{i}]: Class ID: {trt_sorted_class_ids[i]}, Confidence: {trt_sorted_confidences[i]:.4f}, Box: {trt_sorted_boxes[i]}")
         print()
+        
+    # Plot the results of both compared to the real boxes
+    fig, ax = plt.subplots()
+    ax.imshow(img)
+    for i in range(pt_labels.shape[0]):
+        # Ground truth
+        rect = patches.Rectangle((pt_labels[i, 1], pt_labels[i, 2]), pt_labels[i, 3], pt_labels[i, 4], linewidth=1, edgecolor='r', facecolor='none')
+        ax.add_patch(rect)
+        # PyTorch detections
+    for i in range(len(pt_sorted)):
+        rect = patches.Rectangle((pt_sorted_boxes[i, 0], pt_sorted_boxes[i, 1]), pt_sorted_boxes[i, 2], pt_sorted_boxes[i, 3], linewidth=1, edgecolor='b', facecolor='none')
+        ax.add_patch(rect)
+    fig.savefig(f"comparison_plot_pt.png")
+    
+    fig2, ax2 = plt.subplots()
+    ax2.imshow(img_letterboxed[0].transpose(1,2,0))
+    for i in range(trt_labels.shape[0]):
+        # Ground truth
+        rect = patches.Rectangle((trt_labels[i, 1], trt_labels[i, 2]), trt_labels[i, 3], trt_labels[i, 4], linewidth=1, edgecolor='r', facecolor='none')
+        ax2.add_patch(rect)
+        # PyTorch detections
+    for i in range(len(trt_sorted_boxes)):
+        rect = patches.Rectangle((trt_sorted_boxes[i, 0], trt_sorted_boxes[i, 1]), trt_sorted_boxes[i, 2], trt_sorted_boxes[i, 3], linewidth=1, edgecolor='g', facecolor='none')
+        ax2.add_patch(rect)
+    fig2.savefig(f"comparison_plot_trt.png")

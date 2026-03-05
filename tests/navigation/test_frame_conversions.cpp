@@ -126,7 +126,7 @@ static Eigen::Vector3d LatLonAltToECI(double t_j2000, double lat_deg, double lon
     return LAT2ECI(v_lat, t_j2000, geoc);
 }
 
-TEST(LatLonToECITest, PolarZComponentEqualsPolarRadius)
+TEST(LAT2ECITest, PolarZComponentEqualsPolarRadius)
 {
     // The full ECEF→ECI transformation (ITRF93→J2000) includes precession and
     // nutation, so individual components shift by up to ~14 km.
@@ -139,7 +139,7 @@ TEST(LatLonToECITest, PolarZComponentEqualsPolarRadius)
     EXPECT_NEAR(r.norm(), b, 1.0);
 }
 
-TEST(LatLonToECITest, AltitudeIncreasesRadius)
+TEST(LAT2ECITest, AltitudeIncreasesRadius)
 {
     const double t     = JsonTimestampJ2000();
     const double alt_m = 500000.0;
@@ -149,7 +149,7 @@ TEST(LatLonToECITest, AltitudeIncreasesRadius)
     EXPECT_NEAR(r_orbit.norm() - r_surface.norm(), alt_m, 1000.0);
 }
 
-TEST(LatLonToECITest, MagnitudePreservedAcrossTimestamps)
+TEST(LAT2ECITest, MagnitudePreservedAcrossTimestamps)
 {
     const double t = JsonTimestampJ2000();
     Eigen::Vector3d r1 = LatLonAltToECI(t,          35.0, 139.0, 400000.0);
@@ -157,7 +157,7 @@ TEST(LatLonToECITest, MagnitudePreservedAcrossTimestamps)
     EXPECT_NEAR(r1.norm(), r2.norm(), 1.0);
 }
 
-TEST(LatLonToECITest, EarthRotationChangesXYNotZ)
+TEST(LAT2ECITest, EarthRotationChangesXYNotZ)
 {
     // Earth rotates ~15°/hour: after 1h the same ECEF point has different ECI x,y.
     // The full ITRF93→J2000 transformation includes precession/nutation, so z also

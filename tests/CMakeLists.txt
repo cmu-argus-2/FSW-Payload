@@ -71,3 +71,20 @@ target_link_libraries(test_jacobians
     Ceres::ceres
     Eigen3::Eigen
 )
+
+add_executable(TEST_FRAME_CONVERSION
+    navigation/test_frame_conversions.cpp)
+
+target_link_libraries(TEST_FRAME_CONVERSION
+    PRIVATE
+    spdlog::spdlog
+    GTest::gtest
+    GTest::gtest_main
+    core
+    navigation
+    vision
+    ${OpenCV_LIBS}
+    Eigen3::Eigen
+    spice
+)
+

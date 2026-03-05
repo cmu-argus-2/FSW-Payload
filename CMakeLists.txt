@@ -62,6 +62,8 @@ endif()
 # Add the source files subdirectory
 set(CMAKE_POSITION_INDEPENDENT_CODE ON)
 add_subdirectory(src)
+# Add the dependencies subdirectory
+add_subdirectory(deps)
 
 
 ##### MAIN FLIGHT SOFTWARE PROCESS

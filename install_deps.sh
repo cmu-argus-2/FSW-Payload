@@ -34,6 +34,7 @@ sudo apt install -y \
   libprotobuf-dev \
   protobuf-compiler \
   libhdf5-dev \
+  libtbb-dev \
   ccache
 
 # Uncomment this line if you get ccache related issues

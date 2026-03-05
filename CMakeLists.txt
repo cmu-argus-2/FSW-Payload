@@ -40,7 +40,7 @@ find_package(Eigen3 3.3 REQUIRED NO_MODULE)
 include_directories(${EIGEN_INCLUDE_DIR})
 link_directories(${EIGEN_LIBRARY_DIRS})
 find_package(Ceres 2.2.0 REQUIRED)
-find_package(OpenCV REQUIRED)
+find_package(OpenCV REQUIRED COMPONENTS core dnn imgcodecs imgproc highgui)
 
 enable_language(C)
 find_package(HDF5 REQUIRED COMPONENTS C CXX HL)

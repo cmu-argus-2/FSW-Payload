@@ -164,6 +164,7 @@ def pt_to_trt(model_path, device=None, fp16=False):
         parser.add_argument("--imgsz", type=int, default=new_imgsz, help="Desired image size for the model input. Can be an integer for square images or a tuple (height, width) for specific dimensions.")
         parser.add_argument("--dynamic", type=bool, default=False, help="Adds Non-Maximum Suppression (NMS) to the exported model when supported, improving detection post-processing efficiency.")
         parser.add_argument("--verbose", type=bool, default=True, help="Enables verbose logging during export, providing detailed information about the export process and any potential issues.")
+        parser.add_argument("--simplify", type=bool, default=False)
         # parser.add_argument("--input_names", type=list, default=['image'], help="List of input tensor names for the ONNX model.")
         # parser.add_argument("--output_names", type=list, default=['yolo_no_nms'], help="List of output tensor names for the ONNX model.")
         # parser.add_argument("--workspace", type=int, default=1, help="Sets the maximum workspace size in GiB for TensorRT optimizations, balancing memory usage and performance. Use None for auto-allocation by TensorRT up to device maximum.")
@@ -264,9 +265,9 @@ def pt_to_trt(model_path, device=None, fp16=False):
         print("  ✓ Engine saved successfully")
         
         # Clean up ONNX file
-        if os.path.exists(onnx_path):
-            os.remove(onnx_path)
-            print(f"  ✓ Cleaned up intermediate ONNX file")
+        # if os.path.exists(onnx_path):
+        #     os.remove(onnx_path)
+        #     print(f"  ✓ Cleaned up intermediate ONNX file")
         
         print(f"\n{'='*60}")
         print("✓ CONVERSION SUCCESSFUL!")
@@ -311,11 +312,11 @@ if __name__ == "__main__":
     print(list_folder)
 
     for folder in list_folder:
-        if not os.path.isdir(os.path.join(ld_folder, folder)) or not folder.startswith("17R"):
+        if not os.path.isdir(os.path.join(ld_folder, folder)) or not folder.startswith("17T"):
             continue
         path = os.path.join(ld_folder, folder, f"{folder}_weights")
         
-        if not os.path.exists(path + ".trt"):
+        if True: # not os.path.exists(path + ".trt"):
             print(f"Converting model at: {path}")
             pt_to_trt(
                 model_path=path,

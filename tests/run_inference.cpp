@@ -23,6 +23,7 @@ int main(int argc, char** argv)
     std::string rc_trt_file_path = argv[1];
     std::string ld_trt_folder_path = argv[2];
     std::string sample_image_path = argv[3];
+    // TODO: Look for label file if there is one
 
     Inference::Orchestrator orchestrator;
     orchestrator.Initialize(rc_trt_file_path, ld_trt_folder_path);
@@ -39,9 +40,6 @@ int main(int argc, char** argv)
 
     orchestrator.GrabNewImage(frame_ptr); 
 
-
-
-    
     spdlog::info("Running inference on the frame...");
     EC status = orchestrator.ExecFullInference();
     if (status != EC::OK)
@@ -50,7 +48,7 @@ int main(int argc, char** argv)
         return 1;
     }
     spdlog::info("Inference completed successfully.");
-    /*
+    
     spdlog::info("Regions found: {}", frame_ptr->GetRegionIDs().size());
 
     for (const auto& region_id : frame_ptr->GetRegionIDs())
@@ -69,6 +67,6 @@ int main(int argc, char** argv)
         spdlog::info("Landmark - Class ID: {}, Region ID: {}, Confidence: {:.3f}, Position: ({:.2f}, {:.2f}), Size: ({:.2f}, {:.2f})",
             landmark.class_id, GetRegionString(landmark.region_id), landmark.confidence, landmark.x, landmark.y, landmark.height, landmark.width);
     }
-    */
+    /**/
     return 0;
 }

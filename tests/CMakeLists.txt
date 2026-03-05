@@ -77,3 +77,12 @@ target_link_libraries(test_jacobians
     Ceres::ceres
     Eigen3::Eigen
 )
+
+add_executable(yolo_detector
+    yolo_detector.cpp
+)
+target_link_libraries(yolo_detector
+    PRIVATE
+    PAYLOAD_LIB
+    spdlog::spdlog
+)

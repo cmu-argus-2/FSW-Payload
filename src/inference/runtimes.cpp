@@ -3,6 +3,9 @@
 #include <vector>
 #include <fstream>
 #include <iostream>
+#include <opencv2/dnn/dnn.hpp>
+// #include <opencv2/dnn/types.hpp>
+
 namespace Inference
 {
 
@@ -372,8 +375,37 @@ static float ComputeIoU(const Landmark& a, const Landmark& b)
 
     return inter_area / (union_area + 1e-6f);
 }
-
+/*
 // If member: std::vector<Landmark> LDNet::LDYoloNonMaxSuppression(...)
+std::vector<Landmark> LDYoloNonMaxSuppression(
+    const Eigen::MatrixXf& output_matrix,
+    RegionID region_id,
+    float conf_threshold,
+    float iou_threshold)
+{
+    (x,y,w,h);
+    std::vector<Rect> bboxes;
+    std::vector<float> scores;
+    for (int i = 0; i < output_matrix.cols(); ++i)
+    {
+        float conf = output_matrix(4, i);
+        if (conf < conf_threshold || std::isnan(conf)) continue;
+
+        float x = output_matrix(0, i); // TODO: check if top/left or center output. Assuming the former
+        float y = output_matrix(1, i);
+        float w = output_matrix(2, i);
+        float h = output_matrix(3, i);
+
+        bboxes.emplace_back(x, y, w, h);
+        scores.push_back(conf);
+    }
+    std::vector<int> indices;
+    float eta = 1.f;
+    int top_k = 250; // if 0, all are kept, if >0, only top_k are kept
+    cv::dnn::NMSBoxes(bboxes, scores, conf_threshold, iou_threshold, indices, eta, top_k);
+}
+*/
+
 std::vector<Landmark> LDYoloNonMaxSuppression(
     const Eigen::MatrixXf& output_matrix,
     RegionID region_id,
@@ -460,6 +492,7 @@ std::vector<Landmark> LDYoloNonMaxSuppression(
 
     return kept;
 }
+
 
 int GetNumLandmarksFromCSV(const std::string& csv_path)
 {

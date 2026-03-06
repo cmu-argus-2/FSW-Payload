@@ -251,22 +251,18 @@ int main(int argc, char** argv)
 
     // load model
     //![read_net]
+    auto start = std::chrono::high_resolution_clock::now();
     Net net = readNet(ld_onnx_file_path);
-    spdlog::info("Model loaded from: {}", ld_onnx_file_path);
+    auto end = std::chrono::high_resolution_clock::now();
+    auto duration = std::chrono::duration_cast<std::chrono::milliseconds>(end - start);
+    spdlog::info("Model loaded from: {} (took {} ms)", ld_onnx_file_path, duration.count());
     
     int backend = 0; // automatically, opencv implementation or cuda?
     int target = 0; // 0: cpu, 6: cuda, 7: cuda fp16
-    net.setPreferableBackend(backend);
-    net.setPreferableTarget(target);
     spdlog::info("Backend and target set");
     //![read_net]
 
-    VideoCapture cap;
-    Mat img;
-    bool isImage = false;
-    bool isCamera = false;
-
-    img = imread(sample_image_path, IMREAD_COLOR);
+    Mat img = imread(sample_image_path, IMREAD_COLOR);
     spdlog::info("Image loaded: {}", sample_image_path);
 
     // image pre-processing
@@ -283,13 +279,19 @@ int main(int argc, char** argv)
     spdlog::info("Image2BlobParams created");
 
     // rescale boxes back to original image
-    Image2BlobParams paramNet;
-    paramNet.scalefactor = scale;
-    paramNet.size = size;
-    paramNet.mean = mean;
-    paramNet.swapRB = swapRB;
-    paramNet.paddingmode = paddingMode;
+    // Image2BlobParams paramNet;
+    // paramNet.scalefactor = scale;
+    // paramNet.size = size;
+    // paramNet.mean = mean;
+    // paramNet.swapRB = swapRB;
+    // paramNet.paddingmode = paddingMode;
     //![preprocess_call]
+
+    Mat inp;
+    //![preprocess_call_func]
+    inp = blobFromImageWithParams(img, imgParams);
+    spdlog::info("Blob created from image");
+    //![preprocess_call_func]
 
     //![forward_buffers]
     std::vector<Mat> outs;
@@ -300,27 +302,32 @@ int main(int argc, char** argv)
     spdlog::info("Forward buffers initialized");
     //![forward_buffers]
 
-    Mat inp;
-    //![preprocess_call_func]
-    inp = blobFromImageWithParams(img, imgParams);
-    spdlog::info("Blob created from image");
-    //![preprocess_call_func]
-
     //![forward]
+    start = std::chrono::high_resolution_clock::now();
     net.setInput(inp);
-    spdlog::info("Input set to network");
-    
+    end = std::chrono::high_resolution_clock::now();
+    duration = std::chrono::duration_cast<std::chrono::milliseconds>(end - start);
+    spdlog::info("Input set to network (took {} ms)", duration.count());
+
+    net.setPreferableBackend(5); // backend);
+    net.setPreferableTarget(6); // target);
+    start = std::chrono::high_resolution_clock::now();
     net.forward(outs, net.getUnconnectedOutLayersNames());
-    spdlog::info("Forward pass completed, outputs: {}", outs.size());
+    end = std::chrono::high_resolution_clock::now();
+    duration = std::chrono::duration_cast<std::chrono::milliseconds>(end - start);
+    spdlog::info("Forward pass completed, outputs: {}, (took {} ms)", outs.size(), duration.count());
     //![forward]
 
     //![postprocess]
+    start = std::chrono::high_resolution_clock::now();
     yoloPostProcessing(
         outs, keep_classIds, keep_confidences, keep_boxes,
         confThreshold, nmsThreshold,
         yolo_model,
         nc);
-    spdlog::info("Post-processing completed, detections: {}", keep_boxes.size());
+    end = std::chrono::high_resolution_clock::now();
+    duration = std::chrono::duration_cast<std::chrono::milliseconds>(end - start);
+    spdlog::info("Post-processing completed, detections: {} (took {} ms)", keep_boxes.size(), duration.count());
     //![postprocess]
 
     // covert Rect2d to Rect
@@ -366,6 +373,23 @@ int main(int argc, char** argv)
             gt_boxes.push_back(Rect(x, y, w, h));
             drawPrediction(class_id, 1.0f, x, y, x + w, y + h, img, Scalar(255, 0, 0));
         }
+        // look for classid in boxes 
+        // if found, compute iou between gt box and pred box, if iou > 0.5, count as true positive, else count as false positive
+        // if not found, count as false negative
+        for (size_t idx = 0; idx < boxes.size(); ++idx)
+        {
+            if (keep_classIds[idx] != class_id) {
+                continue;
+            }
+            Rect pred_box = boxes[idx];
+            float iou = (pred_box & gt_boxes.back()).area() / float((pred_box | gt_boxes.back()).area());
+            if (iou > 0.5) {
+                spdlog::info("True positive: class_id={}, iou={:.2f}", keep_classIds[idx], iou);
+            } else {
+                spdlog::info("False positive: class_id={}, iou={:.2f}", keep_classIds[idx], iou);
+            }
+        }
+
     }
     spdlog::info("Loaded {} ground truth boxes", gt_boxes.size());
 
@@ -373,7 +397,8 @@ int main(int argc, char** argv)
     spdlog::info("Image displayed");
     //![draw_boxes]
 
-    // TODO: write inference output to file, evaluate inference error
+    // TODO: evaluate inference error
+    // success: IoU > 0.5, failure: IoU <= 0.5
 
     outs.clear();
     keep_classIds.clear();

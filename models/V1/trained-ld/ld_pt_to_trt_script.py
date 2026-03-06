@@ -71,7 +71,7 @@ def check_onnx(onnx_path):
     except Exception as e:
         print(f"✗ ONNX model validation failed: {e}")
 
-def pt_to_trt(model_path, device=None, fp16=False):
+def pt_to_trt(model_path, device=None, fp16=False, convert_to_trt=True):
     """
     Convert PyTorch .pt model to TensorRT .trt engine
     
@@ -169,7 +169,7 @@ def pt_to_trt(model_path, device=None, fp16=False):
         # parser.add_argument("--output_names", type=list, default=['yolo_no_nms'], help="List of output tensor names for the ONNX model.")
         # parser.add_argument("--workspace", type=int, default=1, help="Sets the maximum workspace size in GiB for TensorRT optimizations, balancing memory usage and performance. Use None for auto-allocation by TensorRT up to device maximum.")
         config = vars(parser.parse_args())
-        rebuild =  False
+        rebuild =  True
         if not os.path.exists(onnx_path) or rebuild:
             onnx_path = model.export(**config)
         else:
@@ -196,84 +196,84 @@ def pt_to_trt(model_path, device=None, fp16=False):
             return True
         
         print("  This may take a few minutes...")
-        
-        try:
-            TRT_LOGGER = trt.Logger(trt.Logger.VERBOSE)
-            builder = trt.Builder(TRT_LOGGER)
-        except Exception as e:
-            print(f"  ✗ Failed to create TensorRT builder: {e}")
-            print("  ⚠ This typically means CUDA is not available on this system")
-            print("  ✓ ONNX model has been exported successfully")
-            print(f"\n{'='*60}")
-            print("✓ PARTIAL SUCCESS - ONNX Export Complete")
-            print(f"{'='*60}\n")
-            print(f"ONNX model saved to: {onnx_path}")
-            return True
-        network = builder.create_network(
-            1 << int(trt.NetworkDefinitionCreationFlag.EXPLICIT_BATCH)
-        )
-        parser = trt.OnnxParser(network, TRT_LOGGER)
-        
-        # Parse ONNX
-        print("  Parsing ONNX model...")
-        with open(onnx_path, 'rb') as f:
-            if not parser.parse(f.read()):
-                print("  ✗ Failed to parse ONNX file:")
-                for error in range(parser.num_errors):
-                    print(f"    Error {error}: {parser.get_error(error)}")
+        if convert_to_trt:
+            try:
+                TRT_LOGGER = trt.Logger(trt.Logger.VERBOSE)
+                builder = trt.Builder(TRT_LOGGER)
+            except Exception as e:
+                print(f"  ✗ Failed to create TensorRT builder: {e}")
+                print("  ⚠ This typically means CUDA is not available on this system")
+                print("  ✓ ONNX model has been exported successfully")
+                print(f"\n{'='*60}")
+                print("✓ PARTIAL SUCCESS - ONNX Export Complete")
+                print(f"{'='*60}\n")
+                print(f"ONNX model saved to: {onnx_path}")
+                return True
+            network = builder.create_network(
+                1 << int(trt.NetworkDefinitionCreationFlag.EXPLICIT_BATCH)
+            )
+            parser = trt.OnnxParser(network, TRT_LOGGER)
+            
+            # Parse ONNX
+            print("  Parsing ONNX model...")
+            with open(onnx_path, 'rb') as f:
+                if not parser.parse(f.read()):
+                    print("  ✗ Failed to parse ONNX file:")
+                    for error in range(parser.num_errors):
+                        print(f"    Error {error}: {parser.get_error(error)}")
+                    return False
+            
+            print("  ✓ ONNX parsed successfully")
+            
+            # Configure builder
+            config = builder.create_builder_config()
+            config.set_memory_pool_limit(trt.MemoryPoolType.WORKSPACE, 2 << 30)  # 1GB
+            
+            # Add optimization profile for dynamic batch size
+            profile = builder.create_optimization_profile()
+            # Set min, optimal, and max batch sizes (using input shape from parameter)
+            min_shape = (1, input_shape[1], input_shape[2], input_shape[3])
+            opt_shape = (1, input_shape[1], input_shape[2], input_shape[3])
+            max_shape = (1, input_shape[1], input_shape[2], input_shape[3])
+            # Get the actual input tensor name from the network
+            input_name = network.get_input(0).name
+            profile.set_shape(input_name, min_shape, opt_shape, max_shape)
+            config.add_optimization_profile(profile)
+            print("  ✓ Optimization profile added")
+            
+            # if fp16 and builder.platform_has_fast_fp16:
+            #     config.set_flag(trt.BuilderFlag.FP16)
+            #     print("  ✓ FP16 mode enabled")
+            # elif fp16:
+            #     print("  ⚠ FP16 requested but not supported on this platform")
+            
+            # Build engine
+            print("  Building engine (this is the slow part)...")
+            engine = builder.build_serialized_network(network, config)
+            
+            if engine is None:
+                print("  ✗ Failed to build TensorRT engine")
                 return False
-        
-        print("  ✓ ONNX parsed successfully")
-        
-        # Configure builder
-        config = builder.create_builder_config()
-        config.set_memory_pool_limit(trt.MemoryPoolType.WORKSPACE, 2 << 30)  # 1GB
-        
-        # Add optimization profile for dynamic batch size
-        profile = builder.create_optimization_profile()
-        # Set min, optimal, and max batch sizes (using input shape from parameter)
-        min_shape = (1, input_shape[1], input_shape[2], input_shape[3])
-        opt_shape = (1, input_shape[1], input_shape[2], input_shape[3])
-        max_shape = (1, input_shape[1], input_shape[2], input_shape[3])
-        # Get the actual input tensor name from the network
-        input_name = network.get_input(0).name
-        profile.set_shape(input_name, min_shape, opt_shape, max_shape)
-        config.add_optimization_profile(profile)
-        print("  ✓ Optimization profile added")
-        
-        # if fp16 and builder.platform_has_fast_fp16:
-        #     config.set_flag(trt.BuilderFlag.FP16)
-        #     print("  ✓ FP16 mode enabled")
-        # elif fp16:
-        #     print("  ⚠ FP16 requested but not supported on this platform")
-        
-        # Build engine
-        print("  Building engine (this is the slow part)...")
-        engine = builder.build_serialized_network(network, config)
-        
-        if engine is None:
-            print("  ✗ Failed to build TensorRT engine")
-            return False
-        
-        print("  ✓ Engine built successfully")
-        
-        # Save engine (build_serialized_network returns bytes directly)
-        print(f"  Saving engine to {trt_path}...")
-        with open(trt_path, 'wb') as f:
-            f.write(engine)
-        
-        print("  ✓ Engine saved successfully")
-        
-        # Clean up ONNX file
-        # if os.path.exists(onnx_path):
-        #     os.remove(onnx_path)
-        #     print(f"  ✓ Cleaned up intermediate ONNX file")
-        
-        print(f"\n{'='*60}")
-        print("✓ CONVERSION SUCCESSFUL!")
-        print(f"{'='*60}\n")
-        print(f"TensorRT engine saved to: {trt_path}")
-        print(f"File size: {os.path.getsize(trt_path) / (1024*1024):.2f} MB")
+            
+            print("  ✓ Engine built successfully")
+            
+            # Save engine (build_serialized_network returns bytes directly)
+            print(f"  Saving engine to {trt_path}...")
+            with open(trt_path, 'wb') as f:
+                f.write(engine)
+            
+            print("  ✓ Engine saved successfully")
+            
+            # Clean up ONNX file
+            # if os.path.exists(onnx_path):
+            #     os.remove(onnx_path)
+            #     print(f"  ✓ Cleaned up intermediate ONNX file")
+            
+            print(f"\n{'='*60}")
+            print("✓ CONVERSION SUCCESSFUL!")
+            print(f"{'='*60}\n")
+            print(f"TensorRT engine saved to: {trt_path}")
+            print(f"File size: {os.path.getsize(trt_path) / (1024*1024):.2f} MB")
         
         return True
         
@@ -316,9 +316,9 @@ if __name__ == "__main__":
             continue
         path = os.path.join(ld_folder, folder, f"{folder}_weights")
         
-        if True: # not os.path.exists(path + ".trt"):
-            print(f"Converting model at: {path}")
-            pt_to_trt(
-                model_path=path,
-                fp16=False     # Enable FP16
-            )
+        print(f"Converting model at: {path}")
+        pt_to_trt(
+            model_path=path,
+            fp16=False,     # Enable FP16
+            convert_to_trt=False
+        )

@@ -320,7 +320,7 @@ EC Orchestrator::ExecRCInference()
     return EC::OK;
 }
 
-EC Orchestrator::ExecLDInference()
+EC Orchestrator::ExecLDInferenceTRT()
 {
     if (!current_frame_) 
     {
@@ -405,6 +405,133 @@ EC Orchestrator::ExecLDInference()
     return EC::OK;
 }
 
+EC Orchestrator::ExecLDInferenceONNX()
+{
+    if (!current_frame_) 
+    {
+        spdlog::error("No frame to process");
+        LogError(EC::NN_NO_FRAME_AVAILABLE);
+        return EC::NN_NO_FRAME_AVAILABLE;
+    }
+
+    if (!rc_net_.IsInitialized()) 
+    {
+        spdlog::error("RCNet is not initialized. Cannot perform inference.");
+        LogError(EC::NN_ENGINE_NOT_INITIALIZED);
+        return EC::NN_ENGINE_NOT_INITIALIZED;
+    }
+
+    if (num_inference_performed_on_current_frame_ > 0) 
+    {
+        spdlog::warn("Inference already performed on the current frame. This will overwrite.");
+        original_frame_->ClearLandmarks(); // Reset per-frame LD outputs
+    }
+        
+
+    if (original_frame_->GetRegionIDs().empty())
+    {
+        spdlog::warn("No regions detected by RCNet. Skipping LD inference.");
+        return EC::OK;
+    }
+
+    spdlog::info("Regions detected in the frame: {}", original_frame_->GetRegionIDs().size());
+    std::string onnx_path;
+    std::string csv_path;
+    LDNet* ld_net;
+    std::vector<RegionID> region_ids;
+
+    // Pre-process the image for LD
+    cv::Mat ld_chw_img;
+    int output_size;
+
+    Size size(inpWidth, inpHeight);
+    Image2BlobParams imgParams(
+        scale,
+        size,
+        mean,
+        swapRB,
+        CV_32F,
+        DNN_LAYOUT_NCHW,
+        paddingMode); // , paddingValue);
+
+    Image2BlobParams paramNet;
+    paramNet.scalefactor = scale;
+    paramNet.size = size;
+    paramNet.mean = mean;
+    paramNet.swapRB = swapRB;
+    paramNet.paddingmode = paddingMode;
+    cv::dnn::Net net;
+    int backend = 0; // automatically, opencv implementation or cuda?
+    int target = 0; // 0: cpu, 6: cuda, 7: cuda fp16
+
+    std::vector<Mat> outs;
+    std::vector<int> keep_classIds;
+    std::vector<float> keep_confidences;
+    std::vector<Rect2d> keep_boxes;
+    std::vector<Rect> boxes;
+    spdlog::info("Forward buffers initialized");
+
+    Mat inp;
+    //![preprocess_call_func]
+    inp = blobFromImageWithParams(img, imgParams);
+    spdlog::info("Blob created from image");
+
+    for(const auto& region_id : original_frame_->GetRegionIDs())
+    {
+        if (ld_nets_.find(region_id) == ld_nets_.end())
+        {
+            spdlog::error("No LDNet found for region: {}", GetRegionString(region_id));
+            continue;
+        }
+        if (!ld_nets_.at(region_id).IsInitialized())
+        {
+            spdlog::error("LDNet for region {} is not initialized.", GetRegionString(region_id));
+            continue;
+        }
+        ld_nets.push_back(&ld_nets_.at(region_id));
+        region_ids.push_back(region_id);
+        spdlog::info("Selected LDNet for region: {}", GetRegionString(region_id));
+
+        // Init the Net
+        net = readNet(ld_onnx_file_path);
+        spdlog::info("Model loaded from: {}", ld_onnx_file_path);
+        net.setPreferableBackend(backend);
+        net.setPreferableTarget(target);
+
+        net.setInput(inp);
+        spdlog::info("Input set to network");
+        
+        net.forward(outs, net.getUnconnectedOutLayersNames());
+        spdlog::info("Forward pass completed, outputs: {}", outs.size());
+
+
+        // Non-max suppression and populate landmarks
+        yoloPostProcessing(
+            outs, keep_classIds, keep_confidences, keep_boxes,
+            confThreshold, nmsThreshold,
+            yolo_model,
+            nc);
+        spdlog::info("Post-processing completed, detections: {}", keep_boxes.size());
+        for (auto box : keep_boxes)
+        {
+            boxes.push_back(Rect(cvFloor(box.x), cvFloor(box.y), cvFloor(box.width - box.x), cvFloor(box.height - box.y)));
+        }
+        for (auto& b : boxes) {
+            b = scaleBoxBackLetterbox(b, img.size(), size);
+        }
+
+        // Store results in original frame
+    }
+
+    original_frame_->SetProcessingStage(ProcessingStage::LDNeted);
+
+
+    // preprocess image for LD
+
+    return EC::OK;
+}
+
+
 EC Orchestrator::ExecFullInference()
 {
     // Run Region Classification inference
@@ -413,7 +540,7 @@ EC Orchestrator::ExecFullInference()
     if (rc_ec != EC::OK)  return rc_ec;
     
     // Run Landmark Detection inference
-    EC ld_ec = ExecLDInference();
+    EC ld_ec = ExecLDInferenceTRT();
     num_inference_performed_on_current_frame_++;
 
     return ld_ec;

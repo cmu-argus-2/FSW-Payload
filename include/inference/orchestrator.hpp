@@ -21,7 +21,8 @@ public:
     void GrabNewImage(std::shared_ptr<Frame> frame);
 
     EC ExecRCInference();
-    EC ExecLDInference();
+    EC ExecLDInferenceTRT();
+    EC ExecLDInferenceONNX();
     EC ExecFullInference();
 
     static size_t GetMemorySize(const nvinfer1::Dims& dims, size_t element_size);

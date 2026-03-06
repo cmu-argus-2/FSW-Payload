@@ -71,7 +71,7 @@ def check_onnx(onnx_path):
     except Exception as e:
         print(f"✗ ONNX model validation failed: {e}")
 
-def pt_to_trt(model_path, device=None, fp16=False):
+def pt_to_trt(model_path, device=None, fp16=False, keep_onnx=False, convert_to_trt=True):
     """
     Convert PyTorch .pt model to TensorRT .trt engine
     
@@ -178,6 +178,14 @@ def pt_to_trt(model_path, device=None, fp16=False):
         check_onnx(onnx_path)
         print("  ✓ ONNX export successful")
         
+        if convert_to_trt == False:
+            print(f"\n{'='*60}")
+            print("✓ ONNX EXPORT SUCCESSFUL - SKIPPING TENSORRT CONVERSION")
+            print(f"{'='*60}\n")
+            print(f"ONNX model saved to: {onnx_path}")
+            print(f"File size: {os.path.getsize(onnx_path) / (1024*1024):.2f} MB")
+            return True
+        
         # Step 3: Build TensorRT engine
         print("\nStep 3/3: Building TensorRT engine...")
         
@@ -264,16 +272,16 @@ def pt_to_trt(model_path, device=None, fp16=False):
         
         print("  ✓ Engine saved successfully")
         
-        # Clean up ONNX file
-        # if os.path.exists(onnx_path):
-        #     os.remove(onnx_path)
-        #     print(f"  ✓ Cleaned up intermediate ONNX file")
-        
         print(f"\n{'='*60}")
         print("✓ CONVERSION SUCCESSFUL!")
         print(f"{'='*60}\n")
         print(f"TensorRT engine saved to: {trt_path}")
         print(f"File size: {os.path.getsize(trt_path) / (1024*1024):.2f} MB")
+        
+        # Clean up ONNX file
+        if not keep_onnx and os.path.exists(onnx_path):
+            os.remove(onnx_path)
+            print(f"  ✓ Cleaned up intermediate ONNX file")
         
         return True
         
@@ -312,13 +320,15 @@ if __name__ == "__main__":
     print(list_folder)
 
     for folder in list_folder:
-        if not os.path.isdir(os.path.join(ld_folder, folder)) or not folder.startswith("17T"):
+        if not os.path.isdir(os.path.join(ld_folder, folder)): #  or not folder.startswith("17T"):
             continue
         path = os.path.join(ld_folder, folder, f"{folder}_weights")
         
-        if True: # not os.path.exists(path + ".trt"):
-            print(f"Converting model at: {path}")
-            pt_to_trt(
-                model_path=path,
-                fp16=False     # Enable FP16
-            )
+        # if True: # not os.path.exists(path + ".trt"):
+        print(f"Converting model at: {path}")
+        pt_to_trt(
+            model_path=path,
+            fp16=False,     # Enable FP16
+            keep_onnx=True,
+            convert_to_trt=False
+        )

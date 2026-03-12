@@ -1,0 +1,3 @@
+[submodule "new_payload/splat"]
+	path = new_payload/splat
+	url = https://github.com/cmu-argus-2/splat.git

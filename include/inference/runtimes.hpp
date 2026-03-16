@@ -88,23 +88,23 @@ private:
 
 class LDNet
 {
-
 public:
+    static int GetNumLandmarksFromCSV(const std::string& csv_path);
 
     LDNet(RegionID region_id, std::string csv_path);
-    ~LDNet();
+    virtual ~LDNet() = default;
 
-    EC LoadEngine(const std::string& engine_path);
+    // getters
     bool IsInitialized() const { return initialized_; }
-    EC Free();
-    EC Infer(const void* input_data, void* output);
     int GetNumLandmarks() const { return num_landmarks_; }
     int GetOutputSize() const { return output_size_; }
-    EC PostprocessOutput(const float* output, std::shared_ptr<Frame> frame);
 
+    virtual EC LoadEngine(const std::string& engine_path) = 0;
+    virtual EC Free() = 0;
+    virtual EC Infer(const void* input_data, void* output) = 0;
+    virtual EC PostprocessOutput(const float* output, std::shared_ptr<Frame> frame) = 0;
 private:
-
-    bool initialized_ = false; 
+    bool initialized_ = false;
 
     // Region ID
     RegionID region_id_;
@@ -133,6 +133,32 @@ private:
     // Landmark bounding box CSV file path (for post-processing)
     std::string csv_path_;
 
+    // Landmark engine path
+    std::string engine_path_;
+
+}
+
+class TRTLDNet: public LDNet
+{
+
+public:
+    // static methods
+
+    static std::vector<Landmark> LDYoloNonMaxSuppression(
+        const Eigen::MatrixXf& output_matrix,
+        RegionID region_id,
+        float conf_threshold,
+        float iou_threshold);
+
+    TRTLDNet(RegionID region_id, std::string csv_path);
+    ~TRTLDNet();
+
+    EC LoadEngine(const std::string& engine_path);
+    EC Free();
+    EC Infer(const void* input_data, void* output);
+    EC PostprocessOutput(const float* output, std::shared_ptr<Frame> frame);
+
+private:
     // Logger for TensorRT
     Logger trt_logger_;
 
@@ -151,16 +177,24 @@ private:
 
 };
 
+class ONNXLDNet: public LDNet
+{
+
+public:
+
+    ONNXLDNet(RegionID region_id, std::string csv_path);
+    ~ONNXLDNet();
+
+    EC LoadEngine(const std::string& engine_path);
+    EC Free();
+    EC Infer(const void* input_data, void* output);
+    EC PostprocessOutput(const float* output, std::shared_ptr<Frame> frame);
+
+private:
+    std::unique_ptr<cv::dnn::Net> net_ = nullptr;
+
+};
+
 } // namespace Inference
-
-static float ComputeIoU(const Landmark& a, const Landmark& b);
-
-std::vector<Landmark> LDYoloNonMaxSuppression(
-    const Eigen::MatrixXf& output_matrix,
-    RegionID region_id,
-    float conf_threshold,
-    float iou_threshold);
-
-int GetNumLandmarksFromCSV(const std::string& csv_path);
 
 #endif // RUNTIMES_HPP

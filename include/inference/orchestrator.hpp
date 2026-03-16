@@ -41,7 +41,8 @@ private:
 
     RCNet rc_net_; 
     
-    std::map<RegionID, LDNet> ld_nets_;
+    std::map<RegionID, std::string> ld_net_onnx_engine_paths_; // onnx paths
+    std::map<RegionID, LDNet> ld_nets_; // tensorRT engines
 
 };
 

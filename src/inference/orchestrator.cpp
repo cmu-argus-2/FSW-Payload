@@ -30,7 +30,7 @@ Orchestrator::~Orchestrator()
     FreeEngines();
 }
 
-void Orchestrator::Initialize(const std::string& rc_engine_path, const std::string& ld_engine_folder_path)
+void Orchestrator::Initialize(const std::string& rc_engine_path, const std::string& ld_engine_folder_path, bool use_trt_for_ld)
 {
     // Initialize the RCNet runtime
     EC rc_net_status = rc_net_.LoadEngine(rc_engine_path);
@@ -41,7 +41,7 @@ void Orchestrator::Initialize(const std::string& rc_engine_path, const std::stri
     }
 
     // Find all the regions
-    std::string trt_path;
+    std::string engine_path;
     std::string csv_path;
 
     EC ld_net_status;
@@ -50,28 +50,43 @@ void Orchestrator::Initialize(const std::string& rc_engine_path, const std::stri
     {
         std::string region_str = std::string(GetRegionString(region_id));
 
-        trt_path = ld_engine_folder_path + "/" + region_str + "/" + region_str + "_weights.trt";
         csv_path = ld_engine_folder_path + "/" + region_str + "/bounding_boxes.csv";
 
-        if (!std::filesystem::exists(trt_path) || !std::filesystem::exists(csv_path))
+        if (use_trt_for_ld)
         {
-            spdlog::warn("Skipping region {} (missing LD assets). TRT exists: {}, CSV exists: {}", 
-                        region_str, std::filesystem::exists(trt_path), std::filesystem::exists(csv_path));
-            continue;
+            engine_path = ld_engine_folder_path + "/" + region_str + "/" + region_str + "_weights.trt";
+        } else {
+            engine_path = ld_engine_folder_path + "/" + region_str + "/" + region_str + "_weights.onnx";
         }
-        
-        ld_nets_.try_emplace(region_id, region_id, csv_path);
 
-        spdlog::info("Loading model for region {}: TRT path: {}, CSV path: {}", region_str, trt_path, csv_path);
-        ld_net_status = ld_nets_.at(region_id).LoadEngine(trt_path);
-        if (ld_net_status != EC::OK) 
+        if (!std::filesystem::exists(engine_path) || !std::filesystem::exists(csv_path))
         {
-            spdlog::error("Failed to load LD Net engine for region: {}", region_str);
+            spdlog::warn("Skipping region {} (missing LD assets). Engine exists: {}, CSV exists: {}", 
+                        region_str, std::filesystem::exists(engine_path), std::filesystem::exists(csv_path));
             continue;
         }
 
-        spdlog::info("LDNet successfully loaded for region: {}", region_str);
-        loaded_ld_nets++;
+        if (use_trt_for_ld)
+        {
+            ld_nets_.try_emplace(region_id, region_id, csv_path);
+
+            spdlog::info("Loading model for region {}: Engine path: {}, CSV path: {}", region_str, engine_path, csv_path);
+            ld_net_status = ld_nets_.at(region_id).LoadEngine(engine_path);
+            if (ld_net_status != EC::OK) 
+            {
+                spdlog::error("Failed to load LD Net engine for region: {}", region_str);
+                continue;
+            }
+
+            spdlog::info("LDNet successfully loaded for region: {}", region_str);
+            loaded_ld_nets++;
+        }
+        else // use onnx for ld
+        {
+            ld_net_onnx_engine_paths_[region_id] = engine_path;
+            spdlog::info("ONNX model path set for region {}: {}", region_str, engine_path);
+            loaded_ld_nets++; // onnx to be loaded at inference time
+        }
     }
 
     if (loaded_ld_nets == 0)
@@ -540,7 +555,7 @@ EC Orchestrator::ExecFullInference()
     if (rc_ec != EC::OK)  return rc_ec;
     
     // Run Landmark Detection inference
-    EC ld_ec = ExecLDInferenceTRT();
+    EC ld_ec = ExecLDInferenceONNX();
     num_inference_performed_on_current_frame_++;
 
     return ld_ec;

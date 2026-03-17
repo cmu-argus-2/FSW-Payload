@@ -181,6 +181,8 @@ void yoloPostProcessing(
         }
     }
 
+    spdlog::info("Boxes: {}, Confidences: {}", boxes.size(), confidences.size());
+
     // NMS
     std::vector<int> keep_idx;
     NMSBoxes(boxes, confidences, conf_threshold, iou_threshold, keep_idx);
@@ -389,7 +391,6 @@ int main(int argc, char** argv)
                 spdlog::info("False positive: class_id={}, iou={:.2f}", keep_classIds[idx], iou);
             }
         }
-
     }
     spdlog::info("Loaded {} ground truth boxes", gt_boxes.size());
 

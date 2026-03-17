@@ -551,9 +551,6 @@ EC Orchestrator::ExecLDInferenceONNX()
     }
     spdlog::info("Regions detected in the frame: {}", original_frame_->GetRegionIDs().size());
 
-    // If LDNet engines are not initialized, initialize them. If they don't exist, skip them.
-    std::vector<RegionID> region_ids;
-
     // Pre-process the image for LD
     int output_size;
 
@@ -570,7 +567,7 @@ EC Orchestrator::ExecLDInferenceONNX()
         scale,
         size,
         mean,
-        swapRB,
+        false,
         CV_32F,
         DNN_LAYOUT_NCHW,
         paddingMode); // , paddingValue);
@@ -581,9 +578,6 @@ EC Orchestrator::ExecLDInferenceONNX()
     paramNet.mean = mean;
     paramNet.swapRB = swapRB;
     paramNet.paddingmode = paddingMode;
-    cv::dnn::Net net;
-    int backend = 0; // automatically, opencv implementation or cuda?
-    int target = 0; // 0: cpu, 6: cuda, 7: cuda fp16
 
     std::vector<Mat> outs;
     std::vector<int> keep_classIds;

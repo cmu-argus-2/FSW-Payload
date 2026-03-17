@@ -580,6 +580,8 @@ void ONNXLDNet::yoloPostProcessing(
         }
     }
 
+    spdlog::info("Boxes: {}, Confidences: {}", boxes.size(), confidences.size());
+
     // NMS
     std::vector<int> keep_idx;
     NMSBoxes(boxes, confidences, conf_threshold, iou_threshold, keep_idx);

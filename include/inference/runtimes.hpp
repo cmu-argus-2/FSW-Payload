@@ -135,8 +135,8 @@ public:
     int GetOutputSize() const { return output_size_; }
     int GetNumYoloBoxes() const { return num_yolo_boxes; }
     RegionID GetRegionID() const { return region_id_; }
-    int GetConfidenceThreshold() const { return confidence_threshold_; }
-    int GetIOUThreshold() const { return iou_threshold_; }
+    float GetConfidenceThreshold() const { return confidence_threshold_; }
+    float GetIOUThreshold() const { return iou_threshold_; }
 
     // setters
     void SetInitialized(bool initialized) { initialized_ = initialized; }
@@ -167,7 +167,7 @@ private:
     float confidence_threshold_ = 0.5f;
 
     // iou threshold for non-max suppression
-    float iou_threshold_ = 0.5f;
+    float iou_threshold_ = 0.45f;
 
     // Batch size
     const int batch_size_ = 1;

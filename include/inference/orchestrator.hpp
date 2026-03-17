@@ -58,8 +58,8 @@ private:
     bool preload_rc_engine_ = true; // Option to preload RC engine at initialization
     bool preload_ld_engines_ = false; // Option to preload LD engines at initialization
 
-    std::string ld_engine_folder_path_ = "/home/argus/Documents/FSW-Payload/models/V1/trained-ld"; // Folder path for LD engines (if loading on demand)
-    std::string rc_engine_path_ = "/home/argus/Documents/FSW-Payload/models/V1/trained-rc/effnet_0997acc.trt"; // File path for RC engine (if loading on demand)
+    std::string ld_engine_folder_path_ = "./models/V1/trained-ld"; // Folder path for LD engines (if loading on demand)
+    std::string rc_engine_path_ = "./models/V1/trained-rc/effnet_0997acc.trt"; // File path for RC engine (if loading on demand)
     bool use_trt_for_ld_ = false; // Whether to use TRT for LDNet (if false, use ONNX Runtime)
 
     void RCPreprocessImg(cv::Mat img, cv::Mat& out_chw_img);

@@ -160,6 +160,12 @@ void Orchestrator::SetRCNetEnginePath(const std::string& path)
         return;
     }
     rc_engine_path_ = path;
+
+    if (rc_net_.IsInitialized())
+    {
+        FreeRCNet();
+    }
+
     if (preload_rc_engine_)
     {
         LoadRCEngine();

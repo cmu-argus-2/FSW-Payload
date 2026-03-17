@@ -663,18 +663,29 @@ EC ONNXLDNet::PostprocessOutput(std::vector<cv::Mat> outs, std::shared_ptr<Frame
     std::vector<int> keep_classIds;
     std::vector<float> keep_confidences;
     std::vector<Rect2d> keep_boxes;
+    std::vector<Rect> boxes;
 
     // Non-max suppression
     yoloPostProcessing(outs, keep_classIds, keep_confidences, keep_boxes);
+
+    for (auto box : keep_boxes)
+    {
+        boxes.push_back(Rect(cvFloor(box.x), cvFloor(box.y), cvFloor(box.width - box.x), cvFloor(box.height - box.y)));
+    }
+
+    for (auto& b : boxes) {
+        b = scaleBoxBackLetterbox(b, frame->GetImgSize(), 
+                                    cv::Size(GetInputWidth(), GetInputHeight()));
+    }
 
     // Populate landmarks
     Rect2d box;
     float x_center, y_center, width, height;
     uint16_t class_id;
-    for (int i = 0; i < keep_boxes.size(); ++i)
+    for (int i = 0; i < boxes.size(); ++i)
     {
-        box = scaleBoxBackLetterbox(keep_boxes[i], frame->GetImgSize(), 
-                                    cv::Size(GetInputWidth(), GetInputHeight()));
+        Rect box = boxes[i];
+
         // TODO: Revise variable datatype
         height = static_cast<float>(box.height);
         width = static_cast<float>(box.width);

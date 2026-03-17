@@ -6,17 +6,30 @@
 #include <opencv2/dnn/dnn.hpp>
 // #include <opencv2/dnn/types.hpp>
 
+// TODO: consider whether to remove this
+using namespace cv;
+using namespace cv::dnn;
+
 namespace Inference
 {
 
 using namespace nvinfer1;
 
-static constexpr const char* rc_input_name = "input";
-static constexpr const char* rc_output_name = "output";
+// TODO: Remove, define in classes
+// static constexpr const char* rc_input_name = "input";
+// static constexpr const char* rc_output_name = "output";
 static constexpr const char* ld_input_name = "images";
 static constexpr const char* ld_output_name = "output0";
 
-RCNet::RCNet()
+// TODO: Can the input be obtained from the TRT? If so, either (a) a check should be 
+// added when loading the engine or (b) these values are assigned when the engine is loaded.
+// Either way, there should be a check for these values when they are assigned.
+RCNet::RCNet(): // default values
+batch_size_(1),
+input_channels_(3),
+input_height_(224),
+input_width_(224),
+num_classes_(16)
 {
 }
 
@@ -83,11 +96,12 @@ EC RCNet::LoadEngine(const std::string& engine_path)
     assert(engine_->getTensorDataType(rc_input_name) == nvinfer1::DataType::kFLOAT);
     assert(engine_->getTensorDataType(rc_output_name) == nvinfer1::DataType::kFLOAT);
 
-    context_->setInputShape(rc_input_name, nvinfer1::Dims4{BATCH_SIZE, INPUT_CHANNELS, INPUT_HEIGHT, INPUT_WIDTH});
+    context_->setInputShape(rc_input_name, nvinfer1::Dims4{batch_size_, input_channels_, input_height_, input_width_});
 
     // Allocate GPU memory for input and output
-    buffers_.input_size = BATCH_SIZE * INPUT_CHANNELS * INPUT_HEIGHT * INPUT_WIDTH * sizeof(float);
-    buffers_.output_size = RC_NUM_CLASSES * sizeof(float);
+    // TODO: input shouldn't be float
+    buffers_.input_size = batch_size_ * input_channels_ * input_height_ * input_width_ * sizeof(float);
+    buffers_.output_size = num_classes_ * sizeof(float);
     buffers_.allocate();
 
     // Bind input and output memory (ok for RC)
@@ -164,16 +178,12 @@ EC RCNet::Infer(const void* input_data, void* output)
 // LDNet methods
 
 LDNet::LDNet(RegionID region_id, std::string csv_path)
-: region_id_(region_id), csv_path_(csv_path)
-{
+: region_id_(region_id), csv_path_(csv_path), 
+num_landmarks_(GetNumLandmarksFromCSV(csv_path)),
+num_yolo_boxes(ComputeNumYoloBoxes()), 
+output_size_((num_landmarks_ + 4) * num_yolo_boxes) // 4 for bounding box coordinates
 
-    num_landmarks_ = GetNumLandmarksFromCSV(csv_path_);
-    num_yolo_boxes = 0;
-    for (const auto& stride : strides_)
-    {
-        num_yolo_boxes += (input_width_ / stride) * (input_width_ / stride);
-    }
-    output_size_ = (num_landmarks_ + 4) * num_yolo_boxes; // 4 for bounding box coordinates
+{
 }
 
 
@@ -197,6 +207,18 @@ int LDNet::GetNumLandmarksFromCSV(const std::string& csv_path)
     }
     file.close();
     return num_landmarks;
+}
+
+int LDNet::ComputeNumYoloBoxes() const
+{
+    int total_boxes = 0;
+    int feature_map_size;
+    for (const auto& stride : strides_)
+    {
+        feature_map_size = input_width_ / stride; // assuming square input and feature maps
+        total_boxes += feature_map_size * feature_map_size;
+    }
+    return total_boxes;
 }
 
 // TRTLD Net methods
@@ -269,11 +291,19 @@ EC TRTLDNet::LoadEngine(const std::string& engine_path)
     assert(engine_->getTensorDataType(ld_input_name) == nvinfer1::DataType::kFLOAT);
     assert(engine_->getTensorDataType(ld_output_name) == nvinfer1::DataType::kFLOAT);
 
-    context_->setInputShape(ld_input_name, nvinfer1::Dims4{BATCH_SIZE, INPUT_CHANNELS, INPUT_HEIGHT, INPUT_WIDTH});
+    int batch_size = GetBatchSize();
+    int input_channels = GetInputChannels();
+    int input_height = GetInputHeight();
+    int input_width = GetInputWidth();
+    int num_yolo_boxes = GetNumYoloBoxes();
+
+    // TODO: Check that these values are valid and match the engine's expected input dimensions.
+
+    context_->setInputShape(ld_input_name, nvinfer1::Dims4{batch_size, input_channels, input_height, input_width});
 
     // Allocate GPU memory for input and output
-    buffers_.input_size = BATCH_SIZE * INPUT_CHANNELS * INPUT_HEIGHT * INPUT_WIDTH * sizeof(float);
-    buffers_.output_size = BATCH_SIZE * (num_landmarks_ + 4) * num_yolo_boxes * sizeof(float);
+    buffers_.input_size = batch_size * input_channels * input_height * input_width * sizeof(float);
+    buffers_.output_size = batch_size * (GetNumLandmarks() + 4) * num_yolo_boxes * sizeof(float);
     buffers_.allocate();
 
     // Bind input and output memory (ok for LD?)
@@ -283,7 +313,7 @@ EC TRTLDNet::LoadEngine(const std::string& engine_path)
     // Creating CUDA stream for asynchronous execution
     cudaStreamCreate(&stream_); 
 
-    initialized_ = true;
+    SetInitialized(true);
 
     return EC::OK;
 }
@@ -295,7 +325,7 @@ EC TRTLDNet::Free()
     if (runtime_) runtime_.reset();
     buffers_.free();
     if (stream_) { cudaStreamDestroy(stream_); stream_ = nullptr; }
-    initialized_ = false;
+    SetInitialized(false);
     spdlog::info("LDNet freed.");
     return EC::OK;
 }
@@ -303,7 +333,7 @@ EC TRTLDNet::Free()
 EC TRTLDNet::Infer(const void* input_data, void* output)
 {
     
-    if (!initialized_) 
+    if (!IsInitialized()) 
     {
         spdlog::error("LDNet is not initialized. Call LoadEngine first.");
         return EC::NN_ENGINE_NOT_INITIALIZED;
@@ -349,7 +379,7 @@ EC TRTLDNet::Infer(const void* input_data, void* output)
 EC TRTLDNet::PostprocessOutput(const float* ld_output, std::shared_ptr<Frame> frame)
 {
     // store ld_output in a matrix of size [num_landmarks + 4, num_boxes]
-    int total_output_size = (num_landmarks_ + 4) * num_yolo_boxes;
+    int total_output_size = GetOutputSize();
     // Eigen::MatrixXf output_matrix(num_landmarks_ + 4, num_yolo_boxes);
     // for (int i = 0; i < total_output_size; ++i) {
     //     if (i % 10000 == 0) {
@@ -359,10 +389,10 @@ EC TRTLDNet::PostprocessOutput(const float* ld_output, std::shared_ptr<Frame> fr
     // }
 
     using RowMat = Eigen::Matrix<float, Eigen::Dynamic, Eigen::Dynamic, Eigen::RowMajor>;
-    Eigen::Map<const RowMat> output_matrix(ld_output, num_landmarks_ + 4, num_yolo_boxes);
+    Eigen::Map<const RowMat> output_matrix(ld_output, GetNumLandmarks() + 4, GetNumYoloBoxes());
 
     // Non-max suppression
-    std::vector<Landmark> landmarks = LDYoloNonMaxSuppression(output_matrix, region_id_, confidence_threshold_, iou_threshold_);
+    std::vector<Landmark> landmarks = LDYoloNonMaxSuppression(output_matrix, GetRegionID(), GetConfidenceThreshold(), GetIOUThreshold());
     
     // Populate landmarks
     for (const auto& landmark : landmarks)
@@ -462,6 +492,117 @@ std::vector<Landmark> TRTLDNet::LDYoloNonMaxSuppression(
 
 
 // ONNXLDNet methods
+void ONNXLDNet::yoloPostProcessing(
+    std::vector<Mat>& outs,
+    std::vector<int>& keep_classIds,
+    std::vector<float>& keep_confidences,
+    std::vector<Rect2d>& keep_boxes,
+    float conf_threshold,
+    float iou_threshold,
+    const std::string& model_name,
+    const int nc)
+{
+    // Retrieve
+    std::vector<int> classIds;
+    std::vector<float> confidences;
+    std::vector<Rect2d> boxes;
+
+    if (model_name == "yolov8" || model_name == "yolov10" ||
+        model_name == "yolov9")
+    {
+        cv::transposeND(outs[0], {0, 2, 1}, outs[0]);
+    }
+
+    if (model_name == "yolonas")
+    {
+        // outs contains 2 elements of shape [1, 8400, nc] and [1, 8400, 4]. Concat them to get [1, 8400, nc+4]
+        Mat concat_out;
+        // squeeze the first dimension
+        outs[0] = outs[0].reshape(1, outs[0].size[1]);
+        outs[1] = outs[1].reshape(1, outs[1].size[1]);
+        cv::hconcat(outs[1], outs[0], concat_out);
+        outs[0] = concat_out;
+        // remove the second element
+        outs.pop_back();
+        // unsqueeze the first dimension
+        outs[0] = outs[0].reshape(0, std::vector<int>{1, outs[0].size[0], outs[0].size[1]});
+    }
+
+    // assert if last dim is nc+5 or nc+4
+    CV_CheckEQ(outs[0].dims, 3, "Invalid output shape. The shape should be [1, #anchors, nc+5 or nc+4]");
+    CV_CheckEQ((outs[0].size[2] == nc + 5 || outs[0].size[2] == nc + 4), true, "Invalid output shape: ");
+
+    for (auto preds : outs)
+    {
+        preds = preds.reshape(1, preds.size[1]); // [1, 8400, 85] -> [8400, 85]
+        for (int i = 0; i < preds.rows; ++i)
+        {
+            // filter out non object
+            float obj_conf = (model_name == "yolov8" || model_name == "yolonas" ||
+                              model_name == "yolov9" || model_name == "yolov10") ? 1.0f : preds.at<float>(i, 4) ;
+            if (obj_conf < conf_threshold)
+                continue;
+
+            Mat scores = preds.row(i).colRange((model_name == "yolov8" || model_name == "yolonas" || model_name == "yolov9" || model_name == "yolov10") ? 4 : 5, preds.cols);
+            double conf;
+            Point maxLoc;
+            minMaxLoc(scores, 0, &conf, 0, &maxLoc);
+
+            conf = (model_name == "yolov8" || model_name == "yolonas" || model_name == "yolov9" || model_name == "yolov10") ? conf : conf * obj_conf;
+            if (conf < conf_threshold)
+                continue;
+
+            // get bbox coords
+            float* det = preds.ptr<float>(i);
+            double cx = det[0];
+            double cy = det[1];
+            double w = det[2];
+            double h = det[3];
+
+            // [x1, y1, x2, y2]
+            if (model_name == "yolonas" || model_name == "yolov10"){
+                boxes.push_back(Rect2d(cx, cy, w, h));
+            } else {
+                boxes.push_back(Rect2d(cx - 0.5 * w, cy - 0.5 * h,
+                                        cx + 0.5 * w, cy + 0.5 * h));
+            }
+            classIds.push_back(maxLoc.x);
+            confidences.push_back(static_cast<float>(conf));
+        }
+    }
+
+    // NMS
+    std::vector<int> keep_idx;
+    NMSBoxes(boxes, confidences, conf_threshold, iou_threshold, keep_idx);
+
+    for (auto i : keep_idx)
+    {
+        keep_classIds.push_back(classIds[i]);
+        keep_confidences.push_back(confidences[i]);
+        keep_boxes.push_back(boxes[i]);
+    }
+}
+
+cv::Rect ONNXLDNet::scaleBoxBackLetterbox(
+    const cv::Rect& rBlob,
+    const cv::Size& imgSize,
+    const cv::Size& netSize)
+{
+    const float gain = std::min(netSize.width / (float)imgSize.width,
+                                netSize.height / (float)imgSize.height);
+    const float padX = (netSize.width  - imgSize.width  * gain) * 0.5f;
+    const float padY = (netSize.height - imgSize.height * gain) * 0.5f;
+
+    float x = (rBlob.x - padX) / gain;
+    float y = (rBlob.y - padY) / gain;
+    float w = rBlob.width  / gain;
+    float h = rBlob.height / gain;
+
+    cv::Rect r((int)std::round(x), (int)std::round(y),
+               (int)std::round(w), (int)std::round(h));
+    return r & cv::Rect(0, 0, imgSize.width, imgSize.height);
+}
+
 ONNXLDNet::ONNXLDNet(RegionID region_id, std::string csv_path)
 : LDNet(region_id, csv_path)
 {
@@ -474,53 +615,73 @@ ONNXLDNet::~ONNXLDNet()
 
 EC ONNXLDNet::LoadEngine(const std::string& engine_path)
 {
-    // TODO
-
-    initialized_ = true;
+    SetInitialized(true);
+    // TODO: Error handling
+    net_ = std::make_unique<cv::dnn::Net>(cv::dnn::readNet(engine_path));
+    net_->setPreferableBackend(cv::dnn::DNN_BACKEND_DEFAULT);
+    net_->setPreferableTarget(cv::dnn::DNN_TARGET_CPU);
 
     return EC::OK;
 }
 
 EC ONNXLDNet::Free()
 {
-    // TODO
-    
-    initialized_ = false;
+    net_.reset();
+    SetInitialized(false);
     spdlog::info("LDNet freed.");
     return EC::OK;
 }
 
-EC ONNXLDNet::Infer(const void* input_data, void* output)
+EC ONNXLDNet::Infer(cv::Mat input_data, std::vector<cv::Mat> output)
 {
     
-    if (!initialized_) 
+    if (!IsInitialized()) 
     {
         spdlog::error("LDNet is not initialized. Call LoadEngine first.");
         return EC::NN_ENGINE_NOT_INITIALIZED;
     }
 
-    if (!input_data || !output) 
-    {
-        spdlog::error("Input data or output buffer is null.");
-        LogError(EC::NN_POINTER_NULL);
-        return EC::NN_POINTER_NULL;
-    }
-
-    // TODO
-
-    return EC::OK;
+   net_->setInput(input_data);
+   std::vector<cv::Mat> outs;
+   net_->forward(outs, net_->getUnconnectedOutLayersNames());
+   spdlog::info("Forward pass completed, outputs: {}", outs.size());
+   
+   return EC::OK;
 }
 
-EC ONNXLDNet::PostprocessOutput(const float* ld_output, std::shared_ptr<Frame> frame)
+EC ONNXLDNet::PostprocessOutput(std::vector<cv::Mat> outs, std::shared_ptr<Frame> frame)
 {
     // TODO
+    std::vector<int> keep_classIds;
+    std::vector<float> keep_confidences;
+    std::vector<Rect2d> keep_boxes;
+    std::string yolo_model = "yolov8";
 
     // Non-max suppression
-    // std::vector<Landmark> landmarks = LDYoloNonMaxSuppression(output_matrix, region_id_, confidence_threshold_, iou_threshold_);
-    
+    ONNXLDNet::yoloPostProcessing(
+        outs, keep_classIds, keep_confidences, keep_boxes,
+        GetConfidenceThreshold(), GetIOUThreshold(),
+        yolo_model,
+        GetNumLandmarks());
+
     // Populate landmarks
-    for (const auto& landmark : landmarks)
+    Rect2d box;
+    float x_center, y_center, width, height;
+    uint16_t class_id;
+    for (int i = 0; i < keep_boxes.size(); ++i)
     {
+        box = scaleBoxBackLetterbox(keep_boxes[i], frame->GetImgSize(), 
+                                    cv::Size(GetInputWidth(), GetInputHeight()));
+        // TODO: Revise variable datatype
+        height = static_cast<float>(box.height);
+        width = static_cast<float>(box.width);
+        x_center = static_cast<float>(box.x) + width / 2.0f;
+        y_center = static_cast<float>(box.y) + height / 2.0f;
+
+        class_id = static_cast<uint16_t>(keep_classIds[i]);
+        Landmark landmark(x_center, y_center, class_id, GetRegionID(),
+                            height, width, keep_confidences[i]);
+        // Landmark landmark(keep_boxes[i], keep_classIds[i], keep_confidences[i]);
         frame->AddLandmark(landmark);
     }
     

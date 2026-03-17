@@ -174,7 +174,6 @@ void CameraManager::RunLoop()
             case CAPTURE_MODE::PERIODIC_ROI:
             {
                 static Inference::Orchestrator orchestrator;
-                static bool orchestrator_initialized = false;
 
                 current_capture_time = std::chrono::high_resolution_clock::now();
                 auto elapsed_seconds = std::chrono::duration_cast<std::chrono::seconds>(current_capture_time - last_capture_time).count();
@@ -213,12 +212,6 @@ void CameraManager::RunLoop()
                     DisableCameras(off_cameras);
                     SPDLOG_INFO("Cameras disabled before inference.");
 
-                    // initialize orch
-                    if (!orchestrator_initialized) {
-                        orchestrator.Initialize("/home/argus/Documents/FSW-Payload/models/V1/trained-rc/effnet_0997acc.trt", "/home/argus/Documents/FSW-Payload/models/V1/trained-ld");
-                        orchestrator_initialized = true;
-                    }
-
                     for (auto& frame : captured_frames)
                     {
                         std::shared_ptr<Frame> frame_ptr = std::make_shared<Frame>(frame);
@@ -235,12 +228,6 @@ void CameraManager::RunLoop()
                         {
                             spdlog::error("ROI inference failed with error code: {}", to_uint8(status));
                         }
-                    }
-
-                    // TODO: super slow, memory issues, need to clear context from trt
-                    if (orchestrator_initialized) {
-                        orchestrator.FreeEngines();
-                        orchestrator_initialized = false;
                     }
 
                     // need to reenable

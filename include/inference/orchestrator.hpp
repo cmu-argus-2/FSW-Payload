@@ -15,12 +15,32 @@ public:
     ~Orchestrator();
 
     void FreeEngines();
+    void FreeRCNet();
+    void FreeLDNets();
 
-    void Initialize(const std::string& rc_engine_path, const std::string& ld_engine_folder_path);  
+    void FreeLDNetForRegion(RegionID region_id);
+
+    void InitializeLDNetRuntimes();
+
+    // TODO: Can the below be moved to private
+    // Use these to initialize the class or load the engines on demand?
+    void LoadEngines(); // TODO: Is this one ever being used?
+    EC LoadRCEngine();
+    void LoadLDNetEngines(); 
+    EC LoadLDNetEngineForRegion(RegionID region_id);
 
     void GrabNewImage(std::shared_ptr<Frame> frame);
 
+    // Setters
+    void SetPreloadRCEngine(bool preload) { preload_rc_engine_ = preload; }
+    void SetPreloadLDEngines(bool preload) { preload_ld_engines_ = preload; }
+    void SetLDNetEngineFolderPath(const std::string& path) { ld_engine_folder_path_ = path; }
+    void SetUseTRTForLD(bool use_trt) { use_trt_for_ld_ = use_trt; }
+    void SetRCNetEnginePath(const std::string& path);
+    void SetLDNetFolderPath(const std::string& path);
+
     EC ExecRCInference();
+    // TODO: The two functions below should be merged
     EC ExecLDInferenceTRT();
     EC ExecLDInferenceONNX();
     EC ExecFullInference();
@@ -35,14 +55,21 @@ private:
     int num_inference_performed_on_current_frame_ = 0; 
     cv::Mat img_buff_; // Buffer for the current image
 
+    bool preload_rc_engine_ = true; // Option to preload RC engine at initialization
+    bool preload_ld_engines_ = false; // Option to preload LD engines at initialization
+
+    std::string ld_engine_folder_path_ = "/home/argus/Documents/FSW-Payload/models/V1/trained-ld"; // Folder path for LD engines (if loading on demand)
+    std::string rc_engine_path_ = "/home/argus/Documents/FSW-Payload/models/V1/trained-rc/effnet_0997acc.trt"; // File path for RC engine (if loading on demand)
+    bool use_trt_for_ld_ = false; // Whether to use TRT for LDNet (if false, use ONNX Runtime)
+
     void RCPreprocessImg(cv::Mat img, cv::Mat& out_chw_img);
     void LDPreprocessImg(cv::Mat img, cv::Mat& out_chw_img, int target_width=4608);
     // void PreprocessImgGPU(const cv::Mat& img, cv::Mat& out_chw);
 
     RCNet rc_net_; 
-    
-    std::map<RegionID, std::string> ld_net_onnx_engine_paths_; // onnx paths
-    std::map<RegionID, LDNet> ld_nets_; // tensorRT engines
+    // TODO: Option to preload or load on demand for LDNets
+    // Runtime vs memory tradeoff
+    std::map<RegionID, std::unique_ptr<LDNet>> ld_nets_; // LDNet engines
 
 };
 

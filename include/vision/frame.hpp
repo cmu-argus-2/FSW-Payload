@@ -96,6 +96,7 @@ public:
     const cv::Mat& GetImg() const;
     std::uint64_t GetTimestamp() const;
     const ImageState GetImageState() const;
+    const cv::Size GetImgSize() const { return _img.size(); }
     const ProcessingStage GetProcessingStage() const;
     void SetProcessingStage(ProcessingStage stage);
     const float GetRank() const;

@@ -26,7 +26,9 @@ int main(int argc, char** argv)
     // TODO: Look for label file if there is one
 
     Inference::Orchestrator orchestrator;
-    orchestrator.Initialize(rc_trt_file_path, ld_trt_folder_path);
+    orchestrator.SetRCNetEnginePath(rc_trt_file_path);
+    orchestrator.SetLDNetFolderPath(ld_trt_folder_path);
+    // orchestrator.Initialize(rc_trt_file_path, ld_trt_folder_path);
 
     Frame frame; // empty frame 
     auto timestamp = timing::GetCurrentTimeMs();

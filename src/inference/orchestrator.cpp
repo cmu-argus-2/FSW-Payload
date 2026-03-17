@@ -7,98 +7,128 @@
 // #include <opencv2/cudaarithm.hpp>
 // #include <opencv2/cudaimgproc.hpp>
 
+using namespace cv;
+using namespace cv::dnn;
+
 namespace Inference
 {
 
 Orchestrator::Orchestrator()
-: current_frame_(nullptr)
+: current_frame_(nullptr),
+original_frame_(nullptr),
+rc_net_()
 {
-
+    SetRCNetEnginePath(rc_engine_path_);
+    SetLDNetEngineFolderPath(ld_engine_folder_path_);
 }
 
 void Orchestrator::FreeEngines()
 {
-    rc_net_.Free();
-    ld_nets_.clear();
-    current_frame_ = nullptr;
-    original_frame_ = nullptr;
+    FreeRCNet();
+    FreeLDNets();
     spdlog::info("Orchestrator engines freed.");
 }
+
+void Orchestrator::FreeRCNet()
+{
+    rc_net_.Free();
+}
+
+void Orchestrator::FreeLDNets()
+{
+    for (auto& [region_id, ld_net] : ld_nets_)
+    {
+        if (ld_net)
+        {
+            ld_net->Free();
+        }
+    }
+}
+
+void Orchestrator::FreeLDNetForRegion(RegionID region_id) 
+{
+    if (ld_nets_.find(region_id) != ld_nets_.end() && ld_nets_[region_id]) 
+    {
+        ld_nets_[region_id]->Free();
+        spdlog::info("Freed LDNet for region: {}", GetRegionString(region_id));
+    }
+}
+
 
 Orchestrator::~Orchestrator()
 {
     FreeEngines();
+    current_frame_ = nullptr;
+    original_frame_ = nullptr;
 }
 
-void Orchestrator::Initialize(const std::string& rc_engine_path, const std::string& ld_engine_folder_path, bool use_trt_for_ld)
+void Orchestrator::LoadEngines()
 {
-    // Initialize the RCNet runtime
-    EC rc_net_status = rc_net_.LoadEngine(rc_engine_path);
+    LoadRCEngine();
+    LoadLDNetEngines();
+}
+
+EC Orchestrator::LoadRCEngine()
+{
+    EC rc_net_status = rc_net_.LoadEngine(rc_engine_path_);
     if (rc_net_status != EC::OK) 
     {
         spdlog::error("Failed to load RC Net engine.");
-        return; // could have fallback in which we still run the LDs but that is out of scope for now
     }
+    return rc_net_status;
+}
 
-    // Find all the regions
-    std::string engine_path;
-    std::string csv_path;
-
+void Orchestrator::LoadLDNetEngines()
+{
     EC ld_net_status;
     size_t loaded_ld_nets = 0;
     for(const auto& region_id : GetAllRegionIDs())
     {
-        std::string region_str = std::string(GetRegionString(region_id));
-
-        csv_path = ld_engine_folder_path + "/" + region_str + "/bounding_boxes.csv";
-
-        if (use_trt_for_ld)
-        {
-            engine_path = ld_engine_folder_path + "/" + region_str + "/" + region_str + "_weights.trt";
-        } else {
-            engine_path = ld_engine_folder_path + "/" + region_str + "/" + region_str + "_weights.onnx";
-        }
-
-        if (!std::filesystem::exists(engine_path) || !std::filesystem::exists(csv_path))
-        {
-            spdlog::warn("Skipping region {} (missing LD assets). Engine exists: {}, CSV exists: {}", 
-                        region_str, std::filesystem::exists(engine_path), std::filesystem::exists(csv_path));
-            continue;
-        }
-
-        if (use_trt_for_ld)
-        {
-            ld_nets_.try_emplace(region_id, region_id, csv_path);
-
-            spdlog::info("Loading model for region {}: Engine path: {}, CSV path: {}", region_str, engine_path, csv_path);
-            ld_net_status = ld_nets_.at(region_id).LoadEngine(engine_path);
-            if (ld_net_status != EC::OK) 
-            {
-                spdlog::error("Failed to load LD Net engine for region: {}", region_str);
-                continue;
-            }
-
-            spdlog::info("LDNet successfully loaded for region: {}", region_str);
-            loaded_ld_nets++;
-        }
-        else // use onnx for ld
-        {
-            ld_net_onnx_engine_paths_[region_id] = engine_path;
-            spdlog::info("ONNX model path set for region {}: {}", region_str, engine_path);
-            loaded_ld_nets++; // onnx to be loaded at inference time
-        }
+        ld_net_status = LoadLDNetEngineForRegion(region_id);
+        if (ld_net_status == EC::OK) loaded_ld_nets++;
     }
 
     if (loaded_ld_nets == 0)
     {
-        spdlog::warn("No LD models were loaded from folder: {}", ld_engine_folder_path);
+        spdlog::warn("No LD models were loaded from folder: {}", ld_engine_folder_path_);
     }
     else
     {
-        spdlog::info("Loaded {} LD model(s) from folder: {}", loaded_ld_nets, ld_engine_folder_path);
+        spdlog::info("Loaded {} LD model(s) from folder: {}", loaded_ld_nets, ld_engine_folder_path_);
     }
 
 }
+
+EC Orchestrator::LoadLDNetEngineForRegion(RegionID region_id) 
+{
+    std::string region_str = std::string(GetRegionString(region_id));
+    std::string engine_path;
+
+    if (use_trt_for_ld_)
+    {
+        engine_path = ld_engine_folder_path_ + "/" + region_str + "/" + region_str + "_weights.trt";
+    } else {
+        engine_path = ld_engine_folder_path_ + "/" + region_str + "/" + region_str + "_weights.onnx";
+    }
+
+    if (!std::filesystem::exists(engine_path))
+    {
+        spdlog::error("Cannot initialize LDNet for region {}. Missing assets. Engine does not exist: {}", 
+                    region_str, std::filesystem::exists(engine_path));
+        return EC::NN_FAILED_TO_OPEN_ENGINE_FILE;
+    }
+
+    EC ld_net_status = ld_nets_.at(region_id)->LoadEngine(engine_path);
+
+    if (ld_net_status != EC::OK) 
+    {
+        spdlog::error("Failed to load LD Net engine for region: {}", region_str);
+    } else {
+        spdlog::info("LDNet successfully loaded for region: {}", region_str);
+    }
+    return ld_net_status;
+}
+
 
 void Orchestrator::GrabNewImage(std::shared_ptr<Frame> frame)
 {
@@ -120,6 +150,81 @@ size_t Orchestrator::GetMemorySize(const nvinfer1::Dims& dims, size_t element_si
         size *= dims.d[i];
     }
     return size;
+}
+
+void Orchestrator::SetRCNetEnginePath(const std::string& path)
+{
+    if (!std::filesystem::exists(rc_engine_path_))
+    {
+        spdlog::error("RC Net engine file not found at path: {}", rc_engine_path_);
+        return;
+    }
+    rc_engine_path_ = path;
+    if (preload_rc_engine_)
+    {
+        LoadRCEngine();
+    }
+}
+
+void Orchestrator::SetLDNetFolderPath(const std::string& path)
+{
+    if (!std::filesystem::exists(path))
+    {
+        spdlog::error("LD Net engine folder not found at path: {}", path);
+        return;
+    }
+    ld_engine_folder_path_ = path;
+
+    InitializeLDNetRuntimes();
+}
+
+void Orchestrator::InitializeLDNetRuntimes()
+{
+    std::string engine_path;
+    std::string csv_path;
+    std::string region_str;
+
+    EC ld_net_status;
+    for(const auto& region_id : GetAllRegionIDs())
+    {
+        region_str = std::string(GetRegionString(region_id));
+
+        csv_path = ld_engine_folder_path_ + "/" + region_str + "/bounding_boxes.csv";
+
+        if (use_trt_for_ld_)
+        {
+            engine_path = ld_engine_folder_path_ + "/" + region_str + "/" + region_str + "_weights.trt";
+        } else {
+            engine_path = ld_engine_folder_path_ + "/" + region_str + "/" + region_str + "_weights.onnx";
+        }
+
+        if (!std::filesystem::exists(engine_path) || !std::filesystem::exists(csv_path))
+        {
+            spdlog::error("Cannot initialize LDNet for region {}. Missing assets. Engine exists: {}, CSV exists: {}", 
+                        region_str, std::filesystem::exists(engine_path), std::filesystem::exists(csv_path));
+            return;
+        }
+
+        if (use_trt_for_ld_)
+        {
+            std::unique_ptr<TRTLDNet> trt_ld_net = std::make_unique<TRTLDNet>(region_id, csv_path);
+            ld_nets_[region_id] = std::move(trt_ld_net);
+
+            spdlog::info("Loading model for region {}: Engine path: {}, CSV path: {}", region_str, engine_path, csv_path);
+        }
+        else // use onnx for ld
+        {
+            std::unique_ptr<ONNXLDNet> onnx_ld_net = std::make_unique<ONNXLDNet>(region_id, csv_path);
+            ld_nets_[region_id] = std::move(onnx_ld_net);
+            spdlog::info("ONNX model path set for region {}: {}", region_str, engine_path);
+            // onnx will be loaded at inference time
+        }
+    }
+
+    if (preload_ld_engines_)
+    {
+        LoadLDNetEngines(); 
+    }
 }
 
 void Orchestrator::RCPreprocessImg(cv::Mat img, cv::Mat& out_chw_img)
@@ -288,6 +393,11 @@ EC Orchestrator::ExecRCInference()
         return EC::NN_NO_FRAME_AVAILABLE;
     }
 
+    if (!preload_rc_engine_ && !rc_net_.IsInitialized()) 
+    {
+        LoadRCEngine();
+    }
+
     if (!rc_net_.IsInitialized()) 
     {
         spdlog::error("RCNet is not initialized. Cannot perform inference.");
@@ -310,18 +420,20 @@ EC Orchestrator::ExecRCInference()
     spdlog::info("Image preprocessed to CHW format with shape: {}x{}x{}", chw_img.rows, chw_img.cols, chw_img.channels());
 
     // Run the RC net 
-    auto host_output = std::unique_ptr<float[]>{new float[RC_NUM_CLASSES]};
+    int rc_num_classes = rc_net_.GetNumClasses();
+    auto host_output = std::unique_ptr<float[]>{new float[rc_num_classes]};
     EC rc_inference_status = rc_net_.Infer(chw_img.data, host_output.get());
     if (rc_inference_status != EC::OK) 
     {
         spdlog::error("RCNet inference failed with error code: {}", to_uint8(rc_inference_status));
         LogError(rc_inference_status);
+        if (!preload_rc_engine_) FreeRCNet(); // Free the RC engine if it was loaded on demand
         return rc_inference_status;
     }
 
     // Populate the RC ID to original frame
     static constexpr float RC_THRESHOLD = 0.5f; // Threshold for region classification TODO Change this later on validation
-    for (uint8_t i = 0; i < RC_NUM_CLASSES; i++) 
+    for (uint8_t i = 0; i < rc_num_classes; i++) 
     {
         spdlog::info("RC output for class {}: {:.3f}", i, host_output[i]);
         if (host_output[i] > RC_THRESHOLD) 
@@ -331,6 +443,8 @@ EC Orchestrator::ExecRCInference()
     }
 
     original_frame_->SetProcessingStage(ProcessingStage::RCNeted);
+
+    if (!preload_rc_engine_) FreeRCNet(); // Free the RC engine if it was loaded on demand
 
     return EC::OK;
 }
@@ -344,13 +458,6 @@ EC Orchestrator::ExecLDInferenceTRT()
         return EC::NN_NO_FRAME_AVAILABLE;
     }
 
-    if (!rc_net_.IsInitialized()) 
-    {
-        spdlog::error("RCNet is not initialized. Cannot perform inference.");
-        LogError(EC::NN_ENGINE_NOT_INITIALIZED);
-        return EC::NN_ENGINE_NOT_INITIALIZED;
-    }
-
     if (num_inference_performed_on_current_frame_ > 0) 
     {
         spdlog::warn("Inference already performed on the current frame. This will overwrite.");
@@ -360,13 +467,17 @@ EC Orchestrator::ExecLDInferenceTRT()
     spdlog::info("Regions detected in the frame: {}", original_frame_->GetRegionIDs().size());
     std::string trt_path;
     std::string csv_path;
-    std::vector<LDNet*> ld_nets;
-    std::vector<RegionID> region_ids;
+    // TODO: Don't copy engines, just look them up and run them directly from the map if they exist
     if (original_frame_->GetRegionIDs().empty())
     {
         spdlog::warn("No regions detected by RCNet. Skipping LD inference.");
         return EC::OK; // Not an error, just no regions to run LD on
     }
+
+    // LD inference
+    cv::Mat ld_chw_img;
+    LDPreprocessImg(img_buff_, ld_chw_img);
+    int output_size;
 
     for(const auto& region_id : original_frame_->GetRegionIDs())
     {
@@ -375,33 +486,23 @@ EC Orchestrator::ExecLDInferenceTRT()
             spdlog::error("No LDNet found for region: {}", GetRegionString(region_id));
             continue;
         }
-        if (!ld_nets_.at(region_id).IsInitialized())
+
+        if (!preload_ld_engines_ && !ld_nets_.at(region_id)->IsInitialized())
+        {
+            LoadLDNetEngineForRegion(region_id);
+        }
+
+        if (!ld_nets_.at(region_id)->IsInitialized())
         {
             spdlog::error("LDNet for region {} is not initialized.", GetRegionString(region_id));
             continue;
         }
-        ld_nets.push_back(&ld_nets_.at(region_id));
-        region_ids.push_back(region_id);
-        spdlog::info("Selected LDNet for region: {}", GetRegionString(region_id));
-    }
 
-    if (ld_nets.empty())
-    {
-        spdlog::warn("No initialized LDNet matches RC output regions. Skipping LD inference for this frame.");
-        return EC::OK;
-    }
+        spdlog::info("Running LD inference for region: {}", GetRegionString(region_id));
 
-    // LD inference
-    cv::Mat ld_chw_img;
-    LDPreprocessImg(img_buff_, ld_chw_img);
-    int output_size;
-    for (int idx = 0; idx < ld_nets.size(); idx++)
-    {
-        spdlog::info("Running LD inference for region: {}", GetRegionString(region_ids[idx]));
-
-        output_size = ld_nets[idx]->GetOutputSize();
+        output_size = ld_nets_[region_id]->GetOutputSize();
         auto ld_host_output = std::unique_ptr<float[]>{new float[output_size]};
-        EC ld_inference_status = ld_nets[idx]->Infer(ld_chw_img.data, ld_host_output.get());
+        EC ld_inference_status = ld_nets_[region_id]->Infer(ld_chw_img.data, ld_host_output.get());
         if (ld_inference_status != EC::OK) 
         {
             spdlog::error("LDNet inference failed with error code: {}", to_uint8(ld_inference_status));
@@ -412,8 +513,10 @@ EC Orchestrator::ExecLDInferenceTRT()
         }
 
         // Non-max suppression and populate landmarks
-        ld_nets[idx]->PostprocessOutput(ld_host_output.get(), original_frame_); // This will populate the landmarks in the original frame based on the LD output
+        ld_nets_[region_id]->PostprocessOutput(ld_host_output.get(), original_frame_); // This will populate the landmarks in the original frame based on the LD output
         spdlog::info("LDNet inference output post-processed");
+
+        if (!preload_ld_engines_) FreeLDNetForRegion(region_id); // Free the LD engine for this region if it was loaded on demand
     }
     original_frame_->SetProcessingStage(ProcessingStage::LDNeted);
     
@@ -429,35 +532,32 @@ EC Orchestrator::ExecLDInferenceONNX()
         return EC::NN_NO_FRAME_AVAILABLE;
     }
 
-    if (!rc_net_.IsInitialized()) 
-    {
-        spdlog::error("RCNet is not initialized. Cannot perform inference.");
-        LogError(EC::NN_ENGINE_NOT_INITIALIZED);
-        return EC::NN_ENGINE_NOT_INITIALIZED;
-    }
-
     if (num_inference_performed_on_current_frame_ > 0) 
     {
         spdlog::warn("Inference already performed on the current frame. This will overwrite.");
         original_frame_->ClearLandmarks(); // Reset per-frame LD outputs
     }
-        
 
     if (original_frame_->GetRegionIDs().empty())
     {
         spdlog::warn("No regions detected by RCNet. Skipping LD inference.");
         return EC::OK;
     }
-
     spdlog::info("Regions detected in the frame: {}", original_frame_->GetRegionIDs().size());
-    std::string onnx_path;
-    std::string csv_path;
-    LDNet* ld_net;
+
+    // If LDNet engines are not initialized, initialize them. If they don't exist, skip them.
     std::vector<RegionID> region_ids;
 
     // Pre-process the image for LD
-    cv::Mat ld_chw_img;
     int output_size;
+
+    float paddingValue = 0.0f;
+    bool swapRB = true; // true = rgb
+    int inpWidth = 4608;
+    int inpHeight = 4608;
+    Scalar scale = Scalar(1.0/255.0,1.0/255.0,1.0/255.0);
+    Scalar mean = Scalar(0.0,0.0,0.0);
+    ImagePaddingMode paddingMode = static_cast<ImagePaddingMode>(2);
 
     Size size(inpWidth, inpHeight);
     Image2BlobParams imgParams(
@@ -488,60 +588,59 @@ EC Orchestrator::ExecLDInferenceONNX()
 
     Mat inp;
     //![preprocess_call_func]
-    inp = blobFromImageWithParams(img, imgParams);
+    inp = blobFromImageWithParams(img_buff_, imgParams);
     spdlog::info("Blob created from image");
-
+    EC ld_net_status;
     for(const auto& region_id : original_frame_->GetRegionIDs())
     {
+
         if (ld_nets_.find(region_id) == ld_nets_.end())
         {
             spdlog::error("No LDNet found for region: {}", GetRegionString(region_id));
             continue;
         }
-        if (!ld_nets_.at(region_id).IsInitialized())
-        {
-            spdlog::error("LDNet for region {} is not initialized.", GetRegionString(region_id));
-            continue;
-        }
-        ld_nets.push_back(&ld_nets_.at(region_id));
-        region_ids.push_back(region_id);
+
         spdlog::info("Selected LDNet for region: {}", GetRegionString(region_id));
 
-        // Init the Net
-        net = readNet(ld_onnx_file_path);
-        spdlog::info("Model loaded from: {}", ld_onnx_file_path);
-        net.setPreferableBackend(backend);
-        net.setPreferableTarget(target);
-
-        net.setInput(inp);
-        spdlog::info("Input set to network");
-        
-        net.forward(outs, net.getUnconnectedOutLayersNames());
-        spdlog::info("Forward pass completed, outputs: {}", outs.size());
-
-
-        // Non-max suppression and populate landmarks
-        yoloPostProcessing(
-            outs, keep_classIds, keep_confidences, keep_boxes,
-            confThreshold, nmsThreshold,
-            yolo_model,
-            nc);
-        spdlog::info("Post-processing completed, detections: {}", keep_boxes.size());
-        for (auto box : keep_boxes)
+        if (!preload_ld_engines_ && !ld_nets_.at(region_id)->IsInitialized())
         {
-            boxes.push_back(Rect(cvFloor(box.x), cvFloor(box.y), cvFloor(box.width - box.x), cvFloor(box.height - box.y)));
-        }
-        for (auto& b : boxes) {
-            b = scaleBoxBackLetterbox(b, img.size(), size);
+            LoadLDNetEngineForRegion(region_id);
         }
 
-        // Store results in original frame
+        if (!ld_nets_.at(region_id)->IsInitialized())
+        {
+            spdlog::warn("LDNet for region {} is not initialized. Attempting to load ONNX model.", GetRegionString(region_id));
+
+            ld_net_status = LoadLDNetEngineForRegion(region_id); // Attempt to load the engine for this region
+            if (ld_net_status != EC::OK) 
+            {
+                spdlog::error("Failed to load ONNX LD Net engine for region: {}. Skipping this region.", GetRegionString(region_id));
+                continue;
+            } else {
+                spdlog::info("Successfully loaded ONNX LD Net engine for region: {}", GetRegionString(region_id));
+            }
+        }
+        // Run        
+        ld_net_status = ld_nets_.at(region_id)->Infer(inp, outs);
+
+        if (ld_net_status != EC::OK) 
+        {
+            spdlog::error("LDNet inference failed with error code: {} for region: {}", to_uint8(ld_net_status), GetRegionString(region_id));
+            LogError(ld_net_status);
+            continue;
+        } else {
+            spdlog::info("LDNet inference completed successfully for region: {}. Output size: {}", GetRegionString(region_id), outs.size());
+        }
+
+        ld_net_status = ld_nets_.at(region_id)->PostprocessOutput(outs, original_frame_);
+
+        // Free the LD engine for this region if it was loaded on demand
+        if (!preload_ld_engines_) FreeLDNetForRegion(region_id);
+
     }
 
     original_frame_->SetProcessingStage(ProcessingStage::LDNeted);
 
-
-    // preprocess image for LD
 
     return EC::OK;
 }
@@ -555,6 +654,14 @@ EC Orchestrator::ExecFullInference()
     if (rc_ec != EC::OK)  return rc_ec;
     
     // Run Landmark Detection inference
+    // TODO: Functions below should be merged
+    if (use_trt_for_ld_)
+    {
+        EC ld_ec = ExecLDInferenceTRT();
+        num_inference_performed_on_current_frame_++;
+        return ld_ec;
+    }
+
     EC ld_ec = ExecLDInferenceONNX();
     num_inference_performed_on_current_frame_++;
 

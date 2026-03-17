@@ -30,17 +30,27 @@ public:
 
 private:
 
-    std::shared_ptr<Frame> original_frame_; // Original frame from the camera to populate
-    std::shared_ptr<Frame> current_frame_; // Current frame being processed
+    std::shared_ptr<Frame> original_frame_; // Frame being processed and populated
     int num_inference_performed_on_current_frame_ = 0; 
     cv::Mat img_buff_; // Buffer for the current image
 
-    void RCPreprocessImg(cv::Mat img, cv::Mat& out_chw_img);
-    void LDPreprocessImg(cv::Mat img, cv::Mat& out_chw_img, int target_width=4608);
+    void RCPreprocessImg(const cv::Mat& img, cv::Mat& out_chw_img);
+    void LDPreprocessImg(const cv::Mat& img, cv::Mat& out_chw_img, int target_width=4608);
     // void PreprocessImgGPU(const cv::Mat& img, cv::Mat& out_chw);
 
-    RCNet rc_net_; 
-    
+    // These are released after each frame, they are needed for LD preprocessing
+    // May need to be changed later 
+    cv::Mat ld_letterboxed_u8_; // uint8
+    cv::Mat ld_chw_buffer_;     // float32
+
+    RCNet rc_net_;
+
+    // TRT engines are loaded when RC detects each respective region.
+    struct LDAssets { std::string trt_path; std::string csv_path; };
+    std::map<RegionID, LDAssets> ld_assets_;
+
+    // Live regions/engines — only regions currently selected by RC PER FRAME are kept.
+    // Engines for deselected regions are freed to reclaim GPU memory.
     std::map<RegionID, LDNet> ld_nets_;
 
 };

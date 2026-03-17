@@ -1,5 +1,6 @@
 #include "vision/camera_manager.hpp"
 #include "core/data_handling.hpp"
+#include "inference/orchestrator.hpp"
 
 CameraManager::CameraManager(const std::array<CameraConfig, NUM_CAMERAS>& camera_configs) 
 :
@@ -172,6 +173,95 @@ void CameraManager::RunLoop()
 
             case CAPTURE_MODE::PERIODIC_ROI:
             {
+                static Inference::Orchestrator orchestrator;
+                static bool orchestrator_initialized = false;
+
+                current_capture_time = std::chrono::high_resolution_clock::now();
+                auto elapsed_seconds = std::chrono::duration_cast<std::chrono::seconds>(current_capture_time - last_capture_time).count();
+                if (elapsed_seconds >= periodic_capture_rate)
+                {
+                    uint8_t roi_frames_captured = 0;
+                    std::vector<Frame> captured_frames;
+
+                    // capture and collect frames first
+                    for (std::size_t i = 0; i < NUM_CAMERAS; ++i)
+                    {
+                        if (cameras[i].GetStatus() == CAM_STATUS::ACTIVE && cameras[i].IsNewFrameAvailable())
+                        {
+                            Frame buffer_frame = cameras[i].GetBufferFrame();
+
+                            if (buffer_frame.GetProcessingStage() == ProcessingStage::NotPrefiltered)
+                            {
+                                buffer_frame.RunPrefiltering();
+                            }
+
+                            if (buffer_frame.GetImageState() < ImageState::Earth)
+                            {
+                                SPDLOG_INFO("CAM{}: Frame skipped (not Earth)", cameras[i].GetID());
+                                cameras[i].SetOffNewFrameFlag();
+                                continue;
+                            }
+
+                            DH::StoreFrameToDisk(buffer_frame, IMAGES_FOLDER);
+                            captured_frames.push_back(buffer_frame);
+                            cameras[i].SetOffNewFrameFlag();
+                        }
+                    }
+
+                    // TODO: figure out memory issues, i think disabling might help...
+                    std::array<bool, NUM_CAMERAS> off_cameras;
+                    DisableCameras(off_cameras);
+                    SPDLOG_INFO("Cameras disabled before inference.");
+
+                    // initialize orch
+                    if (!orchestrator_initialized) {
+                        orchestrator.Initialize("/home/argus/Documents/FSW-Payload/models/V1/trained-rc/effnet_0997acc.trt", "/home/argus/Documents/FSW-Payload/models/V1/trained-ld");
+                        orchestrator_initialized = true;
+                    }
+
+                    for (auto& frame : captured_frames)
+                    {
+                        std::shared_ptr<Frame> frame_ptr = std::make_shared<Frame>(frame);
+                        orchestrator.GrabNewImage(frame_ptr);
+                        spdlog::info("Running ROI inference on camera {}", frame.GetCamID());
+                        EC status = orchestrator.ExecFullInference();
+                        if (status == EC::OK)
+                        {
+                            DH::StoreFrameMetadataToDisk(*frame_ptr);
+                            spdlog::info("Frame metadata JSON saved for camera {}", frame.GetCamID());
+                            roi_frames_captured++;
+                        }
+                        else
+                        {
+                            spdlog::error("ROI inference failed with error code: {}", to_uint8(status));
+                        }
+                    }
+
+                    // TODO: super slow, memory issues, need to clear context from trt
+                    if (orchestrator_initialized) {
+                        orchestrator.FreeEngines();
+                        orchestrator_initialized = false;
+                    }
+
+                    // need to reenable
+                    std::array<bool, NUM_CAMERAS> on_cameras;
+                    EnableCameras(on_cameras);
+                    SPDLOG_INFO("Cameras re-enabled after inference.");
+
+                    periodic_frames_captured += roi_frames_captured;
+                    spdlog::info("Periodic ROI capture: {}/{} frames processed", periodic_frames_captured, periodic_frames_to_capture);
+
+                    if (periodic_frames_captured >= periodic_frames_to_capture)
+                    {
+                        spdlog::info("Periodic ROI capture request completed");
+                        SetCaptureMode(CAPTURE_MODE::IDLE);
+                        periodic_frames_captured = 0;
+                        periodic_frames_to_capture = DEFAULT_PERIODIC_FRAMES_TO_CAPTURE;
+                        break;
+                    }
+
+                    last_capture_time = current_capture_time;
+                }
                 break;
             }
 

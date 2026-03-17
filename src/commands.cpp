@@ -38,33 +38,31 @@ std::array<CommandFunction, COMMAND_NUMBER> COMMAND_FUNCTIONS =
     full_reset, // FULL_RESET (no implementation provided)
     debug_display_camera, // DEBUG_DISPLAY_CAMERA
     debug_stop_display, // DEBUG_STOP_DISPLAY
-    request_next_file_packets, // REQUEST_NEXT_FILE_PACKETS
-    start_roi_capture // START_ROI_CAPTURE
+    request_next_file_packets // REQUEST_NEXT_FILE_PACKETS
 };
 
 // Define the array of strings mapping CommandID to command names
 std::array<std::string_view, COMMAND_NUMBER> COMMAND_NAMES = {
-    "PING_ACK",
-    "SHUTDOWN",
-    "REQUEST_TELEMETRY",
-    "ENABLE_CAMERAS",
-    "DISABLE_CAMERAS",
-    "CAPTURE_IMAGES",
+    "PING_ACK", //0
+    "SHUTDOWN", //1 
+    "REQUEST_TELEMETRY", //2
+    "ENABLE_CAMERAS", //3
+    "DISABLE_CAMERAS", //4
+    "CAPTURE_IMAGES", //5
     "START_CAPTURE_IMAGES_PERIODICALLY",
     "STOP_CAPTURE_IMAGES",
     "REQUEST_STORAGE_INFO",
     "REQUEST_IMAGE",
-    "REQUEST_NEXT_FILE_PACKET",
+    "REQUEST_NEXT_FILE_PACKET", //10
     "CLEAR_STORAGE",
     "PING_OD_STATUS",
     "RUN_OD",
     "REQUEST_OD_RESULT",
-    "SYNCHRONIZE_TIME",
+    "SYNCHRONIZE_TIME", //15
     "FULL_RESET",
     "DEBUG_DISPLAY_CAMERA",
     "DEBUG_STOP_DISPLAY",
-    "REQUEST_NEXT_FILE_PACKETS",
-    "START_ROI_CAPTURE"
+    "REQUEST_NEXT_FILE_PACKETS"
 };
 
 void ping_ack([[maybe_unused]] std::vector<uint8_t>& data)
@@ -110,7 +108,6 @@ void request_telemetry([[maybe_unused]] std::vector<uint8_t>& data)
         transmit_data.push_back(tm.CAM_STATUS[i]);
     }
     transmit_data.push_back(tm.IMU_STATUS);
-    SerializeToBytes(tm.IMU_TEMPERATURE, transmit_data);
     transmit_data.push_back(tm.TASKS_IN_EXECUTION);
     transmit_data.push_back(tm.DISK_USAGE);
     transmit_data.push_back(tm.LATEST_ERROR);
@@ -140,6 +137,16 @@ void enable_cameras([[maybe_unused]] std::vector<uint8_t>& data)
 {
     SPDLOG_INFO("Trying to enable all cameras...");
     std::array<bool, NUM_CAMERAS> on_cameras;
+    on_cameras.fill(true); 
+
+    //TODO: Are we assuming we wouldn't intentionally call disable with all 0s?
+    // Turning on specific cameras: if data is used (uint8 array where 1 = turn on, 0 = turn off)
+    if (!data.empty()) {
+        for (size_t i = 0; i < NUM_CAMERAS && i < data.size(); ++i)
+        {
+            on_cameras[i] = (data[i] == 1);
+        }
+    }
 
     int nb_activated_cams = sys::cameraManager().EnableCameras(on_cameras);
     bool at_least_one_was_enabled = false;
@@ -178,6 +185,15 @@ void disable_cameras([[maybe_unused]] std::vector<uint8_t>& data)
 {
     SPDLOG_INFO("Trying to disable all cameras...");
     std::array<bool, NUM_CAMERAS> off_cameras;
+
+    //TODO: Are we assuming we wouldn't intentionally call disable with all 0s?
+    // Turning off specific cameras: if data is used (uint8 array where 1 = turn on, 0 = turn off)
+    if (!data.empty()) {
+        for (size_t i = 0; i < NUM_CAMERAS && i < data.size(); ++i)
+        {
+            off_cameras[i] = (data[i] == 1);
+        }
+    }
 
     int nb_disabled_cams = sys::cameraManager().DisableCameras(off_cameras);
     bool at_least_one_was_disabled = false;
@@ -221,6 +237,10 @@ void capture_images([[maybe_unused]] std::vector<uint8_t>& data)
     // Need to return true or false based on the success of the operations
     // Basically should wait until the camera has captured the image or wait later to send the ocnfirmation and just exit the task? 
     // TODO
+
+    
+
+    
 
     sys::payload().SetLastExecutedCmdID(CommandID::CAPTURE_IMAGES);
 }
@@ -268,6 +288,9 @@ void start_capture_images_periodically([[maybe_unused]] std::vector<uint8_t>& da
         {
             // if running: TODO: return ERROR ACK saying that a dataset is already running
             // If completed, stop it then too
+            SPDLOG_ERROR("Dataset is already running.");
+            std::shared_ptr<Message> msg = CreateErrorAckMessage(CommandID::START_CAPTURE_IMAGES_PERIODICALLY, 0x21); // TODO example error code
+            sys::payload().TransmitMessage(msg);
         }
         else
         {
@@ -340,6 +363,34 @@ void stop_capture_images([[maybe_unused]] std::vector<uint8_t>& data)
 void request_storage_info([[maybe_unused]] std::vector<uint8_t>& data)
 {
     SPDLOG_INFO("Requesting storage information...");
+    uint16_t image_count = 0;
+    for (const auto& entry : std::filesystem::directory_iterator(IMAGES_FOLDER))
+    {
+        if (entry.is_regular_file() && (entry.path().extension() == ".png" || entry.path().extension() == ".jpg")) 
+            ++image_count;
+    }
+
+    // disk space
+    uint32_t images_folder_size_kb = static_cast<uint32_t>(DH::GetDirectorySize(IMAGES_FOLDER) / 1024);
+    uint32_t total_used_kb = static_cast<uint32_t>(DH::GetDirectorySize(ROOT_DATA_FOLDER) / 1024);
+
+    // available
+    uint32_t total_available_kb = 0;
+    std::error_code ec;
+    auto space = std::filesystem::space(ROOT_DISK, ec);
+    if (!ec)
+        total_available_kb = static_cast<uint32_t>(space.available / 1024);
+    else
+        SPDLOG_ERROR("Failed to get disk space: {}", ec.message());
+
+    std::vector<uint8_t> transmit_data;
+    SerializeToBytes(image_count, transmit_data);  
+    SerializeToBytes(total_used_kb, transmit_data);     
+    SerializeToBytes(images_folder_size_kb, transmit_data); 
+    SerializeToBytes(total_available_kb, transmit_data);  
+
+    std::shared_ptr<Message> msg = CreateMessage(CommandID::REQUEST_STORAGE_INFO, transmit_data);
+    sys::payload().TransmitMessage(msg);
 
     sys::payload().SetLastExecutedCmdID(CommandID::REQUEST_STORAGE_INFO);
 }
@@ -494,7 +545,14 @@ void clear_storage([[maybe_unused]] std::vector<uint8_t>& data)
 {
     SPDLOG_INFO("Clearing storage..");
 
-    // TODO
+    // TODO: only clearing images, anything else?
+    for (const auto& entry : std::filesystem::directory_iterator(IMAGES_FOLDER)) 
+    {
+        std::filesystem::remove_all(entry.path());
+    }
+
+    std::shared_ptr<Message> msg = CreateSuccessAckMessage(CommandID::CLEAR_STORAGE);
+    sys::payload().TransmitMessage(msg);
 
     sys::payload().SetLastExecutedCmdID(CommandID::CLEAR_STORAGE);
 }
@@ -580,7 +638,13 @@ void full_reset([[maybe_unused]] std::vector<uint8_t>& data)
 {
     SPDLOG_INFO("Performing full reset..");
 
-    // TODO
+    // TODO: only clearing storage, need to determine what a reset means: sudo reboot?
+    for (const auto& entry : std::filesystem::directory_iterator(IMAGES_FOLDER)) 
+    {
+        std::filesystem::remove_all(entry.path());
+    }
+    
+    
 
     sys::payload().SetLastExecutedCmdID(CommandID::FULL_RESET);
 }
@@ -710,17 +774,4 @@ void request_next_file_packets(std::vector<uint8_t>& data)
     }
 
     sys::payload().SetLastExecutedCmdID(CommandID::REQUEST_NEXT_FILE_PACKETS);
-}
-
-// demo 2 only: inference to mainboard
-void start_roi_capture([[maybe_unused]] std::vector<uint8_t>& data)
-{
-    SPDLOG_INFO("Starting periodic ROI capture..");
-
-    sys::cameraManager().SetCaptureMode(CAPTURE_MODE::PERIODIC_ROI);
-
-    std::shared_ptr<Message> msg = CreateSuccessAckMessage(CommandID::START_ROI_CAPTURE);
-    sys::payload().TransmitMessage(msg);
-
-    sys::payload().SetLastExecutedCmdID(CommandID::START_ROI_CAPTURE);
 }

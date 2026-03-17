@@ -154,9 +154,9 @@ size_t Orchestrator::GetMemorySize(const nvinfer1::Dims& dims, size_t element_si
 
 void Orchestrator::SetRCNetEnginePath(const std::string& path)
 {
-    if (!std::filesystem::exists(rc_engine_path_))
+    if (!std::filesystem::exists(path))
     {
-        spdlog::error("RC Net engine file not found at path: {}", rc_engine_path_);
+        spdlog::error("RC Net engine file not found at path: {}", path);
         return;
     }
     rc_engine_path_ = path;

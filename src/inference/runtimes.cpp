@@ -198,8 +198,14 @@ int LDNet::GetNumLandmarksFromCSV(const std::string& csv_path)
 
     std::string line;
     int num_landmarks = 0;
+    bool first_line = true;
     while (std::getline(file, line)) 
     {
+        if (first_line) 
+        {
+            first_line = false; // skip header
+            continue;
+        }
         if (!line.empty()) 
         {
             num_landmarks++;
@@ -496,24 +502,24 @@ void ONNXLDNet::yoloPostProcessing(
     std::vector<Mat>& outs,
     std::vector<int>& keep_classIds,
     std::vector<float>& keep_confidences,
-    std::vector<Rect2d>& keep_boxes,
-    float conf_threshold,
-    float iou_threshold,
-    const std::string& model_name,
-    const int nc)
+    std::vector<Rect2d>& keep_boxes)
 {
+    float conf_threshold = GetConfidenceThreshold();
+    float iou_threshold = GetIOUThreshold();
+    int nc = GetNumLandmarks();
+
     // Retrieve
     std::vector<int> classIds;
     std::vector<float> confidences;
     std::vector<Rect2d> boxes;
 
-    if (model_name == "yolov8" || model_name == "yolov10" ||
-        model_name == "yolov9")
+    if (model_name_ == "yolov8" || model_name_ == "yolov10" ||
+        model_name_ == "yolov9")
     {
         cv::transposeND(outs[0], {0, 2, 1}, outs[0]);
     }
 
-    if (model_name == "yolonas")
+    if (model_name_ == "yolonas")
     {
         // outs contains 2 elements of shape [1, 8400, nc] and [1, 8400, 4]. Concat them to get [1, 8400, nc+4]
         Mat concat_out;
@@ -529,6 +535,9 @@ void ONNXLDNet::yoloPostProcessing(
     }
 
     // assert if last dim is nc+5 or nc+4
+    // TODO: These CheckEQ can be used in testing but not in the code
+    spdlog::info("Output shape: [{}, {}, {}]", outs[0].size[0], outs[0].size[1], outs[0].size[2]);
+    spdlog::info("Expected output shape: [1, #anchors, nc+5 or nc+4] where nc is {}", nc);
     CV_CheckEQ(outs[0].dims, 3, "Invalid output shape. The shape should be [1, #anchors, nc+5 or nc+4]");
     CV_CheckEQ((outs[0].size[2] == nc + 5 || outs[0].size[2] == nc + 4), true, "Invalid output shape: ");
 
@@ -538,17 +547,17 @@ void ONNXLDNet::yoloPostProcessing(
         for (int i = 0; i < preds.rows; ++i)
         {
             // filter out non object
-            float obj_conf = (model_name == "yolov8" || model_name == "yolonas" ||
-                              model_name == "yolov9" || model_name == "yolov10") ? 1.0f : preds.at<float>(i, 4) ;
+            float obj_conf = (model_name_ == "yolov8" || model_name_ == "yolonas" ||
+                              model_name_ == "yolov9" || model_name_ == "yolov10") ? 1.0f : preds.at<float>(i, 4) ;
             if (obj_conf < conf_threshold)
                 continue;
 
-            Mat scores = preds.row(i).colRange((model_name == "yolov8" || model_name == "yolonas" || model_name == "yolov9" || model_name == "yolov10") ? 4 : 5, preds.cols);
+            Mat scores = preds.row(i).colRange((model_name_ == "yolov8" || model_name_ == "yolonas" || model_name_ == "yolov9" || model_name_ == "yolov10") ? 4 : 5, preds.cols);
             double conf;
             Point maxLoc;
             minMaxLoc(scores, 0, &conf, 0, &maxLoc);
 
-            conf = (model_name == "yolov8" || model_name == "yolonas" || model_name == "yolov9" || model_name == "yolov10") ? conf : conf * obj_conf;
+            conf = (model_name_ == "yolov8" || model_name_ == "yolonas" || model_name_ == "yolov9" || model_name_ == "yolov10") ? conf : conf * obj_conf;
             if (conf < conf_threshold)
                 continue;
 
@@ -560,7 +569,7 @@ void ONNXLDNet::yoloPostProcessing(
             double h = det[3];
 
             // [x1, y1, x2, y2]
-            if (model_name == "yolonas" || model_name == "yolov10"){
+            if (model_name_ == "yolonas" || model_name_ == "yolov10"){
                 boxes.push_back(Rect2d(cx, cy, w, h));
             } else {
                 boxes.push_back(Rect2d(cx - 0.5 * w, cy - 0.5 * h,
@@ -632,7 +641,7 @@ EC ONNXLDNet::Free()
     return EC::OK;
 }
 
-EC ONNXLDNet::Infer(cv::Mat input_data, std::vector<cv::Mat> output)
+EC ONNXLDNet::Infer(cv::Mat input_data, std::vector<cv::Mat>& output)
 {
     
     if (!IsInitialized()) 
@@ -642,9 +651,8 @@ EC ONNXLDNet::Infer(cv::Mat input_data, std::vector<cv::Mat> output)
     }
 
    net_->setInput(input_data);
-   std::vector<cv::Mat> outs;
-   net_->forward(outs, net_->getUnconnectedOutLayersNames());
-   spdlog::info("Forward pass completed, outputs: {}", outs.size());
+   net_->forward(output, net_->getUnconnectedOutLayersNames());
+   spdlog::info("Forward pass completed, outputs: [{}, {}, {}]", output[0].size[0], output[0].size[1], output[0].size[2]);
    
    return EC::OK;
 }
@@ -655,14 +663,9 @@ EC ONNXLDNet::PostprocessOutput(std::vector<cv::Mat> outs, std::shared_ptr<Frame
     std::vector<int> keep_classIds;
     std::vector<float> keep_confidences;
     std::vector<Rect2d> keep_boxes;
-    std::string yolo_model = "yolov8";
 
     // Non-max suppression
-    ONNXLDNet::yoloPostProcessing(
-        outs, keep_classIds, keep_confidences, keep_boxes,
-        GetConfidenceThreshold(), GetIOUThreshold(),
-        yolo_model,
-        GetNumLandmarks());
+    yoloPostProcessing(outs, keep_classIds, keep_confidences, keep_boxes);
 
     // Populate landmarks
     Rect2d box;

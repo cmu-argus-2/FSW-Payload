@@ -59,7 +59,7 @@ int main(int argc, char** argv)
     // Initialize orchestrator
     Inference::Orchestrator orchestrator;
     orchestrator.SetRCNetEnginePath(rc_trt_file_path);
-    orchestrator.SetLDNetFolderPath(ld_trt_folder_path);
+    orchestrator.SetLDNetEngineFolderPath(ld_trt_folder_path);
     // orchestrator.Initialize(rc_trt_file_path, ld_trt_folder_path);
 
     // Run inference on each frame

@@ -179,11 +179,13 @@ EC RCNet::Infer(const void* input_data, void* output)
 
 LDNet::LDNet(RegionID region_id, std::string csv_path)
 : region_id_(region_id), csv_path_(csv_path), 
-num_landmarks_(GetNumLandmarksFromCSV(csv_path)),
-num_yolo_boxes(ComputeNumYoloBoxes()), 
-output_size_((num_landmarks_ + 4) * num_yolo_boxes) // 4 for bounding box coordinates
-
+num_landmarks_(GetNumLandmarksFromCSV(csv_path)), // 
+input_width_(4608), input_height_(4608), input_channels_(3), batch_size_(1)
 {
+    num_yolo_boxes = ComputeNumYoloBoxes();
+    output_size_ = batch_size_ * (num_landmarks_ + 4) * num_yolo_boxes; // Update output size with the computed number of YOLO boxes
+    spdlog::info("LDNet created for region {}. CSV path: {}. Num landmarks: {}. Num YOLO boxes: {}. Input Width: {}. Input Height: {}", 
+                GetRegionString(region_id), csv_path, num_landmarks_, num_yolo_boxes, input_width_, input_height_);
 }
 
 
@@ -218,11 +220,10 @@ int LDNet::GetNumLandmarksFromCSV(const std::string& csv_path)
 int LDNet::ComputeNumYoloBoxes() const
 {
     int total_boxes = 0;
-    int feature_map_size;
     for (const auto& stride : strides_)
     {
-        feature_map_size = input_width_ / stride; // assuming square input and feature maps
-        total_boxes += feature_map_size * feature_map_size;
+        total_boxes += std::floor(GetInputWidth() / stride) * std::floor(GetInputHeight() / stride);
+    
     }
     return total_boxes;
 }
@@ -353,7 +354,7 @@ EC TRTLDNet::Infer(const void* input_data, void* output)
     }
 
     // copy input data to GPU
-    // spdlog::info("Copying input data to GPU memory.");
+   // spdlog::info("Copying input data to GPU memory.");
     cudaError_t err = cudaMemcpy(buffers_.input_data, input_data, buffers_.input_size, cudaMemcpyHostToDevice);
     if (err != cudaSuccess) 
     {

@@ -17,6 +17,10 @@ sudo chmod +x install_deps.sh build.sh run.sh
 ./install_deps.sh
 ```
 
+#### OpenCV
+
+OpenCV needs to be installed with CUDA support. The OpenCV version that is natively installed on the jetson won't have cuda support. The installation guide to include cuda support is provided in https://qengineering.eu/install-opencv-on-jetson-nano.html. The shell script install_opencv4.9.0_Jetpack6.0.sh is taken from there, running it will take approximately 2 hours.
+
 ## Build instructions
 
 Give permissions to both scripts 

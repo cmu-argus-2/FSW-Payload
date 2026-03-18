@@ -161,7 +161,7 @@ private:
     const std::vector<int> strides_ = {8, 16, 32};
 
     // total number of yolo boxes
-    const int num_yolo_boxes;
+    int num_yolo_boxes;
 
     // confidence threshold for detected landmarks
     float confidence_threshold_ = 0.5f;
@@ -176,11 +176,11 @@ private:
     const int input_channels_ = 3;
 
     // Image size
-    const int input_width_ = 4608;
-    const int input_height_ = 4608;
+    int input_width_;
+    int input_height_;
 
     // Output size
-    const int output_size_;
+    int output_size_;
 
     // Landmark bounding box CSV file path (for post-processing)
     const std::string csv_path_;

@@ -172,7 +172,7 @@ void Orchestrator::SetRCNetEnginePath(const std::string& path)
     }
 }
 
-void Orchestrator::SetLDNetFolderPath(const std::string& path)
+void Orchestrator::SetLDNetEngineFolderPath(const std::string& path)
 {
     if (!std::filesystem::exists(path))
     {
@@ -208,7 +208,7 @@ void Orchestrator::InitializeLDNetRuntimes()
         {
             spdlog::error("Cannot initialize LDNet for region {}. Missing assets. Engine exists: {}, CSV exists: {}", 
                         region_str, std::filesystem::exists(engine_path), std::filesystem::exists(csv_path));
-            return;
+            continue;
         }
 
         if (use_trt_for_ld_)

@@ -15,3 +15,4 @@ nvidia-cudnn-cu12
 allantools
 Cython
 pandas==1.4.3
+onnx_graphsurgeon==0.5.8

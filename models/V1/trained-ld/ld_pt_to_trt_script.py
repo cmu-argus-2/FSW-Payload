@@ -169,7 +169,7 @@ def pt_to_trt(model_path, device=None, fp16=False, keep_onnx=False, convert_to_t
         # parser.add_argument("--output_names", type=list, default=['yolo_no_nms'], help="List of output tensor names for the ONNX model.")
         # parser.add_argument("--workspace", type=int, default=1, help="Sets the maximum workspace size in GiB for TensorRT optimizations, balancing memory usage and performance. Use None for auto-allocation by TensorRT up to device maximum.")
         config = vars(parser.parse_args())
-        rebuild =  True
+        rebuild =  False
         if not os.path.exists(onnx_path) or rebuild:
             onnx_path = model.export(**config)
         else:
@@ -246,8 +246,8 @@ def pt_to_trt(model_path, device=None, fp16=False, keep_onnx=False, convert_to_t
         # Get the actual input tensor name from the network
         input_name = network.get_input(0).name
         profile.set_shape(input_name, min_shape, opt_shape, max_shape)
-        config.add_optimization_profile(profile)
-        print("  ✓ Optimization profile added")
+        # config.add_optimization_profile(profile)
+        # print("  ✓ Optimization profile added")
         
         # if fp16 and builder.platform_has_fast_fp16:
         #     config.set_flag(trt.BuilderFlag.FP16)
@@ -301,7 +301,6 @@ def create_model_architecture(path):
     model = YOLO(path)
     return model
 
-
 # ============================================================================
 # MAIN EXECUTION
 # ============================================================================
@@ -320,7 +319,7 @@ if __name__ == "__main__":
     print(list_folder)
 
     for folder in list_folder:
-        if not os.path.isdir(os.path.join(ld_folder, folder)): #  or not folder.startswith("17T"):
+        if not os.path.isdir(os.path.join(ld_folder, folder)) or not folder.startswith("17R"):
             continue
         path = os.path.join(ld_folder, folder, f"{folder}_weights")
         
@@ -330,5 +329,5 @@ if __name__ == "__main__":
             model_path=path,
             fp16=False,     # Enable FP16
             keep_onnx=True,
-            convert_to_trt=False
+            convert_to_trt=True
         )

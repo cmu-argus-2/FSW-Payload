@@ -2,6 +2,8 @@ import onnx
 import onnx_graphsurgeon as gs
 import numpy as np
 from typing import *
+import os
+from pathlib import Path
 
 # From https://medium.com/@MaroJEON/batched-nms-1-yolov8-model-modification-without-modeler-using-onnx-graphsurgeon-d876b75478af
 class OnnxModifier:
@@ -38,13 +40,18 @@ class OnnxModifier:
     
     def add_slice_node(self, sig_output_tensor, starts=5, ends=np.iinfo(np.int64).max, axes=4, step=1):
         data_input = sig_output_tensor
+        
         starts_input = gs.Constant(name="%s_%d_%d_starts_Constant"%(data_input.name,starts,axes), values = np.array([starts])) # 5 is starts point
         ends_input = gs.Constant(name="%s_%d_%d_ends_Constant"%(data_input.name,starts,axes), values = np.array([ends]))
         axes_input = gs.Constant(name="%s_%d_%d_axes_Constant"%(data_input.name,starts,axes), values = np.array([axes]))
         step_input = gs.Constant(name="%s_%d_%d_steps_Constant"%(data_input.name,starts,axes), values = np.array([step]))
 
         slice_inputs = [data_input, starts_input, ends_input, axes_input, step_input]
-        slice_shape = None
+        slice_shape = sig_output_tensor.shape.copy()
+        if slice_shape is not None:
+            if ends == np.iinfo(np.int64).max:
+                ends = sig_output_tensor.shape[2]
+            slice_shape[axes] = (ends - starts + step - 1) // step
 
         slice_outputs = [gs.Variable(name="%s_%d_%dslice_output_0"%(data_input.name, starts, axes), dtype=data_input.dtype, shape=slice_shape)]
         
@@ -104,25 +111,46 @@ class OnnxModifier:
 
         return nms_node.outputs
 
-onnx_load_path = "models/V1/trained-ld/17R/17R_weights_v2.onnx"
-onnx_md = OnnxModifier(onnx_load_path)
-output_tensor = onnx_md.graph.outputs[0]
+trained_ld_path = "models/V1/trained-ld"
 
-transposed_output = onnx_md.add_transpose_nodes(output_tensor, [0, 2, 1])
-# ---- bbox ---- #
-bbox_out_tensor = onnx_md.add_slice_node(transposed_output, starts=0, ends=4, axes=2, step=1)
-# ---- score ---- #
-conf_score_out_tensor = onnx_md.add_slice_node(transposed_output, starts=4, axes=2, step=1)
+for folder in os.listdir(trained_ld_path):
+    folder_path = os.path.join(trained_ld_path, folder)
+    
+    if not os.path.isdir(folder_path):
+        continue
+    
+    # Find ONNX files in the folder
+    onnx_load_path = os.path.join(folder_path, folder + "_weights.onnx")
+    
+    if not os.path.exists(onnx_load_path):
+        print(f"Skipping {folder}: no ONNX model found")
+        continue
+    
+    print(f"Processing {folder}: {onnx_load_path}")
+    
+    try:
+        onnx_md = OnnxModifier(onnx_load_path)
+        output_tensor = onnx_md.graph.outputs[0]
 
-# ---- make last node ---- #
-bbox_last_output = onnx_md.add_yolo_output(bbox_out_tensor, "nms_bbox")
-score_last_output = onnx_md.add_yolo_output(conf_score_out_tensor, "nms_score")
+        transposed_output = onnx_md.add_transpose_nodes(output_tensor, [0, 2, 1])
+        # ---- bbox ---- #
+        bbox_out_tensor = onnx_md.add_slice_node(transposed_output, starts=0, ends=4, axes=2, step=1)
+        # ---- score ---- #
+        conf_score_out_tensor = onnx_md.add_slice_node(transposed_output, starts=4, axes=2, step=1)
 
-# ---- import batchedNMS_TRT plugin ---- #
-num_detections, nmsed_boxes, nmsed_scores, nmsed_classes = onnx_md.add_nms_plugin_nodes(bbox_last_output, score_last_output)
+        # ---- make last node ---- #
+        bbox_last_output = onnx_md.add_yolo_output(bbox_out_tensor, "nms_bbox")
+        score_last_output = onnx_md.add_yolo_output(conf_score_out_tensor, "nms_score")
 
-# ---- make nms plugin outputs ---- #
-onnx_md.carve_output([num_detections, nmsed_boxes, nmsed_scores, nmsed_classes])
+        # ---- import batchedNMS_TRT plugin ---- #
+        num_detections, nmsed_boxes, nmsed_scores, nmsed_classes = onnx_md.add_nms_plugin_nodes(bbox_last_output, score_last_output)
 
-onnx_md.graph.cleanup().toposort()
-onnx.save(gs.export_onnx(onnx_md.graph), "models/V1/trained-ld/17R/17R_weights_with_nms.onnx")
+        # ---- make nms plugin outputs ---- #
+        onnx_md.carve_output([num_detections, nmsed_boxes, nmsed_scores, nmsed_classes])
+
+        onnx_md.graph.cleanup().toposort()
+        output_path = os.path.join(folder_path, folder + "_weights_with_nms.onnx")
+        onnx.save(gs.export_onnx(onnx_md.graph), output_path)
+        print(f"Saved to {output_path}")
+    except Exception as e:
+        print(f"Error processing {folder}: {e}")

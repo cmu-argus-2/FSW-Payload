@@ -13,6 +13,7 @@ import os
 import sys
 from collections import OrderedDict
 from ultralytics import YOLO
+import time
 
 def check_pt_content(pt_path):
     """Check what's inside the .pt file"""
@@ -71,7 +72,7 @@ def check_onnx(onnx_path):
     except Exception as e:
         print(f"✗ ONNX model validation failed: {e}")
 
-def pt_to_trt(model_path, device=None, fp16=False, keep_onnx=False, convert_to_trt=True):
+def pt_to_trt(model_path, device=None, fp16=False, keep_onnx=False, convert_to_trt=True, new_imgsz=4608):
     """
     Convert PyTorch .pt model to TensorRT .trt engine
     
@@ -87,17 +88,24 @@ def pt_to_trt(model_path, device=None, fp16=False, keep_onnx=False, convert_to_t
     """
     trt_path = model_path + ".trt"
     pt_path = model_path + ".pt"
+    trt_path = trt_path.replace("weights", f"weights_sz_{new_imgsz}")
+    trt_path = trt_path.replace("weights", f"weights_fp16" if fp16 else "weights_fp32")
+    onnx_path = trt_path.replace('.trt', '.onnx')
     
     try:
         # Auto-detect device if not specified
         if device is None:
-            device = 'cuda' if torch.cuda.is_available() else 'cpu'
+            if torch.cuda.is_available():
+                device = 'cuda'
+            else:
+                device = 'cpu'
+                onnx_path = onnx_path.replace("fp16", "fp32")
         
         if device == 'cuda':
             if not torch.cuda.is_available():
                 print("WARNING: CUDA requested but not available, falling back to CPU")
                 device = 'cpu'
-                fp16 = False
+                onnx_path = onnx_path.replace("fp16", "fp32")
             else:
                 # Test if CUDA is actually functional
                 try:
@@ -106,7 +114,7 @@ def pt_to_trt(model_path, device=None, fp16=False, keep_onnx=False, convert_to_t
                     print(f"WARNING: CUDA is available but not functional ({e})")
                     print("         Falling back to CPU for ONNX export")
                     device = 'cpu'
-                    fp16 = False
+                    onnx_path = onnx_path.replace("fp16", "fp32")
         
         print(f"\n{'='*60}")
         print(f"Converting {pt_path} to {trt_path}")
@@ -125,7 +133,7 @@ def pt_to_trt(model_path, device=None, fp16=False, keep_onnx=False, convert_to_t
         print(f"  Model stride: {stride}")
         print(f"  Model number of classes: {nc}")
         print(f"  Model image size: {imgsz}")
-        new_imgsz = 4608
+        
         input_shape = (1, 3, new_imgsz, new_imgsz)
         # model.eval()
         
@@ -135,7 +143,7 @@ def pt_to_trt(model_path, device=None, fp16=False, keep_onnx=False, convert_to_t
         print("  ✓ Model loaded successfully (converted to FP32 for export)")
         
         # Step 2: Export to ONNX
-        onnx_path = trt_path.replace('.trt', '.onnx')
+        
         print(f"\nStep 2/3: Exporting to ONNX ({onnx_path})...")
         
         dummy_input = torch.randn(input_shape).to(device)
@@ -155,12 +163,12 @@ def pt_to_trt(model_path, device=None, fp16=False, keep_onnx=False, convert_to_t
         parser = argparse.ArgumentParser(description="Convert YOLO models.")
         parser.add_argument("--format", type=str, default="onnx", help="Format to convert the models to")
         #parser.add_argument("--imgsz", type=int, default=1216, help="Desired image size for the model input. Can be an integer for square images or a tuple (height, width) for specific dimensions.")
-        parser.add_argument("--half", type=bool, default=False, help="Enables FP16 (half-precision) quantization, reducing model size and potentially speeding up inference on supported hardware.")
+        parser.add_argument("--half", type=bool, default=fp16, help="Enables FP16 (half-precision) quantization, reducing model size and potentially speeding up inference on supported hardware.")
         parser.add_argument("--int8", type=bool, default=False, help="Activates INT8 quantization, further compressing the model and speeding up inference with minimal accuracy loss, primarily for edge devices.")
         parser.add_argument("--batch", type=int, default=1, help="Specifies export model batch inference size or the max number of images the exported model will process concurrently in predict mode.")
         parser.add_argument("--optimize", type=bool, default=False, help="Applies optimization for mobile devices when exporting to TorchScript, potentially reducing model size and improving performance.")
         parser.add_argument("--nms", type=bool, default=True, help="Adds Non-Maximum Suppression (NMS) to the exported model when supported, improving detection post-processing efficiency.")
-        parser.add_argument("--device", type=str, default='cpu', help="Specifies the device for exporting: GPU (device=0), CPU (device=cpu), MPS for Apple silicon (device=mps) or DLA for NVIDIA Jetson (device=dla:0 or device=dla:1). TensorRT exports automatically use GPU.")
+        parser.add_argument("--device", type=str, default=device, help="Specifies the device for exporting: GPU (device=0), CPU (device=cpu), MPS for Apple silicon (device=mps) or DLA for NVIDIA Jetson (device=dla:0 or device=dla:1). TensorRT exports automatically use GPU.")
         parser.add_argument("--imgsz", type=int, default=new_imgsz, help="Desired image size for the model input. Can be an integer for square images or a tuple (height, width) for specific dimensions.")
         parser.add_argument("--dynamic", type=bool, default=False, help="Adds Non-Maximum Suppression (NMS) to the exported model when supported, improving detection post-processing efficiency.")
         parser.add_argument("--verbose", type=bool, default=True, help="Enables verbose logging during export, providing detailed information about the export process and any potential issues.")
@@ -171,9 +179,13 @@ def pt_to_trt(model_path, device=None, fp16=False, keep_onnx=False, convert_to_t
         config = vars(parser.parse_args())
         rebuild =  False
         if not os.path.exists(onnx_path) or rebuild:
-            onnx_path = model.export(**config)
+            onnx_path_f = model.export(**config)
+            # rename model in onnx_path to onnx_path_f if it was not created in this run
+            if onnx_path != onnx_path_f:
+                os.rename(onnx_path_f, onnx_path)
         else:
             print(f"ONNX file already exists: {onnx_path}")
+
         print(f"ONNX exported to: {onnx_path}")
         check_onnx(onnx_path)
         print("  ✓ ONNX export successful")
@@ -249,15 +261,18 @@ def pt_to_trt(model_path, device=None, fp16=False, keep_onnx=False, convert_to_t
         # config.add_optimization_profile(profile)
         # print("  ✓ Optimization profile added")
         
-        # if fp16 and builder.platform_has_fast_fp16:
-        #     config.set_flag(trt.BuilderFlag.FP16)
-        #     print("  ✓ FP16 mode enabled")
-        # elif fp16:
-        #     print("  ⚠ FP16 requested but not supported on this platform")
+        if fp16 and builder.platform_has_fast_fp16:
+            config.set_flag(trt.BuilderFlag.FP16)
+            print("  ✓ FP16 mode enabled")
+        elif fp16:
+            print("  ⚠ FP16 requested but not supported on this platform")
         
         # Build engine
         print("  Building engine (this is the slow part)...")
+        start_time = time.time()
         engine = builder.build_serialized_network(network, config)
+        build_time = time.time() - start_time
+        print(f"  Engine build completed in {build_time:.2f} seconds ({build_time/60:.2f} minutes or {build_time/3600:.2f} hours)")
         
         if engine is None:
             print("  ✗ Failed to build TensorRT engine")
@@ -327,7 +342,9 @@ if __name__ == "__main__":
         print(f"Converting model at: {path}")
         pt_to_trt(
             model_path=path,
-            fp16=False,     # Enable FP16
+            fp16=True,           # Enable FP16
+            device='cuda',         # cuda, cpu
             keep_onnx=True,
-            convert_to_trt=True
+            convert_to_trt=False,
+            new_imgsz=1152
         )

@@ -10,6 +10,7 @@ import cv2
 from dataclasses import dataclass, field
 from typing import Dict, List, Sequence
 from torchvision.ops import nms
+import time
 import pycuda.driver as cuda
 import pycuda.autoinit
 import matplotlib.pyplot as plt
@@ -202,8 +203,9 @@ def yolo_postprocess(pred: torch.Tensor, conf_thres=0.5, iou_thres=0.45):
 if __name__ == "__main__":
     # Paths
     model_version = "V1"
-    region_id = "17R"
-    image_id = "00040"
+    region_id = "17T"
+    image_id = "00330"
+    tgt_imgsz = 4608 # 2304, 1152
     pt_model_path = f"models/{model_version}/trained-ld/{region_id}/{region_id}_weights.pt"
     trt_engine_path = f"models/{model_version}/trained-ld/{region_id}/{region_id}_weights.trt"
     bbox_path = f"models/{model_version}/trained-ld/{region_id}/bounding_boxes.csv"
@@ -233,21 +235,31 @@ if __name__ == "__main__":
     
     model = TrtModel(trt_engine_path)
     batch_size = 1
-    img_letterboxed = model.preprocess_image(img_array)
+    img_letterboxed = model.preprocess_image(img_array, target_size=tgt_imgsz)
     
-    result = model(img_letterboxed,batch_size)
+    start_time = time.time()
+    result = model(img_letterboxed, batch_size)
+    trt_inference_time = time.time() - start_time
+    
+    start_time = time.time()
     result_array = result[0].squeeze()
     print(f"TensorRT output shape: {result_array.shape}")
     trt_boxes, trt_confidences, trt_class_ids = yolo_postprocess(torch.from_numpy(result_array), conf_thres=0.5, iou_thres=0.45)
     # TODO: Make this general
     trt_boxes[:, 1] -= 1008
+    trt_postprocess_time = time.time() - start_time
     
     # Original Pytorch model inference for comparison
     # torch.device("cuda" if torch.cuda.is_available() else "cpu")
     model  = PTModel(pt_model_path, device="cpu")
-    result = model(img, 0.5, 4608, True)
-    pt_xywh, pt_confidences, pt_class_ids = model.post_process(result, (IMAGE_WIDTH, IMAGE_HEIGHT))
+    start_time = time.time()
+    result = model(img, 0.5, tgt_imgsz, True)
+    pt_inference_time = time.time() - start_time
     
+    start_time = time.time()
+    pt_xywh, pt_confidences, pt_class_ids = model.post_process(result, (IMAGE_WIDTH, IMAGE_HEIGHT))
+    pt_postprocess_time = time.time() - start_time
+
     print(f"Input tensor shape: {img.size}")
     # print(result)
 
@@ -279,77 +291,137 @@ if __name__ == "__main__":
     all_class_ids = list(set(pt_sorted_class_ids) | set(int(x) for x in trt_sorted_class_ids) | set(true_class_ids))
     all_class_ids.sort()
     max_len = len(all_class_ids)
-    results_folder = f"models/{model_version}/results/ld_comp_{region_id}_{image_id}"
+    script_dir = os.path.dirname(os.path.abspath(__file__))
+    results_folder = os.path.join(script_dir, f"../../results/ld_comp_{region_id}_img_{image_id}_sz_{tgt_imgsz}/")
     os.makedirs(results_folder, exist_ok=True)
     
-    # TODO: Make these consistent. Show the detections in an ordered way
-    # show the same attributes for both pytorch and tensorrt
-    # TODO: Compute the accuracy metrics
-    # TP = IOU > 0.5 with correct class_id
-    # recall = TP / (TP + FN)
-    # precision = TP / (TP + FP)
-    print("PyTorch vs TensorRT detections (sorted by class_id):")
-    is_landmark = False
-    pt_results = {"fp_count": 0, "fn_count": 0, "tp_count": 0, "tn_count": 0}
-    trt_results = {"fp_count": 0, "fn_count": 0, "tp_count": 0, "tn_count": 0}
-    for i, class_id in enumerate(all_class_ids):
-        if class_id in true_class_ids:
-            idx = np.where(true_class_ids == class_id)[0][0]
-            print(f"Ground Truth [{i}]: Class ID: {true_class_ids[idx]}, Pixel Coords: {true_labels[idx, 1:5]}")
-            is_landmark = True
-        else:
-            print(f"Ground Truth [{i}]: No landmark for Class ID: {class_id}")
-            is_landmark = False
+    output_txt_file = os.path.join(results_folder, "detection_comparison.txt")
+    with open(output_txt_file, "w") as f:
+        f.write("PyTorch vs TensorRT detections (sorted by class_id):\n")
+        print("PyTorch vs TensorRT detections (sorted by class_id):")
+        is_landmark = False
+        pt_results = {"fp_count": 0, "fn_count": 0, "tp_count": 0, "tn_count": 0}
+        trt_results = {"fp_count": 0, "fn_count": 0, "tp_count": 0, "tn_count": 0}
+        for i, class_id in enumerate(all_class_ids):
+            if class_id in true_class_ids:
+                idx = np.where(true_class_ids == class_id)[0][0]
+                f.write(f"Ground Truth [{i}]: Class ID: {true_class_ids[idx]}, Pixel Coords: {true_labels[idx, 1:5]}\n")
+                print(f"Ground Truth [{i}]: Class ID: {true_class_ids[idx]}, Pixel Coords: {true_labels[idx, 1:5]}")
+                is_landmark = True
+            else:
+                f.write(f"Ground Truth [{i}]: No landmark for Class ID: {class_id}\n")
+                print(f"Ground Truth [{i}]: No landmark for Class ID: {class_id}")
+                is_landmark = False
+                
+            if class_id in pt_sorted_class_ids:
+                idx_pt = np.where(pt_sorted_class_ids == class_id)[0][0]
+                if is_landmark:                
+                    pt_xyxy_i = xywh_to_xyxy(torch.from_numpy(pt_sorted_boxes[idx_pt, :4]).unsqueeze(0))
+                    true_xyxy_i = xywh_to_xyxy(torch.from_numpy(true_labels[idx][1:5]).unsqueeze(0))
+                    pt_iou = torchvision.ops.box_iou(true_xyxy_i, pt_xyxy_i).item()
+                    
+                    if pt_iou > 0.5:
+                        pt_results["tp_count"] += 1
+                    else:
+                        pt_results["fp_count"] += 1
+                    
+                    pt_center_i = pt_sorted_boxes[idx_pt, :2] + pt_sorted_boxes[idx_pt, 2:] / 2
+                    true_center_i = true_labels[idx, 1:3] + true_labels[idx, 3:5] / 2
+                    pt_cdist = pt_center_i - true_center_i
+                    f.write(f"PyTorch [{i}]: Class ID: {pt_sorted_class_ids[idx_pt]}, Confidence: {pt_sorted_confidences[idx_pt]:.4f}, Box: {pt_sorted_boxes[idx_pt]}, IOU: {pt_iou:.4f}, Center Distance: {pt_cdist}\n")
+                    print(f"PyTorch [{i}]: Class ID: {pt_sorted_class_ids[idx_pt]}, Confidence: {pt_sorted_confidences[idx_pt]:.4f}, Box: {pt_sorted_boxes[idx_pt]}, IOU: {pt_iou:.4f}, Center Distance: {pt_cdist}")
+                else:
+                    pt_results["fp_count"] += 1
+                    f.write(f"PyTorch [{i}]: Class ID: {pt_sorted_class_ids[idx_pt]}, Confidence: {pt_sorted_confidences[idx_pt]:.4f}, Box: {pt_sorted_boxes[idx_pt]}\n")
+                    print(f"PyTorch [{i}]: Class ID: {pt_sorted_class_ids[idx_pt]}, Confidence: {pt_sorted_confidences[idx_pt]:.4f}, Box: {pt_sorted_boxes[idx_pt]}")
+            else:
+                f.write(f"PyTorch [{i}]: No detection for Class ID: {class_id}\n")
+                print(f"PyTorch [{i}]: No detection for Class ID: {class_id}")
+                if is_landmark:
+                    pt_results["fn_count"] += 1
+                else:
+                    pt_results["tn_count"] += 1
             
-        if class_id in pt_sorted_class_ids:
-            idx_pt = np.where(pt_sorted_class_ids == class_id)[0][0]
-            # TODO: if is_landmark -> TP OR FP
-            # iou, center distance
-            if is_landmark:
-                pt_results["tp_count"] += 1
-                pt_iou = torchvision.ops.box_iou(torch.from_numpy(true_labels[idx, 1:5]), torch.from_numpy(pt_sorted_boxes[idx_pt, :4]))
-                pt_cdist = pt_sorted_boxes[idx_pt, :2] - true_labels[idx, 1:3]
-                print(f"PyTorch [{i}]: Class ID: {pt_sorted_class_ids[idx_pt]}, Confidence: {pt_sorted_confidences[idx_pt]:.4f}, Box: {pt_sorted_boxes[idx_pt]}, IOU: {pt_iou:.4f}, Center Distance: {pt_cdist}")
+            if class_id in trt_sorted_class_ids:
+                idx_trt = np.where(trt_sorted_class_ids == class_id)[0][0]
+                if is_landmark:                
+                    trt_xyxy_i = xywh_to_xyxy(trt_sorted_boxes[idx_trt, :4].unsqueeze(0))
+                    true_xyxy_i = xywh_to_xyxy(torch.from_numpy(true_labels[idx][1:5]).unsqueeze(0))
+                    trt_iou = torchvision.ops.box_iou(true_xyxy_i, trt_xyxy_i).item()
+                    
+                    if trt_iou > 0.5:
+                        trt_results["tp_count"] += 1
+                    else:
+                        trt_results["fp_count"] += 1
+                    
+                    trt_center_i = trt_sorted_boxes[idx_trt, :2] + trt_sorted_boxes[idx_trt, 2:] / 2
+                    true_center_i = true_labels[idx, 1:3] + true_labels[idx, 3:5] / 2
+                    trt_cdist = (trt_center_i - true_center_i).tolist()
+                    f.write(f"TensorRT [{i}]: Class ID: {trt_sorted_class_ids[idx_trt]}, Confidence: {trt_sorted_confidences[idx_trt]:.4f}, Box: {trt_sorted_boxes[idx_trt]}, IOU: {trt_iou:.4f}, Center Distance: {trt_cdist}\n")
+                    print(f"TensorRT [{i}]: Class ID: {trt_sorted_class_ids[idx_trt]}, Confidence: {trt_sorted_confidences[idx_trt]:.4f}, Box: {trt_sorted_boxes[idx_trt]}, IOU: {trt_iou:.4f}, Center Distance: {trt_cdist}")
+                else:
+                    trt_results["fp_count"] += 1
+                    f.write(f"TensorRT [{i}]: Class ID: {trt_sorted_class_ids[idx_trt]}, Confidence: {trt_sorted_confidences[idx_trt]:.4f}, Box: {trt_sorted_boxes[idx_trt].tolist()}\n")
+                    print(f"TensorRT [{i}]: Class ID: {trt_sorted_class_ids[idx_trt]}, Confidence: {trt_sorted_confidences[idx_trt]:.4f}, Box: {trt_sorted_boxes[idx_trt].tolist():.1f}")
             else:
-                pt_results["fp_count"] += 1
-                print(f"PyTorch [{i}]: Class ID: {pt_sorted_class_ids[idx_pt]}, Confidence: {pt_sorted_confidences[idx_pt]:.4f}, Box: {pt_sorted_boxes[idx_pt]}")
-        else:
-            print(f"PyTorch [{i}]: No detection for Class ID: {class_id}")
-            if is_landmark:
-                pt_results["fn_count"] += 1
-            else:
-                pt_results["tn_count"] += 1
+                f.write(f"TensorRT [{i}]: No detection for Class ID: {class_id}\n")
+                print(f"TensorRT [{i}]: No detection for Class ID: {class_id}")
+                if is_landmark:
+                    trt_results["fn_count"] += 1
+                else:
+                    trt_results["tn_count"] += 1
+            print()
         
-        if class_id in trt_sorted_class_ids:
-            idx_trt = np.where(trt_sorted_class_ids == class_id)[0][0]
-            print(f"TensorRT [{i}]: Class ID: {trt_sorted_class_ids[idx_trt]}, Confidence: {trt_sorted_confidences[idx_trt]:.4f}, Box: {trt_sorted_boxes[idx_trt].tolist():.1f}")
-        else:
-            print(f"TensorRT [{i}]: No detection for Class ID: {class_id}")
-        print()
+        # Print summary of results
+        print("Summary of Results:")
+        print(f"PyTorch - TP: {pt_results['tp_count']}, FP: {pt_results['fp_count']}, FN: {pt_results['fn_count']}, TN: {pt_results['tn_count']}")
+        print(f"TensorRT - TP: {trt_results['tp_count']}, FP: {trt_results['fp_count']}, FN: {trt_results['fn_count']}, TN: {trt_results['tn_count']}")
+        pt_recall     = pt_results["tp_count"] / (pt_results["tp_count"] + pt_results["fn_count"]) if (pt_results["tp_count"] + pt_results["fn_count"]) > 0 else 0
+        pt_precision  = pt_results["tp_count"] / (pt_results["tp_count"] + pt_results["fp_count"]) if (pt_results["tp_count"] + pt_results["fp_count"]) > 0 else 0
+        trt_recall    = trt_results["tp_count"] / (trt_results["tp_count"] + trt_results["fn_count"]) if (trt_results["tp_count"] + trt_results["fn_count"]) > 0 else 0
+        trt_precision = trt_results["tp_count"] / (trt_results["tp_count"] + trt_results["fp_count"]) if (trt_results["tp_count"] + trt_results["fp_count"]) > 0 else 0
+        print(f"PyTorch - Recall: {pt_recall:.4f}, Precision: {pt_precision:.4f}")
+        print(f"TensorRT - Recall: {trt_recall:.4f}, Precision: {trt_precision:.4f}")
+        print(f"PyTorch inference time: {pt_inference_time:.4f} s")
+        print(f"PyTorch post-process time: {pt_postprocess_time:.4f} s")
+        print(f"TensorRT inference time: {trt_inference_time:.4f} s")
+        print(f"TensorRT post-process time: {trt_postprocess_time:.4f} s")
+        
+        f.write("\nSummary of Results:\n")
+        f.write(f"PyTorch - TP: {pt_results['tp_count']}, FP: {pt_results['fp_count']}, FN: {pt_results['fn_count']}, TN: {pt_results['tn_count']}\n")
+        f.write(f"TensorRT - TP: {trt_results['tp_count']}, FP: {trt_results['fp_count']}, FN: {trt_results['fn_count']}, TN: {trt_results['tn_count']}\n")
+        f.write(f"PyTorch - Recall: {pt_recall:.4f}, Precision: {pt_precision:.4f}\n")
+        f.write(f"TensorRT - Recall: {trt_recall:.4f}, Precision: {trt_precision:.4f}\n")
+        f.write(f"PyTorch inference time: {pt_inference_time:.4f} s\n")
+        f.write(f"PyTorch post-process time: {pt_postprocess_time:.4f} s\n")
+        f.write(f"TensorRT inference time: {trt_inference_time:.4f} s\n")
+        f.write(f"TensorRT post-process time: {trt_postprocess_time:.4f} s\n")
     
     # Plot the results of both compared to the real boxes
-    fig, ax = plt.subplots()
-    ax.imshow(img)
-    for i, true_label in enumerate(true_labels):
-        # Ground truth
-        rect = patches.Rectangle((true_label[1], true_label[2]), true_label[3], true_label[4], linewidth=1, edgecolor='r', facecolor='none')
-        ax.add_patch(rect)
-        # PyTorch detections
-    for i in range(pt_sorted_boxes.shape[0]):
-        rect = patches.Rectangle((pt_sorted_boxes[i, 0], pt_sorted_boxes[i, 1]), pt_sorted_boxes[i, 2], pt_sorted_boxes[i, 3], linewidth=1, edgecolor='b', facecolor='none')
-        ax.add_patch(rect)
-    fig.savefig(f"comparison_plot_pt.png")
-    
-    fig2, ax2 = plt.subplots()
-    ax2.imshow(img)
-    # ax2.imshow(img_letterboxed[0].transpose(1,2,0))
-    for i, true_label in enumerate(true_labels):
-        # Ground truth
-        rect = patches.Rectangle((true_label[1], true_label[2]), true_label[3], true_label[4], linewidth=1, edgecolor='r', facecolor='none')
-        ax2.add_patch(rect)
-        # PyTorch detections
-    for i in range(len(trt_sorted_boxes)):
-        rect = patches.Rectangle((trt_sorted_boxes[i, 0], trt_sorted_boxes[i, 1] - 1008.0), trt_sorted_boxes[i, 2], trt_sorted_boxes[i, 3], linewidth=1, edgecolor='g', facecolor='none')
-        ax2.add_patch(rect)
-    fig2.savefig(f"comparison_plot_trt.png")
-    # TODO: Store the accuracy metrics and the images in the results directory with a consistent naming scheme for later analysis
+    try:
+        fig, ax = plt.subplots()
+        ax.imshow(img)
+        for i, true_label in enumerate(true_labels):
+            # Ground truth
+            rect = patches.Rectangle((true_label[1], true_label[2]), true_label[3], true_label[4], linewidth=1, edgecolor='r', facecolor='none')
+            ax.add_patch(rect)
+            # PyTorch detections
+        for i in range(pt_sorted_boxes.shape[0]):
+            rect = patches.Rectangle((pt_sorted_boxes[i, 0], pt_sorted_boxes[i, 1]), pt_sorted_boxes[i, 2], pt_sorted_boxes[i, 3], linewidth=1, edgecolor='b', facecolor='none')
+            ax.add_patch(rect)
+        fig.savefig(results_folder + "comparison_plot_pt.png")
+        
+        fig2, ax2 = plt.subplots()
+        ax2.imshow(img)
+        # ax2.imshow(img_letterboxed[0].transpose(1,2,0))
+        for i, true_label in enumerate(true_labels):
+            # Ground truth
+            rect = patches.Rectangle((true_label[1], true_label[2]), true_label[3], true_label[4], linewidth=1, edgecolor='r', facecolor='none')
+            ax2.add_patch(rect)
+            # PyTorch detections
+        for i in range(len(trt_sorted_boxes)):
+            rect = patches.Rectangle((trt_sorted_boxes[i, 0], trt_sorted_boxes[i, 1] - 1008.0), trt_sorted_boxes[i, 2], trt_sorted_boxes[i, 3], linewidth=1, edgecolor='g', facecolor='none')
+            ax2.add_patch(rect)
+        fig2.savefig(results_folder + "comparison_plot_trt.png")
+    except Exception as e:
+        print(f"Error occurred while saving plots: {e}")

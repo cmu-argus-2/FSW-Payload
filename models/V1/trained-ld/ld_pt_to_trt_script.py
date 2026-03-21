@@ -266,15 +266,13 @@ def pt_to_trt(model_path, device=None, fp16=False, keep_onnx=False, convert_to_t
         # print("  ✓ Optimization profile added")
         
         if fp16 and builder.platform_has_fast_fp16:
-            trt_path = trt_path.replace('_weights', '_weights_fp16')
             config.set_flag(trt.BuilderFlag.FP16)
             print("  ✓ FP16 mode enabled")
         elif fp16:
             print("  ⚠ FP16 requested but not supported on this platform")
-            trt_path = trt_path.replace('_weights', '_weights_fp32')
+            trt_path = trt_path.replace('fp16', 'fp32')
         else:
             print("  ✓ FP16 mode not enabled, using FP32")
-            trt_path = trt_path.replace('_weights', '_weights_fp32')
         
         # Build engine
         print("  Building engine (this is the slow part)...")

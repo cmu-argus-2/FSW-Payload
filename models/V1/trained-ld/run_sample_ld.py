@@ -15,7 +15,8 @@ import pycuda.driver as cuda
 import pycuda.autoinit
 import matplotlib.pyplot as plt
 import matplotlib.patches as patches
-
+import onnxruntime as ort
+from ultralytics.utils.ops import non_max_suppression # Use ultralytics NMS
 
 
 class HostDeviceMem(object):
@@ -69,6 +70,26 @@ class PTModel:
         
         return xywh, confidences, class_ids
 
+# available_providers = ort.get_available_providers()
+# providers = [p for p in ["CUDAExecutionProvider", "CPUExecutionProvider"] if p in available_providers]
+# session = ort.InferenceSession(ONNX_MODEL_PATH, providers=providers or available_providers)
+# input_name = session.get_inputs()[0].name
+# output_name = session.get_outputs()[0].name
+# input_shape = session.get_inputs()[0].shape[2:] # (640, 640)
+
+class ONNXModel:
+    def __init__(self,engine_path: str):
+        self.engine_path = engine_path
+        available_providers = ort.get_available_providers()
+        providers = [p for p in ["CUDAExecutionProvider", "CPUExecutionProvider"] if p in available_providers]
+        self.session = ort.InferenceSession(engine_path, providers=providers or available_providers)
+        print(f"ONNX input name: {self.session.get_inputs()[0].name}")
+        print(f"ONNX output name: {self.session.get_outputs()[0].name}")
+        print(f"ONNX input shape: {self.session.get_inputs()[0].shape[2:]}")
+        # self.onnx_model  = onnx.load(filename)
+    
+    def __call__(self,x:np.ndarray):
+        return self.session.run(None, {"images":  x.astype(np.float32)})[0]
 
 class TrtModel:
     def __init__(self,engine_path,max_batch_size=1,dtype=np.float32):
@@ -215,13 +236,14 @@ def yolo_postprocess(pred: torch.Tensor, conf_thres=0.5, iou_thres=0.45):
 if __name__ == "__main__":
     # Paths
     model_version = "V1"
-    region_id = "17R" # "17T"
-    image_id = "00221" # "00330"
-    tgt_imgsz = 1536*2 # 4608, 2304, 1152
+    region_id = "17T" # "17T"
+    image_id = "00330" # "00221" # 
+    tgt_imgsz = 4608 # 4608, 2304, 1152
     fp16 = False
     fpstring = "fp16" if fp16 else "fp32"
-    pt_model_path = f"models/{model_version}/trained-ld/{region_id}/{region_id}_weights.pt"
-    trt_engine_path = f"models/{model_version}/trained-ld/{region_id}/{region_id}_weights_{fpstring}_sz_{tgt_imgsz}.trt"
+    pt_model_path    = f"models/{model_version}/trained-ld/{region_id}/{region_id}_weights.pt"
+    trt_engine_path  = f"models/{model_version}/trained-ld/{region_id}/{region_id}_weights_{fpstring}_sz_{tgt_imgsz}.trt"
+    onnx_engine_path = f"models/{model_version}/trained-ld/{region_id}/{region_id}_weights_{fpstring}_sz_{tgt_imgsz}.onnx"
     bbox_path = f"models/{model_version}/trained-ld/{region_id}/bounding_boxes.csv"
     image_path = f"models/{model_version}/sample_images/l8_{region_id}_{image_id}.png"
     label_path = f"models/{model_version}/sample_images/l8_{region_id}_{image_id}.txt"
@@ -248,8 +270,23 @@ if __name__ == "__main__":
     height, width = img_array.shape[:2] # should be 4608x2592 after cropping
     batch_size = 1
     
-    trt_engine_exists = os.path.exists(trt_engine_path)
-    pt_engine_exists  = os.path.exists(pt_model_path)
+    trt_engine_exists  = os.path.exists(trt_engine_path)
+    pt_engine_exists   = os.path.exists(pt_model_path)
+    onnx_engine_exists = os.path.exists(onnx_engine_path)
+    
+    # Original Pytorch model inference for comparison
+    # torch.device("cuda" if torch.cuda.is_available() else "cpu")
+    if pt_engine_exists:
+        pt_model  = PTModel(pt_model_path, device="cpu")
+        start_time = time.time()
+        result = pt_model(img, 0.5, tgt_imgsz, True)
+        pt_inference_time = time.time() - start_time
+        
+        start_time = time.time()
+        pt_xywh, pt_confidences, pt_class_ids = pt_model.post_process(result, (IMAGE_WIDTH, IMAGE_HEIGHT))
+        pt_postprocess_time = time.time() - start_time
+    else:
+        print(f"{pt_model_path} not found")
     
     if trt_engine_exists:
         trt_model = TrtModel(trt_engine_path)
@@ -269,21 +306,19 @@ if __name__ == "__main__":
         trt_postprocess_time = time.time() - start_time
     else:
         print(f"{trt_engine_path} not found")
-    
-    # Original Pytorch model inference for comparison
-    # torch.device("cuda" if torch.cuda.is_available() else "cpu")
-    if pt_engine_exists:
-        pt_model  = PTModel(pt_model_path, device="cpu")
-        start_time = time.time()
-        result = pt_model(img, 0.5, tgt_imgsz, True)
-        pt_inference_time = time.time() - start_time
-        
-        start_time = time.time()
-        pt_xywh, pt_confidences, pt_class_ids = pt_model.post_process(result, (IMAGE_WIDTH, IMAGE_HEIGHT))
-        pt_postprocess_time = time.time() - start_time
-    else:
-        print(f"{pt_model_path} not found")
 
+    # ONNX runtime
+    if onnx_engine_exists:
+        onnx_model = ONNXModel(onnx_engine_path)
+        start_time = time.time()
+        onnx_results = onnx_model(img_letterboxed)
+        onnx_inference_time = time.time() - start_time
+        start_time = time.time()
+        onnx_boxes, onnx_confidences, onnx_class_ids = yolo_postprocess(torch.from_numpy(onnx_results.squeeze()), conf_thres=0.5, iou_thres=0.45)
+        onnx_boxes[:, 1] -= 1008
+        onnx_postprocess_time = time.time() - start_time
+    else:
+        print(f"{onnx_engine_path} not found")
 
     bboxes = np.loadtxt(bbox_path, delimiter=",", skiprows=1)
     
@@ -304,6 +339,12 @@ if __name__ == "__main__":
         trt_sorted_confidences = trt_confidences[trt_sort_idx]
         trt_sorted_boxes = trt_boxes[trt_sort_idx]
     
+    if onnx_engine_exists:
+        onnx_sort_idx = np.argsort(onnx_class_ids)
+        onnx_sorted_class_ids = onnx_class_ids[onnx_sort_idx]
+        onnx_sorted_confidences = onnx_confidences[onnx_sort_idx]
+        onnx_sorted_boxes = onnx_boxes[onnx_sort_idx]
+    
     # already sorted
     true_class_ids = labels[:, 0].astype(int)
     true_labels = labels * np.array([1,width, height, width, height])  # Scale normalized coordinates to pixel values
@@ -317,6 +358,9 @@ if __name__ == "__main__":
     if trt_engine_exists:
         max_len = max(max_len, len(trt_sorted_class_ids))
         all_class_ids = all_class_ids | set(int(x) for x in trt_sorted_class_ids)
+    if onnx_engine_exists:
+        max_len = max(max_len, len(onnx_sorted_class_ids))
+        all_class_ids = all_class_ids | set(int(x) for x in onnx_sorted_class_ids)
     
     all_class_ids = list(all_class_ids)
     all_class_ids.sort()
@@ -332,6 +376,7 @@ if __name__ == "__main__":
         is_landmark = False
         pt_results = {"fp_count": 0, "fn_count": 0, "tp_count": 0, "tn_count": 0}
         trt_results = {"fp_count": 0, "fn_count": 0, "tp_count": 0, "tn_count": 0}
+        onnx_results = {"fp_count": 0, "fn_count": 0, "tp_count": 0, "tn_count": 0}
         for i, class_id in enumerate(all_class_ids):
             if class_id in true_class_ids:
                 idx = np.where(true_class_ids == class_id)[0][0]
@@ -402,6 +447,36 @@ if __name__ == "__main__":
                         trt_results["fn_count"] += 1
                     else:
                         trt_results["tn_count"] += 1
+                
+            if onnx_engine_exists:
+                if class_id in onnx_sorted_class_ids:
+                    idx_onnx = np.where(onnx_sorted_class_ids == class_id)[0][0]
+                    if is_landmark:                
+                        onnx_xyxy_i = xywh_to_xyxy(onnx_sorted_boxes[idx_onnx, :4].unsqueeze(0))
+                        true_xyxy_i = xywh_to_xyxy(torch.from_numpy(true_labels[idx][1:5]).unsqueeze(0))
+                        onnx_iou = torchvision.ops.box_iou(true_xyxy_i, onnx_xyxy_i).item()
+                        
+                        if onnx_iou > 0.5:
+                            onnx_results["tp_count"] += 1
+                        else:
+                            onnx_results["fp_count"] += 1
+                        
+                        onnx_center_i = onnx_sorted_boxes[idx_onnx, :2] + onnx_sorted_boxes[idx_onnx, 2:] / 2
+                        true_center_i = true_labels[idx, 1:3] + true_labels[idx, 3:5] / 2
+                        onnx_cdist = (onnx_center_i - true_center_i).tolist()
+                        f.write(f"TensorRT [{i}]: Class ID: {onnx_sorted_class_ids[idx_onnx]}, Confidence: {onnx_sorted_confidences[idx_onnx]:.4f}, Box: {onnx_sorted_boxes[idx_onnx]}, IOU: {onnx_iou:.4f}, Center Distance: {onnx_cdist}\n")
+                        print(f"TensorRT [{i}]: Class ID: {onnx_sorted_class_ids[idx_onnx]}, Confidence: {onnx_sorted_confidences[idx_onnx]:.4f}, Box: {onnx_sorted_boxes[idx_onnx]}, IOU: {onnx_iou:.4f}, Center Distance: {onnx_cdist}")
+                    else:
+                        onnx_results["fp_count"] += 1
+                        f.write(f"TensorRT [{i}]: Class ID: {onnx_sorted_class_ids[idx_onnx]}, Confidence: {onnx_sorted_confidences[idx_onnx]:.4f}, Box: {onnx_sorted_boxes[idx_onnx].tolist()}\n")
+                        print(f"TensorRT [{i}]: Class ID: {onnx_sorted_class_ids[idx_onnx]}, Confidence: {onnx_sorted_confidences[idx_onnx]:.4f}, Box: {onnx_sorted_boxes[idx_onnx].tolist():.1f}")
+                else:
+                    f.write(f"TensorRT [{i}]: No detection for Class ID: {class_id}\n")
+                    print(f"TensorRT [{i}]: No detection for Class ID: {class_id}")
+                    if is_landmark:
+                        onnx_results["fn_count"] += 1
+                    else:
+                        onnx_results["tn_count"] += 1
             print()
         
         # Print summary of results
@@ -435,6 +510,19 @@ if __name__ == "__main__":
             f.write(f"TensorRT inference time: {trt_inference_time:.4f} s\n")
             f.write(f"TensorRT post-process time: {trt_postprocess_time:.4f} s\n")
             f.write(f"TensorRT memory usage: {trt_model.gpu_memory_allocated_mb} mb\n")
+
+        if onnx_engine_exists:
+            print(f"ONNX - TP: {onnx_results['tp_count']}, FP: {onnx_results['fp_count']}, FN: {onnx_results['fn_count']}, TN: {onnx_results['tn_count']}")
+            onnx_recall    = onnx_results["tp_count"] / (onnx_results["tp_count"] + onnx_results["fn_count"]) if (onnx_results["tp_count"] + onnx_results["fn_count"]) > 0 else 0
+            onnx_precision = onnx_results["tp_count"] / (onnx_results["tp_count"] + onnx_results["fp_count"]) if (onnx_results["tp_count"] + onnx_results["fp_count"]) > 0 else 0
+            print(f"ONNX - Recall: {onnx_recall:.4f}, Precision: {onnx_precision:.4f}")
+            print(f"ONNX inference time: {onnx_inference_time:.4f} s")
+            print(f"ONNX post-process time: {onnx_postprocess_time:.4f} s")
+            
+            f.write(f"ONNX - TP: {onnx_results['tp_count']}, FP: {onnx_results['fp_count']}, FN: {onnx_results['fn_count']}, TN: {onnx_results['tn_count']}\n")
+            f.write(f"ONNX - Recall: {onnx_recall:.4f}, Precision: {onnx_precision:.4f}\n")
+            f.write(f"ONNX inference time: {onnx_inference_time:.4f} s\n")
+            f.write(f"ONNX post-process time: {onnx_postprocess_time:.4f} s\n")
     
     # Plot the results of both compared to the real boxes
     try:
@@ -463,5 +551,18 @@ if __name__ == "__main__":
                 rect = patches.Rectangle((trt_sorted_boxes[i, 0], trt_sorted_boxes[i, 1]), trt_sorted_boxes[i, 2], trt_sorted_boxes[i, 3], linewidth=1, edgecolor='g', facecolor='none')
                 ax2.add_patch(rect)
             fig2.savefig(results_folder + f"comparison_plot_trt_img_{image_id}.png")
+        if onnx_engine_exists:
+            fig3, ax3 = plt.subplots()
+            ax3.imshow(img)
+            # ax2.imshow(img_letterboxed[0].transpose(1,2,0))
+            for i, true_label in enumerate(true_labels):
+                # Ground truth
+                rect = patches.Rectangle((true_label[1], true_label[2]), true_label[3], true_label[4], linewidth=1, edgecolor='r', facecolor='none')
+                ax3.add_patch(rect)
+                # PyTorch detections
+            for i in range(len(onnx_sorted_boxes)):
+                rect = patches.Rectangle((onnx_sorted_boxes[i, 0], onnx_sorted_boxes[i, 1]), onnx_sorted_boxes[i, 2], onnx_sorted_boxes[i, 3], linewidth=1, edgecolor='g', facecolor='none')
+                ax3.add_patch(rect)
+            fig3.savefig(results_folder + f"comparison_plot_onnx_img_{image_id}.png")
     except Exception as e:
         print(f"Error occurred while saving plots: {e}")

@@ -243,7 +243,6 @@ def pt_to_trt(model_path, device=None, fp16=False, keep_onnx=False, convert_to_t
         
         # Parse ONNX
         print("  Parsing ONNX model...")
-        onnx_path = onnx_path.replace('_weights', '_weights_nms') if nms else onnx_path
         with open(onnx_path, 'rb') as f:
             if not parser.parse(f.read()):
                 print("  ✗ Failed to parse ONNX file:")
@@ -346,7 +345,7 @@ if __name__ == "__main__":
     print(list_folder)
 
     for folder in list_folder:
-        if not os.path.isdir(os.path.join(ld_folder, folder)) or not folder.startswith("17R"):
+        if not os.path.isdir(os.path.join(ld_folder, folder)) or not folder.startswith("17T"):
             continue
         path = os.path.join(ld_folder, folder, f"{folder}_weights")
         
@@ -356,9 +355,9 @@ if __name__ == "__main__":
         pt_to_trt(
             model_path=path,
             fp16=False,           # Enable FP16
-            device='cuda',         # cuda, cpu
+            device='cpu',         # cuda, cpu
             keep_onnx=True,
-            convert_to_trt=True,
-            new_imgsz=1152,
+            convert_to_trt=False,
+            new_imgsz=4608,
             nms=False
         )

@@ -72,7 +72,7 @@ def check_onnx(onnx_path):
     except Exception as e:
         print(f"✗ ONNX model validation failed: {e}")
 
-def pt_to_trt(model_path, device=None, fp16=False, keep_onnx=False, convert_to_trt=True, new_imgsz=4608):
+def pt_to_trt(model_path, device=None, fp16=False, keep_onnx=False, convert_to_trt=True, new_imgsz=4608, nms=False):
     """
     Convert PyTorch .pt model to TensorRT .trt engine
     
@@ -88,6 +88,8 @@ def pt_to_trt(model_path, device=None, fp16=False, keep_onnx=False, convert_to_t
     """
     trt_path = model_path + ".trt"
     pt_path = model_path + ".pt"
+    # weights_fp_sz_nms.*
+    trt_path = trt_path.replace("weights", "weights_nms") if nms else trt_path
     trt_path = trt_path.replace("weights", f"weights_sz_{new_imgsz}")
     trt_path = trt_path.replace("weights", f"weights_fp16" if fp16 else "weights_fp32")
     onnx_path = trt_path.replace('.trt', '.onnx')
@@ -172,7 +174,7 @@ def pt_to_trt(model_path, device=None, fp16=False, keep_onnx=False, convert_to_t
         parser.add_argument("--imgsz", type=int, default=new_imgsz, help="Desired image size for the model input. Can be an integer for square images or a tuple (height, width) for specific dimensions.")
         parser.add_argument("--dynamic", type=bool, default=False, help="Adds Non-Maximum Suppression (NMS) to the exported model when supported, improving detection post-processing efficiency.")
         parser.add_argument("--verbose", type=bool, default=True, help="Enables verbose logging during export, providing detailed information about the export process and any potential issues.")
-        parser.add_argument("--simplify", type=bool, default=False)
+        parser.add_argument("--simplify", type=bool, default=True)
         # parser.add_argument("--input_names", type=list, default=['image'], help="List of input tensor names for the ONNX model.")
         # parser.add_argument("--output_names", type=list, default=['yolo_no_nms'], help="List of output tensor names for the ONNX model.")
         # parser.add_argument("--workspace", type=int, default=1, help="Sets the maximum workspace size in GiB for TensorRT optimizations, balancing memory usage and performance. Use None for auto-allocation by TensorRT up to device maximum.")
@@ -219,6 +221,7 @@ def pt_to_trt(model_path, device=None, fp16=False, keep_onnx=False, convert_to_t
         
         try:
             TRT_LOGGER = trt.Logger(trt.Logger.VERBOSE)
+            trt.init_libnvinfer_plugins(TRT_LOGGER, "")
             builder = trt.Builder(TRT_LOGGER)
         except Exception as e:
             print(f"  ✗ Failed to create TensorRT builder: {e}")
@@ -236,6 +239,7 @@ def pt_to_trt(model_path, device=None, fp16=False, keep_onnx=False, convert_to_t
         
         # Parse ONNX
         print("  Parsing ONNX model...")
+        onnx_path = onnx_path.replace('_weights', '_weights_nms') if nms else onnx_path
         with open(onnx_path, 'rb') as f:
             if not parser.parse(f.read()):
                 print("  ✗ Failed to parse ONNX file:")
@@ -262,10 +266,15 @@ def pt_to_trt(model_path, device=None, fp16=False, keep_onnx=False, convert_to_t
         # print("  ✓ Optimization profile added")
         
         if fp16 and builder.platform_has_fast_fp16:
+            trt_path = trt_path.replace('_weights', '_weights_fp16')
             config.set_flag(trt.BuilderFlag.FP16)
             print("  ✓ FP16 mode enabled")
         elif fp16:
             print("  ⚠ FP16 requested but not supported on this platform")
+            trt_path = trt_path.replace('_weights', '_weights_fp32')
+        else:
+            print("  ✓ FP16 mode not enabled, using FP32")
+            trt_path = trt_path.replace('_weights', '_weights_fp32')
         
         # Build engine
         print("  Building engine (this is the slow part)...")
@@ -281,6 +290,7 @@ def pt_to_trt(model_path, device=None, fp16=False, keep_onnx=False, convert_to_t
         print("  ✓ Engine built successfully")
         
         # Save engine (build_serialized_network returns bytes directly)
+        trt_path = trt_path.replace('_weights', '_weights_with_nms') if nms else trt_path
         print(f"  Saving engine to {trt_path}...")
         with open(trt_path, 'wb') as f:
             f.write(engine)
@@ -346,5 +356,6 @@ if __name__ == "__main__":
             device='cuda',         # cuda, cpu
             keep_onnx=True,
             convert_to_trt=False,
-            new_imgsz=1152
+            new_imgsz=1152,
+            nms=False
         )

@@ -118,6 +118,10 @@ def pt_to_trt(model_path, device=None, fp16=False, keep_onnx=False, convert_to_t
                     device = 'cpu'
                     onnx_path = onnx_path.replace("fp16", "fp32")
         
+        if device == 'cpu':
+            print("WARNING: Can only convert to ONNX with fp16 with CUDA. Will write ONNX with fp32 instead")
+            onnx_path = onnx_path.replace("fp16", "fp32")
+        
         print(f"\n{'='*60}")
         print(f"Converting {pt_path} to {trt_path}")
         print(f"Device: {device}")
@@ -348,12 +352,13 @@ if __name__ == "__main__":
         
         # if True: # not os.path.exists(path + ".trt"):
         print(f"Converting model at: {path}")
+        # cuda is needed for fp16 on onnx
         pt_to_trt(
             model_path=path,
-            fp16=True,           # Enable FP16
+            fp16=False,           # Enable FP16
             device='cuda',         # cuda, cpu
             keep_onnx=True,
-            convert_to_trt=False,
+            convert_to_trt=True,
             new_imgsz=1152,
             nms=False
         )

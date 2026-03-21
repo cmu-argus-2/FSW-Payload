@@ -77,10 +77,22 @@ class TrtModel:
         self.dtype = dtype
         self.logger = trt.Logger(trt.Logger.VERBOSE)
         self.runtime = trt.Runtime(self.logger)
+        
+        # Track deserialization time
+        deserialize_start = time.time()
         self.engine = self.load_engine(self.runtime, self.engine_path)
+        self.deserialization_time = time.time() - deserialize_start
+        
         self.max_batch_size = max_batch_size
         self.inputs, self.outputs, self.bindings, self.stream = self.allocate_buffers()
+        
+        # Track context creation and GPU memory
+        context_start = time.time()
         self.context = self.engine.create_execution_context()
+        self.context_creation_time = time.time() - context_start
+        
+        self.gpu_memory_allocated_mb = self.context.engine.device_memory_size / (1024 * 1024)
+        
 
     @staticmethod
     def load_engine(trt_runtime, engine_path):
@@ -206,8 +218,10 @@ if __name__ == "__main__":
     region_id = "17T"
     image_id = "00330"
     tgt_imgsz = 4608 # 2304, 1152
+    fp16 = True
+    fpstring = "fp16" if fp16 else "fp32"
     pt_model_path = f"models/{model_version}/trained-ld/{region_id}/{region_id}_weights.pt"
-    trt_engine_path = f"models/{model_version}/trained-ld/{region_id}/{region_id}_weights.trt"
+    trt_engine_path = f"models/{model_version}/trained-ld/{region_id}/{region_id}_weights_{fpstring}_sz_{tgt_imgsz}.trt"
     bbox_path = f"models/{model_version}/trained-ld/{region_id}/bounding_boxes.csv"
     image_path = f"models/{model_version}/sample_images/l8_{region_id}_{image_id}.png"
     label_path = f"models/{model_version}/sample_images/l8_{region_id}_{image_id}.txt"
@@ -233,12 +247,12 @@ if __name__ == "__main__":
 
     height, width = img_array.shape[:2] # should be 4608x2592 after cropping
     
-    model = TrtModel(trt_engine_path)
+    trt_model = TrtModel(trt_engine_path)
     batch_size = 1
-    img_letterboxed = model.preprocess_image(img_array, target_size=tgt_imgsz)
+    img_letterboxed = trt_model.preprocess_image(img_array, target_size=tgt_imgsz)
     
     start_time = time.time()
-    result = model(img_letterboxed, batch_size)
+    result = trt_model(img_letterboxed, batch_size)
     trt_inference_time = time.time() - start_time
     
     start_time = time.time()
@@ -251,13 +265,13 @@ if __name__ == "__main__":
     
     # Original Pytorch model inference for comparison
     # torch.device("cuda" if torch.cuda.is_available() else "cpu")
-    model  = PTModel(pt_model_path, device="cpu")
+    pt_model  = PTModel(pt_model_path, device="cpu")
     start_time = time.time()
-    result = model(img, 0.5, tgt_imgsz, True)
+    result = pt_model(img, 0.5, tgt_imgsz, True)
     pt_inference_time = time.time() - start_time
     
     start_time = time.time()
-    pt_xywh, pt_confidences, pt_class_ids = model.post_process(result, (IMAGE_WIDTH, IMAGE_HEIGHT))
+    pt_xywh, pt_confidences, pt_class_ids = pt_model.post_process(result, (IMAGE_WIDTH, IMAGE_HEIGHT))
     pt_postprocess_time = time.time() - start_time
 
     print(f"Input tensor shape: {img.size}")
@@ -292,7 +306,7 @@ if __name__ == "__main__":
     all_class_ids.sort()
     max_len = len(all_class_ids)
     script_dir = os.path.dirname(os.path.abspath(__file__))
-    results_folder = os.path.join(script_dir, f"../../results/ld_comp_{region_id}_img_{image_id}_sz_{tgt_imgsz}/")
+    results_folder = os.path.join(script_dir, f"../../results/ld_comp_{region_id}_img_{image_id}_{fpstring}_sz_{tgt_imgsz}/")
     os.makedirs(results_folder, exist_ok=True)
     
     output_txt_file = os.path.join(results_folder, "detection_comparison.txt")
@@ -386,6 +400,7 @@ if __name__ == "__main__":
         print(f"PyTorch post-process time: {pt_postprocess_time:.4f} s")
         print(f"TensorRT inference time: {trt_inference_time:.4f} s")
         print(f"TensorRT post-process time: {trt_postprocess_time:.4f} s")
+        print(f"TensorRT memory usage: {trt_model.gpu_memory_allocated_mb} mb")
         
         f.write("\nSummary of Results:\n")
         f.write(f"PyTorch - TP: {pt_results['tp_count']}, FP: {pt_results['fp_count']}, FN: {pt_results['fn_count']}, TN: {pt_results['tn_count']}\n")
@@ -396,6 +411,7 @@ if __name__ == "__main__":
         f.write(f"PyTorch post-process time: {pt_postprocess_time:.4f} s\n")
         f.write(f"TensorRT inference time: {trt_inference_time:.4f} s\n")
         f.write(f"TensorRT post-process time: {trt_postprocess_time:.4f} s\n")
+        f.write(f"TensorRT memory usage: {trt_model.gpu_memory_allocated_mb} mb\n")
     
     # Plot the results of both compared to the real boxes
     try:
@@ -409,7 +425,7 @@ if __name__ == "__main__":
         for i in range(pt_sorted_boxes.shape[0]):
             rect = patches.Rectangle((pt_sorted_boxes[i, 0], pt_sorted_boxes[i, 1]), pt_sorted_boxes[i, 2], pt_sorted_boxes[i, 3], linewidth=1, edgecolor='b', facecolor='none')
             ax.add_patch(rect)
-        fig.savefig(results_folder + "comparison_plot_pt.png")
+        fig.savefig(results_folder + "comparison_plot_pt_img_{image_id}.png")
         
         fig2, ax2 = plt.subplots()
         ax2.imshow(img)
@@ -420,8 +436,8 @@ if __name__ == "__main__":
             ax2.add_patch(rect)
             # PyTorch detections
         for i in range(len(trt_sorted_boxes)):
-            rect = patches.Rectangle((trt_sorted_boxes[i, 0], trt_sorted_boxes[i, 1] - 1008.0), trt_sorted_boxes[i, 2], trt_sorted_boxes[i, 3], linewidth=1, edgecolor='g', facecolor='none')
+            rect = patches.Rectangle((trt_sorted_boxes[i, 0], trt_sorted_boxes[i, 1]), trt_sorted_boxes[i, 2], trt_sorted_boxes[i, 3], linewidth=1, edgecolor='g', facecolor='none')
             ax2.add_patch(rect)
-        fig2.savefig(results_folder + "comparison_plot_trt.png")
+        fig2.savefig(results_folder + "comparison_plot_trt_img_{image_id}.png")
     except Exception as e:
         print(f"Error occurred while saving plots: {e}")

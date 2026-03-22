@@ -1,4 +1,5 @@
 git+https://github.com/cmu-argus-1/custom_ultralytics.git@main
+# ultralytics
 onnx # ==1.14.1
 protobuf==3.20.3
 onnxscript
@@ -16,3 +17,6 @@ allantools
 Cython
 pandas==1.4.3
 onnx_graphsurgeon==0.5.8
+# nvidia-ml-py # only works for pc, not jetson which is igpu
+onnxruntime==1.23.2
+onnxsim==0.6.2

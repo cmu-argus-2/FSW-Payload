@@ -127,18 +127,18 @@ class TrtModel:
         height, width = img_array.shape[:2]
         
         # Resize to different target size while maintaining aspect ratio
-        height_scale = target_size / height
-        width_scale  = target_size / width
+        height_scale = target_size[0] / height
+        width_scale  = target_size[1] / width
         scale = min(height_scale, width_scale)
         new_width = int(width * scale)
         new_height = int(height * scale)
         img_array = cv2.resize(img_array, (new_width, new_height), interpolation=cv2.INTER_LINEAR)
 
         # Letterbox to 4608x4608
-        pad_top = np.max((target_size - new_height) // 2,0)
-        pad_bottom = target_size - new_height - pad_top
-        pad_left = np.max((target_size - new_width) // 2,0)
-        pad_right = target_size - new_width - pad_left
+        pad_top = np.max((target_size[0] - new_height) // 2,0)
+        pad_bottom = target_size[0] - new_height - pad_top
+        pad_left = np.max((target_size[1] - new_width) // 2,0)
+        pad_right = target_size[1] - new_width - pad_left
         img_letterboxed = np.pad(img_array, ((pad_top, pad_bottom), (pad_left, pad_right), (0, 0)), mode='constant', constant_values=0)
 
         # img = Image.fromarray(img_letterboxed)
@@ -236,13 +236,15 @@ def yolo_postprocess(pred: torch.Tensor, conf_thres=0.5, iou_thres=0.45):
 if __name__ == "__main__":
     # Paths
     model_version = "V1"
-    region_id = "17T" # "17T"
-    image_id = "00330" # "00221" # 
-    tgt_imgsz = 4608 # 4608, 2304, 1152
-    fp16 = False
+    region_id = "17R" # "17T"
+    image_id = "00221" # "00330"
+    tgt_imgsz = (2592,4608) # 4608, 2304, 1152
+    fp16 = True
     fpstring = "fp16" if fp16 else "fp32"
+    trt_with_nms = True
+    nms_string = "_nms" if trt_with_nms else ""
     pt_model_path    = f"models/{model_version}/trained-ld/{region_id}/{region_id}_weights.pt"
-    trt_engine_path  = f"models/{model_version}/trained-ld/{region_id}/{region_id}_weights_{fpstring}_sz_{tgt_imgsz}.trt"
+    trt_engine_path  = f"models/{model_version}/trained-ld/{region_id}/{region_id}_weights_{fpstring}_sz_{tgt_imgsz[1]}{nms_string}.trt"
     onnx_engine_path = f"models/{model_version}/trained-ld/{region_id}/{region_id}_weights_{fpstring}_sz_{tgt_imgsz}.onnx"
     bbox_path = f"models/{model_version}/trained-ld/{region_id}/bounding_boxes.csv"
     image_path = f"models/{model_version}/sample_images/l8_{region_id}_{image_id}.png"
@@ -279,7 +281,7 @@ if __name__ == "__main__":
     if pt_engine_exists:
         pt_model  = PTModel(pt_model_path, device="cpu")
         start_time = time.time()
-        result = pt_model(img, 0.5, tgt_imgsz, True)
+        result = pt_model(img, 0.5, (2592,4608), True)
         pt_inference_time = time.time() - start_time
         
         start_time = time.time()
@@ -302,7 +304,7 @@ if __name__ == "__main__":
         print(f"TensorRT output shape: {result_array.shape}")
         trt_boxes, trt_confidences, trt_class_ids = yolo_postprocess(torch.from_numpy(result_array), conf_thres=0.5, iou_thres=0.45)
         # TODO: Make this general
-        trt_boxes[:, 1] -= 1008
+        # trt_boxes[:, 1] -= 1008
         trt_postprocess_time = time.time() - start_time
     else:
         print(f"{trt_engine_path} not found")

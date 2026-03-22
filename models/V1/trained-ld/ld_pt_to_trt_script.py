@@ -72,7 +72,7 @@ def check_onnx(onnx_path):
     except Exception as e:
         print(f"✗ ONNX model validation failed: {e}")
 
-def pt_to_trt(model_path, device=None, fp16=False, keep_onnx=False, convert_to_trt=True, new_imgsz=4608, nms=False):
+def pt_to_trt(model_path, device=None, fp16=False, keep_onnx=False, convert_to_trt=True, new_imgsz=(2592,4608), nms=False):
     """
     Convert PyTorch .pt model to TensorRT .trt engine
     
@@ -90,7 +90,13 @@ def pt_to_trt(model_path, device=None, fp16=False, keep_onnx=False, convert_to_t
     pt_path = model_path + ".pt"
     # weights_fp_sz_nms.*
     trt_path = trt_path.replace("weights", "weights_nms") if nms else trt_path
-    trt_path = trt_path.replace("weights", f"weights_sz_{new_imgsz}")
+    if isinstance(new_imgsz, int):
+        trt_path = trt_path.replace("weights", f"weights_sz_{new_imgsz}")
+    elif len(new_imgsz) == 2:
+        trt_path = trt_path.replace("weights", f"weights_sz_{new_imgsz[1]}")
+    else:
+        print("imgsz wrong number of dims")
+        return
     trt_path = trt_path.replace("weights", f"weights_fp16" if fp16 else "weights_fp32")
     onnx_path = trt_path.replace('.trt', '.onnx')
     
@@ -140,7 +146,13 @@ def pt_to_trt(model_path, device=None, fp16=False, keep_onnx=False, convert_to_t
         print(f"  Model number of classes: {nc}")
         print(f"  Model image size: {imgsz}")
         
-        input_shape = (1, 3, new_imgsz, new_imgsz)
+        if isinstance(new_imgsz, int):
+            input_shape = (1, 3, new_imgsz, new_imgsz)
+        elif len(new_imgsz) == 2:
+            input_shape = (1, 3, new_imgsz[0], new_imgsz[1])
+        else:
+            print("invalid imgsz")
+            return
         # model.eval()
         
         # Convert model to FP32 to avoid dtype mismatches during ONNX export
@@ -169,16 +181,16 @@ def pt_to_trt(model_path, device=None, fp16=False, keep_onnx=False, convert_to_t
         parser = argparse.ArgumentParser(description="Convert YOLO models.")
         parser.add_argument("--format", type=str, default="onnx", help="Format to convert the models to")
         #parser.add_argument("--imgsz", type=int, default=1216, help="Desired image size for the model input. Can be an integer for square images or a tuple (height, width) for specific dimensions.")
-        parser.add_argument("--half", type=bool, default=fp16, help="Enables FP16 (half-precision) quantization, reducing model size and potentially speeding up inference on supported hardware.")
+        parser.add_argument("--half", type=bool, default=False, help="Enables FP16 (half-precision) quantization, reducing model size and potentially speeding up inference on supported hardware.")
         parser.add_argument("--int8", type=bool, default=False, help="Activates INT8 quantization, further compressing the model and speeding up inference with minimal accuracy loss, primarily for edge devices.")
         parser.add_argument("--batch", type=int, default=1, help="Specifies export model batch inference size or the max number of images the exported model will process concurrently in predict mode.")
         parser.add_argument("--optimize", type=bool, default=False, help="Applies optimization for mobile devices when exporting to TorchScript, potentially reducing model size and improving performance.")
-        parser.add_argument("--nms", type=bool, default=True, help="Adds Non-Maximum Suppression (NMS) to the exported model when supported, improving detection post-processing efficiency.")
-        parser.add_argument("--device", type=str, default=device, help="Specifies the device for exporting: GPU (device=0), CPU (device=cpu), MPS for Apple silicon (device=mps) or DLA for NVIDIA Jetson (device=dla:0 or device=dla:1). TensorRT exports automatically use GPU.")
-        parser.add_argument("--imgsz", type=int, default=new_imgsz, help="Desired image size for the model input. Can be an integer for square images or a tuple (height, width) for specific dimensions.")
-        parser.add_argument("--dynamic", type=bool, default=False, help="Adds Non-Maximum Suppression (NMS) to the exported model when supported, improving detection post-processing efficiency.")
+        parser.add_argument("--nms", type=bool, default=False, help="Adds Non-Maximum Suppression (NMS) to the exported model when supported, improving detection post-processing efficiency.")
+        parser.add_argument("--device", type=str, default='cpu', help="Specifies the device for exporting: GPU (device=0), CPU (device=cpu), MPS for Apple silicon (device=mps) or DLA for NVIDIA Jetson (device=dla:0 or device=dla:1). TensorRT exports automatically use GPU.")
+        parser.add_argument("--imgsz", type=int, default=4608, help="Desired image size for the model input. Can be an integer for square images or a tuple (height, width) for specific dimensions.")
+        parser.add_argument("--dynamic", type=bool, default=True, help="Adds Non-Maximum Suppression (NMS) to the exported model when supported, improving detection post-processing efficiency.")
         parser.add_argument("--verbose", type=bool, default=True, help="Enables verbose logging during export, providing detailed information about the export process and any potential issues.")
-        parser.add_argument("--simplify", type=bool, default=True)
+        parser.add_argument("--simplify", type=bool, default=False)
         # parser.add_argument("--input_names", type=list, default=['image'], help="List of input tensor names for the ONNX model.")
         # parser.add_argument("--output_names", type=list, default=['yolo_no_nms'], help="List of output tensor names for the ONNX model.")
         # parser.add_argument("--workspace", type=int, default=1, help="Sets the maximum workspace size in GiB for TensorRT optimizations, balancing memory usage and performance. Use None for auto-allocation by TensorRT up to device maximum.")
@@ -254,7 +266,7 @@ def pt_to_trt(model_path, device=None, fp16=False, keep_onnx=False, convert_to_t
         
         # Configure builder
         config = builder.create_builder_config()
-        config.set_memory_pool_limit(trt.MemoryPoolType.WORKSPACE, 2 << 30)  # 1GB
+        config.set_memory_pool_limit(trt.MemoryPoolType.WORKSPACE, 5 << 30)  # 1GB
         
         # Add optimization profile for dynamic batch size
         profile = builder.create_optimization_profile()
@@ -265,7 +277,7 @@ def pt_to_trt(model_path, device=None, fp16=False, keep_onnx=False, convert_to_t
         # Get the actual input tensor name from the network
         input_name = network.get_input(0).name
         profile.set_shape(input_name, min_shape, opt_shape, max_shape)
-        # config.add_optimization_profile(profile)
+        config.add_optimization_profile(profile)
         # print("  ✓ Optimization profile added")
         
         if fp16 and builder.platform_has_fast_fp16:
@@ -325,6 +337,7 @@ def pt_to_trt(model_path, device=None, fp16=False, keep_onnx=False, convert_to_t
 
 def create_model_architecture(path):
     model = YOLO(path)
+    # metrics = model.val(rect=True)
     return model
 
 # ============================================================================
@@ -354,10 +367,10 @@ if __name__ == "__main__":
         # cuda is needed for fp16 on onnx
         pt_to_trt(
             model_path=path,
-            fp16=False,           # Enable FP16
-            device='cpu',         # cuda, cpu
+            fp16=True,             # Enable FP16
+            device='cuda',         # cuda, cpu
             keep_onnx=True,
-            convert_to_trt=False,
-            new_imgsz=4608,
-            nms=False
+            convert_to_trt=True,
+            new_imgsz=(2592,4608), # 4608, # 
+            nms=True
         )

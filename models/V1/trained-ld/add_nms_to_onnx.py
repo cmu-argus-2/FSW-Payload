@@ -57,7 +57,10 @@ class OnnxModifier:
         if slice_shape is not None:
             if ends == np.iinfo(np.int64).max:
                 ends = sig_output_tensor.shape[2]
-            slice_shape[axes] = (ends - starts + step - 1) // step
+            if isinstance(ends,str): # dynamic input onnx network - used to export rectangular TRT
+                slice_shape[axes] = ends
+            else:
+                slice_shape[axes] = (ends - starts + step - 1) // step
 
         slice_outputs = [gs.Variable(name="%s_%d_%dslice_output_0"%(data_input.name, starts, axes), dtype=data_input.dtype, shape=slice_shape)]
         
@@ -132,12 +135,12 @@ class OnnxModifier:
 
 if __name__ == "__main__":
     trained_ld_path = "models/V1/trained-ld"
-    fp16 = False
+    fp16 = True
     class_agnostic = False # default yolo option
     keep_topk = 300 # default yolo value
     score_threshold = 0.5
     iou_threshold = 0.45
-    imgsz = 1152
+    imgsz = 4608
     for folder in os.listdir(trained_ld_path):
         folder_path = os.path.join(trained_ld_path, folder)
         

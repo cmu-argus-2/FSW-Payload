@@ -123,32 +123,6 @@ class TrtModel:
             engine_data = f.read()
         engine = trt_runtime.deserialize_cuda_engine(engine_data)
         return engine
-
-    def preprocess_image(self,img_array, target_size=4608): # input image will be at most 4608x2592
-        height, width = img_array.shape[:2]
-        
-        # Resize to different target size while maintaining aspect ratio
-        height_scale = target_size[0] / height
-        width_scale  = target_size[1] / width
-        scale = min(height_scale, width_scale)
-        new_width = int(width * scale)
-        new_height = int(height * scale)
-        img_array = cv2.resize(img_array, (new_width, new_height), interpolation=cv2.INTER_LINEAR)
-
-        # Letterbox to 4608x4608
-        pad_top = np.max((target_size[0] - new_height) // 2,0)
-        pad_bottom = target_size[0] - new_height - pad_top
-        pad_left = np.max((target_size[1] - new_width) // 2,0)
-        pad_right = target_size[1] - new_width - pad_left
-        img_letterboxed = np.pad(img_array, ((pad_top, pad_bottom), (pad_left, pad_right), (0, 0)), mode='constant', constant_values=0)
-
-        # img = Image.fromarray(img_letterboxed)
-
-        img_letterboxed = np.expand_dims(img_letterboxed, axis=0)
-        # NCHW
-        img_letterboxed = np.transpose(img_letterboxed, (0, 3, 1, 2)) / 255.0
-        
-        return img_letterboxed
     
     def allocate_buffers(self):
         
@@ -194,6 +168,42 @@ class TrtModel:
         return [out.host.reshape(batch_size,-1) for out in self.outputs]
 
 
+def preprocess_image(img_array, target_size=4608): # input image will be at most 4608x2592
+    height, width = img_array.shape[:2]
+    
+    if isinstance(target_size,int):
+        target_width = target_size
+        target_height = target_size
+    elif len(target_size) == 2:
+        target_width = target_size[1]
+        target_height = target_size[0]
+    else:
+        print("invalid target size")
+        return
+    
+    # Resize to different target size while maintaining aspect ratio
+    height_scale = target_height / height
+    width_scale  = target_width / width
+    scale = min(height_scale, width_scale)
+    new_width = int(width * scale)
+    new_height = int(height * scale)
+    img_array = cv2.resize(img_array, (new_width, new_height), interpolation=cv2.INTER_LINEAR)
+
+    # Letterbox to 4608x4608
+    pad_top = np.max((target_height - new_height) // 2,0)
+    pad_bottom = target_height - new_height - pad_top
+    pad_left = np.max((target_width - new_width) // 2,0)
+    pad_right = target_width - new_width - pad_left
+    img_letterboxed = np.pad(img_array, ((pad_top, pad_bottom), (pad_left, pad_right), (0, 0)), mode='constant', constant_values=0)
+
+    # img = Image.fromarray(img_letterboxed)
+
+    img_letterboxed = np.expand_dims(img_letterboxed, axis=0)
+    # NCHW
+    img_letterboxed = np.transpose(img_letterboxed, (0, 3, 1, 2)) / 255.0
+    
+    return img_letterboxed
+
 def xywh_to_xyxy(boxes):
     x, y, w, h = boxes.unbind(-1)
     x1 = x - w / 2
@@ -237,18 +247,18 @@ def yolo_postprocess(pred: torch.Tensor, conf_thres=0.5, iou_thres=0.45):
 if __name__ == "__main__":
     # Paths
     model_version = "V1"
-    region_id = "17R" # "17T"
-    image_id = "00221" # "00330"
+    region_id = "17T" #  "17R" # "17T"
+    image_id = "00330" # "00330"
     tgt_imgsz = (2592,4608) # 4608, 2304, 1152
-    fp16 = True
+    fp16 = False
     fpstring = "fp16" if fp16 else "fp32"
     trt_with_nms = False
-    use_jpg = True
+    use_jpg = False
     pngstring = "jpg" if use_jpg else "png"
     nms_string = "_nms" if trt_with_nms else ""
     pt_model_path    = f"models/{model_version}/trained-ld/{region_id}/{region_id}_weights.pt"
     trt_engine_path  = f"models/{model_version}/trained-ld/{region_id}/{region_id}_weights_{fpstring}_sz_{tgt_imgsz[1]}{nms_string}.trt"
-    onnx_engine_path = f"models/{model_version}/trained-ld/{region_id}/{region_id}_weights_{fpstring}_sz_{tgt_imgsz}.onnx"
+    onnx_engine_path = f"models/{model_version}/trained-ld/{region_id}/{region_id}_weights_{fpstring}_sz_{tgt_imgsz[1]}.onnx"
     bbox_path = f"models/{model_version}/trained-ld/{region_id}/bounding_boxes.csv"
     image_path = f"models/{model_version}/sample_images/l8_{region_id}_{image_id}.{pngstring}"
     label_path = f"models/{model_version}/sample_images/l8_{region_id}_{image_id}.txt"
@@ -311,7 +321,7 @@ if __name__ == "__main__":
     if trt_engine_exists:
         trt_model = TrtModel(trt_engine_path)
         
-        img_letterboxed = trt_model.preprocess_image(img_array, target_size=tgt_imgsz)
+        img_letterboxed = preprocess_image(img_array, target_size=tgt_imgsz)
         
         start_time = time.time()
         result = trt_model(img_letterboxed, batch_size)
@@ -330,6 +340,9 @@ if __name__ == "__main__":
     # ONNX runtime
     if onnx_engine_exists:
         onnx_model = ONNXModel(onnx_engine_path)
+        
+        img_letterboxed = preprocess_image(img_array, target_size=4608)
+
         start_time = time.time()
         onnx_results = onnx_model(img_letterboxed)
         onnx_inference_time = time.time() - start_time
@@ -484,15 +497,15 @@ if __name__ == "__main__":
                         onnx_center_i = onnx_sorted_boxes[idx_onnx, :2] + onnx_sorted_boxes[idx_onnx, 2:] / 2
                         true_center_i = true_labels[idx, 1:3] + true_labels[idx, 3:5] / 2
                         onnx_cdist = (onnx_center_i - true_center_i).tolist()
-                        f.write(f"TensorRT [{i}]: Class ID: {onnx_sorted_class_ids[idx_onnx]}, Confidence: {onnx_sorted_confidences[idx_onnx]:.4f}, Box: {onnx_sorted_boxes[idx_onnx]}, IOU: {onnx_iou:.4f}, Center Distance: {onnx_cdist}\n")
-                        print(f"TensorRT [{i}]: Class ID: {onnx_sorted_class_ids[idx_onnx]}, Confidence: {onnx_sorted_confidences[idx_onnx]:.4f}, Box: {onnx_sorted_boxes[idx_onnx]}, IOU: {onnx_iou:.4f}, Center Distance: {onnx_cdist}")
+                        f.write(f"ONNX [{i}]: Class ID: {onnx_sorted_class_ids[idx_onnx]}, Confidence: {onnx_sorted_confidences[idx_onnx]:.4f}, Box: {onnx_sorted_boxes[idx_onnx]}, IOU: {onnx_iou:.4f}, Center Distance: {onnx_cdist}\n")
+                        print(f"ONNX [{i}]: Class ID: {onnx_sorted_class_ids[idx_onnx]}, Confidence: {onnx_sorted_confidences[idx_onnx]:.4f}, Box: {onnx_sorted_boxes[idx_onnx]}, IOU: {onnx_iou:.4f}, Center Distance: {onnx_cdist}")
                     else:
                         onnx_results["fp_count"] += 1
-                        f.write(f"TensorRT [{i}]: Class ID: {onnx_sorted_class_ids[idx_onnx]}, Confidence: {onnx_sorted_confidences[idx_onnx]:.4f}, Box: {onnx_sorted_boxes[idx_onnx].tolist()}\n")
-                        print(f"TensorRT [{i}]: Class ID: {onnx_sorted_class_ids[idx_onnx]}, Confidence: {onnx_sorted_confidences[idx_onnx]:.4f}, Box: {onnx_sorted_boxes[idx_onnx].tolist():.1f}")
+                        f.write(f"ONNX [{i}]: Class ID: {onnx_sorted_class_ids[idx_onnx]}, Confidence: {onnx_sorted_confidences[idx_onnx]:.4f}, Box: {onnx_sorted_boxes[idx_onnx].tolist()}\n")
+                        print(f"ONNX [{i}]: Class ID: {onnx_sorted_class_ids[idx_onnx]}, Confidence: {onnx_sorted_confidences[idx_onnx]:.4f}, Box: {onnx_sorted_boxes[idx_onnx].tolist():.1f}")
                 else:
-                    f.write(f"TensorRT [{i}]: No detection for Class ID: {class_id}\n")
-                    print(f"TensorRT [{i}]: No detection for Class ID: {class_id}")
+                    f.write(f"ONNX [{i}]: No detection for Class ID: {class_id}\n")
+                    print(f"ONNX [{i}]: No detection for Class ID: {class_id}")
                     if is_landmark:
                         onnx_results["fn_count"] += 1
                     else:

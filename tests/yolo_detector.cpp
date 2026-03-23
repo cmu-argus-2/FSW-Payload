@@ -154,6 +154,7 @@ void yoloPostProcessing(
                 continue;
 
             Mat scores = preds.row(i).colRange((model_name == "yolov8" || model_name == "yolonas" || model_name == "yolov9" || model_name == "yolov10") ? 4 : 5, preds.cols);
+            
             double conf;
             Point maxLoc;
             minMaxLoc(scores, 0, &conf, 0, &maxLoc);
@@ -181,11 +182,14 @@ void yoloPostProcessing(
         }
     }
 
+    spdlog::info("classIds length: {}", classIds.size());
+
     spdlog::info("Boxes: {}, Confidences: {}", boxes.size(), confidences.size());
 
     // NMS
     std::vector<int> keep_idx;
-    NMSBoxes(boxes, confidences, conf_threshold, iou_threshold, keep_idx);
+    // NMSBoxes(boxes, confidences, conf_threshold, iou_threshold, keep_idx);
+    NMSBoxesBatched(boxes, confidences, classIds, conf_threshold, iou_threshold, keep_idx);
 
     for (auto i : keep_idx)
     {
@@ -222,14 +226,21 @@ static inline cv::Rect scaleBoxBackLetterbox(
  */
 int main(int argc, char** argv)
 {
+
+    std::string ld_onnx_file_path;
+    std::string bounding_box_path;
+    std::string sample_image_path;
     if (argc < 4)
     {
-        spdlog::error("Usage: {} <path_to_ld_onnx_file> <path_to_bounding_box.csv> <path_to_sample_image>", argv[0]);
-        return 1;
+        ld_onnx_file_path = "models/V1/trained-ld/17T/17T_weights_fp32_sz_4608.onnx";
+        bounding_box_path = "models/V1/trained-ld/17T/bounding_boxes.csv";
+        sample_image_path = "models/V1/sample_images/l8_17T_00330.png";
+    } else {
+        ld_onnx_file_path = argv[1];
+        bounding_box_path = argv[2];
+        sample_image_path = argv[3];
     }
-    std::string ld_onnx_file_path = argv[1];
-    std::string bounding_box_path = argv[2];
-    std::string sample_image_path = argv[3];
+    
 
     // std::cout << cv::getBuildInformation() << "\n";
 
@@ -264,8 +275,11 @@ int main(int argc, char** argv)
     spdlog::info("Backend and target set");
     //![read_net]
 
+    start = std::chrono::high_resolution_clock::now();
     Mat img = imread(sample_image_path, IMREAD_COLOR);
-    spdlog::info("Image loaded: {}", sample_image_path);
+    end = std::chrono::high_resolution_clock::now();
+    duration = std::chrono::duration_cast<std::chrono::milliseconds>(end - start);
+    spdlog::info("Image loaded: {} (took {} ms)", sample_image_path, duration.count());
 
     // image pre-processing
     //![preprocess_call]
@@ -311,8 +325,8 @@ int main(int argc, char** argv)
     duration = std::chrono::duration_cast<std::chrono::milliseconds>(end - start);
     spdlog::info("Input set to network (took {} ms)", duration.count());
 
-    net.setPreferableBackend(5); // backend);
-    net.setPreferableTarget(6); // target);
+    net.setPreferableBackend(backend); // backend);
+    net.setPreferableTarget(target); // target);
     start = std::chrono::high_resolution_clock::now();
     net.forward(outs, net.getUnconnectedOutLayersNames());
     end = std::chrono::high_resolution_clock::now();

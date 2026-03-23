@@ -180,7 +180,7 @@ EC RCNet::Infer(const void* input_data, void* output)
 LDNet::LDNet(RegionID region_id, std::string csv_path)
 : region_id_(region_id), csv_path_(csv_path), 
 num_landmarks_(GetNumLandmarksFromCSV(csv_path)), // 
-input_width_(4608), input_height_(4608), input_channels_(3), batch_size_(1)
+input_width_(4608), input_height_(2592), input_channels_(3), batch_size_(1)
 {
     num_yolo_boxes = ComputeNumYoloBoxes();
     output_size_ = batch_size_ * (num_landmarks_ + 4) * num_yolo_boxes; // Update output size with the computed number of YOLO boxes

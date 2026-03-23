@@ -72,7 +72,8 @@ def check_onnx(onnx_path):
     except Exception as e:
         print(f"✗ ONNX model validation failed: {e}")
 
-def pt_to_trt(model_path, device=None, fp16_onnx=False, fp16_trt=True, keep_onnx=False, convert_to_trt=True, new_imgsz=(2592,4608), nms=False):
+def pt_to_trt(model_path, device_onnx=None, fp16_onnx=False, fp16_trt=True, keep_onnx=False, convert_to_trt=True, 
+                    onnx_imgsz=4608, onnx_dyn_input=True, trt_imgsz=(2592,4608), nms=False):
     """
     Convert PyTorch .pt model to TensorRT .trt engine
     
@@ -80,7 +81,7 @@ def pt_to_trt(model_path, device=None, fp16_onnx=False, fp16_trt=True, keep_onnx
         model_path: Output path for .trt file
         input_shape: Tuple of input shape (batch, channels, height, width)
         model_architecture: PyTorch model instance or class
-        device: 'cuda' or 'cpu' (default: auto-detect)
+        device_onnx: 'cuda' or 'cpu' (default: auto-detect)
         fp16: Enable FP16 precision for faster inference (requires CUDA)
     
     Returns:
@@ -88,33 +89,44 @@ def pt_to_trt(model_path, device=None, fp16_onnx=False, fp16_trt=True, keep_onnx
     """
     trt_path = model_path + ".trt"
     pt_path = model_path + ".pt"
+    onnx_path = model_path + ".onnx"
     # weights_fp_sz_nms.*
+    # trt file path
     trt_path = trt_path.replace("weights", "weights_nms") if nms else trt_path
-    if isinstance(new_imgsz, int):
-        trt_path = trt_path.replace("weights", f"weights_sz_{new_imgsz}")
-    elif len(new_imgsz) == 2:
-        trt_path = trt_path.replace("weights", f"weights_sz_{new_imgsz[1]}")
+    if isinstance(trt_imgsz, int):
+        trt_path = trt_path.replace("weights", f"weights_sz_{trt_imgsz}")
+    elif len(trt_imgsz) == 2:
+        trt_path = trt_path.replace("weights", f"weights_sz_{trt_imgsz[0]}x{trt_imgsz[1]}")
     else:
         print("imgsz wrong number of dims")
         return
-    onnx_path = trt_path.replace('.trt', '.onnx')
     trt_path = trt_path.replace("weights", f"weights_fp16" if fp16_trt else "weights_fp32")
+    
+    # onnx file path
+    onnx_path = onnx_path.replace("weights", "weights_nms") if nms else onnx_path
+    if isinstance(onnx_imgsz, int):
+        onnx_path = onnx_path.replace("weights", f"weights_sz_{onnx_imgsz}")
+    elif len(trt_imgsz) == 2:
+        onnx_path = onnx_path.replace("weights", f"weights_sz_{onnx_imgsz[0]}x{onnx_imgsz[1]}")
+    else:
+        print("imgsz wrong number of dims")
+        return
     onnx_path = onnx_path.replace("weights", f"weights_fp16" if fp16_onnx else "weights_fp32")
     
     try:
         # Auto-detect device if not specified
-        if device is None:
+        if device_onnx is None:
             if torch.cuda.is_available():
-                device = 'cuda'
+                device_onnx = 'cuda'
             else:
-                device = 'cpu'
+                device_onnx = 'cpu'
                 fp16_onnx = False
                 onnx_path = onnx_path.replace("fp16", "fp32")
         
-        if device == 'cuda':
+        if device_onnx == 'cuda':
             if not torch.cuda.is_available():
                 print("WARNING: CUDA requested but not available, falling back to CPU")
-                device = 'cpu'
+                device_onnx = 'cpu'
                 fp16_onnx = False
                 onnx_path = onnx_path.replace("fp16", "fp32")
             else:
@@ -124,18 +136,18 @@ def pt_to_trt(model_path, device=None, fp16_onnx=False, fp16_trt=True, keep_onnx
                 except Exception as e:
                     print(f"WARNING: CUDA is available but not functional ({e})")
                     print("         Falling back to CPU for ONNX export")
-                    device = 'cpu'
+                    device_onnx = 'cpu'
                     fp16_onnx = False
                     onnx_path = onnx_path.replace("fp16", "fp32")
         
-        if device == 'cpu':
+        if device_onnx == 'cpu':
             print("WARNING: Can only convert to ONNX with fp16 with CUDA. Will write ONNX with fp32 instead")
             fp16_onnx = False
             onnx_path = onnx_path.replace("fp16", "fp32")
         
         print(f"\n{'='*60}")
         print(f"Converting {pt_path} to {trt_path}")
-        print(f"Device: {device}")
+        print(f"Device: {device_onnx}")
         print(f"ONNX FP16 mode: {fp16_onnx}")
         print(f"{'='*60}\n")
         
@@ -150,39 +162,18 @@ def pt_to_trt(model_path, device=None, fp16_onnx=False, fp16_trt=True, keep_onnx
         print(f"  Model stride: {stride}")
         print(f"  Model number of classes: {nc}")
         print(f"  Model image size: {imgsz}")
-        
-        if isinstance(new_imgsz, int):
-            input_shape = (1, 3, new_imgsz, new_imgsz)
-        elif len(new_imgsz) == 2:
-            input_shape = (1, 3, new_imgsz[0], new_imgsz[1])
-        else:
-            print("invalid imgsz")
-            return
+
         # model.eval()
         
         # Convert model to FP32 to avoid dtype mismatches during ONNX export
         # model = model.float()
-        model.to(device)
+        model.to(device_onnx)
         print("  ✓ Model loaded successfully (converted to FP32 for export)")
         
         # Step 2: Export to ONNX
         
         print(f"\nStep 2/3: Exporting to ONNX ({onnx_path})...")
         
-        dummy_input = torch.randn(input_shape).to(device)
-        
-        # Use legacy TorchScript-based exporter for compatibility
-        # with torch.no_grad():
-        #     torch.onnx.export(
-        #         model,
-        #         dummy_input,
-        #         onnx_path,
-        #         export_params=True,
-        #         opset_version=17,
-        #         # do_constant_folding=True,
-        #         verbose=True# ,
-        #         # dynamo=False  # Use legacy exporter
-        #     )
         parser = argparse.ArgumentParser(description="Convert YOLO models.")
         parser.add_argument("--format", type=str, default="onnx", help="Format to convert the models to")
         #parser.add_argument("--imgsz", type=int, default=1216, help="Desired image size for the model input. Can be an integer for square images or a tuple (height, width) for specific dimensions.")
@@ -191,14 +182,14 @@ def pt_to_trt(model_path, device=None, fp16_onnx=False, fp16_trt=True, keep_onnx
         parser.add_argument("--batch", type=int, default=1, help="Specifies export model batch inference size or the max number of images the exported model will process concurrently in predict mode.")
         parser.add_argument("--optimize", type=bool, default=False, help="Applies optimization for mobile devices when exporting to TorchScript, potentially reducing model size and improving performance.")
         parser.add_argument("--nms", type=bool, default=False, help="Adds Non-Maximum Suppression (NMS) to the exported model when supported, improving detection post-processing efficiency.")
-        parser.add_argument("--device", type=str, default='cpu', help="Specifies the device for exporting: GPU (device=0), CPU (device=cpu), MPS for Apple silicon (device=mps) or DLA for NVIDIA Jetson (device=dla:0 or device=dla:1). TensorRT exports automatically use GPU.")
-        parser.add_argument("--imgsz", type=int, default=4608, help="Desired image size for the model input. Can be an integer for square images or a tuple (height, width) for specific dimensions.")
-        parser.add_argument("--dynamic", type=bool, default=True, help="Adds Non-Maximum Suppression (NMS) to the exported model when supported, improving detection post-processing efficiency.")
+        parser.add_argument("--device", type=str, default=device_onnx, help="Specifies the device for exporting: GPU (device=0), CPU (device=cpu), MPS for Apple silicon (device=mps) or DLA for NVIDIA Jetson (device=dla:0 or device=dla:1). TensorRT exports automatically use GPU.")
+        parser.add_argument("--imgsz", type=int, default=onnx_imgsz, help="Desired image size for the model input. Can be an integer for square images or a tuple (height, width) for specific dimensions.")
+        parser.add_argument("--dynamic", type=bool, default=onnx_dyn_input, help="Adds Non-Maximum Suppression (NMS) to the exported model when supported, improving detection post-processing efficiency.")
         parser.add_argument("--verbose", type=bool, default=True, help="Enables verbose logging during export, providing detailed information about the export process and any potential issues.")
-        parser.add_argument("--simplify", type=bool, default=False)
+        parser.add_argument("--simplify", type=bool, default=True)
         # parser.add_argument("--input_names", type=list, default=['image'], help="List of input tensor names for the ONNX model.")
         # parser.add_argument("--output_names", type=list, default=['yolo_no_nms'], help="List of output tensor names for the ONNX model.")
-        # parser.add_argument("--workspace", type=int, default=1, help="Sets the maximum workspace size in GiB for TensorRT optimizations, balancing memory usage and performance. Use None for auto-allocation by TensorRT up to device maximum.")
+        parser.add_argument("--workspace", type=int, default=4, help="Sets the maximum workspace size in GiB for TensorRT optimizations, balancing memory usage and performance. Use None for auto-allocation by TensorRT up to device maximum.")
         config = vars(parser.parse_args())
         rebuild =  False
         if not os.path.exists(onnx_path) or rebuild:
@@ -225,7 +216,16 @@ def pt_to_trt(model_path, device=None, fp16_onnx=False, fp16_trt=True, keep_onnx
         print("\nStep 3/3: Building TensorRT engine...")
         
         # Check if we can build TensorRT engine (requires CUDA)
-        if device == 'cpu':
+        if not torch.cuda.is_available():
+            convert_to_trt = False
+        else:
+            try:
+                torch.cuda.current_device()
+            except Exception as e:
+                print(f"WARNING: CUDA is available but not functional ({e})")
+                convert_to_trt = False
+        
+        if convert_to_trt:
             print("  ⚠ WARNING: Cannot build TensorRT engine on CPU")
             print("  ⚠ TensorRT requires GPU support for engine building")
             print("  ✓ ONNX model has been exported successfully")
@@ -239,7 +239,6 @@ def pt_to_trt(model_path, device=None, fp16_onnx=False, fp16_trt=True, keep_onnx
             return True
         
         print("  This may take a few minutes...")
-        
         try:
             TRT_LOGGER = trt.Logger(trt.Logger.VERBOSE)
             trt.init_libnvinfer_plugins(TRT_LOGGER, "")
@@ -275,6 +274,15 @@ def pt_to_trt(model_path, device=None, fp16_onnx=False, fp16_trt=True, keep_onnx
         
         # Add optimization profile for dynamic batch size
         profile = builder.create_optimization_profile()
+        
+        if isinstance(trt_imgsz, int):
+            input_shape = (1, 3, trt_imgsz, trt_imgsz)
+        elif len(trt_imgsz) == 2:
+            input_shape = (1, 3, trt_imgsz[0], trt_imgsz[1])
+        else:
+            print("invalid imgsz")
+            return
+        
         # Set min, optimal, and max batch sizes (using input shape from parameter)
         min_shape = (1, input_shape[1], input_shape[2], input_shape[3])
         opt_shape = (1, input_shape[1], input_shape[2], input_shape[3])
@@ -363,7 +371,7 @@ if __name__ == "__main__":
 
     for folder in list_folder:
         #  not folder.startswith("17T")
-        if not os.path.isdir(os.path.join(ld_folder, folder)): #  or int(folder[:2]) > 20:
+        if not os.path.isdir(os.path.join(ld_folder, folder)) or not folder.startswith("17T"):
             continue
         path = os.path.join(ld_folder, folder, f"{folder}_weights")
         
@@ -374,9 +382,11 @@ if __name__ == "__main__":
             model_path=path,
             fp16_onnx=False,             # Enable FP16
             fp16_trt=True,
-            device='cuda',         # cuda, cpu
+            device_onnx='cpu',         # cuda, cpu
             keep_onnx=True,
-            convert_to_trt=True,
-            new_imgsz=(2592,4608), # 4608, # 
+            convert_to_trt=False,
+            onnx_imgsz=4608,
+            onnx_dyn_input=False,
+            trt_imgsz=(2592,4608), # 4608, # 
             nms=False
         )

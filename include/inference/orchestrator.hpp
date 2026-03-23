@@ -34,9 +34,10 @@ public:
     // Setters
     void SetPreloadRCEngine(bool preload) { preload_rc_engine_ = preload; }
     void SetPreloadLDEngines(bool preload) { preload_ld_engines_ = preload; }
-    void SetUseTRTForLD(bool use_trt) { use_trt_for_ld_ = use_trt; }
+    void SetUseTRTForLD(bool use_trt) { ldnet_config.use_trt = use_trt; }
     void SetRCNetEnginePath(const std::string& path);
     void SetLDNetEngineFolderPath(const std::string& path);
+    void SetLDNetConfig(NET_QUANTIZATION weight_quant, int input_width, int input_height, bool embedded_nms, bool use_trt_for_ld);
 
     EC ExecRCInference();
     // TODO: The two functions below should be merged
@@ -59,7 +60,7 @@ private:
 
     std::string ld_engine_folder_path_ = "./models/V1/trained-ld"; // Folder path for LD engines (if loading on demand)
     std::string rc_engine_path_ = "./models/V1/trained-rc/effnet_0997acc.trt"; // File path for RC engine (if loading on demand)
-    bool use_trt_for_ld_ = true; // Whether to use TRT for LDNet (if false, use ONNX Runtime)
+    LDNetConfig ldnet_config = {NET_QUANTIZATION::FP16,4608,2592,false,true};
 
     void RCPreprocessImg(cv::Mat img, cv::Mat& out_chw_img);
     void LDPreprocessImg(cv::Mat img, cv::Mat& out_chw_img, int target_width=4608);

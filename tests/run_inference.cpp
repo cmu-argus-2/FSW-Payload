@@ -60,18 +60,40 @@ static inline cv::Rect scaleBoxBackLetterbox(
 
 int main(int argc, char** argv)
 {
+    std::string rc_trt_file_path;
+    std::string ld_trt_folder_path;
+    std::string sample_image_path;
+
     if (argc < 4)
     {
-        spdlog::error("Usage: {} <path_to_rc_trt_file> <path_to_ld_trt_folder> <path_to_sample_image>", argv[0]);
-        return 1;
+        spdlog::info("Using default inference example");
+        rc_trt_file_path = "models/V1/trained-rc/effnet_0997acc.trt";
+        ld_trt_folder_path = "models/V1/trained-ld";
+        // ld_trt_folder_path -> should be inferred from the parameters
+        std::string tgt_region = "17R";
+        std::string sample_id = "00221";
+        bool isjpg = false;
+        sample_image_path = "models/V1/sample_images/l8_" + tgt_region + "_" + sample_id;
+        if (isjpg) {
+            sample_image_path = sample_image_path + ".jpg";
+        } else {
+            sample_image_path = sample_image_path + ".png";
+        }
+    } else {
+        rc_trt_file_path = argv[1];
+        ld_trt_folder_path = argv[2];
+        sample_image_path = argv[3];
     }
-    std::string rc_trt_file_path = argv[1];
-    std::string ld_trt_folder_path = argv[2];
-    std::string sample_image_path = argv[3];
-    
+    // Parameters that define the model 
+    Inference::NET_QUANTIZATION weight_quant = Inference::NET_QUANTIZATION::FP16;
+    int input_width = 4608;
+    int input_height = 2592;
+    bool embedded_nms = false;
+    bool use_trt_for_ld = true;
 
     Inference::Orchestrator orchestrator;
     orchestrator.SetRCNetEnginePath(rc_trt_file_path);
+    orchestrator.SetLDNetConfig(weight_quant, input_width, input_height, embedded_nms, use_trt_for_ld);
     orchestrator.SetLDNetEngineFolderPath(ld_trt_folder_path);
     // orchestrator.Initialize(rc_trt_file_path, ld_trt_folder_path);
 

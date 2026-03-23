@@ -14,7 +14,6 @@
 #include "vision/regions.hpp"
 #include "vision/frame.hpp"
 
-
 namespace Inference
 {
 
@@ -115,6 +114,44 @@ private:
 
 };
 
+enum class NET_QUANTIZATION : uint8_t 
+{
+    FP32 = 0,
+    FP16 = 1,
+    INT8 = 2,
+};
+
+inline std::string GetQuantString(NET_QUANTIZATION quant) {
+    switch (quant) {
+        case NET_QUANTIZATION::FP32: return "fp32";
+        case NET_QUANTIZATION::FP16: return "fp16";
+        case NET_QUANTIZATION::INT8: return "int8";
+        default: return "";
+    }
+}
+
+// Parameters used to define the model file name (knowing the region)
+struct LDNetConfig {
+    NET_QUANTIZATION weight_quant;
+    int input_width;
+    int input_height;
+    bool embedded_nms;
+    bool use_trt;
+
+    std::string GetFileNameAppendix() {
+
+        std::string fp16_string = GetQuantString(weight_quant);
+
+        std::string nms_string = "";
+        if (embedded_nms) nms_string = "_nms";
+
+        std::string file_ext = "onnx";
+        if (use_trt) file_ext = "trt";
+
+        return "_weights_" + fp16_string + "_sz_" + std::to_string(input_width) + nms_string + "." + file_ext;
+    }
+};
+
 
 class LDNet
 {
@@ -137,19 +174,33 @@ public:
     RegionID GetRegionID() const { return region_id_; }
     float GetConfidenceThreshold() const { return confidence_threshold_; }
     float GetIOUThreshold() const { return iou_threshold_; }
+    bool IsDynamicSizeInput() const {return dynamic_size_input; }
+    NET_QUANTIZATION GetNetQuantization() const {return weight_quant; }
+    bool HasEmbeddedNMS() const {return embedded_nms; }
+    bool HasClassAgnosticNMS() const {return class_agnostic_nms; }
+    int GetTopKNMS() const {return topk_nms; }
 
     // setters
     void SetInitialized(bool initialized) { initialized_ = initialized; }
+    void SetLDNetConfig(LDNetConfig ldnet_config);
 
-    virtual EC LoadEngine(const std::string& engine_path) = 0;
+    
+
     virtual EC Free() = 0;
     virtual EC Infer(const void* input_data, void* output) = 0;
     virtual EC Infer(cv::Mat input_data, std::vector<cv::Mat>& output) = 0;
     // TODO: Once OpenCV with CUDA support is available, change PostprocessOutput to take cv::Mat outs
     virtual EC PostprocessOutput(const float* output, std::shared_ptr<Frame> frame) = 0;
     virtual EC PostprocessOutput(std::vector<cv::Mat> outs, std::shared_ptr<Frame> frame) = 0;
+
+    // Engine path is defined by the model parameters
+    virtual EC LoadEngine(const std::string& engine_path) = 0;
+    EC LoadEngine() {return LoadEngine(engine_path_);};
 private:
     bool initialized_ = false;
+
+    // Model with dynamic size
+    bool dynamic_size_input = false;
 
     // Region ID
     RegionID region_id_;
@@ -176,11 +227,23 @@ private:
     const int input_channels_ = 3;
 
     // Image size
-    int input_width_;
-    int input_height_;
+    int input_width_ = 4608;
+    int input_height_ = 2592;
 
     // Output size
     int output_size_;
+
+    // Uses half-float precision
+    NET_QUANTIZATION weight_quant = NET_QUANTIZATION::FP16;
+
+    // If the model runs NMS
+    bool embedded_nms = false;
+
+    // If the NMS is class-agnostic
+    bool class_agnostic_nms = false; // yolo default
+
+    // Top K detections to keep in NMS
+    bool topk_nms = 300; // yolo default
 
     // Landmark bounding box CSV file path (for post-processing)
     const std::string csv_path_;
@@ -206,6 +269,7 @@ public:
     ~TRTLDNet();
 
     EC LoadEngine(const std::string& engine_path);
+
     EC Free();
     EC Infer(const void* input_data, void* output);
     EC Infer(cv::Mat input_data, std::vector<cv::Mat>& output) { return EC::OK; } // Not used for TRT, only the raw pointer version is used;
@@ -252,6 +316,7 @@ public:
     ~ONNXLDNet();
 
     EC LoadEngine(const std::string& engine_path);
+
     EC Free();
     EC Infer(const void* input_data, void* output) { return EC::OK; } // Not used for ONNX, only the cv::Mat version is used;
     EC Infer(cv::Mat input_data, std::vector<cv::Mat>& output);

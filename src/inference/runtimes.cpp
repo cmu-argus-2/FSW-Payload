@@ -228,6 +228,15 @@ int LDNet::ComputeNumYoloBoxes() const
     return total_boxes;
 }
 
+void LDNet::SetLDNetConfig(LDNetConfig ldnet_config)
+{
+    weight_quant = ldnet_config.weight_quant;
+    input_width_  = ldnet_config.input_width;
+    input_height_ = ldnet_config.input_height;
+    embedded_nms  = ldnet_config.embedded_nms;
+    // input_width  = ldnet_config.use_trt;
+}
+
 // TRTLD Net methods
 
 TRTLDNet::TRTLDNet(RegionID region_id, std::string csv_path)

@@ -104,7 +104,7 @@ EC Orchestrator::LoadLDNetEngineForRegion(RegionID region_id)
     std::string region_str = std::string(GetRegionString(region_id));
     std::string engine_path;
 
-    if (use_trt_for_ld_)
+    if (ldnet_config.use_trt)
     {
         engine_path = ld_engine_folder_path_ + "/" + region_str + "/" + region_str + "_weights.trt";
     } else {
@@ -197,12 +197,7 @@ void Orchestrator::InitializeLDNetRuntimes()
 
         csv_path = ld_engine_folder_path_ + "/" + region_str + "/bounding_boxes.csv";
 
-        if (use_trt_for_ld_)
-        {
-            engine_path = ld_engine_folder_path_ + "/" + region_str + "/" + region_str + "_weights.trt";
-        } else {
-            engine_path = ld_engine_folder_path_ + "/" + region_str + "/" + region_str + "_weights.onnx";
-        }
+        engine_path = ld_engine_folder_path_ + "/" + region_str + "/" + region_str + ldnet_config.GetFileNameAppendix();
 
         if (!std::filesystem::exists(engine_path) || !std::filesystem::exists(csv_path))
         {
@@ -211,7 +206,8 @@ void Orchestrator::InitializeLDNetRuntimes()
             continue;
         }
 
-        if (use_trt_for_ld_)
+        // TODO: merge both below
+        if (ldnet_config.use_trt)
         {
             std::unique_ptr<TRTLDNet> trt_ld_net = std::make_unique<TRTLDNet>(region_id, csv_path);
             ld_nets_[region_id] = std::move(trt_ld_net);
@@ -231,6 +227,11 @@ void Orchestrator::InitializeLDNetRuntimes()
     {
         LoadLDNetEngines(); 
     }
+}
+
+void Orchestrator::SetLDNetConfig(NET_QUANTIZATION weight_quant, int input_width, int input_height, bool embedded_nms, bool use_trt_for_ld)
+{
+    ldnet_config = {weight_quant, input_width, input_height, embedded_nms, use_trt_for_ld};
 }
 
 void Orchestrator::RCPreprocessImg(cv::Mat img, cv::Mat& out_chw_img)
@@ -316,32 +317,9 @@ void Orchestrator::LDPreprocessImg(cv::Mat img, cv::Mat& out_chw_img, int target
     spdlog::info("Image resized and placed in letterboxed image");
     spdlog::info("Letterboxed image shape: {}x{}x{}", letterboxed_img.rows, letterboxed_img.cols, letterboxed_img.channels());
 
-    // int y_offset = (4608 - float_img.rows) / 2;
-    // int x_offset = (4608 - float_img.cols) / 2;
-    // float_img.copyTo(letterboxed_img(cv::Rect(x_offset, y_offset, float_img.cols, float_img.rows)));
-    // float_img = letterboxed_img;
-    
-    // Convert HWC (4608x4608x3) to CHW (3x4608x4608)
-    // int siz[] = {3, float_img.rows, float_img.cols};
-    // out_chw_img.create(3, siz, CV_32F);
-    // std::vector<cv::Mat> planes = {
-    //     cv::Mat(float_img.rows, float_img.cols, float_img.type(), out_chw_img.ptr(0)), // swap 0 and 2 and you can avoid the bgr->rgb conversion !
-    //     cv::Mat(float_img.rows, float_img.cols, float_img.type(), out_chw_img.ptr(1)),
-    //     cv::Mat(float_img.rows, float_img.cols, float_img.type(), out_chw_img.ptr(2))
-    // };
-    // split(float_img, planes);
-    // out_chw_img.convertTo(out_chw_img, CV_32F);
-    // transposeND(letterboxed_img, {2, 0, 1}, out_chw_img); // only for single channel images
-
     std::vector<cv::Mat> channels(3);
     cv::split(letterboxed_img, channels);  // Split into individual float32 channels
-    // std::vector<cv::Mat> chwchannels(3);
-    // transposeND(hwcchannels[0], {2, 0, 1}, chwchannels[0]);
-    // transposeND(hwcchannels[1], {2, 0, 1}, chwchannels[1]);
-    // transposeND(hwcchannels[2], {2, 0, 1}, chwchannels[2]);
-    // // spdlog::info("Split into {} channels", channels.size());
-    // cv::merge(chwchannels, out_chw_img);    
-    // // cv::dnn::blobFromImage(letterboxed_img, out_chw_img); // doesn't work
+
     cv::vconcat(channels, out_chw_img);  // Stack channels vertically (CHW format)
 
     spdlog::info("Stacked channels to CHW format, final shape: {}x{}x{}", out_chw_img.rows, out_chw_img.cols, out_chw_img.channels());
@@ -655,7 +633,7 @@ EC Orchestrator::ExecFullInference()
     
     // Run Landmark Detection inference
     // TODO: Functions below should be merged
-    if (use_trt_for_ld_)
+    if (ldnet_config.use_trt)
     {
         EC ld_ec = ExecLDInferenceTRT();
         num_inference_performed_on_current_frame_++;

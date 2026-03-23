@@ -72,7 +72,7 @@ def check_onnx(onnx_path):
     except Exception as e:
         print(f"✗ ONNX model validation failed: {e}")
 
-def pt_to_trt(model_path, device=None, fp16=False, keep_onnx=False, convert_to_trt=True, new_imgsz=(2592,4608), nms=False):
+def pt_to_trt(model_path, device=None, fp16_onnx=False, fp16_trt=True, keep_onnx=False, convert_to_trt=True, new_imgsz=(2592,4608), nms=False):
     """
     Convert PyTorch .pt model to TensorRT .trt engine
     
@@ -97,8 +97,9 @@ def pt_to_trt(model_path, device=None, fp16=False, keep_onnx=False, convert_to_t
     else:
         print("imgsz wrong number of dims")
         return
-    trt_path = trt_path.replace("weights", f"weights_fp16" if fp16 else "weights_fp32")
     onnx_path = trt_path.replace('.trt', '.onnx')
+    trt_path = trt_path.replace("weights", f"weights_fp16" if fp16_trt else "weights_fp32")
+    onnx_path = onnx_path.replace("weights", f"weights_fp16" if fp16_onnx else "weights_fp32")
     
     try:
         # Auto-detect device if not specified
@@ -107,12 +108,14 @@ def pt_to_trt(model_path, device=None, fp16=False, keep_onnx=False, convert_to_t
                 device = 'cuda'
             else:
                 device = 'cpu'
+                fp16_onnx = False
                 onnx_path = onnx_path.replace("fp16", "fp32")
         
         if device == 'cuda':
             if not torch.cuda.is_available():
                 print("WARNING: CUDA requested but not available, falling back to CPU")
                 device = 'cpu'
+                fp16_onnx = False
                 onnx_path = onnx_path.replace("fp16", "fp32")
             else:
                 # Test if CUDA is actually functional
@@ -122,16 +125,18 @@ def pt_to_trt(model_path, device=None, fp16=False, keep_onnx=False, convert_to_t
                     print(f"WARNING: CUDA is available but not functional ({e})")
                     print("         Falling back to CPU for ONNX export")
                     device = 'cpu'
+                    fp16_onnx = False
                     onnx_path = onnx_path.replace("fp16", "fp32")
         
         if device == 'cpu':
             print("WARNING: Can only convert to ONNX with fp16 with CUDA. Will write ONNX with fp32 instead")
+            fp16_onnx = False
             onnx_path = onnx_path.replace("fp16", "fp32")
         
         print(f"\n{'='*60}")
         print(f"Converting {pt_path} to {trt_path}")
         print(f"Device: {device}")
-        print(f"FP16 mode: {fp16}")
+        print(f"ONNX FP16 mode: {fp16_onnx}")
         print(f"{'='*60}\n")
         
         # Step 1: Load PyTorch model
@@ -181,7 +186,7 @@ def pt_to_trt(model_path, device=None, fp16=False, keep_onnx=False, convert_to_t
         parser = argparse.ArgumentParser(description="Convert YOLO models.")
         parser.add_argument("--format", type=str, default="onnx", help="Format to convert the models to")
         #parser.add_argument("--imgsz", type=int, default=1216, help="Desired image size for the model input. Can be an integer for square images or a tuple (height, width) for specific dimensions.")
-        parser.add_argument("--half", type=bool, default=False, help="Enables FP16 (half-precision) quantization, reducing model size and potentially speeding up inference on supported hardware.")
+        parser.add_argument("--half", type=bool, default=fp16_onnx, help="Enables FP16 (half-precision) quantization, reducing model size and potentially speeding up inference on supported hardware.")
         parser.add_argument("--int8", type=bool, default=False, help="Activates INT8 quantization, further compressing the model and speeding up inference with minimal accuracy loss, primarily for edge devices.")
         parser.add_argument("--batch", type=int, default=1, help="Specifies export model batch inference size or the max number of images the exported model will process concurrently in predict mode.")
         parser.add_argument("--optimize", type=bool, default=False, help="Applies optimization for mobile devices when exporting to TorchScript, potentially reducing model size and improving performance.")
@@ -280,10 +285,10 @@ def pt_to_trt(model_path, device=None, fp16=False, keep_onnx=False, convert_to_t
         config.add_optimization_profile(profile)
         # print("  ✓ Optimization profile added")
         
-        if fp16 and builder.platform_has_fast_fp16:
+        if fp16_trt and builder.platform_has_fast_fp16:
             config.set_flag(trt.BuilderFlag.FP16)
             print("  ✓ FP16 mode enabled")
-        elif fp16:
+        elif fp16_trt:
             print("  ⚠ FP16 requested but not supported on this platform")
             trt_path = trt_path.replace('fp16', 'fp32')
         else:
@@ -303,7 +308,6 @@ def pt_to_trt(model_path, device=None, fp16=False, keep_onnx=False, convert_to_t
         print("  ✓ Engine built successfully")
         
         # Save engine (build_serialized_network returns bytes directly)
-        trt_path = trt_path.replace('_weights', '_weights_with_nms') if nms else trt_path
         print(f"  Saving engine to {trt_path}...")
         with open(trt_path, 'wb') as f:
             f.write(engine)
@@ -358,7 +362,8 @@ if __name__ == "__main__":
     print(list_folder)
 
     for folder in list_folder:
-        if not os.path.isdir(os.path.join(ld_folder, folder)) or not folder.startswith("17T"):
+        #  not folder.startswith("17T")
+        if not os.path.isdir(os.path.join(ld_folder, folder)): #  or int(folder[:2]) > 20:
             continue
         path = os.path.join(ld_folder, folder, f"{folder}_weights")
         
@@ -367,10 +372,11 @@ if __name__ == "__main__":
         # cuda is needed for fp16 on onnx
         pt_to_trt(
             model_path=path,
-            fp16=True,             # Enable FP16
+            fp16_onnx=False,             # Enable FP16
+            fp16_trt=True,
             device='cuda',         # cuda, cpu
             keep_onnx=True,
             convert_to_trt=True,
             new_imgsz=(2592,4608), # 4608, # 
-            nms=True
+            nms=False
         )

@@ -3,6 +3,7 @@ import numpy as np
 from PIL import Image
 import tensorrt as trt
 import os
+import sys
 import torchvision
 from ultralytics import YOLO
 # from ultralytics.engine.results import Result
@@ -241,16 +242,33 @@ if __name__ == "__main__":
     tgt_imgsz = (2592,4608) # 4608, 2304, 1152
     fp16 = True
     fpstring = "fp16" if fp16 else "fp32"
-    trt_with_nms = True
+    trt_with_nms = False
+    use_jpg = True
+    pngstring = "jpg" if use_jpg else "png"
     nms_string = "_nms" if trt_with_nms else ""
     pt_model_path    = f"models/{model_version}/trained-ld/{region_id}/{region_id}_weights.pt"
     trt_engine_path  = f"models/{model_version}/trained-ld/{region_id}/{region_id}_weights_{fpstring}_sz_{tgt_imgsz[1]}{nms_string}.trt"
     onnx_engine_path = f"models/{model_version}/trained-ld/{region_id}/{region_id}_weights_{fpstring}_sz_{tgt_imgsz}.onnx"
     bbox_path = f"models/{model_version}/trained-ld/{region_id}/bounding_boxes.csv"
-    image_path = f"models/{model_version}/sample_images/l8_{region_id}_{image_id}.png"
+    image_path = f"models/{model_version}/sample_images/l8_{region_id}_{image_id}.{pngstring}"
     label_path = f"models/{model_version}/sample_images/l8_{region_id}_{image_id}.txt"
     
+    if not os.path.exists(image_path):
+        if use_jpg:
+            png_image_path = image_path.replace("jpg","png")
+            if not os.path.exists(png_image_path):
+                sys.exit()
+            else:
+                # convert png to jpg
+                img_png = Image.open(png_image_path)
+                img_png.save(image_path)
+        else:
+            print("image not found")
+            sys.exit()
+    
+    start_time = time.time()
     img = Image.open(image_path).convert("RGB")
+    img_loading_time = time.time() - start_time
     
     # Crop image to 4608x2592 and letterbox to 4608x4608
     img_array = np.array(img)
@@ -368,7 +386,7 @@ if __name__ == "__main__":
     all_class_ids.sort()
     max_len = len(all_class_ids)
     script_dir = os.path.dirname(os.path.abspath(__file__))
-    results_folder = os.path.join(script_dir, f"../../results/ld_comp_{region_id}_img_{image_id}_{fpstring}_sz_{tgt_imgsz}/")
+    results_folder = os.path.join(script_dir, f"../../results/ld_comp_{region_id}_img_{image_id}_{fpstring}_sz_{tgt_imgsz}_{pngstring}/")
     os.makedirs(results_folder, exist_ok=True)
     
     output_txt_file = os.path.join(results_folder, "detection_comparison.txt")
@@ -484,6 +502,9 @@ if __name__ == "__main__":
         # Print summary of results
         print("Summary of Results:")
         f.write("\nSummary of Results:\n")
+
+        print(f"{pngstring} Image loading time: {img_loading_time} s")
+        f.write(f"{pngstring} Image loading time: {img_loading_time} s\n")
         
         if pt_engine_exists:
             print(f"PyTorch - TP: {pt_results['tp_count']}, FP: {pt_results['fp_count']}, FN: {pt_results['fn_count']}, TN: {pt_results['tn_count']}")

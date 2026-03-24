@@ -154,14 +154,14 @@ class CommandThread(threading.Thread):
         try:
             data = {
                 "tid": int(command.arguments.get("tid")),
-                "MSB": int(command.arguments.get("MSB")),
-                "LSB": int(command.arguments.get("LSB")),
+                "bitmap_high": int(command.arguments.get("bitmap_high")),
+                "bitmap_low": int(command.arguments.get("bitmap_low")),
             }
         except (TypeError, ValueError) as exc:
             log.error("Invalid UPDATE_LAST_BATCH arguments: %s", exc)
             self._send_ack(command, ack_args={"handled": handled, "error": "invalid_arguments"})
             return
-
+        
         with update_last_batch_lock:
             if update_last_batch_event.is_set():
                 update_last_batch_shared["overrun_count"] += 1

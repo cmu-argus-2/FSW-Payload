@@ -29,12 +29,12 @@ class FileDownlinkManager:
     def __init__(
         self,
         stop_event=None,
-        burst_size: int = 32,
+        burst_size: int = 40,
         ack_timeout_s: float = 10.0,
         ack_retry_interval_s: float = 3.0,
         confirm_timeout_s: float = 20.0,
         max_stalled_rounds: int = 5,
-        completion_command_name: str = "RF_RESUME",
+        completion_command_name: str = "DOWNLOAD_FINISH",
     ):
         self.stop_event = stop_event
         self.burst_size = max(1, int(burst_size))
@@ -72,7 +72,7 @@ class FileDownlinkManager:
         if not os.path.exists(file_path):
             return FileDownlinkResult(file_path=file_path, success=False, reason="file_not_found")
 
-        transaction = Transaction(tid, file_path, is_tx=True)
+        transaction = Transaction(tid, file_path, is_tx=True, max_payload_size=600)
         self._clear_confirm_shared()
 
         # CREATE_TRANS phase
@@ -86,9 +86,6 @@ class FileDownlinkManager:
         init_command = Command("INIT_TRANS")
         init_command.add_argument("tid", tid)
         init_command.add_argument("number_of_packets", transaction.number_of_packets)
-        init_command.add_argument("hash_MSB", 0)
-        init_command.add_argument("hash_middlesb", 0)
-        init_command.add_argument("hash_LSB", 0)
         if not self._send_with_ack(init_command, init_transaction_ack_event, "INIT_TRANS"):
             return FileDownlinkResult(file_path=file_path, success=False, reason="init_ack_timeout")
 
@@ -112,7 +109,7 @@ class FileDownlinkManager:
             if confirm is None:
                 return FileDownlinkResult(file_path=file_path, success=False, reason="confirm_timeout", bursts_sent=bursts_sent)
 
-            transaction.confirm_last_batch((confirm["MSB"], confirm["LSB"]))
+            transaction.confirm_last_batch((confirm["bitmap_high"], confirm["bitmap_low"]))
             current_missing = len(transaction.missing_fragments)
 
             if current_missing == 0:

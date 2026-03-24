@@ -27,7 +27,7 @@ class UartThread(threading.Thread):
             log.error("Serial error: %s", exc)
             self.stop_event.set()
 
-    def _read(self, ser: serial.Serial):
+    def _read(self, ser: serial.Serial, max_packet_size=609):
         available = ser.in_waiting
         if available > 0:
             chunk = ser.read(available)
@@ -35,9 +35,9 @@ class UartThread(threading.Thread):
                 self._rx_buffer.extend(chunk)
                 self._last_rx_time = time.monotonic()
 
-        while len(self._rx_buffer) >= MAX_PACKET_SIZE:
-            data = bytes(self._rx_buffer[:MAX_PACKET_SIZE])
-            del self._rx_buffer[:MAX_PACKET_SIZE]
+        while len(self._rx_buffer) >= max_packet_size:
+            data = bytes(self._rx_buffer[:max_packet_size])
+            del self._rx_buffer[:max_packet_size]
 
             log.debug("RX %d bytes: %s", len(data), data.hex()[:20])
             rx_queue.put(data)
@@ -62,9 +62,9 @@ class UartThread(threading.Thread):
             except queue.Empty:
                 break
 
-            # Pad every outgoing packet to 255 bytes
-            if len(packet) < 255:
-                packet = packet + b"\x00" * (255 - len(packet))
+            # Pad every outgoing packet to 609 bytes
+            if len(packet) < 609:
+                packet = packet + b"\x00" * (609 - len(packet))
 
             ser.write(packet)
             log.debug("TX %d bytes: %s", len(packet), packet.hex()[:20])

@@ -57,14 +57,14 @@ class ExperimentThread(threading.Thread):
         # hard coding to send a fixed file (make it faster for testing)
         # send the finished experiment command
         # TODO - not sure that I want to do this here
-        command = Command("RF_STOP")   # TODO - change this to proper finish experiment command
+        command = Command("EXPERIMENT_FINISHED")   # TODO - change this to proper finish experiment command
         tx_queue.put(pack(command))
-        log.info("Sending RF_STOP command (experiment finished)")
+        log.info("Sending EXPERIMENT_FINISHED command (experiment finished)")
         
         # finished experiment, want to go to downlink mode
         state_manager.set(PayloadState.DOWNLOAD)
         
-        file_list = ["images_downscaled/downscaled_raw_0_20260311_220942.jpeg", "images_downscaled/raw_0_20260312_112414.jpeg"]
+        file_list = ["experiment_20260320_142430/downscaled_raw_0_20260320_142431.jpeg", "experiment_20260320_142430/raw_0_20260320_142431.jpeg"]
         log.debug(f"Sending results for files: {file_list}")
         self.send_results(file_list)
         return
@@ -121,9 +121,9 @@ class ExperimentThread(threading.Thread):
             
         # send the finished experiment command
         # TODO - not sure that I want to do this here
-        command = Command("RF_STOP")   # TODO - change this to proper finish experiment command
+        command = Command("EXPERIMENT_FINISHED")   # TODO - change this to proper finish experiment command
         tx_queue.put(pack(command))
-        log.info("Sending RF_STOP command (experiment finished)")
+        log.info("Sending EXPERIMENT_FINISHED command (experiment finished)")
         
         # finished experiment, want to go to downlink mode
         state_manager.set(PayloadState.DOWNLOAD)

@@ -221,11 +221,11 @@ EC LDNet::parseModelName(const std::string& name, LDNetConfig& ldnet_config)
     // Extract extension
     std::string file_ext = DH::getExtension(base_name);
 
-    if (file_ext == "trt" || file_ext == "engine")
+    if (file_ext == ".trt" || file_ext == ".engine")
     {
         ldnet_config.use_trt = true;
     }
-    else if (file_ext == "onnx")
+    else if (file_ext == ".onnx")
     {
         ldnet_config.use_trt = false;
     }
@@ -594,15 +594,16 @@ cv::Rect LDNet::scaleBoxBackLetterbox(
 }
 
 
-EC LDNet::PostprocessOutput(std::vector<cv::Mat> outs, std::shared_ptr<Frame> frame)
+EC LDNet::PostprocessOutput(cv::Mat outs, std::shared_ptr<Frame> frame)
 {
     std::vector<int> keep_classIds;
     std::vector<float> keep_confidences;
     std::vector<Rect2d> keep_boxes;
     std::vector<Rect> boxes;
 
+    
     // Non-max suppression
-    yoloPostProcessing(outs[0], keep_classIds, keep_confidences, keep_boxes);
+    yoloPostProcessing(outs, keep_classIds, keep_confidences, keep_boxes);
 
     for (auto box : keep_boxes)
     {

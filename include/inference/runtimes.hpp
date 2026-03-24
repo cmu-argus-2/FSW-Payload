@@ -198,7 +198,7 @@ public:
     EC Free();
     EC Infer(const void* input_data, void* output) ;
     EC Infer(cv::Mat input_data, std::vector<cv::Mat>& output);
-    EC PostprocessOutput(std::vector<cv::Mat> outs, std::shared_ptr<Frame> frame);
+    EC PostprocessOutput(cv::Mat outs, std::shared_ptr<Frame> frame);
 
     // Engine path is defined by the model parameters
     EC LoadEngine(const std::string& engine_path);

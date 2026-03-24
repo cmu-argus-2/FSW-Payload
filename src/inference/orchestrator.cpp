@@ -387,7 +387,7 @@ EC Orchestrator::ExecRCInference()
     return EC::OK;
 }
 
-EC Orchestrator::ExecLDInferenceTRT()
+EC Orchestrator::ExecLDInference()
 {
     if (!current_frame_) 
     {
@@ -402,15 +402,14 @@ EC Orchestrator::ExecLDInferenceTRT()
         original_frame_->ClearLandmarks(); // Reset per-frame LD outputs
     }
 
-    spdlog::info("Regions detected in the frame: {}", original_frame_->GetRegionIDs().size());
-    std::string trt_path;
-    std::string csv_path;
     // TODO: Don't copy engines, just look them up and run them directly from the map if they exist
     if (original_frame_->GetRegionIDs().empty())
     {
         spdlog::warn("No regions detected by RCNet. Skipping LD inference.");
         return EC::OK; // Not an error, just no regions to run LD on
     }
+
+    spdlog::info("Regions detected in the frame: {}", original_frame_->GetRegionIDs().size());
 
     // LD inference
     auto start = std::chrono::high_resolution_clock::now();
@@ -421,7 +420,7 @@ EC Orchestrator::ExecLDInferenceTRT()
     spdlog::info("LD preprocessing (took {} ms)", duration.count());
     
     int output_size;
-
+    EC ld_net_status;
     for(const auto& region_id : original_frame_->GetRegionIDs())
     {
         if (ld_nets_.find(region_id) == ld_nets_.end())
@@ -433,108 +432,10 @@ EC Orchestrator::ExecLDInferenceTRT()
         if (!preload_ld_engines_ && !ld_nets_.at(region_id)->IsInitialized())
         {
             start = std::chrono::high_resolution_clock::now();
-            LoadLDNetEngineForRegion(region_id);
+            ld_net_status = LoadLDNetEngineForRegion(region_id);
             end = std::chrono::high_resolution_clock::now();
             duration = std::chrono::duration_cast<std::chrono::milliseconds>(end - start);
             spdlog::info("LD preloading (took {} ms)", duration.count());
-        }
-
-        if (!ld_nets_.at(region_id)->IsInitialized())
-        {
-            spdlog::error("LDNet for region {} is not initialized.", GetRegionString(region_id));
-            continue;
-        }
-
-        spdlog::info("Running LD inference for region: {}", GetRegionString(region_id));
-
-        start = std::chrono::high_resolution_clock::now();
-        
-        output_size = ld_nets_[region_id]->GetOutputSize();
-
-        auto ld_host_output = std::unique_ptr<float[]>{new float[output_size]};
-        EC ld_inference_status = ld_nets_[region_id]->Infer(ld_chw_img.data, ld_host_output.get());
-        
-        end = std::chrono::high_resolution_clock::now();
-        duration = std::chrono::duration_cast<std::chrono::milliseconds>(end - start);
-        spdlog::info("Inference (took {} ms)", duration.count());
-        
-        if (ld_inference_status != EC::OK) 
-        {
-            spdlog::error("LDNet inference failed with error code: {}", to_uint8(ld_inference_status));
-            LogError(ld_inference_status);
-            return ld_inference_status;
-        } else {
-            spdlog::info("LDNet inference completed successfully. Output size: {}", output_size);
-        }
-        start = std::chrono::high_resolution_clock::now();
-
-        // Non-max suppression and populate landmarks
-        int sizes[3] = {1, ld_nets_[region_id]->GetNumLandmarks() + 4, ld_nets_[region_id]->GetNumYoloBoxes()};
-
-        cv::Mat output_matrix(3, sizes, CV_32F, ld_host_output.get());
-        ld_nets_[region_id]->PostprocessOutput(output_matrix, original_frame_); // This will populate the landmarks in the original frame based on the LD output
-        spdlog::info("LDNet inference output post-processed");
-        end = std::chrono::high_resolution_clock::now();
-        duration = std::chrono::duration_cast<std::chrono::milliseconds>(end - start);
-        spdlog::info("Post-processing (took {} ms)", duration.count());
-
-        if (!preload_ld_engines_) FreeLDNetForRegion(region_id); // Free the LD engine for this region if it was loaded on demand
-    }
-    original_frame_->SetProcessingStage(ProcessingStage::LDNeted);
-    
-    return EC::OK;
-}
-
-EC Orchestrator::ExecLDInferenceONNX()
-{
-    if (!current_frame_) 
-    {
-        spdlog::error("No frame to process");
-        LogError(EC::NN_NO_FRAME_AVAILABLE);
-        return EC::NN_NO_FRAME_AVAILABLE;
-    }
-
-    if (num_inference_performed_on_current_frame_ > 0) 
-    {
-        spdlog::warn("Inference already performed on the current frame. This will overwrite.");
-        original_frame_->ClearLandmarks(); // Reset per-frame LD outputs
-    }
-
-    if (original_frame_->GetRegionIDs().empty())
-    {
-        spdlog::warn("No regions detected by RCNet. Skipping LD inference.");
-        return EC::OK;
-    }
-    spdlog::info("Regions detected in the frame: {}", original_frame_->GetRegionIDs().size());
-
-    // Pre-process the image for LD
-    int output_size;
-
-    std::vector<Mat> outs;
-    std::vector<int> keep_classIds;
-    std::vector<float> keep_confidences;
-    std::vector<Rect2d> keep_boxes;
-    std::vector<Rect> boxes;
-    spdlog::info("Forward buffers initialized");
-
-    Mat inp;
-    LDPreprocessImg(img_buff_, inp, ldnet_config.input_width, ldnet_config.input_height);
-
-    EC ld_net_status;
-    for(const auto& region_id : original_frame_->GetRegionIDs())
-    {
-
-        if (ld_nets_.find(region_id) == ld_nets_.end())
-        {
-            spdlog::error("No LDNet found for region: {}", GetRegionString(region_id));
-            continue;
-        }
-
-        spdlog::info("Selected LDNet for region: {}", GetRegionString(region_id));
-
-        if (!preload_ld_engines_ && !ld_nets_.at(region_id)->IsInitialized())
-        {
-            LoadLDNetEngineForRegion(region_id);
         }
 
         if (!ld_nets_.at(region_id)->IsInitialized())
@@ -550,31 +451,66 @@ EC Orchestrator::ExecLDInferenceONNX()
                 spdlog::info("Successfully loaded ONNX LD Net engine for region: {}", GetRegionString(region_id));
             }
         }
-        // Run        
-        ld_net_status = ld_nets_.at(region_id)->Infer(inp, outs);
 
-        if (ld_net_status != EC::OK) 
-        {
-            spdlog::error("LDNet inference failed with error code: {} for region: {}", to_uint8(ld_net_status), GetRegionString(region_id));
-            LogError(ld_net_status);
-            continue;
+        spdlog::info("Running LD inference for region: {}", GetRegionString(region_id));
+
+        start = std::chrono::high_resolution_clock::now();
+        
+        output_size = ld_nets_[region_id]->GetOutputSize();
+        if (ldnet_config.use_trt) {
+            auto ld_host_output = std::unique_ptr<float[]>{new float[output_size]};
+            ld_net_status = ld_nets_[region_id]->Infer(ld_chw_img.data, ld_host_output.get());
+
+            end = std::chrono::high_resolution_clock::now();
+            duration = std::chrono::duration_cast<std::chrono::milliseconds>(end - start);
+            spdlog::info("Inference (took {} ms)", duration.count());
+            
+            if (ld_net_status != EC::OK) 
+            {
+                spdlog::error("LDNet inference failed with error code: {}", to_uint8(ld_net_status));
+                LogError(ld_net_status);
+                return ld_net_status;
+            } else {
+                spdlog::info("LDNet inference completed successfully. Output size: {}", output_size);
+            }
+
+            int sizes[3] = {1, ld_nets_[region_id]->GetNumLandmarks() + 4, ld_nets_[region_id]->GetNumYoloBoxes()};
+            cv::Mat output_matrix(3, sizes, CV_32F, ld_host_output.get());
+
+            start = std::chrono::high_resolution_clock::now();
+            ld_nets_[region_id]->PostprocessOutput(output_matrix, original_frame_); // This will populate the landmarks in the original frame based on the LD output
+
         } else {
-            spdlog::info("LDNet inference completed successfully for region: {}. Output size: {}", GetRegionString(region_id), outs.size());
+            std::vector<cv::Mat> outs;
+            ld_net_status = ld_nets_.at(region_id)->Infer(ld_chw_img, outs);
+            
+            end = std::chrono::high_resolution_clock::now();
+            duration = std::chrono::duration_cast<std::chrono::milliseconds>(end - start);
+            spdlog::info("Inference (took {} ms)", duration.count());
+            
+            if (ld_net_status != EC::OK) 
+            {
+                spdlog::error("LDNet inference failed with error code: {}", to_uint8(ld_net_status));
+                LogError(ld_net_status);
+                return ld_net_status;
+            } else {
+                spdlog::info("LDNet inference completed successfully. Output size: {}", output_size);
+            }
+            start = std::chrono::high_resolution_clock::now();
+            ld_nets_[region_id]->PostprocessOutput(outs[0], original_frame_); // This will populate the landmarks in the original frame based on the LD output
+
         }
+        spdlog::info("LDNet inference output post-processed");
+        end = std::chrono::high_resolution_clock::now();
+        duration = std::chrono::duration_cast<std::chrono::milliseconds>(end - start);
+        spdlog::info("Post-processing (took {} ms)", duration.count());
 
-        ld_net_status = ld_nets_.at(region_id)->PostprocessOutput(outs, original_frame_);
-
-        // Free the LD engine for this region if it was loaded on demand
-        if (!preload_ld_engines_) FreeLDNetForRegion(region_id);
-
+        if (!preload_ld_engines_) FreeLDNetForRegion(region_id); // Free the LD engine for this region if it was loaded on demand
     }
-
     original_frame_->SetProcessingStage(ProcessingStage::LDNeted);
-
-
+    
     return EC::OK;
 }
-
 
 EC Orchestrator::ExecFullInference()
 {
@@ -584,15 +520,7 @@ EC Orchestrator::ExecFullInference()
     if (rc_ec != EC::OK)  return rc_ec;
     
     // Run Landmark Detection inference
-    // TODO: Functions below should be merged
-    if (ldnet_config.use_trt)
-    {
-        EC ld_ec = ExecLDInferenceTRT();
-        num_inference_performed_on_current_frame_++;
-        return ld_ec;
-    }
-
-    EC ld_ec = ExecLDInferenceONNX();
+    EC ld_ec = ExecLDInference();
     num_inference_performed_on_current_frame_++;
 
     return ld_ec;

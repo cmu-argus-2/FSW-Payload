@@ -41,12 +41,10 @@ public:
 
     EC ExecRCInference();
     // TODO: The two functions below should be merged
-    EC ExecLDInferenceTRT();
-    EC ExecLDInferenceONNX();
+    EC ExecLDInference();
     EC ExecFullInference();
 
     static size_t GetMemorySize(const nvinfer1::Dims& dims, size_t element_size);
-
 
 private:
 

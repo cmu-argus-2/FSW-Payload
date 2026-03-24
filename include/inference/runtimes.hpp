@@ -152,12 +152,22 @@ struct LDNetConfig {
     }
 };
 
-
 class LDNet
 {
 public:
     static int GetNumLandmarksFromCSV(const std::string& csv_path);
     int ComputeNumYoloBoxes() const;
+
+    cv::Rect scaleBoxBackLetterbox(
+        const cv::Rect& rBlob,
+        const cv::Size& imgSize,
+        const cv::Size& netSize);
+
+    void yoloPostProcessing(
+        cv::Mat outs,
+        std::vector<int>& keep_classIds,
+        std::vector<float>& keep_confidences,
+        std::vector<cv::Rect2d>& keep_boxes);
 
     LDNet(RegionID region_id, std::string csv_path);
     virtual ~LDNet() = default;
@@ -190,7 +200,7 @@ public:
     virtual EC Infer(const void* input_data, void* output) = 0;
     virtual EC Infer(cv::Mat input_data, std::vector<cv::Mat>& output) = 0;
     // TODO: Once OpenCV with CUDA support is available, change PostprocessOutput to take cv::Mat outs
-    virtual EC PostprocessOutput(const float* output, std::shared_ptr<Frame> frame) = 0;
+    virtual EC PostprocessOutput(float* output, std::shared_ptr<Frame> frame) = 0;
     virtual EC PostprocessOutput(std::vector<cv::Mat> outs, std::shared_ptr<Frame> frame) = 0;
 
     // Engine path is defined by the model parameters
@@ -244,6 +254,9 @@ private:
 
     // Top K detections to keep in NMS
     bool topk_nms = 300; // yolo default
+    
+    // Yolo model version
+    std::string model_name_ = "yolov8";
 
     // Landmark bounding box CSV file path (for post-processing)
     const std::string csv_path_;
@@ -275,7 +288,7 @@ public:
     EC Infer(cv::Mat input_data, std::vector<cv::Mat>& output) { return EC::OK; } // Not used for TRT, only the raw pointer version is used;
     EC PostprocessOutput(std::vector<cv::Mat> outs, std::shared_ptr<Frame> frame)  { return EC::OK; }
     // TODO: Once OpenCV with CUDA support is available, change PostprocessOutput to take cv::Mat outs
-    EC PostprocessOutput(const float* output, std::shared_ptr<Frame> frame);
+    EC PostprocessOutput(float* output, std::shared_ptr<Frame> frame);
 
 private:
     // Logger for TensorRT
@@ -300,17 +313,6 @@ class ONNXLDNet: public LDNet
 {
 
 public:
-    cv::Rect scaleBoxBackLetterbox(
-        const cv::Rect& rBlob,
-        const cv::Size& imgSize,
-        const cv::Size& netSize);
-        
-    // TODO: Name consistent between ONNX and TRT. Have a virtual method in LDNet
-    void yoloPostProcessing(
-        std::vector<cv::Mat>& outs,
-        std::vector<int>& keep_classIds,
-        std::vector<float>& keep_confidences,
-        std::vector<cv::Rect2d>& keep_boxes);
 
     ONNXLDNet(RegionID region_id, std::string csv_path);
     ~ONNXLDNet();
@@ -322,11 +324,10 @@ public:
     EC Infer(cv::Mat input_data, std::vector<cv::Mat>& output);
     EC PostprocessOutput(std::vector<cv::Mat> outs, std::shared_ptr<Frame> frame);
     // TODO: Once OpenCV with CUDA support is available, change PostprocessOutput to take cv::Mat outs
-    EC PostprocessOutput(const float* output, std::shared_ptr<Frame> frame) { return EC::OK; }
+    EC PostprocessOutput(float* output, std::shared_ptr<Frame> frame) { return EC::OK; }
 
 private:
     std::unique_ptr<cv::dnn::Net> net_ = nullptr;
-    std::string model_name_ = "yolov8"; // default to yolov8, can be set based on region or csv in the future
 };
 
 } // namespace Inference

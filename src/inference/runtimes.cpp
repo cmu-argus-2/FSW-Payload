@@ -348,7 +348,7 @@ EC TRTLDNet::Free()
 
 EC TRTLDNet::Infer(const void* input_data, void* output)
 {
-    
+    // const void* input_data
     if (!IsInitialized()) 
     {
         spdlog::error("LDNet is not initialized. Call LoadEngine first.");
@@ -392,124 +392,57 @@ EC TRTLDNet::Infer(const void* input_data, void* output)
     return EC::OK;
 }
 
-EC TRTLDNet::PostprocessOutput(const float* ld_output, std::shared_ptr<Frame> frame)
+EC TRTLDNet::PostprocessOutput(float* ld_output, std::shared_ptr<Frame> frame)
 {
-    // store ld_output in a matrix of size [num_landmarks + 4, num_boxes]
-    int total_output_size = GetOutputSize();
-    // Eigen::MatrixXf output_matrix(num_landmarks_ + 4, num_yolo_boxes);
-    // for (int i = 0; i < total_output_size; ++i) {
-    //     if (i % 10000 == 0) {
-    //         spdlog::info("Processing output element {}/{}", i, total_output_size);
-    //     }
-    //     output_matrix(i / (num_yolo_boxes), i % (num_yolo_boxes)) = ld_output[i];
-    // }
+    std::vector<int> keep_classIds;
+    std::vector<float> keep_confidences;
+    std::vector<Rect2d> keep_boxes;
+    std::vector<Rect> boxes;
 
-    using RowMat = Eigen::Matrix<float, Eigen::Dynamic, Eigen::Dynamic, Eigen::RowMajor>;
-    Eigen::Map<const RowMat> output_matrix(ld_output, GetNumLandmarks() + 4, GetNumYoloBoxes());
+    int sizes[3] = {1, GetNumLandmarks() + 4, GetNumYoloBoxes()};
+
+    cv::Mat output_matrix(3, sizes, CV_32F, ld_output);
 
     // Non-max suppression
-    std::vector<Landmark> landmarks = LDYoloNonMaxSuppression(output_matrix, GetRegionID(), GetConfidenceThreshold(), GetIOUThreshold());
-    
-    // Populate landmarks
-    for (const auto& landmark : landmarks)
+    LDNet::yoloPostProcessing(output_matrix, keep_classIds, keep_confidences, keep_boxes);
+
+    for (auto box : keep_boxes)
     {
+        boxes.push_back(Rect(cvFloor(box.x), cvFloor(box.y), cvFloor(box.width - box.x), cvFloor(box.height - box.y)));
+    }
+
+    for (auto& b : boxes) {
+        b = scaleBoxBackLetterbox(b, frame->GetImgSize(), 
+                                    cv::Size(GetInputWidth(), GetInputHeight()));
+    }
+
+    // Populate landmarks
+    Rect2d box;
+    float x_center, y_center, width, height;
+    uint16_t class_id;
+    for (int i = 0; i < boxes.size(); ++i)
+    {
+        Rect box = boxes[i];
+
+        // TODO: Revise variable datatype
+        height = static_cast<float>(box.height);
+        width = static_cast<float>(box.width);
+        x_center = static_cast<float>(box.x) + width / 2.0f;
+        y_center = static_cast<float>(box.y) + height / 2.0f;
+
+        class_id = static_cast<uint16_t>(keep_classIds[i]);
+        Landmark landmark(x_center, y_center, class_id, GetRegionID(),
+                            height, width, keep_confidences[i]);
+        // Landmark landmark(keep_boxes[i], keep_classIds[i], keep_confidences[i]);
         frame->AddLandmark(landmark);
     }
 
     return EC::OK;
 }
 
-std::vector<Landmark> TRTLDNet::LDYoloNonMaxSuppression(
-    const Eigen::MatrixXf& output_matrix,
-    RegionID region_id,
-    float conf_threshold,
-    float iou_threshold)
-{
-    std::vector<Landmark> candidates;
-    if (output_matrix.rows() < 5 || output_matrix.cols() == 0) return candidates;
-
-    const int num_classes = output_matrix.rows() - 4;
-    const int num_boxes = output_matrix.cols();
-    candidates.reserve(num_boxes);
-
-    // Decode + confidence filter
-    for (int i = 0; i < num_boxes; ++i)
-    {
-        int best_class = 0;
-        float best_conf = output_matrix(4, i);
-        for (int c = 1; c < num_classes; ++c)
-        {
-            const float score = output_matrix(4 + c, i);
-            if (score > best_conf)
-            {
-                best_conf = score;
-                best_class = c;
-            }
-        }
-        // TODO: investigate why we are getting a few NaN confidence scores
-        if (std::isnan(best_conf) || best_conf < 0.0f)
-        {
-            spdlog::warn("Box {} has invalid confidence score: {:.3f}. Skipping.", i, best_conf);
-            continue;
-        }
-
-        if (best_conf < conf_threshold) continue;
-
-        const float x = output_matrix(0, i);
-        const float y = output_matrix(1, i);
-        const float w = output_matrix(2, i);
-        const float h = output_matrix(3, i);
-
-        candidates.emplace_back(
-            x, y,
-            static_cast<uint16_t>(best_class),
-            region_id,
-            h, w,                  // Landmark(height, width)
-            best_conf);
-    }
-
-    if (candidates.empty()) return candidates;
-
-    // Shrink candidates vector to remove unused capacity
-    candidates.shrink_to_fit();
-
-    // Sort by confidence desc
-    std::sort(candidates.begin(), candidates.end(),
-              [](const Landmark& a, const Landmark& b) {
-                  return a.confidence > b.confidence;
-              });
-
-    // Class-aware NMS
-    std::vector<Landmark> kept;
-    std::vector<bool> suppressed(candidates.size(), false);
-    kept.reserve(candidates.size());
-
-    for (size_t i = 0; i < candidates.size(); ++i)
-    {
-        if (suppressed[i]) continue;
-        kept.push_back(candidates[i]);
-
-        for (size_t j = i + 1; j < candidates.size(); ++j)
-        {
-            if (suppressed[j]) continue;
-            if (candidates[j].class_id != candidates[i].class_id) continue;
-            // keep only the highest confidence class detetion
-            suppressed[j] = true;
-            // use iou to decide
-            // if (ComputeIoU(candidates[i], candidates[j]) > iou_threshold)
-            // {
-            //     suppressed[j] = true;
-            // }
-        }
-    }
-
-    return kept;
-}
-
-
 // ONNXLDNet methods
-void ONNXLDNet::yoloPostProcessing(
-    std::vector<Mat>& outs,
+void LDNet::yoloPostProcessing(
+    Mat outs,
     std::vector<int>& keep_classIds,
     std::vector<float>& keep_confidences,
     std::vector<Rect2d>& keep_boxes)
@@ -526,75 +459,59 @@ void ONNXLDNet::yoloPostProcessing(
     if (model_name_ == "yolov8" || model_name_ == "yolov10" ||
         model_name_ == "yolov9")
     {
-        cv::transposeND(outs[0], {0, 2, 1}, outs[0]);
-    }
-
-    if (model_name_ == "yolonas")
-    {
-        // outs contains 2 elements of shape [1, 8400, nc] and [1, 8400, 4]. Concat them to get [1, 8400, nc+4]
-        Mat concat_out;
-        // squeeze the first dimension
-        outs[0] = outs[0].reshape(1, outs[0].size[1]);
-        outs[1] = outs[1].reshape(1, outs[1].size[1]);
-        cv::hconcat(outs[1], outs[0], concat_out);
-        outs[0] = concat_out;
-        // remove the second element
-        outs.pop_back();
-        // unsqueeze the first dimension
-        outs[0] = outs[0].reshape(0, std::vector<int>{1, outs[0].size[0], outs[0].size[1]});
+        // TODO: try to not use this 
+        cv::transposeND(outs, {0, 2, 1}, outs);
     }
 
     // assert if last dim is nc+5 or nc+4
     // TODO: These CheckEQ can be used in testing but not in the code
-    spdlog::info("Output shape: [{}, {}, {}]", outs[0].size[0], outs[0].size[1], outs[0].size[2]);
+    spdlog::info("Output shape: [{}, {}, {}]", outs.size[0], outs.size[1], outs.size[2]);
     spdlog::info("Expected output shape: [1, #anchors, nc+5 or nc+4] where nc is {}", nc);
-    CV_CheckEQ(outs[0].dims, 3, "Invalid output shape. The shape should be [1, #anchors, nc+5 or nc+4]");
-    CV_CheckEQ((outs[0].size[2] == nc + 5 || outs[0].size[2] == nc + 4), true, "Invalid output shape: ");
+    CV_CheckEQ(outs.dims, 3, "Invalid output shape. The shape should be [1, #anchors, nc+5 or nc+4]");
+    CV_CheckEQ((outs.size[2] == nc + 5 || outs.size[2] == nc + 4), true, "Invalid output shape: ");
 
-    for (auto preds : outs)
+
+    auto preds = outs.reshape(1, outs.size[1]); // [1, 8400, 85] -> [8400, 85]
+    for (int i = 0; i < preds.rows; ++i)
     {
-        preds = preds.reshape(1, preds.size[1]); // [1, 8400, 85] -> [8400, 85]
-        for (int i = 0; i < preds.rows; ++i)
-        {
-            // filter out non object
-            float obj_conf = (model_name_ == "yolov8" || model_name_ == "yolonas" ||
-                              model_name_ == "yolov9" || model_name_ == "yolov10") ? 1.0f : preds.at<float>(i, 4) ;
-            if (obj_conf < conf_threshold)
-                continue;
+        // filter out non object
+        float obj_conf = (model_name_ == "yolov8" || model_name_ == "yolonas" ||
+                            model_name_ == "yolov9" || model_name_ == "yolov10") ? 1.0f : preds.at<float>(i, 4) ;
+        if (obj_conf < conf_threshold)
+            continue;
 
-            Mat scores = preds.row(i).colRange((model_name_ == "yolov8" || model_name_ == "yolonas" || model_name_ == "yolov9" || model_name_ == "yolov10") ? 4 : 5, preds.cols);
-            double conf;
-            Point maxLoc;
-            minMaxLoc(scores, 0, &conf, 0, &maxLoc);
+        Mat scores = preds.row(i).colRange((model_name_ == "yolov8" || model_name_ == "yolonas" || model_name_ == "yolov9" || model_name_ == "yolov10") ? 4 : 5, preds.cols);
+        double conf;
+        Point maxLoc;
+        minMaxLoc(scores, 0, &conf, 0, &maxLoc);
 
-            conf = (model_name_ == "yolov8" || model_name_ == "yolonas" || model_name_ == "yolov9" || model_name_ == "yolov10") ? conf : conf * obj_conf;
-            if (conf < conf_threshold)
-                continue;
+        conf = (model_name_ == "yolov8" || model_name_ == "yolonas" || model_name_ == "yolov9" || model_name_ == "yolov10") ? conf : conf * obj_conf;
+        if (conf < conf_threshold)
+            continue;
 
-            // get bbox coords
-            float* det = preds.ptr<float>(i);
-            double cx = det[0];
-            double cy = det[1];
-            double w = det[2];
-            double h = det[3];
+        // get bbox coords
+        float* det = preds.ptr<float>(i);
+        double cx = det[0];
+        double cy = det[1];
+        double w = det[2];
+        double h = det[3];
 
-            // [x1, y1, x2, y2]
-            if (model_name_ == "yolonas" || model_name_ == "yolov10"){
-                boxes.push_back(Rect2d(cx, cy, w, h));
-            } else {
-                boxes.push_back(Rect2d(cx - 0.5 * w, cy - 0.5 * h,
-                                        cx + 0.5 * w, cy + 0.5 * h));
-            }
-            classIds.push_back(maxLoc.x);
-            confidences.push_back(static_cast<float>(conf));
+        // [x1, y1, x2, y2]
+        if (model_name_ == "yolonas" || model_name_ == "yolov10"){
+            boxes.push_back(Rect2d(cx, cy, w, h));
+        } else {
+            boxes.push_back(Rect2d(cx - 0.5 * w, cy - 0.5 * h,
+                                    cx + 0.5 * w, cy + 0.5 * h));
         }
+        classIds.push_back(maxLoc.x);
+        confidences.push_back(static_cast<float>(conf));
     }
 
     spdlog::info("Boxes: {}, Confidences: {}", boxes.size(), confidences.size());
 
     // NMS
     std::vector<int> keep_idx;
-    NMSBoxes(boxes, confidences, conf_threshold, iou_threshold, keep_idx);
+    NMSBoxesBatched(boxes, confidences, classIds, conf_threshold, iou_threshold, keep_idx);
 
     for (auto i : keep_idx)
     {
@@ -604,7 +521,7 @@ void ONNXLDNet::yoloPostProcessing(
     }
 }
 
-cv::Rect ONNXLDNet::scaleBoxBackLetterbox(
+cv::Rect LDNet::scaleBoxBackLetterbox(
     const cv::Rect& rBlob,
     const cv::Size& imgSize,
     const cv::Size& netSize)
@@ -678,7 +595,7 @@ EC ONNXLDNet::PostprocessOutput(std::vector<cv::Mat> outs, std::shared_ptr<Frame
     std::vector<Rect> boxes;
 
     // Non-max suppression
-    yoloPostProcessing(outs, keep_classIds, keep_confidences, keep_boxes);
+    yoloPostProcessing(outs[0], keep_classIds, keep_confidences, keep_boxes);
 
     for (auto box : keep_boxes)
     {

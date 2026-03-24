@@ -151,11 +151,10 @@ int main(int argc, char** argv)
         }
         spdlog::info("Converted {} landmarks to Rect", boxes.size());
 
-        for (auto& b : boxes) {
-            b = scaleBoxBackLetterbox(b, img.size(), size);
-        }
-        spdlog::info("Boxes scaled back to original image");
-        // paramNet.blobRectsToImageRects(boxes, boxes, img.size());
+        // for (auto& b : boxes) {
+        //     b = scaleBoxBackLetterbox(b, img.size(), size);
+        // }
+        // spdlog::info("Boxes scaled back to original image");
 
         for (size_t idx = 0; idx < boxes.size(); ++idx)
         {

@@ -3,9 +3,9 @@
 
 #include <filesystem>
 #include <opencv2/opencv.hpp>
-// #include <opencv2/core/cuda.hpp>
-// #include <opencv2/cudaarithm.hpp>
-// #include <opencv2/cudaimgproc.hpp>
+#include <opencv2/core/cuda.hpp>
+#include <opencv2/cudaarithm.hpp>
+#include <opencv2/cudaimgproc.hpp>
 
 using namespace cv;
 using namespace cv::dnn;
@@ -104,17 +104,13 @@ EC Orchestrator::LoadLDNetEngineForRegion(RegionID region_id)
     std::string region_str = std::string(GetRegionString(region_id));
     std::string engine_path;
 
-    if (ldnet_config.use_trt)
-    {
-        engine_path = ld_engine_folder_path_ + "/" + region_str + "/" + region_str + "_weights.trt";
-    } else {
-        engine_path = ld_engine_folder_path_ + "/" + region_str + "/" + region_str + "_weights.onnx";
-    }
+    engine_path = ld_engine_folder_path_ + "/" + region_str + "/" + region_str + ldnet_config.GetFileNameAppendix();
+
 
     if (!std::filesystem::exists(engine_path))
     {
         spdlog::error("Cannot initialize LDNet for region {}. Missing assets. Engine does not exist: {}", 
-                    region_str, std::filesystem::exists(engine_path));
+                    region_str, engine_path);
         return EC::NN_FAILED_TO_OPEN_ENGINE_FILE;
     }
 
@@ -234,101 +230,48 @@ void Orchestrator::SetLDNetConfig(NET_QUANTIZATION weight_quant, int input_width
     ldnet_config = {weight_quant, input_width, input_height, embedded_nms, use_trt_for_ld};
 }
 
-void Orchestrator::RCPreprocessImg(cv::Mat img, cv::Mat& out_chw_img)
+void Orchestrator::RCPreprocessImg(const cv::Mat& img, cv::Mat& out_chw_img)
 {
-    // TODO: optimize and remove copies. Leverage GPU
-
-    // Convert BGR to RGB
-    cv::cvtColor(img, img, cv::COLOR_BGR2RGB);
-    
-    // 1. Resize
-    cv::resize(img, img, cv::Size(224, 224), 0, 0, cv::INTER_AREA); 
-    // Note: cv::INTER_AREA is the best one I found closest to torchvision.transforms.Resize (which uses PIL resize's default)
-    // Ideally, we would want to avoid that because it has *slight* pixel differences due to their implementation
-    // spdlog::info("Image resized to 224x224, current shape: {}x{}x{}", img.rows, img.cols, img.channels());
-
-    // 2. ToTensor (Convert to float and scale to [0, 1]) 
-    // Convert from uint8 [0, 255] to float32 [0, 1]
-    cv::Mat float_img;
-    img.convertTo(float_img, CV_32F, 1.0 / 255.0);  // Correctly normalize
-    // Convert HWC (224x224x3) to CHW (3x224x224)
-    std::vector<cv::Mat> channels(3);
-    cv::split(float_img, channels);  // Split into individual float32 channels
-
-    // 3. Normalize per channel
-    std::vector<float> mean = {0.485f, 0.456f, 0.406f};
-    std::vector<float> std = {0.229f, 0.224f, 0.225f};
-    // Apply normalization per channel
-    for (int c = 0; c < 3; c++) 
+   if (img.empty())
     {
-        channels[c] = (channels[c] - mean[c]) / std[c];  // Element-wise operation
+        spdlog::error("RCPreprocessImg: input image is empty.");
+        out_chw_img.release();
+        return;
     }
 
-    // Stack back to CHW
-    // spdlog::info("Stacking channels to CHW format, current shape: {}x{}x{}", channels[0].rows, channels[0].cols, channels.size());
+    // Convert BGR -> RGB explicitly
+    cv::Mat rgb_img;
+    cv::cvtColor(img, rgb_img, cv::COLOR_BGR2RGB);
 
-    spdlog::info("Size of out_chw_img before: {}x{}x{}", out_chw_img.rows, out_chw_img.cols, out_chw_img.channels());
-    cv::vconcat(channels, out_chw_img);  // Stack channels vertically (CHW format)
-    spdlog::info("Size of out_chw_img after: {}x{}x{}", out_chw_img.rows, out_chw_img.cols, out_chw_img.channels());
-    // Print the first 10 pixels of the preprocessed image
-    /*spdlog::info("First 10 pixels of the preprocessed image:");
-    for (int i = 0; i < std::min(10, out_chw_img.rows); ++i) {
-        spdlog::info("Pixel {}: {}", i, out_chw_img.at<float>(i));
-    }*/
+    const cv::Scalar scalefactor(
+        1.0 / (255.0 * 0.229),  // R
+        1.0 / (255.0 * 0.224),  // G
+        1.0 / (255.0 * 0.225),  // B
+        0.0
+    );
+
+    const cv::Scalar mean(
+        255.0 * 0.485,          // R
+        255.0 * 0.456,          // G
+        255.0 * 0.406,          // B
+        0.0
+    );
+
+    cv::dnn::Image2BlobParams params(
+        scalefactor,
+        Size(224, 224),
+        mean,
+        false,                  // swapRB = false because we already converted to RGB
+        CV_32F,
+        DNN_LAYOUT_NCHW
+    );
+
+    blobFromImageWithParams(rgb_img, out_chw_img, params);
+
 }
-
-// Source: https://stackoverflow.com/questions/28562401/resize-an-image-to-a-square-but-keep-aspect-ratio-c-opencv
-void Orchestrator::LDPreprocessImg(cv::Mat img, cv::Mat& out_chw_img, int target_width)
-{
-    spdlog::info("Starting LDPreprocessImg");
-    cv::Mat float_img;
-    img.convertTo(float_img, CV_32F, 1.0 / 255.0);  // Correctly normalize
-    spdlog::info("Image converted to float32, shape: {}x{}x{}", float_img.rows, float_img.cols, float_img.channels());
-    
-    // TODO: letterbox the image to 4608 x 4608, or just have the LD nets be trained on the actual image size
-    cv::Mat letterboxed_img = cv::Mat::zeros(target_width, target_width, float_img.type() );
-    spdlog::info("Created letterboxed image with size: {}x{}x{}", letterboxed_img.rows, letterboxed_img.cols, letterboxed_img.channels());
-
-    int max_dim = ( img.cols >= img.rows ) ? img.cols : img.rows;
-    spdlog::info("Max dimension: {}", max_dim);
-    
-    float scale = ( ( float ) target_width ) / max_dim;
-    spdlog::info("Scale factor: {}", scale);
-
-    cv::Rect roi;
-    if ( img.cols >= img.rows )
-    {
-        roi.width = target_width;
-        roi.x = 0;
-        roi.height = img.rows * scale;
-        roi.y = ( target_width - roi.height ) / 2;
-        spdlog::info("Landscape image - ROI: x={}, y={}, width={}, height={}", roi.x, roi.y, roi.width, roi.height);
-    }
-    else
-    {
-        roi.y = 0;
-        roi.height = target_width;
-        roi.width = img.cols * scale;
-        roi.x = ( target_width - roi.width ) / 2;
-        spdlog::info("Portrait image - ROI: x={}, y={}, width={}, height={}", roi.x, roi.y, roi.width, roi.height);
-    }
-    
-    cv::resize( float_img, letterboxed_img( roi ), roi.size() );
-    spdlog::info("Image resized and placed in letterboxed image");
-    spdlog::info("Letterboxed image shape: {}x{}x{}", letterboxed_img.rows, letterboxed_img.cols, letterboxed_img.channels());
-
-    std::vector<cv::Mat> channels(3);
-    cv::split(letterboxed_img, channels);  // Split into individual float32 channels
-
-    cv::vconcat(channels, out_chw_img);  // Stack channels vertically (CHW format)
-
-    spdlog::info("Stacked channels to CHW format, final shape: {}x{}x{}", out_chw_img.rows, out_chw_img.cols, out_chw_img.channels());
-}
-
-
 
 /*
-void Orchestrator::PreprocessImgGPU(const cv::Mat& img, cv::Mat& out_chw)
+void Orchestrator::RCPreprocessImgGPU(const cv::Mat& img, cv::Mat& out_chw)
 {
     // Upload to GPU
     cv::cuda::GpuMat gpu_img;
@@ -367,6 +310,28 @@ void Orchestrator::PreprocessImgGPU(const cv::Mat& img, cv::Mat& out_chw)
     cv::vconcat(cpu_channels, out_chw); // (3*224)x224 → CHW
 }
 */
+
+// Source: https://stackoverflow.com/questions/28562401/resize-an-image-to-a-square-but-keep-aspect-ratio-c-opencv
+void Orchestrator::LDPreprocessImg(const cv::Mat& img, cv::Mat& out_chw_img, int target_width, int target_height)
+{
+    bool swapRB = true; // true = rgb
+    Scalar scale = Scalar(1.0/255.0,1.0/255.0,1.0/255.0);
+    Scalar mean = Scalar(0.0,0.0,0.0);
+    ImagePaddingMode paddingMode = static_cast<ImagePaddingMode>(2);
+
+    Size size(target_width, target_height);
+    Image2BlobParams imgParams(
+        scale,
+        size,
+        mean,
+        swapRB,
+        CV_32F,
+        DNN_LAYOUT_NCHW, // DNN_LAYOUT_NHWC
+        paddingMode);
+
+    out_chw_img = blobFromImageWithParams(img, imgParams);
+}
+
 
 EC Orchestrator::ExecRCInference()
 {
@@ -459,8 +424,13 @@ EC Orchestrator::ExecLDInferenceTRT()
     }
 
     // LD inference
+    auto start = std::chrono::high_resolution_clock::now();
     cv::Mat ld_chw_img;
-    LDPreprocessImg(img_buff_, ld_chw_img);
+    LDPreprocessImg(img_buff_, ld_chw_img, ldnet_config.input_width, ldnet_config.input_height);
+    auto end = std::chrono::high_resolution_clock::now();
+    auto duration = std::chrono::duration_cast<std::chrono::milliseconds>(end - start);
+    spdlog::info("LD preprocessing (took {} ms)", duration.count());
+    
     int output_size;
 
     for(const auto& region_id : original_frame_->GetRegionIDs())
@@ -473,7 +443,11 @@ EC Orchestrator::ExecLDInferenceTRT()
 
         if (!preload_ld_engines_ && !ld_nets_.at(region_id)->IsInitialized())
         {
+            start = std::chrono::high_resolution_clock::now();
             LoadLDNetEngineForRegion(region_id);
+            end = std::chrono::high_resolution_clock::now();
+            duration = std::chrono::duration_cast<std::chrono::milliseconds>(end - start);
+            spdlog::info("LD preloading (took {} ms)", duration.count());
         }
 
         if (!ld_nets_.at(region_id)->IsInitialized())
@@ -484,9 +458,17 @@ EC Orchestrator::ExecLDInferenceTRT()
 
         spdlog::info("Running LD inference for region: {}", GetRegionString(region_id));
 
+        start = std::chrono::high_resolution_clock::now();
+        
         output_size = ld_nets_[region_id]->GetOutputSize();
+
         auto ld_host_output = std::unique_ptr<float[]>{new float[output_size]};
         EC ld_inference_status = ld_nets_[region_id]->Infer(ld_chw_img.data, ld_host_output.get());
+        
+        end = std::chrono::high_resolution_clock::now();
+        duration = std::chrono::duration_cast<std::chrono::milliseconds>(end - start);
+        spdlog::info("Inference (took {} ms)", duration.count());
+        
         if (ld_inference_status != EC::OK) 
         {
             spdlog::error("LDNet inference failed with error code: {}", to_uint8(ld_inference_status));
@@ -495,10 +477,14 @@ EC Orchestrator::ExecLDInferenceTRT()
         } else {
             spdlog::info("LDNet inference completed successfully. Output size: {}", output_size);
         }
+        start = std::chrono::high_resolution_clock::now();
 
         // Non-max suppression and populate landmarks
         ld_nets_[region_id]->PostprocessOutput(ld_host_output.get(), original_frame_); // This will populate the landmarks in the original frame based on the LD output
         spdlog::info("LDNet inference output post-processed");
+        end = std::chrono::high_resolution_clock::now();
+        duration = std::chrono::duration_cast<std::chrono::milliseconds>(end - start);
+        spdlog::info("Post-processing (took {} ms)", duration.count());
 
         if (!preload_ld_engines_) FreeLDNetForRegion(region_id); // Free the LD engine for this region if it was loaded on demand
     }
@@ -532,31 +518,6 @@ EC Orchestrator::ExecLDInferenceONNX()
     // Pre-process the image for LD
     int output_size;
 
-    float paddingValue = 0.0f;
-    bool swapRB = true; // true = rgb
-    int inpWidth = 4608;
-    int inpHeight = 4608;
-    Scalar scale = Scalar(1.0/255.0,1.0/255.0,1.0/255.0);
-    Scalar mean = Scalar(0.0,0.0,0.0);
-    ImagePaddingMode paddingMode = static_cast<ImagePaddingMode>(2);
-
-    Size size(inpWidth, inpHeight);
-    Image2BlobParams imgParams(
-        scale,
-        size,
-        mean,
-        false,
-        CV_32F,
-        DNN_LAYOUT_NCHW,
-        paddingMode); // , paddingValue);
-
-    Image2BlobParams paramNet;
-    paramNet.scalefactor = scale;
-    paramNet.size = size;
-    paramNet.mean = mean;
-    paramNet.swapRB = swapRB;
-    paramNet.paddingmode = paddingMode;
-
     std::vector<Mat> outs;
     std::vector<int> keep_classIds;
     std::vector<float> keep_confidences;
@@ -565,9 +526,8 @@ EC Orchestrator::ExecLDInferenceONNX()
     spdlog::info("Forward buffers initialized");
 
     Mat inp;
-    //![preprocess_call_func]
-    inp = blobFromImageWithParams(img_buff_, imgParams);
-    spdlog::info("Blob created from image");
+    LDPreprocessImg(img_buff_, inp, ldnet_config.input_width, ldnet_config.input_height);
+
     EC ld_net_status;
     for(const auto& region_id : original_frame_->GetRegionIDs())
     {

@@ -62,8 +62,8 @@ private:
     std::string rc_engine_path_ = "./models/V1/trained-rc/effnet_0997acc.trt"; // File path for RC engine (if loading on demand)
     LDNetConfig ldnet_config = {NET_QUANTIZATION::FP16,4608,2592,false,true};
 
-    void RCPreprocessImg(cv::Mat img, cv::Mat& out_chw_img);
-    void LDPreprocessImg(cv::Mat img, cv::Mat& out_chw_img, int target_width=4608);
+    void RCPreprocessImg(const cv::Mat& img, cv::Mat& out_chw_img);
+    void LDPreprocessImg(const cv::Mat& img, cv::Mat& out_chw_img, int target_width=4608, int target_height=2592);
     // void PreprocessImgGPU(const cv::Mat& img, cv::Mat& out_chw);
 
     RCNet rc_net_; 

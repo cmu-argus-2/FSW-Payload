@@ -58,6 +58,7 @@ namespace DH // Data Handling
     long GetFileSize(std::string_view file_path); // in bytes
     long GetDirectorySize(std::string_view directory_path); 
     int CountFilesInDirectory(std::string_view directory_path);
+    std::string getExtension(const std::string& path);
 
 
     // raw_timestamp_camid.png 

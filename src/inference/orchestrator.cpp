@@ -203,20 +203,9 @@ void Orchestrator::InitializeLDNetRuntimes()
         }
 
         // TODO: merge both below
-        if (ldnet_config.use_trt)
-        {
-            std::unique_ptr<TRTLDNet> trt_ld_net = std::make_unique<TRTLDNet>(region_id, csv_path);
-            ld_nets_[region_id] = std::move(trt_ld_net);
-
-            spdlog::info("Loading model for region {}: Engine path: {}, CSV path: {}", region_str, engine_path, csv_path);
-        }
-        else // use onnx for ld
-        {
-            std::unique_ptr<ONNXLDNet> onnx_ld_net = std::make_unique<ONNXLDNet>(region_id, csv_path);
-            ld_nets_[region_id] = std::move(onnx_ld_net);
-            spdlog::info("ONNX model path set for region {}: {}", region_str, engine_path);
-            // onnx will be loaded at inference time
-        }
+        std::unique_ptr<LDNet> ld_net = std::make_unique<LDNet>(region_id, csv_path);
+        ld_nets_[region_id] = std::move(ld_net);
+        spdlog::info("Loading model for region {}: Engine path: {}, CSV path: {}", region_str, engine_path, csv_path);
     }
 
     if (preload_ld_engines_)
@@ -480,7 +469,10 @@ EC Orchestrator::ExecLDInferenceTRT()
         start = std::chrono::high_resolution_clock::now();
 
         // Non-max suppression and populate landmarks
-        ld_nets_[region_id]->PostprocessOutput(ld_host_output.get(), original_frame_); // This will populate the landmarks in the original frame based on the LD output
+        int sizes[3] = {1, ld_nets_[region_id]->GetNumLandmarks() + 4, ld_nets_[region_id]->GetNumYoloBoxes()};
+
+        cv::Mat output_matrix(3, sizes, CV_32F, ld_host_output.get());
+        ld_nets_[region_id]->PostprocessOutput(output_matrix, original_frame_); // This will populate the landmarks in the original frame based on the LD output
         spdlog::info("LDNet inference output post-processed");
         end = std::chrono::high_resolution_clock::now();
         duration = std::chrono::duration_cast<std::chrono::milliseconds>(end - start);

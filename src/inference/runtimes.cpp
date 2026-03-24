@@ -1,8 +1,10 @@
 #include "inference/runtimes.hpp"
 
+#include <regex>
 #include <vector>
 #include <fstream>
 #include <iostream>
+#include "core/data_handling.hpp"
 #include <opencv2/dnn/dnn.hpp>
 // #include <opencv2/dnn/types.hpp>
 
@@ -116,6 +118,7 @@ EC RCNet::LoadEngine(const std::string& engine_path)
     return EC::OK;
 }
 
+
 EC RCNet::Free()
 {
     if (context_) context_.reset();
@@ -176,7 +179,6 @@ EC RCNet::Infer(const void* input_data, void* output)
 }
 
 // LDNet methods
-
 LDNet::LDNet(RegionID region_id, std::string csv_path)
 : region_id_(region_id), csv_path_(csv_path), 
 num_landmarks_(GetNumLandmarksFromCSV(csv_path)), // 
@@ -186,6 +188,196 @@ input_width_(4608), input_height_(2592), input_channels_(3), batch_size_(1)
     output_size_ = batch_size_ * (num_landmarks_ + 4) * num_yolo_boxes; // Update output size with the computed number of YOLO boxes
     spdlog::info("LDNet created for region {}. CSV path: {}. Num landmarks: {}. Num YOLO boxes: {}. Input Width: {}. Input Height: {}", 
                 GetRegionString(region_id), csv_path, num_landmarks_, num_yolo_boxes, input_width_, input_height_);
+}
+
+EC LDNet::Free()
+{
+    if (is_trt) {
+        if (context_) context_.reset();
+        if (engine_) engine_.reset();
+        if (runtime_) runtime_.reset();
+        buffers_.free();
+        if (stream_) { cudaStreamDestroy(stream_); stream_ = nullptr; }
+    } else {
+        net_.reset();
+    }
+    
+    SetInitialized(false);
+    spdlog::info("LDNet freed.");
+    return EC::OK;
+}
+
+EC LDNet::parseModelName(const std::string& name, LDNetConfig& ldnet_config)
+{
+    std::string base_name = name;
+
+    // Remove folder path if present
+    size_t slash = base_name.find_last_of("/\\");
+    if (slash != std::string::npos)
+    {
+        base_name = base_name.substr(slash + 1);
+    }
+
+    // Extract extension
+    std::string file_ext = DH::getExtension(base_name);
+
+    if (file_ext == "trt" || file_ext == "engine")
+    {
+        ldnet_config.use_trt = true;
+    }
+    else if (file_ext == "onnx")
+    {
+        ldnet_config.use_trt = false;
+    }
+    else
+    {
+        spdlog::error("Unrecognized model file extension {}", file_ext);
+        return EC::NN_FAILED_TO_LOAD_ENGINE;
+    }
+
+    // Remove extension from filename
+    size_t dot = base_name.find_last_of('.');
+    if (dot != std::string::npos)
+    {
+        base_name = base_name.substr(0, dot);
+    }
+
+    // Detect _nms at the end of the stem
+    if (base_name.size() >= 4 && base_name.rfind("_nms") == base_name.size() - 4)
+    {
+        ldnet_config.embedded_nms = true;
+        base_name = base_name.substr(0, base_name.size() - 4);
+    }
+    else
+    {
+        ldnet_config.embedded_nms = false;
+    }
+
+    // Parse remaining pattern: 17R_weights_fp16_sz_4608
+    std::regex pattern(R"(([^_]+)_weights_([^_]+)_sz_(\d+))");
+    std::smatch match;
+
+    if (!std::regex_match(base_name, match, pattern))
+    {
+        spdlog::error("Model name does not match expected format: {}", base_name);
+        return EC::NN_FAILED_TO_LOAD_ENGINE;
+    }
+
+    // match[1] = model region
+    // match[2] = precision
+    // match[3] = input size
+
+    if (match[2] == "fp16")
+    {
+        ldnet_config.weight_quant = NET_QUANTIZATION::FP16;
+    }
+    else if (match[2] == "fp32")
+    {
+        ldnet_config.weight_quant = NET_QUANTIZATION::FP32;
+    }
+    else if (match[2] == "int8")
+    {
+        ldnet_config.weight_quant = NET_QUANTIZATION::INT8;
+    }
+    else
+    {
+        spdlog::error("Unrecognized model quantization {}", match[2].str());
+        return EC::NN_FAILED_TO_LOAD_ENGINE;
+    }
+
+    ldnet_config.input_width = std::stoi(match[3]);
+
+    if (ldnet_config.use_trt)
+    {
+        ldnet_config.input_height = 2592;
+    }
+    else
+    {
+        ldnet_config.input_height = ldnet_config.input_width;
+    }
+
+    return EC::OK;
+}
+
+EC LDNet::LoadEngine(const std::string& engine_path)
+{
+    // Get the parameters from the file
+    LDNetConfig ldnet_config;
+    EC load_status = parseModelName(engine_path, ldnet_config);
+    SetLDNetConfig(ldnet_config);
+
+    if (is_trt) {
+
+        std::ifstream file(engine_path, std::ios::binary);
+
+        if (!file.good()) 
+        {
+            spdlog::error("Error: Failed to open engine file {}", engine_path);
+            return EC::NN_FAILED_TO_OPEN_ENGINE_FILE;
+        }
+
+        file.seekg(0, std::ios::end); // Move > end of file
+        size_t size = file.tellg(); 
+        file.seekg(0, std::ios::beg); // Move >  beginning of the file
+        std::vector<char> engine_data(size); 
+        file.read(engine_data.data(), size);
+
+        // Create runtime and deserialize engine
+        runtime_ = std::unique_ptr<IRuntime>(nvinfer1::createInferRuntime(trt_logger_));
+        if (!runtime_) {
+            spdlog::error("Error: Failed to create runtime");
+            LogError(EC::NN_FAILED_TO_CREATE_RUNTIME);
+            return EC::NN_FAILED_TO_CREATE_RUNTIME;
+        }
+
+        engine_ = std::unique_ptr<ICudaEngine>(runtime_->deserializeCudaEngine(engine_data.data(), engine_data.size()));
+        if (!engine_) {
+            spdlog::error("Error: Failed to create CUDA engine");
+            LogError(EC::NN_FAILED_TO_CREATE_ENGINE);
+            return EC::NN_FAILED_TO_CREATE_ENGINE;
+        }
+
+        // Create execution context
+        context_ = std::unique_ptr<IExecutionContext>(engine_->createExecutionContext());
+        if (!context_) 
+        {
+            spdlog::error("Error: Failed to create execution context");
+            LogError(EC::NN_FAILED_TO_CREATE_EXECUTION_CONTEXT);
+            return EC::NN_FAILED_TO_CREATE_EXECUTION_CONTEXT;
+        }
+
+        assert(engine_->getTensorDataType(ld_input_name) == nvinfer1::DataType::kFLOAT);
+        assert(engine_->getTensorDataType(ld_output_name) == nvinfer1::DataType::kFLOAT);
+
+        // Engine-declared shapes
+        nvinfer1::Dims in_engine = engine_->getTensorShape(ld_input_name);
+        nvinfer1::Dims out_engine = engine_->getTensorShape(ld_output_name);
+        
+        // If possible, read from the engine
+        num_yolo_boxes = ComputeNumYoloBoxes();
+
+        context_->setInputShape(ld_input_name, nvinfer1::Dims4{batch_size_, input_channels_, input_height_, input_width_});
+
+        // Allocate GPU memory for input and output
+        buffers_.input_size = batch_size_ * input_channels_ * input_height_ * input_width_ * sizeof(float);
+        buffers_.output_size = batch_size_ * (GetNumLandmarks() + 4) * num_yolo_boxes * sizeof(float);
+        buffers_.allocate();
+
+        // Bind input and output memory (ok for LD?)
+        context_->setTensorAddress(ld_input_name, buffers_.input_data);
+        context_->setTensorAddress(ld_output_name, buffers_.output_data);
+
+        // Creating CUDA stream for asynchronous execution
+        cudaStreamCreate(&stream_); 
+
+    } else {
+        net_ = std::make_unique<cv::dnn::Net>(cv::dnn::readNet(engine_path));
+        net_->setPreferableBackend(cv::dnn::DNN_BACKEND_DEFAULT);
+        net_->setPreferableTarget(cv::dnn::DNN_TARGET_CPU);
+    }
+
+    SetInitialized(true);
+    return EC::OK;
 }
 
 
@@ -230,123 +422,31 @@ int LDNet::ComputeNumYoloBoxes() const
 
 void LDNet::SetLDNetConfig(LDNetConfig ldnet_config)
 {
-    weight_quant = ldnet_config.weight_quant;
+    weight_quant  = ldnet_config.weight_quant;
     input_width_  = ldnet_config.input_width;
     input_height_ = ldnet_config.input_height;
     embedded_nms  = ldnet_config.embedded_nms;
-    // input_width  = ldnet_config.use_trt;
+    is_trt        = ldnet_config.use_trt;
+    num_yolo_boxes = ComputeNumYoloBoxes();
 }
 
-// TRTLD Net methods
-
-TRTLDNet::TRTLDNet(RegionID region_id, std::string csv_path)
-: LDNet(region_id, csv_path)
+EC LDNet::Infer(cv::Mat input_data, std::vector<cv::Mat>& output)
 {
-}
-
-TRTLDNet::~TRTLDNet()
-{
-    cudaStreamDestroy(stream_);
-
-    buffers_.free();
     
-    if (context_) 
+    if (!IsInitialized()) 
     {
-        context_.reset();
+        spdlog::error("LDNet is not initialized. Call LoadEngine first.");
+        return EC::NN_ENGINE_NOT_INITIALIZED;
     }
-    if (engine_) 
-    {
-        engine_.reset();
-    }
-    if (runtime_) 
-    {
-        runtime_.reset();
-    }
+
+   net_->setInput(input_data);
+   net_->forward(output, net_->getUnconnectedOutLayersNames());
+   spdlog::info("Forward pass completed, outputs: [{}, {}, {}]", output[0].size[0], output[0].size[1], output[0].size[2]);
+   
+   return EC::OK;
 }
 
-EC TRTLDNet::LoadEngine(const std::string& engine_path)
-{
-    // TODO: Absolutely need to add retry and recovery logic
-    
-    std::ifstream file(engine_path, std::ios::binary);
-    if (!file.good()) 
-    {
-        spdlog::error("Error: Failed to open engine file {}", engine_path);
-        return EC::NN_FAILED_TO_OPEN_ENGINE_FILE;
-    }
-    file.seekg(0, std::ios::end); // Move > end of file
-    size_t size = file.tellg(); 
-    file.seekg(0, std::ios::beg); // Move >  beginning of the file
-    std::vector<char> engine_data(size); 
-    file.read(engine_data.data(), size);
-
-    // Create runtime and deserialize engine
-    runtime_ = std::unique_ptr<IRuntime>(nvinfer1::createInferRuntime(trt_logger_));
-    if (!runtime_) {
-        spdlog::error("Error: Failed to create runtime");
-        LogError(EC::NN_FAILED_TO_CREATE_RUNTIME);
-        return EC::NN_FAILED_TO_CREATE_RUNTIME;
-    }
-
-    engine_ = std::unique_ptr<ICudaEngine>(runtime_->deserializeCudaEngine(engine_data.data(), engine_data.size()));
-    if (!engine_) {
-        spdlog::error("Error: Failed to create CUDA engine");
-        LogError(EC::NN_FAILED_TO_CREATE_ENGINE);
-        return EC::NN_FAILED_TO_CREATE_ENGINE;
-    }
-
-    // Create execution context
-    context_ = std::unique_ptr<IExecutionContext>(engine_->createExecutionContext());
-    if (!context_) 
-    {
-        spdlog::error("Error: Failed to create execution context");
-        LogError(EC::NN_FAILED_TO_CREATE_EXECUTION_CONTEXT);
-        return EC::NN_FAILED_TO_CREATE_EXECUTION_CONTEXT;
-    }
-
-    assert(engine_->getTensorDataType(ld_input_name) == nvinfer1::DataType::kFLOAT);
-    assert(engine_->getTensorDataType(ld_output_name) == nvinfer1::DataType::kFLOAT);
-
-    int batch_size = GetBatchSize();
-    int input_channels = GetInputChannels();
-    int input_height = GetInputHeight();
-    int input_width = GetInputWidth();
-    int num_yolo_boxes = GetNumYoloBoxes();
-
-    // TODO: Check that these values are valid and match the engine's expected input dimensions.
-
-    context_->setInputShape(ld_input_name, nvinfer1::Dims4{batch_size, input_channels, input_height, input_width});
-
-    // Allocate GPU memory for input and output
-    buffers_.input_size = batch_size * input_channels * input_height * input_width * sizeof(float);
-    buffers_.output_size = batch_size * (GetNumLandmarks() + 4) * num_yolo_boxes * sizeof(float);
-    buffers_.allocate();
-
-    // Bind input and output memory (ok for LD?)
-    context_->setTensorAddress(ld_input_name, buffers_.input_data);
-    context_->setTensorAddress(ld_output_name, buffers_.output_data);
-
-    // Creating CUDA stream for asynchronous execution
-    cudaStreamCreate(&stream_); 
-
-    SetInitialized(true);
-
-    return EC::OK;
-}
-
-EC TRTLDNet::Free()
-{
-    if (context_) context_.reset();
-    if (engine_) engine_.reset();
-    if (runtime_) runtime_.reset();
-    buffers_.free();
-    if (stream_) { cudaStreamDestroy(stream_); stream_ = nullptr; }
-    SetInitialized(false);
-    spdlog::info("LDNet freed.");
-    return EC::OK;
-}
-
-EC TRTLDNet::Infer(const void* input_data, void* output)
+EC LDNet::Infer(const void* input_data, void* output)
 {
     // const void* input_data
     if (!IsInitialized()) 
@@ -389,54 +489,6 @@ EC TRTLDNet::Infer(const void* input_data, void* output)
     }
     // spdlog::info("Inference enqueued successfully. Waiting for completion...");
     cudaStreamSynchronize(stream_);  
-    return EC::OK;
-}
-
-EC TRTLDNet::PostprocessOutput(float* ld_output, std::shared_ptr<Frame> frame)
-{
-    std::vector<int> keep_classIds;
-    std::vector<float> keep_confidences;
-    std::vector<Rect2d> keep_boxes;
-    std::vector<Rect> boxes;
-
-    int sizes[3] = {1, GetNumLandmarks() + 4, GetNumYoloBoxes()};
-
-    cv::Mat output_matrix(3, sizes, CV_32F, ld_output);
-
-    // Non-max suppression
-    LDNet::yoloPostProcessing(output_matrix, keep_classIds, keep_confidences, keep_boxes);
-
-    for (auto box : keep_boxes)
-    {
-        boxes.push_back(Rect(cvFloor(box.x), cvFloor(box.y), cvFloor(box.width - box.x), cvFloor(box.height - box.y)));
-    }
-
-    for (auto& b : boxes) {
-        b = scaleBoxBackLetterbox(b, frame->GetImgSize(), 
-                                    cv::Size(GetInputWidth(), GetInputHeight()));
-    }
-
-    // Populate landmarks
-    Rect2d box;
-    float x_center, y_center, width, height;
-    uint16_t class_id;
-    for (int i = 0; i < boxes.size(); ++i)
-    {
-        Rect box = boxes[i];
-
-        // TODO: Revise variable datatype
-        height = static_cast<float>(box.height);
-        width = static_cast<float>(box.width);
-        x_center = static_cast<float>(box.x) + width / 2.0f;
-        y_center = static_cast<float>(box.y) + height / 2.0f;
-
-        class_id = static_cast<uint16_t>(keep_classIds[i]);
-        Landmark landmark(x_center, y_center, class_id, GetRegionID(),
-                            height, width, keep_confidences[i]);
-        // Landmark landmark(keep_boxes[i], keep_classIds[i], keep_confidences[i]);
-        frame->AddLandmark(landmark);
-    }
-
     return EC::OK;
 }
 
@@ -541,54 +593,9 @@ cv::Rect LDNet::scaleBoxBackLetterbox(
     return r & cv::Rect(0, 0, imgSize.width, imgSize.height);
 }
 
-ONNXLDNet::ONNXLDNet(RegionID region_id, std::string csv_path)
-: LDNet(region_id, csv_path)
+
+EC LDNet::PostprocessOutput(std::vector<cv::Mat> outs, std::shared_ptr<Frame> frame)
 {
-}
-
-ONNXLDNet::~ONNXLDNet()
-{
-    // deallocate LDNet
-}
-
-EC ONNXLDNet::LoadEngine(const std::string& engine_path)
-{
-    SetInitialized(true);
-    // TODO: Error handling
-    net_ = std::make_unique<cv::dnn::Net>(cv::dnn::readNet(engine_path));
-    net_->setPreferableBackend(cv::dnn::DNN_BACKEND_DEFAULT);
-    net_->setPreferableTarget(cv::dnn::DNN_TARGET_CPU);
-
-    return EC::OK;
-}
-
-EC ONNXLDNet::Free()
-{
-    net_.reset();
-    SetInitialized(false);
-    spdlog::info("LDNet freed.");
-    return EC::OK;
-}
-
-EC ONNXLDNet::Infer(cv::Mat input_data, std::vector<cv::Mat>& output)
-{
-    
-    if (!IsInitialized()) 
-    {
-        spdlog::error("LDNet is not initialized. Call LoadEngine first.");
-        return EC::NN_ENGINE_NOT_INITIALIZED;
-    }
-
-   net_->setInput(input_data);
-   net_->forward(output, net_->getUnconnectedOutLayersNames());
-   spdlog::info("Forward pass completed, outputs: [{}, {}, {}]", output[0].size[0], output[0].size[1], output[0].size[2]);
-   
-   return EC::OK;
-}
-
-EC ONNXLDNet::PostprocessOutput(std::vector<cv::Mat> outs, std::shared_ptr<Frame> frame)
-{
-    // TODO
     std::vector<int> keep_classIds;
     std::vector<float> keep_confidences;
     std::vector<Rect2d> keep_boxes;

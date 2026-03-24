@@ -157,6 +157,7 @@ class LDNet
 public:
     static int GetNumLandmarksFromCSV(const std::string& csv_path);
     int ComputeNumYoloBoxes() const;
+    EC parseModelName(const std::string& name, LDNetConfig& ldnet_config);
 
     cv::Rect scaleBoxBackLetterbox(
         const cv::Rect& rBlob,
@@ -170,7 +171,7 @@ public:
         std::vector<cv::Rect2d>& keep_boxes);
 
     LDNet(RegionID region_id, std::string csv_path);
-    virtual ~LDNet() = default;
+    ~LDNet() = default;
 
     // getters
     bool IsInitialized() const { return initialized_; }
@@ -194,20 +195,19 @@ public:
     void SetInitialized(bool initialized) { initialized_ = initialized; }
     void SetLDNetConfig(LDNetConfig ldnet_config);
 
-    
-
-    virtual EC Free() = 0;
-    virtual EC Infer(const void* input_data, void* output) = 0;
-    virtual EC Infer(cv::Mat input_data, std::vector<cv::Mat>& output) = 0;
-    // TODO: Once OpenCV with CUDA support is available, change PostprocessOutput to take cv::Mat outs
-    virtual EC PostprocessOutput(float* output, std::shared_ptr<Frame> frame) = 0;
-    virtual EC PostprocessOutput(std::vector<cv::Mat> outs, std::shared_ptr<Frame> frame) = 0;
+    EC Free();
+    EC Infer(const void* input_data, void* output) ;
+    EC Infer(cv::Mat input_data, std::vector<cv::Mat>& output);
+    EC PostprocessOutput(std::vector<cv::Mat> outs, std::shared_ptr<Frame> frame);
 
     // Engine path is defined by the model parameters
-    virtual EC LoadEngine(const std::string& engine_path) = 0;
+    EC LoadEngine(const std::string& engine_path);
     EC LoadEngine() {return LoadEngine(engine_path_);};
 private:
     bool initialized_ = false;
+
+    // True: TRT, False: ONNX
+    bool is_trt = true;
 
     // Model with dynamic size
     bool dynamic_size_input = false;
@@ -263,34 +263,8 @@ private:
 
     // Landmark engine path
     const std::string engine_path_;
-
-};
-
-class TRTLDNet: public LDNet
-{
-
-public:
-    // static methods
-    // TODO: method shouldn't be static
-    static std::vector<Landmark> LDYoloNonMaxSuppression(
-        const Eigen::MatrixXf& output_matrix,
-        RegionID region_id,
-        float conf_threshold,
-        float iou_threshold);
-
-    TRTLDNet(RegionID region_id, std::string csv_path);
-    ~TRTLDNet();
-
-    EC LoadEngine(const std::string& engine_path);
-
-    EC Free();
-    EC Infer(const void* input_data, void* output);
-    EC Infer(cv::Mat input_data, std::vector<cv::Mat>& output) { return EC::OK; } // Not used for TRT, only the raw pointer version is used;
-    EC PostprocessOutput(std::vector<cv::Mat> outs, std::shared_ptr<Frame> frame)  { return EC::OK; }
-    // TODO: Once OpenCV with CUDA support is available, change PostprocessOutput to take cv::Mat outs
-    EC PostprocessOutput(float* output, std::shared_ptr<Frame> frame);
-
-private:
+    
+    // TensorRT Engine
     // Logger for TensorRT
     Logger trt_logger_;
 
@@ -307,29 +281,10 @@ private:
     // CUDA stream
     cudaStream_t stream_ = nullptr;
 
-};
-
-class ONNXLDNet: public LDNet
-{
-
-public:
-
-    ONNXLDNet(RegionID region_id, std::string csv_path);
-    ~ONNXLDNet();
-
-    EC LoadEngine(const std::string& engine_path);
-
-    EC Free();
-    EC Infer(const void* input_data, void* output) { return EC::OK; } // Not used for ONNX, only the cv::Mat version is used;
-    EC Infer(cv::Mat input_data, std::vector<cv::Mat>& output);
-    EC PostprocessOutput(std::vector<cv::Mat> outs, std::shared_ptr<Frame> frame);
-    // TODO: Once OpenCV with CUDA support is available, change PostprocessOutput to take cv::Mat outs
-    EC PostprocessOutput(float* output, std::shared_ptr<Frame> frame) { return EC::OK; }
-
-private:
+    // ONNX Engine
     std::unique_ptr<cv::dnn::Net> net_ = nullptr;
-};
 
+};
 } // namespace Inference
 
 #endif // RUNTIMES_HPP

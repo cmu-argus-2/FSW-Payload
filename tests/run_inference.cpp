@@ -85,11 +85,18 @@ int main(int argc, char** argv)
         sample_image_path = argv[3];
     }
     // Parameters that define the model 
-    Inference::NET_QUANTIZATION weight_quant = Inference::NET_QUANTIZATION::FP16;
+    // TRT Example
+    // Inference::NET_QUANTIZATION weight_quant = Inference::NET_QUANTIZATION::FP16;
+    // int input_width = 4608;
+    // int input_height = 2592;
+    // bool embedded_nms = false;
+    // bool use_trt_for_ld = true;
+    // ONNX example
+    Inference::NET_QUANTIZATION weight_quant = Inference::NET_QUANTIZATION::FP32;
     int input_width = 4608;
-    int input_height = 2592;
+    int input_height = 4608;
     bool embedded_nms = false;
-    bool use_trt_for_ld = true;
+    bool use_trt_for_ld = false;
 
     Inference::Orchestrator orchestrator;
     orchestrator.SetRCNetEnginePath(rc_trt_file_path);

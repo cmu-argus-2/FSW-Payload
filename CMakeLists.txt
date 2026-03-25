@@ -110,11 +110,6 @@ else()
     message(FATAL_ERROR "Readline library not found. Please install libreadline-dev.")
 endif()
 
-##### IMU
-
-add_executable(imu_run src/imu/run_imu.cpp)
-target_link_libraries(imu_run PRIVATE PAYLOAD_LIB)
-
 ##### TESTS
 
 option(BUILD_TESTS "Build tests" ON)

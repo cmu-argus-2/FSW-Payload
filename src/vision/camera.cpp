@@ -301,8 +301,10 @@ void Camera::RunCaptureLoop()
 void Camera::StopCaptureLoop()
 {
     capture_loop_flag.store(false);
-    if (capture_thread.joinable()) {
-        capture_thread.join();
+    if (cam_status == CAM_STATUS::ACTIVE) {
+        if (capture_thread.joinable()) {
+            capture_thread.join();
+        }
     }
 }
 

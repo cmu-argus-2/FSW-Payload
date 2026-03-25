@@ -278,7 +278,7 @@ void CameraManager::StopLoops()
 
     for (auto& camera : cameras) 
     {
-        camera.StopCaptureLoop();
+        camera.Disable();
     }
 
     SPDLOG_INFO("Stopped camera loops...");

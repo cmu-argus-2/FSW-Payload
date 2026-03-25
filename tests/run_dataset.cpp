@@ -20,7 +20,7 @@ int main(int argc, char** argv)
     config->LoadConfiguration("config/config.toml");
 
     CAPTURE_MODE capture_mode = CAPTURE_MODE::PERIODIC; // default to periodic
-    double period = 60.0; // default to 60s
+    double period = 5.0; // default to 60s
     uint16_t nb_frames = 4;
 
     // collect IMU data or not flag
@@ -70,6 +70,9 @@ int main(int argc, char** argv)
                                 IMU_COLLECTION_MODE::GYRO_MAG_TEMP, uint8_t(30), 1.0f, ProcessingStage::NotPrefiltered,
                                 DATASET_KEY_CMD, camera_manager, imu_manager);
     ds->StartCollection();
+
+    // Close Dataset Manager
+    ds->StopDatasetManager(DATASET_KEY_CMD);
 
     // close threads
     imu_manager.StopLoop();

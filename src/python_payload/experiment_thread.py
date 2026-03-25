@@ -45,6 +45,7 @@ class ExperimentThread(threading.Thread):
         level_processing = int(request.get("level_processing", 0))
         width = int(request.get("width", 4608))
         height = int(request.get("height", 2592))
+        downscale_factor = float(request.get("downscale_factor", 2.0))
         camera_defaults_selector = int(
             request.get("camera_defaults_selector", self.USE_PROGRAM_CAMERA_DEFAULTS)
         )
@@ -56,13 +57,14 @@ class ExperimentThread(threading.Thread):
         log.info(
             (
                 "Starting experiment ts=%s camera_mask=%s level=%s width=%s height=%s "
-                "camera_defaults_selector=%s"
+                "downscale_factor=%s camera_defaults_selector=%s"
             ),
             ts,
             camera_bit_flag,
             level_processing,
             width,
             height,
+            downscale_factor,
             camera_defaults_selector,
         )
 
@@ -72,6 +74,7 @@ class ExperimentThread(threading.Thread):
                 level_processing=level_processing,
                 width=width,
                 height=height,
+                downscale_factor=downscale_factor,
                 camera_params=camera_params,
             )
             log.info("Experiment completed")
@@ -85,6 +88,7 @@ class ExperimentThread(threading.Thread):
         level_processing: int = 0,
         width: int = 4608,
         height: int = 2592,
+        downscale_factor: float = 2.0,
         camera_params: dict | None = None,
     ):
         
@@ -112,7 +116,10 @@ class ExperimentThread(threading.Thread):
         # check to see if should downscale image
         if level_processing & self.PROCESS_DOWNSCALE_BIT:
             state_manager.set(PayloadState.DOWNSCALING)
-            current_image_path_list = self._downscale_images(current_image_path_list)
+            current_image_path_list = self._downscale_images(
+                current_image_path_list,
+                downscale_factor,
+            )
             
         # check to see if should run prefiltering
         if level_processing & self.PROCESS_PREFILTER_BIT:
@@ -223,7 +230,11 @@ class ExperimentThread(threading.Thread):
 
 
 
-    def _downscale_images(self, image_paths: list[str]) -> list[str]:
+    def _downscale_images(
+        self,
+        image_paths: list[str],
+        downscale_factor: float = 2.0,
+    ) -> list[str]:
         """
         Will receive a list of image paths. For each of the images, it will perform the necessary downsample to the image
         It will prepare the image to feed to the model
@@ -231,6 +242,13 @@ class ExperimentThread(threading.Thread):
         """
         output_dir = Path("images_downscaled")
         output_dir.mkdir(parents=True, exist_ok=True)
+
+        if downscale_factor <= 0:
+            log.warning(
+                "Invalid downscale_factor=%s. Falling back to 2.0",
+                downscale_factor,
+            )
+            downscale_factor = 2.0
 
         downscaled_paths: list[str] = []
         for image_path in image_paths:
@@ -240,14 +258,20 @@ class ExperimentThread(threading.Thread):
                 raise RuntimeError(f"Failed to read image for downscaling: {src}")
 
             height, width = img.shape[:2]
-            resized = cv2.resize(img, (max(1, width // 2), max(1, height // 2)))
+            resized_width = max(1, int(round(width / downscale_factor)))
+            resized_height = max(1, int(round(height / downscale_factor)))
+            resized = cv2.resize(img, (resized_width, resized_height))
             dst = output_dir / f"downscaled_{src.stem}.jpeg"
             ok = cv2.imwrite(str(dst), resized)
             if not ok:
                 raise RuntimeError(f"Failed to write downscaled image: {dst}")
             downscaled_paths.append(str(dst))
 
-        log.info("Downscaled %d images", len(downscaled_paths))
+        log.info(
+            "Downscaled %d images with factor=%s",
+            len(downscaled_paths),
+            downscale_factor,
+        )
         return downscaled_paths
 
     def _prefilter_images(self, image_paths: list[str]) -> list[str]:

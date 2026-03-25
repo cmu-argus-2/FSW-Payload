@@ -1,6 +1,6 @@
 #include <imu/imu_manager.hpp>
 #include "spdlog/spdlog.h"
-//#include <iostream>
+#include <iostream>
 #include <core/timing.hpp>
 #include <iomanip> // for set precision
 //#include <ctime>
@@ -180,6 +180,7 @@ int IMUManager::StartCollection() {
         SPDLOG_INFO("Logging gyro data to {}", log_file);
         ofs << "Timestamp_ms, Gyro_X_dps, Gyro_Y_dps, Gyro_Z_dps, Mag_X_uT, Mag_Y_uT, Mag_Z_uT, Temperature_C\n";
     }
+    ofs.close();
     
     state.store(IMU_STATE::COLLECT); // Update state to collecting
     SPDLOG_INFO("IMU Manager status set to: {}", GetIMUState(state.load()));
@@ -322,6 +323,13 @@ int32_t IMUManager::ReadSensorStatus(bool *gyrSelfTestOk, bool *magManOp, bool *
 }
 
 void IMUManager::LogSensorData(uint64_t timestamp, const BMI160::SensorData &gyroData, const BMI160::SensorData &magData, float temperature) {
+    ofs.open(log_file, std::ios::out | std::ios::app);
+    if (!ofs) {
+        SPDLOG_ERROR("Failed to open {} for writing", log_file);
+        state.store(IMU_STATE::ERROR_DEVICE); // Update state to error
+        SPDLOG_INFO("IMU Manager status set to: {}", GetIMUState(state.load()));
+        return;
+    }
     ofs << timestamp << ','
         << std::fixed << std::setprecision(6)
         << gyroData.xAxis.scaled << ','
@@ -333,4 +341,6 @@ void IMUManager::LogSensorData(uint64_t timestamp, const BMI160::SensorData &gyr
         << temperature << '\n';
 
     ofs.flush();
+
+    ofs.close();
 }

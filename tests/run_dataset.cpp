@@ -15,13 +15,26 @@
 
 int main(int argc, char** argv)
 {
+    std::string config_file_path = "config/config.toml";
+    std::string ds_config_folder_path = "config";
     // Dataset collection configuration flag
     auto config = std::make_unique<Configuration>();
-    config->LoadConfiguration("config/config.toml");
+    try {
+        config->LoadConfiguration(config_file_path);
+    } catch (const toml::parse_error& err) {
+        std::cerr << "Parsing configuration file failed: " << err << "\n";
+        return 1;
+    }
+    SPDLOG_INFO("Configuration file {} loaded.", config_file_path);
 
+    int64_t capture_start_time = timing::GetCurrentTimeMs();
     CAPTURE_MODE capture_mode = CAPTURE_MODE::PERIODIC; // default to periodic
-    double period = 5.0; // default to 60s
-    uint16_t nb_frames = 4;
+    IMU_COLLECTION_MODE imu_collection_mode = IMU_COLLECTION_MODE::GYRO_MAG_TEMP;
+    double max_period = 10.0; // default to 60s
+    uint16_t target_frame_nb = 4;
+    uint8_t image_capture_rate = uint8_t(1);
+    float imu_sample_rate_hz = 1.0f;
+    ProcessingStage target_processing_stage = ProcessingStage::NotPrefiltered;
 
     // collect IMU data or not flag
     const auto& imu_config = config->GetIMUConfig();
@@ -30,9 +43,6 @@ int main(int argc, char** argv)
     const auto& cam_configs = config->GetCameraConfigs();
     CameraManager camera_manager(cam_configs);
 
-    // TODO: Create the IMUManager and CameraManager instances and threads for the 
-    // datasetManager to interface with, preferably without having to create 
-    // a payload instance for this test
     std::thread imu_thread = std::thread(&IMUManager::RunLoop, &imu_manager);
 
     std::array<bool, NUM_CAMERAS> temp;
@@ -41,7 +51,7 @@ int main(int argc, char** argv)
 
     // how to make the above accessible to the dataset manager through the sys namespace?
 
-    if (period == 0.0 || nb_frames == 0)
+    if (max_period == 0.0 || target_frame_nb == 0)
     {
         spdlog::error("Invalid parameters for dataset collection command");
         return 0;
@@ -64,12 +74,15 @@ int main(int argc, char** argv)
     }
 
     // Create a new Dataset
-    SPDLOG_INFO("Starting dataset collection (type {}) for {} frames at a period of {} seconds.", static_cast<uint8_t>(capture_mode), nb_frames, period);
+    SPDLOG_INFO("Starting dataset collection (type {}) for {} frames at a period of {} seconds.", static_cast<uint8_t>(capture_mode), target_frame_nb, max_period);
 
-    ds = DatasetManager::Create(period, nb_frames, capture_mode, timing::GetCurrentTimeMs(),
-                                IMU_COLLECTION_MODE::GYRO_MAG_TEMP, uint8_t(30), 1.0f, ProcessingStage::NotPrefiltered,
-                                DATASET_KEY_CMD, camera_manager, imu_manager);
+    ds = DatasetManager::Create(ds_config_folder_path, DATASET_KEY_CMD, camera_manager, imu_manager);
+
+    // ds = DatasetManager::Create(max_period, target_frame_nb, capture_mode, capture_start_time, imu_collection_mode, 
+    //                                             image_capture_rate, imu_sample_rate_hz, target_processing_stage,
+    //                                                                 DATASET_KEY_CMD, camera_manager, imu_manager);
     ds->StartCollection();
+
 
     // Close Dataset Manager
     ds->StopDatasetManager(DATASET_KEY_CMD);

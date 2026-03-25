@@ -133,21 +133,21 @@ TEST(DatasetTest, DatasetConfigurationCheck)
     ASSERT_THROW(Dataset{folder_path}, std::invalid_argument);
 
     config.erase("maximum_period"); config.insert("maximum_period", 60.0f);
-    config.erase("target_frames"); 
+    config.erase("target_frames_nb"); 
     file.open(dataset_config_file_path, std::ofstream::out | std::ofstream::trunc);
     file << config;
     file.close();
     EXPECT_FALSE(Dataset::isValidConfigurationFile(dataset_config_file_path));
     ASSERT_THROW(Dataset{folder_path}, std::invalid_argument);
     
-    config.insert("target_frames", 0);
+    config.insert("target_frames_nb", 0);
     file.open(dataset_config_file_path, std::ofstream::out | std::ofstream::trunc);
     file << config;
     file.close();
     EXPECT_FALSE(Dataset::isValidConfigurationFile(dataset_config_file_path));
     ASSERT_THROW(Dataset{folder_path}, std::invalid_argument);
 
-    config.erase("target_frames"); config.insert("target_frames", 100);
+    config.erase("target_frames_nb"); config.insert("target_frames_nb", 100);
     config.erase("dataset_capture_mode"); 
     file.open(dataset_config_file_path, std::ofstream::out | std::ofstream::trunc);
     file << config;

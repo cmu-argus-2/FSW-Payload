@@ -48,7 +48,7 @@ public:
                                                   IMU_COLLECTION_MODE imu_collection_mode, uint8_t image_capture_rate, float imu_sample_rate_hz, 
                                                   ProcessingStage target_processing_stage, std::string ds_key, CameraManager& cam_manager, IMUManager& imu_manager);
     // If the folder path does not exist or does not contain a config file, it throws.
-    static std::shared_ptr<DatasetManager> Create(const std::string& folder_path, std::string key);
+    static std::shared_ptr<DatasetManager> Create(const std::string& folder_path, std::string key, CameraManager& cam_manager, IMUManager& imu_manager);
 
     static std::shared_ptr<DatasetManager> GetActiveDatasetManager(const std::string& key);
     static void StopDatasetManager(const std::string& key);
@@ -70,7 +70,7 @@ public:
     // Actual constructors ~ not to be used
     DatasetManager(Dataset dataset, CameraManager& cam_manager, IMUManager& imu_manager);
     // If the folder path does not exist or does not contain a config file, it throws.
-    DatasetManager(const std::string& folder_path);
+    DatasetManager(const std::string& folder_path, CameraManager& cam_manager, IMUManager& imu_manager);
 
     ~DatasetManager();
 

@@ -4,7 +4,7 @@ maximum_period = 600 # sec
 
 target_frame_nb = 1000
 
-dataset_capture_mode = 1 # PERIODIC
+dataset_capture_mode = 2 # PERIODIC
 
 imu_collection_mode = 1
 

@@ -25,7 +25,7 @@ std::vector<std::string> Dataset::ListAllStoredDatasets()
 bool Dataset::isValidConfigurationFile(const std::string& config_file_path)
 {
     toml::table config = toml::parse_file(config_file_path);
-
+    
     std::optional<double> max_period = config["maximum_period"].value<double>();
     if (!max_period)
     {
@@ -33,10 +33,10 @@ bool Dataset::isValidConfigurationFile(const std::string& config_file_path)
         return false;
     }
 
-    std::optional<uint64_t> target_frames = config["target_frames"].value<uint64_t>();
+    std::optional<uint64_t> target_frames = config["target_frame_nb"].value<uint64_t>();
     if (!target_frames)
     {
-        SPDLOG_ERROR("Missing or invalid 'target_frames' in configuration.");
+        SPDLOG_ERROR("Missing or invalid 'target_frame_nb' in configuration.");
         return false;
     }
 
@@ -198,14 +198,12 @@ imu_log_file_path(folder_path_in + "/imu_data.csv")
     {
         candidate_folder += '/';
     }
-    
     // check if config path exists
     if (!DH::fs::exists(candidate_folder + DATASET_CONFIG_FILE_NAME))
     {
         SPDLOG_ERROR("{} does not exist!", candidate_folder + DATASET_CONFIG_FILE_NAME);
         throw std::invalid_argument("Dataset configuration file not found.");
     }
-
     // read config file and fill all parameters
     // TODO: remove this high-level try-catch and throw OR have a default config... (well-documented)
     if (!isValidConfigurationFile(candidate_folder + DATASET_CONFIG_FILE_NAME))
@@ -219,14 +217,16 @@ imu_log_file_path(folder_path_in + "/imu_data.csv")
     // but then this constructor should receive the toml path, not the folder
     toml::table config = toml::parse_file(candidate_folder + DATASET_CONFIG_FILE_NAME);
 
-    maximum_period          = *(config["maximum_period"].value<double>());
-    target_frame_nb         = static_cast<uint16_t>(*(config["target_frames"].value<uint64_t>()));
+    // If not available, default value is kept
+    if (config.contains("maximum_period")) {
+        maximum_period      = *(config["maximum_period"].value<double>());
+    }
+    target_frame_nb         = static_cast<uint16_t>(*(config["target_frame_nb"].value<uint64_t>()));
     dataset_capture_mode    = static_cast<CAPTURE_MODE>(*(config["dataset_capture_mode"].value<uint64_t>()));
     imu_collection_mode     = static_cast<IMU_COLLECTION_MODE>(*(config["imu_collection_mode"].value<uint64_t>()));
     image_capture_rate      = static_cast<uint8_t>(*(config["image_capture_rate"].value<uint64_t>()));
     imu_sample_rate_hz      = static_cast<float>(*(config["imu_sample_rate_hz"].value<double>()));
     target_processing_stage = static_cast<ProcessingStage>(*(config["target_processing_stage"].value<uint64_t>())); // Use uint64_t to match the value type in config
-    
 }
 
 Dataset& Dataset::operator=(const Dataset& other)

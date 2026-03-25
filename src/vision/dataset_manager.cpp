@@ -66,9 +66,10 @@ std::shared_ptr<DatasetManager> DatasetManager::Create(double max_period, uint16
     return instance;
 }
 
-std::shared_ptr<DatasetManager> DatasetManager::Create(const std::string& folder_path, std::string ds_key = DEFAULT_DS_KEY)
+std::shared_ptr<DatasetManager> DatasetManager::Create(const std::string& folder_path, std::string ds_key = DEFAULT_DS_KEY,
+                            CameraManager& cam_manager = sys::cameraManager(), IMUManager& imu_manager = sys::imuManager())
 {
-    auto instance = std::make_shared<DatasetManager>(folder_path);
+    auto instance = std::make_shared<DatasetManager>(folder_path, cam_manager, imu_manager);
     std::lock_guard<std::mutex> lock(datasets_mtx);
     if (ds_key == DEFAULT_DS_KEY)
     {
@@ -121,12 +122,14 @@ created_at(timing::GetCurrentTimeMs())
 {
 }
 
-DatasetManager::DatasetManager(const std::string& folder_path)
+DatasetManager::DatasetManager(const std::string& folder_path,
+                                CameraManager& cam_manager=sys::cameraManager(), 
+                                IMUManager& imu_manager=sys::imuManager())
 :
 current_dataset(folder_path),
 progress(current_dataset.GetTargetFrameNb()),
-cameraManager(sys::cameraManager()),
-imuManager(sys::imuManager()),
+cameraManager(cam_manager),
+imuManager(imu_manager),
 created_at(timing::GetCurrentTimeMs())
 {
 }
@@ -219,6 +222,7 @@ void DatasetManager::CollectionLoop()
     // configure the imu manager for the dataset collection
     imuManager.SetLogFile(current_dataset.GetIMUFilePath());
     imuManager.SetSampleRate(current_dataset.GetIMUSampleRateHz());
+    imuManager.SetCollectionMode(current_dataset.GetIMUCollectionMode());
     imuManager.StartCollection();
 
     // configure the camera manager for the dataset collection

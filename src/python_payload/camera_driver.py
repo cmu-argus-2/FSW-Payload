@@ -124,6 +124,7 @@ class JetsonCamera:
         Valid range: 1.0 – 16.0.  Pass None to omit (default None).
     ispdigitalgainrange : tuple[float, float] or None
         (low, high) ISP digital gain range.  Pass None to omit
+        Valid range: 1 - 256
         (default None).
     ee_mode : int
         Edge-enhancement mode – use :class:EdgeEnhancementMode constants

@@ -22,6 +22,7 @@ class ExperimentThread(threading.Thread):
     PROCESS_DOWNSCALE_BIT = 1 << 0
     PROCESS_PREFILTER_BIT = 1 << 1
     PROCESS_INFERENCE_BIT = 1 << 2
+    USE_PROGRAM_CAMERA_DEFAULTS = -1
 
     def __init__(self, stop_event: threading.Event):
         super().__init__(name="ExperimentThread", daemon=True)
@@ -44,36 +45,34 @@ class ExperimentThread(threading.Thread):
         level_processing = int(request.get("level_processing", 0))
         width = int(request.get("width", 4608))
         height = int(request.get("height", 2592))
+        camera_defaults_selector = int(
+            request.get("camera_defaults_selector", self.USE_PROGRAM_CAMERA_DEFAULTS)
+        )
+        camera_params = self._build_camera_params_from_request(
+            request,
+            camera_defaults_selector,
+        )
 
         log.info(
-            "Starting experiment ts=%s camera_mask=%s level=%s width=%s height=%s",
+            (
+                "Starting experiment ts=%s camera_mask=%s level=%s width=%s height=%s "
+                "camera_defaults_selector=%s"
+            ),
             ts,
             camera_bit_flag,
             level_processing,
             width,
             height,
+            camera_defaults_selector,
         )
-        
-        # hard coding to send a fixed file (make it faster for testing)
-        # send the finished experiment command
-        # TODO - not sure that I want to do this here
-        command = Command("EXPERIMENT_FINISHED")   # TODO - change this to proper finish experiment command
-        tx_queue.put(pack(command))
-        log.info("Sending EXPERIMENT_FINISHED command (experiment finished)")
-        
-        # finished experiment, want to go to downlink mode
-        state_manager.set(PayloadState.DOWNLOAD)
-        
-        file_list = ["experiment_20260320_142430/downscaled_raw_0_20260320_142431.jpeg", "experiment_20260320_142430/raw_0_20260320_142431.jpeg"]
-        log.debug(f"Sending results for files: {file_list}")
-        self.send_results(file_list)
-        return
+
         try:
             self.experiment(
                 camera_bit_flag,
                 level_processing=level_processing,
                 width=width,
                 height=height,
+                camera_params=camera_params,
             )
             log.info("Experiment completed")
         except Exception as exc:
@@ -86,11 +85,17 @@ class ExperimentThread(threading.Thread):
         level_processing: int = 0,
         width: int = 4608,
         height: int = 2592,
+        camera_params: dict | None = None,
     ):
         
         # 1. turn on the required cameras
         state_manager.set(PayloadState.TURNING_ON)
-        cameras = self._start_cameras(camera_bit_flag, width=width, height=height)
+        cameras = self._start_cameras(
+            camera_bit_flag,
+            width=width,
+            height=height,
+            camera_params=camera_params,
+        )
 
         if not cameras:
             log.info("No cameras selected; experiment finished without capture")
@@ -153,7 +158,13 @@ class ExperimentThread(threading.Thread):
         log.info("Downlink completed for %s", file_path)
         return True
 
-    def _start_cameras(self, camera_bit_flag: int, width: int = 4608, height: int = 2592) -> dict[int, JetsonCamera]:
+    def _start_cameras(
+        self,
+        camera_bit_flag: int,
+        width: int = 4608,
+        height: int = 2592,
+        camera_params: dict | None = None,
+    ) -> dict[int, JetsonCamera]:
         width, height = self._validate_dimensions(width, height)
         active_sensor_ids = [sensor_id for sensor_id in range(4) if camera_bit_flag & (1 << sensor_id)]
         if not active_sensor_ids:
@@ -166,9 +177,15 @@ class ExperimentThread(threading.Thread):
         )
 
         cameras: dict[int, JetsonCamera] = {}
+        camera_params = camera_params or {}
         for sensor_id in active_sensor_ids:
             log.info("Initializing camera sensor-id=%d", sensor_id)
-            camera = JetsonCamera(sensor_id=sensor_id, width=width, height=height)
+            camera = JetsonCamera(
+                sensor_id=sensor_id,
+                width=width,
+                height=height,
+                **camera_params,
+            )
             camera.open()
             cameras[sensor_id] = camera
 
@@ -260,4 +277,64 @@ class ExperimentThread(threading.Thread):
             )
             return (4608, 2592)
         return (width, height)
+
+    def _build_camera_params_from_request(
+        self,
+        request: dict,
+        camera_defaults_selector: int,
+    ) -> dict:
+        if camera_defaults_selector == self.USE_PROGRAM_CAMERA_DEFAULTS:
+            return {}
+
+        exposuretimerange = self._decode_int_range(
+            request.get("exposuretimerange_low", 0),
+            request.get("exposuretimerange_high", 0),
+        )
+        gainrange = self._decode_float_range(
+            request.get("gainrange_low", 0.0),
+            request.get("gainrange_high", 0.0),
+        )
+        ispdigitalgainrange = self._decode_float_range(
+            request.get("ispdigitalgainrange_low", 0.0),
+            request.get("ispdigitalgainrange_high", 0.0),
+        )
+
+        return {
+            "fps": int(request.get("fps", 14)),
+            "wbmode": int(request.get("wbmode", 0)),
+            "aelock": self._to_bool(request.get("aelock", 0)),
+            "awblock": self._to_bool(request.get("awblock", 0)),
+            "exposuretimerange": exposuretimerange,
+            "gainrange": gainrange,
+            "ispdigitalgainrange": ispdigitalgainrange,
+            "ee_mode": int(request.get("ee_mode", 1)),
+            "ee_strength": float(request.get("ee_strength", -1.0)),
+            "aeantibanding": int(request.get("aeantibanding", 1)),
+            "exposurecompensation": float(request.get("exposurecompensation", 0.0)),
+            "tnr_mode": int(request.get("tnr_mode", 1)),
+            "tnr_strength": float(request.get("tnr_strength", -1.0)),
+            "saturation": float(request.get("saturation", 1.0)),
+        }
+
+    @staticmethod
+    def _to_bool(value) -> bool:
+        if isinstance(value, bool):
+            return value
+        return bool(int(value))
+
+    @staticmethod
+    def _decode_int_range(low, high) -> tuple[int, int] | None:
+        low_i = int(low)
+        high_i = int(high)
+        if low_i == 0 and high_i == 0:
+            return None
+        return (low_i, high_i)
+
+    @staticmethod
+    def _decode_float_range(low, high) -> tuple[float, float] | None:
+        low_f = float(low)
+        high_f = float(high)
+        if low_f == 0.0 and high_f == 0.0:
+            return None
+        return (low_f, high_f)
 

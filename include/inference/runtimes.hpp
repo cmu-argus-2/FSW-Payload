@@ -171,16 +171,22 @@ public:
         std::vector<cv::Rect2d>& keep_boxes);
 
     LDNet(RegionID region_id, std::string csv_path);
-    ~LDNet() = default;
+    ~LDNet();
 
     // getters
     bool IsInitialized() const { return initialized_; }
+    
+    // Explicitly release per-frame scratch allocations while keeping engine/context loaded
+    EC ReleaseScratchBuffers();
+    
     int GetNumLandmarks() const { return num_landmarks_; }
     int GetInputWidth() const { return input_width_; }
     int GetInputHeight() const { return input_height_; }
     int GetInputChannels() const { return input_channels_; }
     int GetBatchSize() const { return batch_size_; }
     int GetOutputSize() const { return output_size_; }
+    float* GetOutputBuffer() { return output_buffer_.get(); }
+    const float* GetOutputBuffer() const { return output_buffer_.get(); }
     int GetNumYoloBoxes() const { return num_yolo_boxes; }
     RegionID GetRegionID() const { return region_id_; }
     float GetConfidenceThreshold() const { return confidence_threshold_; }
@@ -199,10 +205,10 @@ public:
     EC Infer(const void* input_data, void* output) ;
     EC Infer(cv::Mat input_data, std::vector<cv::Mat>& output);
     EC PostprocessOutput(cv::Mat outs, std::shared_ptr<Frame> frame);
-
+    
     // Engine path is defined by the model parameters
     EC LoadEngine(const std::string& engine_path);
-    EC LoadEngine() {return LoadEngine(engine_path_);};
+    // EC LoadEngine() {return LoadEngine(engine_path_);}; // Commented out for now
 private:
     bool initialized_ = false;
 
@@ -253,10 +259,14 @@ private:
     bool class_agnostic_nms = false; // yolo default
 
     // Top K detections to keep in NMS
-    bool topk_nms = 300; // yolo default
+    int topk_nms = 300; // yolo default
     
     // Yolo model version
     std::string model_name_ = "yolov8";
+
+    // Pre-allocated CPU output buffer for raw-detection engines.
+    // Avoids a large heap allocation (~24–180 MB) on every inference call.
+    std::unique_ptr<float[]> output_buffer_;
 
     // Landmark bounding box CSV file path (for post-processing)
     const std::string csv_path_;
@@ -268,8 +278,17 @@ private:
     // Logger for TensorRT
     Logger trt_logger_;
 
-    // Inference buffer 
+    // Inference buffer (input always; output only in raw-detection mode)
     InferenceBuffer buffers_;
+    
+    // The scratch buffer tracks if the memory is allocated currently. 
+    // Allocated in EnsureScratchBuffers(), released in ReleaseScratchBuffers(). Aggressively Freed
+    bool scratch_buffers_allocated_ = false;
+    // ---
+
+    // Lazily allocate/reallocate and bind CUDA + host scratch buffers before Infer().
+    // THIS SHOULD BE VALIDATED
+    EC EnsureScratchBuffers();
 
     // Model deserialization >> executable engine
     std::unique_ptr<IRuntime> runtime_ = nullptr;
@@ -286,5 +305,21 @@ private:
 
 };
 } // namespace Inference
+
+static float ComputeIoU(const Landmark& a, const Landmark& b);
+
+// Converting the output matrix to be row-major prevents unnecessary copy -- saves ~900MB RAM usage
+// NOTE: For future reference, Eigen::Map should be RowMajor!!
+using LDOutputMatrix = Eigen::Matrix<float, Eigen::Dynamic, Eigen::Dynamic, Eigen::RowMajor>;
+using LDOutputMatrixRef = Eigen::Ref<const LDOutputMatrix>;
+
+std::vector<Landmark> LDYoloNonMaxSuppression(
+    const LDOutputMatrixRef& output_matrix,
+    RegionID region_id,
+    float conf_threshold,
+    float iou_threshold);
+
+// TODO: Commented out for now, remove if this works without it, two versions since there is also a member in LDNet
+// int GetNumLandmarksFromCSV(const std::string& csv_path);
 
 #endif // RUNTIMES_HPP

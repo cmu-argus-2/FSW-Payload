@@ -1,6 +1,7 @@
 #include "inference/orchestrator.hpp"
 #include "spdlog/spdlog.h"
 
+#include <algorithm>
 #include <filesystem>
 #include <opencv2/opencv.hpp>
 #include <opencv2/core/cuda.hpp>
@@ -134,9 +135,9 @@ void Orchestrator::GrabNewImage(std::shared_ptr<Frame> frame)
         return;
     }
 
-    original_frame_ = frame; 
-    current_frame_ = std::make_shared<Frame>(*frame); // deep copy
-    num_inference_performed_on_current_frame_ = 0; // Reset the inference count for the new frame
+    original_frame_ = frame;
+    current_frame_ = std::make_shared<Frame>(*frame);
+    num_inference_performed_on_current_frame_ = 0;
 }
 
 size_t Orchestrator::GetMemorySize(const nvinfer1::Dims& dims, size_t element_size)
@@ -324,7 +325,7 @@ void Orchestrator::LDPreprocessImg(const cv::Mat& img, cv::Mat& out_chw_img, int
 
 EC Orchestrator::ExecRCInference()
 {
-    if (!current_frame_) 
+    if (!original_frame_)
     {
         spdlog::error("No frame to process");
         LogError(EC::NN_NO_FRAME_AVAILABLE);
@@ -350,7 +351,7 @@ EC Orchestrator::ExecRCInference()
         original_frame_->ClearLandmarks(); // Reset per-frame LD outputs
     }
     
-    img_buff_ = current_frame_->GetImg();
+    img_buff_ = original_frame_->GetImg();
     cv::Mat chw_img;
 
     // Preprocess the image
@@ -373,10 +374,10 @@ EC Orchestrator::ExecRCInference()
     static constexpr float RC_THRESHOLD = 0.5f; // Threshold for region classification TODO Change this later on validation
     for (uint8_t i = 0; i < rc_num_classes; i++) 
     {
-        spdlog::info("RC output for class {}: {:.3f}", i, host_output[i]);
-        if (host_output[i] > RC_THRESHOLD) 
+        if (host_output[i] > RC_THRESHOLD)
         {
-            original_frame_->AddRegion(static_cast<RegionID>(i), host_output[i]); 
+            spdlog::info("RC: class {} score {:.3f} above threshold", GetRegionString(static_cast<RegionID>(i)), host_output[i]);
+            original_frame_->AddRegion(static_cast<RegionID>(i), host_output[i]);
         }
     }
 
@@ -440,15 +441,15 @@ EC Orchestrator::ExecLDInference()
 
         if (!ld_nets_.at(region_id)->IsInitialized())
         {
-            spdlog::warn("LDNet for region {} is not initialized. Attempting to load ONNX model.", GetRegionString(region_id));
+            spdlog::warn("LDNet for region {} is not initialized. Attempting to load model.", GetRegionString(region_id));
 
             ld_net_status = LoadLDNetEngineForRegion(region_id); // Attempt to load the engine for this region
             if (ld_net_status != EC::OK) 
             {
-                spdlog::error("Failed to load ONNX LD Net engine for region: {}. Skipping this region.", GetRegionString(region_id));
+                spdlog::error("Failed to load LD Net engine for region: {}. Skipping this region.", GetRegionString(region_id));
                 continue;
             } else {
-                spdlog::info("Successfully loaded ONNX LD Net engine for region: {}", GetRegionString(region_id));
+                spdlog::info("Successfully loaded LD Net engine for region: {}", GetRegionString(region_id));
             }
         }
 
@@ -458,8 +459,8 @@ EC Orchestrator::ExecLDInference()
         
         output_size = ld_nets_[region_id]->GetOutputSize();
         if (ldnet_config.use_trt) {
-            auto ld_host_output = std::unique_ptr<float[]>{new float[output_size]};
-            ld_net_status = ld_nets_[region_id]->Infer(ld_chw_img.data, ld_host_output.get());
+            float* raw_out = ld_nets_[region_id]->GetOutputBuffer();
+            ld_net_status = ld_nets_[region_id]->Infer(ld_chw_img.data, raw_out);
 
             end = std::chrono::high_resolution_clock::now();
             duration = std::chrono::duration_cast<std::chrono::milliseconds>(end - start);
@@ -469,16 +470,35 @@ EC Orchestrator::ExecLDInference()
             {
                 spdlog::error("LDNet inference failed with error code: {}", to_uint8(ld_net_status));
                 LogError(ld_net_status);
+                ld_nets_[region_id]->ReleaseScratchBuffers();
                 return ld_net_status;
             } else {
                 spdlog::info("LDNet inference completed successfully. Output size: {}", output_size);
             }
 
+            // Raw output buffer may be lazily allocated during Infer().
+            raw_out = ld_nets_[region_id]->GetOutputBuffer();
+            if (!raw_out)
+            {
+                spdlog::error("LDNet output buffer is null after inference.");
+                LogError(EC::NN_POINTER_NULL);
+                ld_nets_[region_id]->ReleaseScratchBuffers();
+                return EC::NN_POINTER_NULL;
+            }
+
             int sizes[3] = {1, ld_nets_[region_id]->GetNumLandmarks() + 4, ld_nets_[region_id]->GetNumYoloBoxes()};
-            cv::Mat output_matrix(3, sizes, CV_32F, ld_host_output.get());
+            cv::Mat output_matrix(3, sizes, CV_32F, raw_out);
 
             start = std::chrono::high_resolution_clock::now();
-            ld_nets_[region_id]->PostprocessOutput(output_matrix, original_frame_); // This will populate the landmarks in the original frame based on the LD output
+            EC postprocess_status = ld_nets_[region_id]->PostprocessOutput(output_matrix, original_frame_); // This will populate the landmarks in the original frame based on the LD output
+            ld_nets_[region_id]->ReleaseScratchBuffers();
+
+            if (postprocess_status != EC::OK)
+            {
+                spdlog::error("LDNet postprocess failed with error code: {}", to_uint8(postprocess_status));
+                LogError(postprocess_status);
+                return postprocess_status;
+            }
 
         } else {
             std::vector<cv::Mat> outs;
@@ -497,7 +517,14 @@ EC Orchestrator::ExecLDInference()
                 spdlog::info("LDNet inference completed successfully. Output size: {}", output_size);
             }
             start = std::chrono::high_resolution_clock::now();
-            ld_nets_[region_id]->PostprocessOutput(outs[0], original_frame_); // This will populate the landmarks in the original frame based on the LD output
+            EC postprocess_status = ld_nets_[region_id]->PostprocessOutput(outs[0], original_frame_); // This will populate the landmarks in the original frame based on the LD output
+
+            if (postprocess_status != EC::OK)
+            {
+                spdlog::error("LDNet postprocess failed with error code: {}", to_uint8(postprocess_status));
+                LogError(postprocess_status);
+                return postprocess_status;
+            }
 
         }
         spdlog::info("LDNet inference output post-processed");
@@ -511,6 +538,7 @@ EC Orchestrator::ExecLDInference()
     
     return EC::OK;
 }
+
 
 EC Orchestrator::ExecFullInference()
 {

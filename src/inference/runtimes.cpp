@@ -1,5 +1,6 @@
 #include "inference/runtimes.hpp"
 
+#include <algorithm>
 #include <regex>
 #include <vector>
 #include <fstream>
@@ -37,22 +38,7 @@ num_classes_(16)
 
 RCNet::~RCNet()
 {
-    cudaStreamDestroy(stream_);
-
-    buffers_.free();
-    
-    if (context_) 
-    {
-        context_.reset();
-    }
-    if (engine_) 
-    {
-        engine_.reset();
-    }
-    if (runtime_) 
-    {
-        runtime_.reset();
-    }
+    (void)Free();
 }
 
 EC RCNet::LoadEngine(const std::string& engine_path)
@@ -190,13 +176,75 @@ input_width_(4608), input_height_(2592), input_channels_(3), batch_size_(1)
                 GetRegionString(region_id), csv_path, num_landmarks_, num_yolo_boxes, input_width_, input_height_);
 }
 
+LDNet::~LDNet()
+{
+    // Simplified from before
+    (void)Free();
+}
+
+// Ensure "scratch" buffers are allocated before inference and freed after post-processing
+// This was done to reduce GPU memory, but should be validated with changes to the model/post-processing
+EC LDNet::EnsureScratchBuffers()
+{
+    if (!initialized_ || !context_)
+    {
+        spdlog::error("LDNet scratch ensure failed: engine/context not initialized.");
+        LogError(EC::NN_ENGINE_NOT_INITIALIZED);
+        return EC::NN_ENGINE_NOT_INITIALIZED;
+    }
+    if (scratch_buffers_allocated_)
+    {
+        return EC::OK;
+    }
+
+    auto alloc_cuda = [](void** ptr, size_t bytes, const char* label) -> EC
+    {
+        if (bytes == 0 || *ptr != nullptr) 
+        {
+            return EC::OK;
+        }
+        cudaError_t err = cudaMalloc(ptr, bytes);
+        if (err != cudaSuccess)
+        {
+            spdlog::error("cudaMalloc failed for {} ({} bytes): {}", label, bytes, cudaGetErrorString(err));
+            LogError(EC::NN_CUDA_MEMCPY_FAILED);
+            return EC::NN_CUDA_MEMCPY_FAILED;
+        }
+        return EC::OK;
+    };
+
+    EC alloc_status = alloc_cuda(&buffers_.input_data, buffers_.input_size, "LD input buffer");
+    if (alloc_status != EC::OK) return alloc_status;
+
+    alloc_status = alloc_cuda(&buffers_.output_data, buffers_.output_size, "LD raw output buffer");
+    if (alloc_status != EC::OK) return alloc_status;
+
+    if (!output_buffer_)
+        output_buffer_ = std::make_unique<float[]>(output_size_);
+
+    context_->setTensorAddress(ld_input_name, buffers_.input_data);
+    context_->setTensorAddress(ld_output_name, buffers_.output_data);
+
+    scratch_buffers_allocated_ = true;
+    return EC::OK;
+}
+
+EC LDNet::ReleaseScratchBuffers()
+{
+    // Aggressively release host + GPU scratch while preserving loaded TRT engine/context
+    buffers_.free();
+    output_buffer_.reset();
+    scratch_buffers_allocated_ = false;
+    return EC::OK;
+}
+
 EC LDNet::Free()
 {
     if (is_trt) {
+        ReleaseScratchBuffers();
         if (context_) context_.reset();
-        if (engine_) engine_.reset();
+        if (engine_)  engine_.reset();
         if (runtime_) runtime_.reset();
-        buffers_.free();
         if (stream_) { cudaStreamDestroy(stream_); stream_ = nullptr; }
     } else {
         net_.reset();
@@ -301,9 +349,23 @@ EC LDNet::parseModelName(const std::string& name, LDNetConfig& ldnet_config)
 
 EC LDNet::LoadEngine(const std::string& engine_path)
 {
+
+    // TODO: May want to have this so that loading starts from clean state
+    EC free_status = Free();
+    if (free_status != EC::OK)
+    {
+        return free_status;
+    }
+
     // Get the parameters from the file
     LDNetConfig ldnet_config;
     EC load_status = parseModelName(engine_path, ldnet_config);
+
+    if (load_status != EC::OK)
+    {
+        spdlog::error("Failed to parse model name for engine {}", engine_path);
+        return load_status;
+    }
     SetLDNetConfig(ldnet_config);
 
     if (is_trt) {
@@ -352,20 +414,22 @@ EC LDNet::LoadEngine(const std::string& engine_path)
         // Engine-declared shapes
         nvinfer1::Dims in_engine = engine_->getTensorShape(ld_input_name);
         nvinfer1::Dims out_engine = engine_->getTensorShape(ld_output_name);
-        
-        // If possible, read from the engine
-        num_yolo_boxes = ComputeNumYoloBoxes();
 
         context_->setInputShape(ld_input_name, nvinfer1::Dims4{batch_size_, input_channels_, input_height_, input_width_});
 
-        // Allocate GPU memory for input and output
+        // Allocate GPU memory for input and output, now moved to scratch buffers
         buffers_.input_size = batch_size_ * input_channels_ * input_height_ * input_width_ * sizeof(float);
-        buffers_.output_size = batch_size_ * (GetNumLandmarks() + 4) * num_yolo_boxes * sizeof(float);
-        buffers_.allocate();
+        buffers_.output_size = output_size_ * sizeof(float);
+        // Buffer Allocation is handled by scratch management
 
         // Bind input and output memory (ok for LD?)
-        context_->setTensorAddress(ld_input_name, buffers_.input_data);
-        context_->setTensorAddress(ld_output_name, buffers_.output_data);
+        // context_->setTensorAddress(ld_input_name, buffers_.input_data);
+        // context_->setTensorAddress(ld_output_name, buffers_.output_data);
+
+        buffers_.input_data = nullptr;
+        buffers_.output_data = nullptr;
+        output_buffer_.reset();
+        scratch_buffers_allocated_ = false;
 
         // Creating CUDA stream for asynchronous execution
         cudaStreamCreate(&stream_); 
@@ -428,6 +492,7 @@ void LDNet::SetLDNetConfig(LDNetConfig ldnet_config)
     embedded_nms  = ldnet_config.embedded_nms;
     is_trt        = ldnet_config.use_trt;
     num_yolo_boxes = ComputeNumYoloBoxes();
+    output_size_ = batch_size_ * (GetNumLandmarks() + 4) * num_yolo_boxes;
 }
 
 EC LDNet::Infer(cv::Mat input_data, std::vector<cv::Mat>& output)
@@ -454,25 +519,44 @@ EC LDNet::Infer(const void* input_data, void* output)
         spdlog::error("LDNet is not initialized. Call LoadEngine first.");
         return EC::NN_ENGINE_NOT_INITIALIZED;
     }
-
-    if (!input_data || !output) 
+    // Re-allocate/rebind scratch buffers on demand after per-frame release
+    EC ensure_status = EnsureScratchBuffers();
+    if (ensure_status != EC::OK)
     {
-        spdlog::error("Input data or output buffer is null.");
+        return ensure_status;
+    }
+
+    if (!input_data) 
+    {
+        spdlog::error("Input data is null.");
+        LogError(EC::NN_POINTER_NULL);
+        return EC::NN_POINTER_NULL;
+    }
+
+
+    // Make sure output buffer is allocated, if not get the output buffer, if that doesn't work then throw
+    if (!output) 
+    {
+        output = output_buffer_.get();
+    }
+
+    if (!output)
+    {
+        spdlog::error("Output buffer is null.");
         LogError(EC::NN_POINTER_NULL);
         return EC::NN_POINTER_NULL;
     }
 
     // copy input data to GPU
-   // spdlog::info("Copying input data to GPU memory.");
+    // spdlog::info("Copying input data to GPU memory.");
     cudaError_t err = cudaMemcpy(buffers_.input_data, input_data, buffers_.input_size, cudaMemcpyHostToDevice);
-    if (err != cudaSuccess) 
+    if (err != cudaSuccess)
     {
-        spdlog::error("cudaMemcpyAsync (input) failed.");
+        spdlog::error("cudaMemcpy (input) failed.");
         return EC::NN_CUDA_MEMCPY_FAILED;
     }
 
-    // Run asynchronous inference with enqueueV3 (async by design)
-    bool status = context_->enqueueV3(stream_); // could use the default stream with enqueueV3(0) adn then no need to sync
+    bool status = context_->enqueueV3(stream_);
     if (!status)
     {
         spdlog::error("Failed to enqueue inference.");
@@ -480,15 +564,15 @@ EC LDNet::Infer(const void* input_data, void* output)
         return EC::NN_INFERENCE_FAILED;
     }
 
-    err = cudaMemcpyAsync(output, buffers_.output_data, buffers_.output_size, cudaMemcpyDeviceToHost, stream_); // Copy output back to CPU
-    if (err != cudaSuccess) 
+    err = cudaMemcpyAsync(output, buffers_.output_data, buffers_.output_size, cudaMemcpyDeviceToHost, stream_);
+    if (err != cudaSuccess)
     {
-        spdlog::error("cudaMemcpyAsync output failed.");
+        spdlog::error("cudaMemcpyAsync (output) failed.");
         LogError(EC::NN_CUDA_MEMCPY_FAILED);
         return EC::NN_CUDA_MEMCPY_FAILED;
     }
-    // spdlog::info("Inference enqueued successfully. Waiting for completion...");
-    cudaStreamSynchronize(stream_);  
+
+    cudaStreamSynchronize(stream_);
     return EC::OK;
 }
 
@@ -554,6 +638,7 @@ void LDNet::yoloPostProcessing(
         } else {
             boxes.push_back(Rect2d(cx - 0.5 * w, cy - 0.5 * h,
                                     cx + 0.5 * w, cy + 0.5 * h));
+            // boxes.push_back(Rect2d(cx - 0.5 * w, cy - 0.5 * h, w, h));
         }
         classIds.push_back(maxLoc.x);
         confidences.push_back(static_cast<float>(conf));
@@ -601,13 +686,20 @@ EC LDNet::PostprocessOutput(cv::Mat outs, std::shared_ptr<Frame> frame)
     std::vector<Rect2d> keep_boxes;
     std::vector<Rect> boxes;
 
-    
+    if (!frame)
+    {
+        spdlog::error("LDNet::PostprocessOutput received null frame.");
+        LogError(EC::NN_POINTER_NULL);
+        return EC::NN_POINTER_NULL;
+    }
+
     // Non-max suppression
     yoloPostProcessing(outs, keep_classIds, keep_confidences, keep_boxes);
 
     for (auto box : keep_boxes)
     {
         boxes.push_back(Rect(cvFloor(box.x), cvFloor(box.y), cvFloor(box.width - box.x), cvFloor(box.height - box.y)));
+        // boxes.push_back(Rect(cvFloor(box.x), cvFloor(box.y), cvFloor(box.width), cvFloor(box.height))
     }
 
     for (auto& b : boxes) {
@@ -635,7 +727,6 @@ EC LDNet::PostprocessOutput(cv::Mat outs, std::shared_ptr<Frame> frame)
         // Landmark landmark(keep_boxes[i], keep_classIds[i], keep_confidences[i]);
         frame->AddLandmark(landmark);
     }
-    
 
     return EC::OK;
 }

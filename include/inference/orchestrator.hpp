@@ -48,8 +48,8 @@ public:
 
 private:
 
-    std::shared_ptr<Frame> original_frame_; // Original frame from the camera to populate
     std::shared_ptr<Frame> current_frame_; // Current frame being processed
+    std::shared_ptr<Frame> original_frame_; // Frame being processed and populated
     int num_inference_performed_on_current_frame_ = 0; 
     cv::Mat img_buff_; // Buffer for the current image
 

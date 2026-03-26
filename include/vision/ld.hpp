@@ -22,7 +22,4 @@ struct Landmark
     }
 };
 
-static float ComputeIoU(const Landmark& a, const Landmark& b);
-
-
 #endif // LD_HPP

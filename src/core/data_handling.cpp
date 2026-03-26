@@ -446,6 +446,8 @@ std::string GetLatestImgBinPath()
 
 }
 
+// TODO: investigate the overloaded functions, ensure safety
+
 bool ReadImageFromDisk(const std::string& file_path, Frame& frame_out, int cam_id, std::uint64_t timestamp)
 {
     // Load the image into memory

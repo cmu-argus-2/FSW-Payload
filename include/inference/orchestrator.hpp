@@ -24,7 +24,6 @@ public:
 
     // TODO: Can the below be moved to private
     // Use these to initialize the class or load the engines on demand?
-    void LoadEngines(); // TODO: Is this one ever being used?
     EC LoadRCEngine();
     void LoadLDNetEngines(); 
     EC LoadLDNetEngineForRegion(RegionID region_id);

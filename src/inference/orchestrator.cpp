@@ -63,12 +63,6 @@ Orchestrator::~Orchestrator()
     original_frame_ = nullptr;
 }
 
-void Orchestrator::LoadEngines()
-{
-    LoadRCEngine();
-    LoadLDNetEngines();
-}
-
 EC Orchestrator::LoadRCEngine()
 {
     EC rc_net_status = rc_net_.LoadEngine(rc_engine_path_);

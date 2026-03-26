@@ -1,9 +1,10 @@
 import queue
 import threading
 import json
+import time
 
 from splat.splat.telemetry_codec import Ack, Command, Report, pack, unpack
-from thread_shared import experiment_queue, log, rx_queue, tx_queue
+from thread_shared import PayloadState, experiment_queue, log, rx_queue, state_manager, tx_queue
 from thread_shared import create_transaction_ack_event, init_transaction_ack_event, update_last_batch_event
 from thread_shared import update_last_batch_lock, update_last_batch_shared
 
@@ -176,6 +177,37 @@ class CommandThread(threading.Thread):
         handled = True
         self._send_ack(command, ack_args={"handled": handled})
         
+        # wait for tx_queue to be empty and after that shutdown
+        # timeout after 5 seconds and shutdown anyway
+        
+        
+    
+    def _handle_turn_off_payload(self, command: Command):
+        """
+        Handle the command to turn off the payload
+        """
+        log.info("Received command to turn off payload")
+        # Queue ACK first, then wait briefly for TX drain before stopping threads.
+        self._send_ack(command, ack_args={"handled": True, "shutdown": True})
+        self._drain_tx_then_shutdown(timeout_s=5.0)
+
+    def _drain_tx_then_shutdown(self, timeout_s: float = 5.0) -> None:
+        """Wait for outbound queue drain, then request process shutdown."""
+        deadline = time.monotonic() + timeout_s
+        while not tx_queue.empty() and time.monotonic() < deadline:
+            time.sleep(0.05)
+
+        if tx_queue.empty():
+            log.info("TX queue drained before shutdown")
+        else:
+            log.warning(
+                "Shutdown timeout reached with %d packets still pending in tx_queue",
+                tx_queue.qsize(),
+            )
+
+        state_manager.set(PayloadState.OFF)
+        self.stop_event.set()
+        log.info("Shutdown requested by command")
 
     def _send_ack(self, command: Command, ack_args=None):
         if isinstance(ack_args, dict):
@@ -192,5 +224,6 @@ class CommandThread(threading.Thread):
         "EXPERIMENT": _handle_experiment,
         "REQUEST_TM_PAYLOAD": _handle_request_tm_payload,
         "CONFIRM_LAST_BATCH": _handle_update_last_batch,
+        "TURN_OFF_PAYLOAD": _handle_turn_off_payload
         # "CREATE_TRANS": _handle_create_trans
     }

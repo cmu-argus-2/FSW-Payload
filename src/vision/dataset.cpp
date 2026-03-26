@@ -76,7 +76,7 @@ bool Dataset::isValidConfigurationFile(const std::string& config_file_path)
         return false;
     }
 
-    return isValidConfiguration(*max_period, static_cast<uint8_t>(*target_frames), 
+    return isValidConfiguration(*max_period, static_cast<uint16_t>(*target_frames), 
                                 static_cast<CAPTURE_MODE>(*dataset_capture_mode_val),
                                 static_cast<IMU_COLLECTION_MODE>(*imu_collection_mode_val),
                                 static_cast<uint8_t>(*image_capture_rate_val),
@@ -85,7 +85,7 @@ bool Dataset::isValidConfigurationFile(const std::string& config_file_path)
                                 timing::GetCurrentTimeMs());
 }
 
-bool Dataset::isValidConfiguration(double max_period, uint8_t nb_frames, CAPTURE_MODE capture_mode, IMU_COLLECTION_MODE imu_collection_mode,
+bool Dataset::isValidConfiguration(double max_period, uint16_t nb_frames, CAPTURE_MODE capture_mode, IMU_COLLECTION_MODE imu_collection_mode,
                                     uint8_t image_capture_rate, float imu_sample_rate_hz, ProcessingStage target_processing_stage,
                                     uint64_t capture_start_time)
 {
@@ -141,7 +141,7 @@ bool Dataset::isValidConfiguration(double max_period, uint8_t nb_frames, CAPTURE
 }
 
 
-Dataset::Dataset(double max_period, uint8_t nb_frames, 
+Dataset::Dataset(double max_period, uint16_t nb_frames, 
                 CAPTURE_MODE capture_mode,
                 IMU_COLLECTION_MODE imu_collection_mode,
                 uint8_t image_capture_rate, float imu_sample_rate_hz, 

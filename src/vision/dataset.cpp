@@ -221,7 +221,7 @@ imu_log_file_path(folder_path_in + "/imu_data.csv")
     if (config.contains("maximum_period")) {
         maximum_period      = *(config["maximum_period"].value<double>());
     }
-    target_frame_nb         = static_cast<uint16_t>(*(config["target_frame_nb"].value<uint64_t>()));
+    target_frame_nb = static_cast<uint16_t>(*(config["target_frame_nb"].value<uint64_t>()));
     dataset_capture_mode    = static_cast<CAPTURE_MODE>(*(config["dataset_capture_mode"].value<uint64_t>()));
     imu_collection_mode     = static_cast<IMU_COLLECTION_MODE>(*(config["imu_collection_mode"].value<uint64_t>()));
     image_capture_rate      = static_cast<uint8_t>(*(config["image_capture_rate"].value<uint64_t>()));
@@ -253,7 +253,7 @@ bool Dataset::CreateConfigurationFile()
     auto tbl = toml::table{
         {"capture_start_time", static_cast<int64_t>(capture_start_time)}, 
         {"maximum_period", maximum_period},
-        {"target_frames", target_frame_nb},
+        {"target_frame_nb", target_frame_nb},
         {"dataset_capture_mode", dataset_capture_mode},
         {"imu_collection_mode", imu_collection_mode},
         {"image_capture_rate", image_capture_rate},

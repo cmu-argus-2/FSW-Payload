@@ -43,13 +43,6 @@ class Logger : public ILogger
     }
 };
 
-// TODO: Remove, define in classes
-// static constexpr int BATCH_SIZE = 1; // Batch size for inference
-// static constexpr int INPUT_CHANNELS = 3; // Number of input channels (RGB)
-// static constexpr int INPUT_HEIGHT = 224; // Input height
-// static constexpr int INPUT_WIDTH = 224; // Input width
-// static constexpr int RC_NUM_CLASSES = 16; // Number of classes in the output (THIS CHANGES WITH MODEL, WILL BREAK OTHERWISE)
-
 class RCNet
 {
 
@@ -305,21 +298,5 @@ private:
 
 };
 } // namespace Inference
-
-static float ComputeIoU(const Landmark& a, const Landmark& b);
-
-// Converting the output matrix to be row-major prevents unnecessary copy -- saves ~900MB RAM usage
-// NOTE: For future reference, Eigen::Map should be RowMajor!!
-using LDOutputMatrix = Eigen::Matrix<float, Eigen::Dynamic, Eigen::Dynamic, Eigen::RowMajor>;
-using LDOutputMatrixRef = Eigen::Ref<const LDOutputMatrix>;
-
-std::vector<Landmark> LDYoloNonMaxSuppression(
-    const LDOutputMatrixRef& output_matrix,
-    RegionID region_id,
-    float conf_threshold,
-    float iou_threshold);
-
-// TODO: Commented out for now, remove if this works without it, two versions since there is also a member in LDNet
-// int GetNumLandmarksFromCSV(const std::string& csv_path);
 
 #endif // RUNTIMES_HPP

@@ -226,7 +226,7 @@ imu_log_file_path(folder_path_in + "/imu_data.csv")
     image_capture_rate      = static_cast<uint8_t>(*(config["image_capture_rate"].value<uint64_t>()));
     imu_sample_rate_hz      = static_cast<float>(*(config["imu_sample_rate_hz"].value<double>()));
     target_processing_stage = static_cast<ProcessingStage>(*(config["target_processing_stage"].value<uint64_t>())); // Use uint64_t to match the value type in config
-    
+    capture_start_time = static_cast<uint64_t>(*(config["capture_start_time"].value<int64_t>()));
 }
 
 Dataset& Dataset::operator=(const Dataset& other)
@@ -250,6 +250,7 @@ Dataset& Dataset::operator=(const Dataset& other)
 bool Dataset::CreateConfigurationFile()
 {
     auto tbl = toml::table{
+        {"capture_start_time", static_cast<int64_t>(capture_start_time)}, 
         {"maximum_period", maximum_period},
         {"target_frames", target_frame_nb},
         {"dataset_capture_mode", dataset_capture_mode},
@@ -375,3 +376,4 @@ bool Dataset::OverlapsWith(const Dataset& other) const
     return (capture_start_time >= other.capture_start_time && capture_start_time <= other.capture_start_time + other.maximum_period * 1000) ||
            (capture_start_time + maximum_period * 1000 >= other.capture_start_time && capture_start_time + maximum_period * 1000 <= other.capture_start_time + other.maximum_period * 1000);
 }
+

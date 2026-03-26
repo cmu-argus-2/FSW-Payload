@@ -239,13 +239,69 @@ TEST(DatasetTest, DatasetConfigurationCheck)
 
 TEST(DatasetTest, DatasetStorageAndRetrieval) 
 {
+    // First make the dataset
+
+    // configuration parameters
+    double max_period = 60.0;
+    uint16_t nb_frames = 100;
+    CAPTURE_MODE capture_mode = CAPTURE_MODE::PERIODIC;
+    IMU_COLLECTION_MODE imu_collection_mode = IMU_COLLECTION_MODE::GYRO_ONLY;
+    uint8_t image_capture_rate = 60;
+    float imu_sample_rate_hz = 1.0f;
+    ProcessingStage target_processing_stage = ProcessingStage::NotPrefiltered;
+    uint64_t capture_start_time = timing::GetCurrentTimeMs();
+
+    Dataset dataset(max_period, nb_frames, capture_mode, 
+                    imu_collection_mode, image_capture_rate, 
+                    imu_sample_rate_hz, target_processing_stage, 
+                    capture_start_time);
+
     // Test that dataset is stored in the right place
+    auto folder_path = "data/datasets/" + std::to_string(capture_start_time);
+    EXPECT_TRUE(fs::exists(folder_path));
+    EXPECT_TRUE(fs::exists(folder_path + "/dataset_config.toml"));
 
     // Test that dataset can be retrieved from folder path and that parameters are correctly read
+    Dataset retrieved_dataset(folder_path);
+    EXPECT_EQ(retrieved_dataset.GetMaximumPeriod(), 60.0);
+    EXPECT_EQ(retrieved_dataset.GetTargetFrameNb(), 100);
+    EXPECT_EQ(retrieved_dataset.GetDatasetCaptureMode(), CAPTURE_MODE::PERIODIC);
+    EXPECT_EQ(retrieved_dataset.GetCaptureStartTime(), capture_start_time);
+    EXPECT_EQ(retrieved_dataset.GetIMUCollectionMode(), IMU_COLLECTION_MODE::GYRO_ONLY);
+    EXPECT_EQ(retrieved_dataset.GetImageCaptureRate(), 60);
+    EXPECT_EQ(retrieved_dataset.GetIMUSampleRateHz(), 1.0f);
+    EXPECT_EQ(retrieved_dataset.GetTargetProcessingStage(), ProcessingStage::NotPrefiltered);
 
     // Error handling: dataset doesn't exist
+    ASSERT_THROW(Dataset{"data/datasets/bogus_dataset_path/"}, std::invalid_argument);
 
     // Test that dataset can be converted to and from json correctly
+    Json j = dataset.toJson();
+    EXPECT_TRUE(j.contains("folder_path"));
+    EXPECT_TRUE(j.contains("capture_start_time"));
+    EXPECT_TRUE(j.contains("maximum_period"));
+    EXPECT_TRUE(j.contains("target_frame_nb"));
+    EXPECT_TRUE(j.contains("dataset_capture_mode"));
+    EXPECT_TRUE(j.contains("imu_collection_mode"));
+    EXPECT_TRUE(j.contains("image_capture_rate"));
+    EXPECT_TRUE(j.contains("imu_sample_rate_hz"));
+    EXPECT_TRUE(j.contains("target_processing_stage"));
+    EXPECT_TRUE(j.contains("imu_log_file_path"));
+    EXPECT_TRUE(j.contains("frame_id_list"));
+
+    EXPECT_EQ(j["capture_start_time"], capture_start_time);
+    EXPECT_EQ(j["maximum_period"], 60.0);
+    EXPECT_EQ(j["target_frame_nb"], 100);
+
+    Dataset dataset_from_json(max_period, nb_frames, capture_mode,
+                          imu_collection_mode, image_capture_rate,
+                          imu_sample_rate_hz, target_processing_stage,
+                          capture_start_time + 100000);
+    EXPECT_TRUE(dataset_from_json.fromJson(j));
+    EXPECT_EQ(dataset_from_json.GetCaptureStartTime(), capture_start_time);
+    EXPECT_EQ(dataset_from_json.GetMaximumPeriod(), 60.0);
+    EXPECT_EQ(dataset_from_json.GetTargetFrameNb(), 100);
+    EXPECT_EQ(dataset_from_json.GetFolderPath(), folder_path + "/");
 }
 
 

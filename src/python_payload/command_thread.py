@@ -4,6 +4,7 @@ import json
 import time
 
 from splat.splat.telemetry_codec import Ack, Command, Report, pack, unpack
+from splat.splat.telemetry_definition import COMMAND_IDS
 from thread_shared import PayloadState, experiment_queue, log, rx_queue, state_manager, tx_queue
 from thread_shared import create_transaction_ack_event, init_transaction_ack_event, update_last_batch_event
 from thread_shared import update_last_batch_lock, update_last_batch_shared
@@ -59,8 +60,8 @@ class CommandThread(threading.Thread):
         This is the function that will be used to deal with ack
         it will simply set the ack variable for that given function true
         """
-        if ack.cmd_id == 15:
-            # it was a ping command
+        if ack.cmd_id == COMMAND_IDS["CREATE_TRANS"]:
+            # it was a create trans command
             if create_transaction_ack_event.is_set():
                 log.error("CREATE_TRANS ACK OVERRIDDEN")
             create_transaction_ack_event.set()
@@ -68,8 +69,8 @@ class CommandThread(threading.Thread):
             return
             
         
-        if ack.cmd_id == 16:
-            # it was a ping command
+        if ack.cmd_id == COMMAND_IDS["INIT_TRANS"]:
+            # it was a init trans command
             if init_transaction_ack_event.is_set():
                 log.error("INIT_TRANS ACK OVERRIDDEN")
             init_transaction_ack_event.set()

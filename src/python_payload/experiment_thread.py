@@ -10,6 +10,8 @@ from camera_driver import JetsonCamera
 from thread_shared import PayloadState, experiment_queue, log, state_manager, tx_queue
 from file_downlink_manager import FileDownlinkManager
 
+from external_bin_calls import run_inference
+
 from splat.splat.telemetry_codec import Command, pack
 
 import math
@@ -91,6 +93,9 @@ class ExperimentThread(threading.Thread):
         downscale_factor: float = 2.0,
         camera_params: dict | None = None,
     ):
+        experiment_dir = self._create_experiment_output_dir()
+        log.info("Experiment output directory: %s", experiment_dir)
+        file_manifest = self._init_file_manifest()
         
         # 1. turn on the required cameras
         state_manager.set(PayloadState.TURNING_ON)
@@ -108,8 +113,13 @@ class ExperimentThread(threading.Thread):
 
         # 2. capture and save images from the required cameras
         state_manager.set(PayloadState.CAPTURING)
-        current_image_path_list = self._capture_from_cameras(cameras)
+        current_image_path_list = self._capture_from_cameras(
+            cameras,
+            experiment_dir,
+            file_manifest,
+        )
         log.info("Captured %d images", len(current_image_path_list))
+        log.info("After capture: %s", file_manifest)
         self._close_cameras(cameras)
 
         # 3. run the processing
@@ -119,17 +129,29 @@ class ExperimentThread(threading.Thread):
             current_image_path_list = self._downscale_images(
                 current_image_path_list,
                 downscale_factor,
+                experiment_dir,
+                file_manifest,
             )
+        log.info("After downscaling: %s", file_manifest)
             
         # check to see if should run prefiltering
         if level_processing & self.PROCESS_PREFILTER_BIT:
             state_manager.set(PayloadState.PREFILTERING)
-            current_image_path_list = self._prefilter_images(current_image_path_list)
+            current_image_path_list = self._prefilter_images(
+                current_image_path_list,
+                file_manifest,
+            )
+        log.info("After prefiltering: %s", file_manifest)
 
         # check to see if should run inference
         if level_processing & self.PROCESS_INFERENCE_BIT:
             state_manager.set(PayloadState.INFERENCE)
-            current_image_path_list = self._run_inference(current_image_path_list)
+            current_image_path_list = self._run_inference(
+                current_image_path_list,
+                experiment_dir,
+                file_manifest,
+            )
+        log.info("After inference: %s", file_manifest)
             
         # send the finished experiment command
         # TODO - not sure that I want to do this here
@@ -137,9 +159,23 @@ class ExperimentThread(threading.Thread):
         tx_queue.put(pack(command))
         log.info("Sending EXPERIMENT_FINISHED command (experiment finished)")
         
+        # get the files that we want to send to the mainboard
+        # for now it will be the files in the results and downscale folder inside the experiment folder
+        # we need to create a list with the paths for all those files
+        final_file_list = self._files_for_downlink(file_manifest)
+        if not final_file_list:
+            log.warning(
+                "No files found in file_manifest downscaled/results for %s. "
+                "Falling back to raw/current_image_path_list.",
+                experiment_dir,
+            )
+            final_file_list = file_manifest["raw"] or current_image_path_list
+        log.info("Prepared %d files for downlink", len(final_file_list))
+        
+        
         # finished experiment, want to go to downlink mode
         state_manager.set(PayloadState.DOWNLOAD)
-        self.send_results(current_image_path_list)  # TODO currently only sending the images, need to change later on to send the results as well
+        self.send_results(final_file_list)
         
     def send_results(self, final_file_list: list[str]):
         """
@@ -201,11 +237,16 @@ class ExperimentThread(threading.Thread):
         
         return cameras
 
-    def _capture_from_cameras(self, cameras: dict[int, JetsonCamera]) -> list[str]:
+    def _capture_from_cameras(
+        self,
+        cameras: dict[int, JetsonCamera],
+        experiment_dir: Path,
+        file_manifest: dict,
+    ) -> list[str]:
         if not cameras:
             return []
 
-        output_dir = Path("images_raw")
+        output_dir = experiment_dir / "raw"
         output_dir.mkdir(parents=True, exist_ok=True)
         timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
 
@@ -215,10 +256,11 @@ class ExperimentThread(threading.Thread):
             camera = cameras[sensor_id]
             log.info("Capturing image from camera sensor-id=%d", sensor_id)
             frame = camera.capture()
-            output_path = output_dir / f"raw_{sensor_id}_{timestamp}.jpeg"
+            output_path = output_dir / f"{sensor_id}_{timestamp}.jpeg"
             camera.save(frame, str(output_path))
             saved_paths.append(str(output_path))
 
+        file_manifest["raw"].extend(saved_paths)
         return saved_paths
 
     def _close_cameras(self, cameras: dict[int, JetsonCamera]) -> None:
@@ -234,15 +276,17 @@ class ExperimentThread(threading.Thread):
         self,
         image_paths: list[str],
         downscale_factor: float = 2.0,
+        experiment_dir: Path | None = None,
+        file_manifest: dict | None = None,
     ) -> list[str]:
         """
         Will receive a list of image paths. For each of the images, it will perform the necessary downsample to the image
         It will prepare the image to feed to the model
         it will save the new image in a new path and return a new image_path list with the new paths
         """
-        output_dir = Path("images_downscaled")
+        output_dir = experiment_dir / "downscaled"
         output_dir.mkdir(parents=True, exist_ok=True)
-
+        
         if downscale_factor <= 0:
             log.warning(
                 "Invalid downscale_factor=%s. Falling back to 2.0",
@@ -261,7 +305,7 @@ class ExperimentThread(threading.Thread):
             resized_width = max(1, int(round(width / downscale_factor)))
             resized_height = max(1, int(round(height / downscale_factor)))
             resized = cv2.resize(img, (resized_width, resized_height))
-            dst = output_dir / f"downscaled_{src.stem}.jpeg"
+            dst = output_dir / f"{src.stem}.jpeg"
             ok = cv2.imwrite(str(dst), resized)
             if not ok:
                 raise RuntimeError(f"Failed to write downscaled image: {dst}")
@@ -272,9 +316,11 @@ class ExperimentThread(threading.Thread):
             len(downscaled_paths),
             downscale_factor,
         )
+        if file_manifest is not None:
+            file_manifest["downscaled"].extend(downscaled_paths)
         return downscaled_paths
 
-    def _prefilter_images(self, image_paths: list[str]) -> list[str]:
+    def _prefilter_images(self, image_paths: list[str], file_manifest: dict | None = None) -> list[str]:
         """
         Receives a list of image paths and will perform pre filtering
         It will return a new list of image paths contain only the images that passed pre filtering
@@ -284,12 +330,76 @@ class ExperimentThread(threading.Thread):
         log.error("Prefiltering stage not implemented")
         return image_paths
 
-    def _run_inference(self, image_paths: list[str]) -> None:
+    def _run_inference(
+        self,
+        image_paths: list[str],
+        experiment_dir: Path,
+        file_manifest: dict | None = None,
+    ) -> list[str]:
         """
         Receive a list with the file path to the images it should run inference on
         for each image in the image_paths, it will create a json with the results of the experiment
         """
-        log.error("Inference stage not implemented")
+        
+        output_folder = experiment_dir / "results"
+        output_folder.mkdir(parents=True, exist_ok=True)
+        
+            
+        # TODO remove this hardcode
+        # but for not I will add the full path to the output_folder_path 
+        # need to add the full path to the image path as well
+        full_path = "/home/argus-payload/new_payload"
+        output_folder_full = Path(full_path) / output_folder
+
+        log.info("Running inference on images...")
+        for image_path in image_paths:
+            
+            # TODO remove this hardcode
+            # adding the full path to the image folder
+            full_image_path = Path(full_path) / image_path
+
+            log.info(f"Running inference on {full_image_path} and {output_folder_full}")
+            # TODO remove this hardcode as well
+            run_inference(str(full_image_path), f"{str(output_folder_full)}/")
+
+        # for now will return whatever data was generated by the inferece
+        # return list dir for the output folder
+
+        result_paths = [str(p) for p in sorted(output_folder.rglob("*")) if p.is_file()]
+        if file_manifest is not None:
+            file_manifest["results"].extend(result_paths)
+        return result_paths
+
+    def _create_experiment_output_dir(self) -> Path:
+        root = Path("experiments")
+        root.mkdir(parents=True, exist_ok=True)
+        timestamp = datetime.now().strftime("%Y-%m-%d_%H-%M-%S")
+        base = root / f"experiment_{timestamp}"
+
+        if not base.exists():
+            base.mkdir(parents=True, exist_ok=False)
+            return base
+
+        suffix = 1
+        while True:
+            candidate = root / f"experiment_{timestamp}_{suffix:02d}"
+            if not candidate.exists():
+                candidate.mkdir(parents=True, exist_ok=False)
+                return candidate
+            suffix += 1
+
+    @staticmethod
+    def _init_file_manifest() -> dict:
+        return {
+            "raw": [],
+            "downscaled": [],
+            "results": [],
+        }
+
+    @staticmethod
+    def _files_for_downlink(file_manifest: dict) -> list[str]:
+        return [*file_manifest["downscaled"], *file_manifest["results"]]
+            
         
 
     def _validate_dimensions(self, width: int, height: int) -> tuple[int, int]:

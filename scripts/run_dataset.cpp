@@ -66,6 +66,12 @@ int main(int argc, char** argv)
         {
             // if running: TODO: return ERROR ACK saying that a dataset is already running
             // If completed, stop it then too
+            SPDLOG_ERROR("Dataset already running under key {}, ignoring command", DATASET_KEY_CMD);
+            imu_manager.StopLoop();
+            if (imu_thread.joinable()) imu_thread.join();
+            camera_manager.StopLoops();
+            if (camera_thread.joinable()) camera_thread.join();
+            return 1;
         }
         else
         {

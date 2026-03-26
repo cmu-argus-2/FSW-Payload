@@ -248,9 +248,9 @@ void start_capture_dataset([[maybe_unused]] std::vector<uint8_t>& data)
 
     if (max_period == 0.0 || target_frame_nb == 0)
     {
-        // TODO: Send Error ACK
         uint8_t ERR_PERIODIC = 0x20; // TODO define elsewhere
         SPDLOG_ERROR("Invalid data for START_CAPTURE_DATASET command");
+        // error ack
         std::shared_ptr<Message> msg = CreateErrorAckMessage(CommandID::START_CAPTURE_DATASET, 0x20);
         sys::payload().TransmitMessage(msg);
         return;
@@ -265,6 +265,10 @@ void start_capture_dataset([[maybe_unused]] std::vector<uint8_t>& data)
         {
             // if running: TODO: return ERROR ACK saying that a dataset is already running
             // If completed, stop it then too
+            SPDLOG_ERROR("Dataset already running under key {}, ignoring command", DATASET_KEY_CMD);
+            std::shared_ptr<Message> msg = CreateErrorAckMessage(CommandID::START_CAPTURE_DATASET, 0x21);
+            sys::payload().TransmitMessage(msg);
+            return;
         }
         else
         {
@@ -288,6 +292,7 @@ void start_capture_dataset([[maybe_unused]] std::vector<uint8_t>& data)
         SPDLOG_ERROR("Failed to start dataset collection: {}", e.what());
         std::shared_ptr<Message> msg = CreateErrorAckMessage(CommandID::START_CAPTURE_DATASET, 0x21); // TODO example error code
         sys::payload().TransmitMessage(msg);
+        return;
     }
     
     // All good

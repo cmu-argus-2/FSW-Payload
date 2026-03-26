@@ -26,6 +26,30 @@ target_link_libraries(GEN_TILEPACK_RAW
     vision
 )
 
+add_executable(TEST_CAMERA_INFERENCE test_camera_inference.cpp)
+target_link_libraries(TEST_CAMERA_INFERENCE
+    PRIVATE
+    PAYLOAD_LIB
+)
+
+add_executable(TEST_PREFILTER test_prefiltering.cpp)
+target_link_libraries(TEST_PREFILTER
+    PRIVATE
+    vision
+    ${OpenCV_LIBS}
+)
+
+add_executable(RUN_BATCH_OPT navigation/run_batch_opt.cpp)
+target_link_libraries(RUN_BATCH_OPT
+    PRIVATE
+    spdlog::spdlog
+    PAYLOAD_LIB
+    HDF5::HDF5           
+    HighFive::HighFive
+    Ceres::ceres
+    Eigen3::Eigen
+)
+
 # temporary executable to test jacobians
 add_executable(test_jacobians
     navigation/test_jacobians.cpp
@@ -38,4 +62,13 @@ target_link_libraries(test_jacobians
     HighFive::HighFive
     Ceres::ceres
     Eigen3::Eigen
+)
+
+add_executable(yolo_detector
+    yolo_detector.cpp
+)
+target_link_libraries(yolo_detector
+    PRIVATE
+    PAYLOAD_LIB
+    spdlog::spdlog
 )

@@ -58,6 +58,7 @@ namespace DH // Data Handling
     long GetFileSize(std::string_view file_path); // in bytes
     long GetDirectorySize(std::string_view directory_path); 
     int CountFilesInDirectory(std::string_view directory_path);
+    std::string getExtension(const std::string& path);
 
     // Store a dataset on disk
     std::string StoreDatasetToDisk(Dataset& dataset);
@@ -75,14 +76,15 @@ namespace DH // Data Handling
 
     bool ReadLatestStoredRawImg(Frame& frame);
     bool ReadHighestValueStoredRawImg(Frame& frame);
-    
+
     // Load an image from disk by its path
     bool ReadImageFromDisk(const std::string& file_path, Frame& frame_out);
+    // Load an image from disk by its path, with optional cam_id and timestamp for logging
+    bool ReadImageFromDisk(const std::string& file_path, Frame& frame_out, int cam_id=0, std::uint64_t timestamp=0);
     // Load an image from disk by its timestamp and cam_id
     bool ReadImageFromDisk(std::uint64_t timestamp, int cam_id, Frame& frame_out);
     // Load image information to json
     Json LoadFrameMetadataFromDisk(std::uint64_t timestamp, int cam_id);
-
 
     // Load the latest binary image file with packet header (img_<timestamp>_<camera_id>.bin)
     // Returns the file path if found, empty string otherwise

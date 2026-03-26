@@ -17,7 +17,6 @@ add_executable(TM_TEGRASTATS tegra_processor.cpp tegra.cpp)
 
 # Link libraries to the executable
 target_link_libraries(TM_TEGRASTATS PRIVATE
-    spdlog::spdlog
+    ${PAYLOAD_SPDLOG_TARGET}
     rt
 )
-

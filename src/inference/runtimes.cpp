@@ -636,9 +636,9 @@ void LDNet::yoloPostProcessing(
         if (model_name_ == "yolonas" || model_name_ == "yolov10"){
             boxes.push_back(Rect2d(cx, cy, w, h));
         } else {
-            boxes.push_back(Rect2d(cx - 0.5 * w, cy - 0.5 * h,
-                                    cx + 0.5 * w, cy + 0.5 * h));
-            // boxes.push_back(Rect2d(cx - 0.5 * w, cy - 0.5 * h, w, h));
+            // boxes.push_back(Rect2d(cx - 0.5 * w, cy - 0.5 * h,
+            //                         cx + 0.5 * w, cy + 0.5 * h));
+            boxes.push_back(Rect2d(cx - 0.5 * w, cy - 0.5 * h, w, h));
         }
         classIds.push_back(maxLoc.x);
         confidences.push_back(static_cast<float>(conf));
@@ -698,8 +698,8 @@ EC LDNet::PostprocessOutput(cv::Mat outs, std::shared_ptr<Frame> frame)
 
     for (auto box : keep_boxes)
     {
-        boxes.push_back(Rect(cvFloor(box.x), cvFloor(box.y), cvFloor(box.width - box.x), cvFloor(box.height - box.y)));
-        // boxes.push_back(Rect(cvFloor(box.x), cvFloor(box.y), cvFloor(box.width), cvFloor(box.height))
+        // boxes.push_back(Rect(cvFloor(box.x), cvFloor(box.y), cvFloor(box.width - box.x), cvFloor(box.height - box.y)));
+        boxes.push_back(Rect(cvFloor(box.x), cvFloor(box.y), cvFloor(box.width), cvFloor(box.height)));
     }
 
     for (auto& b : boxes) {

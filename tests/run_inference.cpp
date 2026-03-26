@@ -63,15 +63,16 @@ int main(int argc, char** argv)
     std::string rc_trt_file_path;
     std::string ld_trt_folder_path;
     std::string sample_image_path;
-
-    if (argc < 4)
+    std::string_view target_folder;
+    if (argc < 5)
     {
         spdlog::info("Using default inference example");
         rc_trt_file_path = "models/V1/trained-rc/effnet_0997acc.trt";
         ld_trt_folder_path = "models/V1/trained-ld";
+        target_folder = "data/images";
         // ld_trt_folder_path -> should be inferred from the parameters
-        std::string tgt_region = "17R";
-        std::string sample_id = "00221";
+        std::string tgt_region = "17T";
+        std::string sample_id = "00277";
         bool isjpg = false;
         sample_image_path = "models/V1/sample_images/l8_" + tgt_region + "_" + sample_id;
         if (isjpg) {
@@ -80,29 +81,32 @@ int main(int argc, char** argv)
             sample_image_path = sample_image_path + ".png";
         }
     } else {
-        rc_trt_file_path = argv[1];
+        rc_trt_file_path  = argv[1];
         ld_trt_folder_path = argv[2];
-        sample_image_path = argv[3];
+        sample_image_path  = argv[3];
+        target_folder      = argv[4];
     }
-    // Parameters that define the model 
+    // Parameters that define the model
     // TRT Example
-    // Inference::NET_QUANTIZATION weight_quant = Inference::NET_QUANTIZATION::FP16;
-    // int input_width = 4608;
-    // int input_height = 2592;
-    // bool embedded_nms = false;
-    // bool use_trt_for_ld = true;
-    // ONNX example
-    Inference::NET_QUANTIZATION weight_quant = Inference::NET_QUANTIZATION::FP32;
+    Inference::NET_QUANTIZATION weight_quant = Inference::NET_QUANTIZATION::FP16;
     int input_width = 4608;
-    int input_height = 4608;
+    int input_height = 2592;
     bool embedded_nms = false;
-    bool use_trt_for_ld = false;
+    bool use_trt_for_ld = true;
+    // ONNX example
+    // Inference::NET_QUANTIZATION weight_quant = Inference::NET_QUANTIZATION::FP32;
+    // int input_width = 4608;
+    // int input_height = 4608;
+    // bool embedded_nms = false;
+    // bool use_trt_for_ld = false;
 
     Inference::Orchestrator orchestrator;
     orchestrator.SetRCNetEnginePath(rc_trt_file_path);
     orchestrator.SetLDNetConfig(weight_quant, input_width, input_height, embedded_nms, use_trt_for_ld);
     orchestrator.SetLDNetEngineFolderPath(ld_trt_folder_path);
     // orchestrator.Initialize(rc_trt_file_path, ld_trt_folder_path);
+
+    spdlog::info("Using image file: {}", sample_image_path);
 
     Frame frame; // empty frame 
     auto timestamp = timing::GetCurrentTimeMs();
@@ -132,7 +136,7 @@ int main(int argc, char** argv)
         spdlog::info("Region ID: {}", GetRegionString(region_id));
     }
 
-    DH::StoreFrameMetadataToDisk(*frame_ptr); // Test for now
+    DH::StoreFrameMetadataToDisk(*frame_ptr, target_folder); // Test for now
     spdlog::info("Frame metadata JSON saved to data/images/");
 
     // Landmark Detection results

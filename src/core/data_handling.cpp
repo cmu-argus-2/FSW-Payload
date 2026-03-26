@@ -154,7 +154,7 @@ void StoreFrameMetadataToDisk(Frame& frame, std::string_view target_folder)
         return;
     }
 
-    ofs << j.dump(4);
+    ofs << j.dump(1,'\t');
     ofs.close();
     /*
     std::ostringstream oss;

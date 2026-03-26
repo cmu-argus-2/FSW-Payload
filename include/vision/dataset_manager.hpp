@@ -76,7 +76,8 @@ public:
 
     std::atomic<bool> inference_enabled{true};
     
-
+    void SetInferenceEnabled(bool enabled) { inference_enabled.store(enabled); }
+    bool GetInferenceEnabled() const { return inference_enabled.load(); }
 
 private:
 

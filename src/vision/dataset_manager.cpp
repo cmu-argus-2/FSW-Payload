@@ -295,10 +295,7 @@ void DatasetManager::CollectionLoop()
                 }
             }
 
-            progress.Update(no_frame_counter, 1.0);
-
-            if (inference_enabled.load() &&
-                current_dataset.GetTargetProcessingStage() > ProcessingStage::NotPrefiltered)
+            if (inference_enabled.load())
             {
                 RunInferenceOnNewFrames(frame_ids, stored_frame_ids);
             }

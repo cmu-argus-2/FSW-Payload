@@ -74,6 +74,9 @@ public:
 
     ~DatasetManager();
 
+    std::atomic<bool> inference_enabled{true};
+    
+
 
 private:
 
@@ -90,6 +93,9 @@ private:
     bool CheckTermination();
     // Runs the loop that periodically takes the latest frames, performs any necessary preprocessing, and stores the data in the corresponding folder
     void CollectionLoop();
+    void RunInferenceOnNewFrames(
+        const std::vector<std::tuple<uint8_t, uint64_t>>& frame_ids,
+        const std::vector<std::tuple<uint8_t, uint64_t>>& already_processed);
     std::atomic<bool> loop_flag = false;
     
     std::mutex loop_mtx;

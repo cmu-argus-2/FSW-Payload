@@ -8,6 +8,7 @@
 #include "core/data_handling.hpp"
 #include "core/timing.hpp"
 #include "payload.hpp"
+#include "inference/orchestrator.hpp"
 
 
 DatasetProgress::DatasetProgress(uint16_t target_nb_frames)
@@ -205,6 +206,50 @@ bool DatasetManager::CheckTermination()
     return (progress.current_frames >= current_dataset.GetTargetFrameNb()) || (timing::GetCurrentTimeMs() - current_dataset.GetCaptureStartTime() > current_dataset.GetMaximumPeriod() * 1000);
 }
 
+void DatasetManager::RunInferenceOnNewFrames(
+    const std::vector<std::tuple<uint8_t, uint64_t>>& frame_ids,
+    const std::vector<std::tuple<uint8_t, uint64_t>>& already_processed)
+{
+    static Inference::Orchestrator orchestrator;
+
+    for (const auto& frame_id : frame_ids)
+    {
+        // if already done, thjen skip over it
+        if (std::find(already_processed.begin(), already_processed.end(), frame_id) 
+            != already_processed.end())
+            continue;
+
+        uint8_t cam_id = std::get<0>(frame_id);
+        uint64_t timestamp = std::get<1>(frame_id);
+
+        std::string img_path = current_dataset.GetFolderPath() 
+                             + "raw_" + std::to_string(timestamp) 
+                             + "_" + std::to_string(cam_id) + ".png";
+
+        Frame frame;
+        if (!DH::ReadImageFromDisk(img_path, frame, cam_id, timestamp))
+        {
+            SPDLOG_ERROR("Failed to load frame ({}, {}) for inference", cam_id, timestamp);
+            continue;
+        }
+
+        std::shared_ptr<Frame> frame_ptr = std::make_shared<Frame>(frame);
+        orchestrator.GrabNewImage(frame_ptr);
+
+        EC status = orchestrator.ExecFullInference();
+        if (status == EC::OK)
+        {
+            DH::StoreFrameMetadataToDisk(*frame_ptr, current_dataset.GetFolderPath());
+            SPDLOG_INFO("Inference complete for frame ({}, {})", cam_id, timestamp);
+        }
+        else
+        {
+            SPDLOG_ERROR("Inference failed for frame ({}, {}): error {}", 
+                         cam_id, timestamp, to_uint8(status));
+        }
+    }
+}
+
 void DatasetManager::CollectionLoop()
 {
     // TODO: No two datasets should collect at the same time. 
@@ -249,9 +294,19 @@ void DatasetManager::CollectionLoop()
                     stored_frame_ids.push_back(frame_id);
                 }
             }
+
+            progress.Update(no_frame_counter, 1.0);
+
+            if (inference_enabled.load() &&
+                current_dataset.GetTargetProcessingStage() > ProcessingStage::NotPrefiltered)
+            {
+                RunInferenceOnNewFrames(frame_ids, stored_frame_ids);
+            }
+
         }
     }
 
     // terminate data collection
     StopCollection();
 }
+

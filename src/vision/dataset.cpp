@@ -1,3 +1,4 @@
+#include <algorithm>
 #include <ostream>
 #include <stdexcept>
 #include "toml.hpp"
@@ -241,10 +242,27 @@ Dataset& Dataset::operator=(const Dataset& other)
         dataset_capture_mode    = other.dataset_capture_mode;
         imu_collection_mode     = other.imu_collection_mode;
         image_capture_rate      = other.image_capture_rate;
+        imu_sample_rate_hz      = other.imu_sample_rate_hz;
         target_processing_stage = other.target_processing_stage;
         stored_frame_ids        = other.stored_frame_ids;
     }
     return *this;
+}
+
+void Dataset::AddStoredFrameID(const std::tuple<uint8_t, uint64_t>& frame_id)
+{
+    if (std::find(stored_frame_ids.begin(), stored_frame_ids.end(), frame_id) == stored_frame_ids.end())
+    {
+        stored_frame_ids.push_back(frame_id);
+    }
+}
+
+void Dataset::AddStoredFrameIDs(const std::vector<std::tuple<uint8_t, uint64_t>>& frame_ids)
+{
+    for (const auto& frame_id : frame_ids)
+    {
+        AddStoredFrameID(frame_id);
+    }
 }
 
 
@@ -316,7 +334,7 @@ Json Dataset::toJson() const
     {
         // Load frame metadata from disk using the frame_id (cam_id and timestamp)
         // Check if the frame meets the criteria for each category and increment the corresponding counters
-        Json frame_metadata = DH::LoadFrameMetadataFromDisk(std::get<1>(frame_id), std::get<0>(frame_id));
+        Json frame_metadata = DH::LoadFrameMetadataFromDisk(std::get<1>(frame_id), std::get<0>(frame_id), folder_path);
         if (frame_metadata.is_null()) {
             SPDLOG_WARN("Failed to load metadata for frame ID: ({}, {})", std::get<0>(frame_id), std::get<1>(frame_id));
             continue;

@@ -164,6 +164,12 @@ bool DatasetManager::IsCompleted()
 
 bool DatasetManager::StartCollection()
 {
+    if (loop_flag.load())
+    {
+        SPDLOG_WARN("Dataset collection already running");
+        return false;
+    }
+
     // Create folder if it doesn't exists
     if (!DH::fs::exists(current_dataset.GetFolderPath()))
     {
@@ -175,7 +181,6 @@ bool DatasetManager::StartCollection()
     }
 
     loop_flag.store(true);
-
     CollectionLoop();
 
     return true;
@@ -184,11 +189,11 @@ bool DatasetManager::StartCollection()
 
 void DatasetManager::StopCollection()
 {
-    cameraManager.SetCaptureMode(CAPTURE_MODE::IDLE);
-    imuManager.Suspend();
-
     loop_flag.store(false);
     loop_cv.notify_all();
+
+    cameraManager.SetCaptureMode(CAPTURE_MODE::IDLE);
+    imuManager.Suspend();
 }
 
 bool DatasetManager::Running()
@@ -208,15 +213,19 @@ bool DatasetManager::CheckTermination()
 
 void DatasetManager::RunInferenceOnNewFrames(
     const std::vector<std::tuple<uint8_t, uint64_t>>& frame_ids,
-    const std::vector<std::tuple<uint8_t, uint64_t>>& already_processed)
+    std::vector<std::tuple<uint8_t, uint64_t>>& processed_frame_ids)
 {
     static Inference::Orchestrator orchestrator;
 
+    if (current_dataset.GetTargetProcessingStage() < ProcessingStage::RCNeted)
+    {
+        return;
+    }
+
     for (const auto& frame_id : frame_ids)
     {
-        // if already done, thjen skip over it
-        if (std::find(already_processed.begin(), already_processed.end(), frame_id) 
-            != already_processed.end())
+        if (std::find(processed_frame_ids.begin(), processed_frame_ids.end(), frame_id)
+            != processed_frame_ids.end())
             continue;
 
         uint8_t cam_id = std::get<0>(frame_id);
@@ -236,10 +245,19 @@ void DatasetManager::RunInferenceOnNewFrames(
         std::shared_ptr<Frame> frame_ptr = std::make_shared<Frame>(frame);
         orchestrator.GrabNewImage(frame_ptr);
 
-        EC status = orchestrator.ExecFullInference();
+        EC status;
+        if (current_dataset.GetTargetProcessingStage() == ProcessingStage::RCNeted)
+        {
+            status = orchestrator.ExecRCInference();
+        }
+        else
+        {
+            status = orchestrator.ExecFullInference();
+        }
         if (status == EC::OK)
         {
             DH::StoreFrameMetadataToDisk(*frame_ptr, current_dataset.GetFolderPath());
+            processed_frame_ids.push_back(frame_id);
             SPDLOG_INFO("Inference complete for frame ({}, {})", cam_id, timestamp);
         }
         else
@@ -273,31 +291,28 @@ void DatasetManager::CollectionLoop()
     // configure the camera manager for the dataset collection
     // TODO:Define folder to store images on
     cameraManager.SetStorageFolder(current_dataset.GetFolderPath());
+    cameraManager.SetTargetProcessingStage(current_dataset.GetTargetProcessingStage());
     cameraManager.SetPeriodicCaptureRate(current_dataset.GetImageCaptureRate());
     cameraManager.SetPeriodicFramesToCapture(current_dataset.GetTargetFrameNb());
     cameraManager.SetCaptureMode(current_dataset.GetDatasetCaptureMode());
 
     int no_frame_counter = 0;
+    std::vector<std::tuple<uint8_t, uint64_t>> processed_frame_ids;
     while (loop_flag.load() && !CheckTermination())
     {
         std::this_thread::sleep_for(std::chrono::milliseconds(100));
-        if (no_frame_counter < cameraManager.GetCapturedFramesCount())
+        const int captured_frames = cameraManager.GetCapturedFramesCount();
+        if (no_frame_counter < captured_frames)
         {
-            no_frame_counter = cameraManager.GetCapturedFramesCount();
+            const uint16_t new_frames = static_cast<uint16_t>(captured_frames - no_frame_counter);
+            no_frame_counter = captured_frames;
             std::vector<std::tuple<uint8_t, uint64_t>> frame_ids = cameraManager.GetBufferFrameIDs();
-            std::vector<std::tuple<uint8_t, uint64_t>> stored_frame_ids = current_dataset.GetStoredFrameIDs();
-            progress.Update(no_frame_counter, 1.0); // TODO: compute actual hit
-            for (const auto& frame_id : frame_ids)
-            {
-                if (std::find(stored_frame_ids.begin(), stored_frame_ids.end(), frame_id) == stored_frame_ids.end())
-                {
-                    stored_frame_ids.push_back(frame_id);
-                }
-            }
+            current_dataset.AddStoredFrameIDs(frame_ids);
+            progress.Update(new_frames, 1.0); // TODO: compute actual hit
 
             if (inference_enabled.load())
             {
-                RunInferenceOnNewFrames(frame_ids, stored_frame_ids);
+                RunInferenceOnNewFrames(frame_ids, processed_frame_ids);
             }
 
         }
@@ -306,4 +321,3 @@ void DatasetManager::CollectionLoop()
     // terminate data collection
     StopCollection();
 }
-

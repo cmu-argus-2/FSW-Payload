@@ -177,8 +177,9 @@ bool readDatasetFromDisk(const std::string& dataset_file_path, Dataset& dataset_
 
 std::string StoreFrameToDisk(Frame& frame, std::string_view target_folder)
 {
+    std::string img_path = StoreRawImgToDisk(frame.GetTimestamp(), frame.GetCamID(), frame.GetImg(), target_folder);
     StoreFrameMetadataToDisk(frame, target_folder);
-    return StoreRawImgToDisk(frame.GetTimestamp(), frame.GetCamID(), frame.GetImg(), target_folder);
+    return img_path;
 }
 
 void StoreFrameMetadataToDisk(Frame& frame, std::string_view target_folder)
@@ -474,10 +475,10 @@ bool ReadImageFromDisk(std::uint64_t timestamp, int cam_id, Frame& frame_out)
     return ReadImageFromDisk(file_path, frame_out);
 }
 
-Json LoadFrameMetadataFromDisk(std::uint64_t timestamp, int cam_id)
+Json LoadFrameMetadataFromDisk(std::uint64_t timestamp, int cam_id, std::string_view target_folder)
 {
     std::ostringstream oss;
-    oss << IMAGES_FOLDER << "frame" << DELIMITER << timestamp << DELIMITER << cam_id << ".json";
+    oss << target_folder << "frame" << DELIMITER << timestamp << DELIMITER << cam_id << ".json";
     std::string file_path = oss.str();
 
     std::ifstream ifs(file_path);

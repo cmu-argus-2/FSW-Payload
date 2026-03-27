@@ -39,6 +39,7 @@ void CameraManager::CaptureFrames()
 uint8_t CameraManager::SaveLatestFrames(bool only_earth)
 {
     uint8_t save_count = 0;
+    const bool needs_prefilter = only_earth || GetTargetProcessingStage() >= ProcessingStage::Prefiltered;
     buffer_frame_ids.clear();
     for (std::size_t i = 0; i < NUM_CAMERAS; ++i) 
     {
@@ -46,7 +47,7 @@ uint8_t CameraManager::SaveLatestFrames(bool only_earth)
         {
             Frame buffer_frame = cameras[i].GetBufferFrame();
 
-            if (buffer_frame.GetProcessingStage() == ProcessingStage::NotPrefiltered)
+            if (needs_prefilter && buffer_frame.GetProcessingStage() == ProcessingStage::NotPrefiltered)
             {
                 buffer_frame.RunPrefiltering();
             }
@@ -106,7 +107,7 @@ void CameraManager::RunLoop()
             case CAPTURE_MODE::IDLE:
             {
                 std::unique_lock<std::mutex> lock(capture_mode_mutex);
-                capture_mode_cv.wait(lock, [this] { return !loop_flag.load() || !(capture_mode.load() != CAPTURE_MODE::IDLE); });
+                capture_mode_cv.wait(lock, [this] {return !loop_flag.load() || capture_mode.load() != CAPTURE_MODE::IDLE;});
                 
                 break;
             }
@@ -176,6 +177,7 @@ void CameraManager::RunLoop()
             case CAPTURE_MODE::PERIODIC_ROI:
             {
                 static Inference::Orchestrator orchestrator;
+                const ProcessingStage requested_stage = GetTargetProcessingStage();
 
                 current_capture_time = std::chrono::high_resolution_clock::now();
                 auto elapsed_seconds = std::chrono::duration_cast<std::chrono::seconds>(current_capture_time - last_capture_time).count();
@@ -203,7 +205,7 @@ void CameraManager::RunLoop()
                                 continue;
                             }
 
-                            DH::StoreFrameToDisk(buffer_frame, IMAGES_FOLDER);
+                            DH::StoreFrameToDisk(buffer_frame, GetStorageFolder());
                             captured_frames.push_back(buffer_frame);
                             cameras[i].SetOffNewFrameFlag();
                         }
@@ -219,10 +221,18 @@ void CameraManager::RunLoop()
                         std::shared_ptr<Frame> frame_ptr = std::make_shared<Frame>(frame);
                         orchestrator.GrabNewImage(frame_ptr);
                         spdlog::info("Running ROI inference on camera {}", frame.GetCamID());
-                        EC status = orchestrator.ExecFullInference();
+                        EC status;
+                        if (requested_stage == ProcessingStage::RCNeted)
+                        {
+                            status = orchestrator.ExecRCInference();
+                        }
+                        else
+                        {
+                            status = orchestrator.ExecFullInference();
+                        }
                         if (status == EC::OK)
                         {
-                            DH::StoreFrameMetadataToDisk(*frame_ptr);
+                            DH::StoreFrameMetadataToDisk(*frame_ptr, GetStorageFolder());
                             spdlog::info("Frame metadata JSON saved for camera {}", frame.GetCamID());
                             roi_frames_captured++;
                         }
@@ -374,6 +384,7 @@ bool CameraManager::GetDisplayFlag() const
 void CameraManager::SetCaptureMode(CAPTURE_MODE mode)
 {
     capture_mode.store(mode);
+    capture_mode_cv.notify_all();
 }
 
 
@@ -412,10 +423,20 @@ void CameraManager::SetStorageFolder(const std::string& s)
     SPDLOG_INFO("Camera storage folder set to: {}", s);
 }
 
+void CameraManager::SetTargetProcessingStage(ProcessingStage stage)
+{
+    target_processing_stage.store(stage);
+}
+
 std::string CameraManager::GetStorageFolder()
 {
     std::lock_guard<std::mutex> lock(storage_folder_m);
     return storage_folder;
+}
+
+ProcessingStage CameraManager::GetTargetProcessingStage() const
+{
+    return target_processing_stage.load();
 }
 
 

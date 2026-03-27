@@ -239,11 +239,23 @@ void start_capture_dataset([[maybe_unused]] std::vector<uint8_t> &data)
     CAPTURE_MODE capture_mode = static_cast<CAPTURE_MODE>(data[0]);
     double max_period = static_cast<double>((data[1] << 8) | data[2]);
     uint16_t target_frame_nb = (data[3] << 8) | data[4];
-    uint64_t capture_start_time = timing::GetCurrentTimeMs();
-    IMU_COLLECTION_MODE imu_collection_mode = static_cast<IMU_COLLECTION_MODE>(data[5]);
-    uint8_t image_capture_rate = data[6];
-    float imu_sample_rate_hz = static_cast<float>(data[7]) / 10.0f;
-    ProcessingStage target_processing_stage = static_cast<ProcessingStage>(data[8]);
+    const uint32_t capture_start_time_s =
+        (static_cast<uint32_t>(data[5]) << 24) |
+        (static_cast<uint32_t>(data[6]) << 16) |
+        (static_cast<uint32_t>(data[7]) << 8) |
+        static_cast<uint32_t>(data[8]);
+
+    uint64_t capture_start_time = static_cast<uint64_t>(capture_start_time_s) * 1000ULL;
+    IMU_COLLECTION_MODE imu_collection_mode = static_cast<IMU_COLLECTION_MODE>(data[9]);
+    uint8_t image_capture_rate = data[10];
+    float imu_sample_rate_hz = static_cast<float>(data[11]) / 10.0f;
+    ProcessingStage target_processing_stage = static_cast<ProcessingStage>(data[12]);
+
+    const uint64_t now_ms = timing::GetCurrentTimeMs();
+    if (capture_start_time < now_ms)
+    {
+        capture_start_time = now_ms;
+    }
 
     if (max_period == 0.0 || target_frame_nb == 0)
     {
@@ -283,7 +295,7 @@ void start_capture_dataset([[maybe_unused]] std::vector<uint8_t> &data)
         ds = DatasetManager::Create(max_period, target_frame_nb, capture_mode, capture_start_time,
                                     imu_collection_mode, image_capture_rate, imu_sample_rate_hz,
                                     target_processing_stage, DATASET_KEY_CMD, sys::cameraManager(), sys::imuManager());
-        ds->SetInferenceEnabled(true);
+        ds->SetInferenceEnabled(target_processing_stage >= ProcessingStage::RCNeted); // The inference would always run when naively set to "true"
         ds->StartCollection();
     }
     catch (const std::exception &e)

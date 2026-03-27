@@ -53,6 +53,8 @@ public:
     std::string GetFolderPath() const { return folder_path; }
     std::string GetIMUFilePath() const { return imu_log_file_path; }
     std::vector<std::tuple<uint8_t, uint64_t>> GetStoredFrameIDs() const { return stored_frame_ids; }
+    void AddStoredFrameID(const std::tuple<uint8_t, uint64_t>& frame_id);
+    void AddStoredFrameIDs(const std::vector<std::tuple<uint8_t, uint64_t>>& frame_ids);
 
     Json toJson() const;
     bool fromJson(const Json& j);

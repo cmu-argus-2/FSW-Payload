@@ -96,7 +96,7 @@ private:
     void CollectionLoop();
     void RunInferenceOnNewFrames(
         const std::vector<std::tuple<uint8_t, uint64_t>>& frame_ids,
-        const std::vector<std::tuple<uint8_t, uint64_t>>& already_processed);
+        std::vector<std::tuple<uint8_t, uint64_t>>& processed_frame_ids);
     std::atomic<bool> loop_flag = false;
     
     std::mutex loop_mtx;

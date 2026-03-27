@@ -71,8 +71,10 @@ public:
     void SetPeriodicFramesToCapture(uint8_t frames);
     // Set the folder to store the captured images
     void SetStorageFolder(const std::string& folder);
+    void SetTargetProcessingStage(ProcessingStage stage);
 
     std::string GetStorageFolder();
+    ProcessingStage GetTargetProcessingStage() const;
 
     // Returns the number of cameras that were activated
     int EnableCameras(std::array<bool, NUM_CAMERAS>& id_activated_cams);
@@ -103,6 +105,7 @@ private:
     std::atomic<uint8_t> periodic_capture_rate = 60; // Default rate of 60 seconds
     std::atomic<uint8_t> periodic_frames_to_capture = DEFAULT_PERIODIC_FRAMES_TO_CAPTURE; // After the request is serviced, it gets back to the default value
     std::atomic<uint8_t> periodic_frames_captured = 0;
+    std::atomic<ProcessingStage> target_processing_stage = ProcessingStage::NotPrefiltered;
 
     // Buffer to store the latest frame IDs (cam_id, timestamp) for each camera. 
     std::vector<std::tuple<uint8_t, uint64_t>> buffer_frame_ids;

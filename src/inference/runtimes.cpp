@@ -425,6 +425,26 @@ EC LDNet::LoadEngine(const std::string& engine_path)
             return EC::NN_FAILED_TO_CREATE_ENGINE;
         }
 
+        // Check that enough GPU memory remains for the execution context.
+        // getDeviceMemorySize() is TRT's exact figure — more accurate than the
+        // pre-flight file-size estimate above.
+        {
+            const size_t ctx_needed = engine_->getDeviceMemorySize();
+            size_t gpu_free = 0, gpu_total = 0;
+            cudaMemGetInfo(&gpu_free, &gpu_total);
+            spdlog::info("Engine loaded: context needs {} MiB, {} MiB GPU free.",
+                         ctx_needed >> 20, gpu_free >> 20);
+            if (gpu_free < ctx_needed)
+            {
+                spdlog::error("Insufficient GPU memory for execution context ({} MiB free, {} MiB needed). Freeing engine.",
+                              gpu_free >> 20, ctx_needed >> 20);
+                engine_.reset();
+                runtime_.reset();
+                LogError(EC::NN_INSUFFICIENT_GPU_MEMORY);
+                return EC::NN_INSUFFICIENT_GPU_MEMORY;
+            }
+        }
+
         // Create execution context
         context_ = std::unique_ptr<IExecutionContext>(engine_->createExecutionContext());
         if (!context_) 

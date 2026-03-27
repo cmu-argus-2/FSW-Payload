@@ -113,45 +113,42 @@ class ExperimentThread(threading.Thread):
 
         # 2. capture and save images from the required cameras
         state_manager.set(PayloadState.CAPTURING)
-        current_image_path_list = self._capture_from_cameras(
+        self._capture_from_cameras(
             cameras,
             experiment_dir,
             file_manifest,
         )
-        log.info("Captured %d images", len(current_image_path_list))
-        log.info("After capture: %s", file_manifest)
+        log.info("Captured %d images", len(file_manifest.get("raw", [])))
+        log.debug("After capture: %s", file_manifest)
         self._close_cameras(cameras)
 
         # 3. run the processing
         # check to see if should downscale image
         if level_processing & self.PROCESS_DOWNSCALE_BIT:
             state_manager.set(PayloadState.DOWNSCALING)
-            current_image_path_list = self._downscale_images(
-                current_image_path_list,
+            self._downscale_images(
                 downscale_factor,
                 experiment_dir,
                 file_manifest,
             )
-        log.info("After downscaling: %s", file_manifest)
+        log.debug("After downscaling: %s", file_manifest)
             
         # check to see if should run prefiltering
         if level_processing & self.PROCESS_PREFILTER_BIT:
             state_manager.set(PayloadState.PREFILTERING)
-            current_image_path_list = self._prefilter_images(
-                current_image_path_list,
+            self._prefilter_images(
                 file_manifest,
             )
-        log.info("After prefiltering: %s", file_manifest)
+        log.debug("After prefiltering: %s", file_manifest)
 
         # check to see if should run inference
         if level_processing & self.PROCESS_INFERENCE_BIT:
             state_manager.set(PayloadState.INFERENCE)
-            current_image_path_list = self._run_inference(
-                current_image_path_list,
+            self._run_inference(
                 experiment_dir,
                 file_manifest,
             )
-        log.info("After inference: %s", file_manifest)
+        log.debug("After inference: %s", file_manifest)
             
         # send the finished experiment command
         # TODO - not sure that I want to do this here
@@ -169,7 +166,7 @@ class ExperimentThread(threading.Thread):
                 "Falling back to raw/current_image_path_list.",
                 experiment_dir,
             )
-            final_file_list = file_manifest["raw"] or current_image_path_list
+            final_file_list = file_manifest["raw"] 
         log.info("Prepared %d files for downlink", len(final_file_list))
         
         
@@ -261,7 +258,7 @@ class ExperimentThread(threading.Thread):
             saved_paths.append(str(output_path))
 
         file_manifest["raw"].extend(saved_paths)
-        return saved_paths
+
 
     def _close_cameras(self, cameras: dict[int, JetsonCamera]) -> None:
         for sensor_id, camera in cameras.items():
@@ -274,15 +271,13 @@ class ExperimentThread(threading.Thread):
 
     def _downscale_images(
         self,
-        image_paths: list[str],
         downscale_factor: float = 2.0,
         experiment_dir: Path | None = None,
         file_manifest: dict | None = None,
     ) -> list[str]:
         """
-        Will receive a list of image paths. For each of the images, it will perform the necessary downsample to the image
-        It will prepare the image to feed to the model
-        it will save the new image in a new path and return a new image_path list with the new paths
+        Using the images in file_manifest raw. For each of the images, it will perform the necessary downscale to the image
+        it will save the new image in a new path and add it to the manifest
         """
         output_dir = experiment_dir / "downscaled"
         output_dir.mkdir(parents=True, exist_ok=True)
@@ -295,7 +290,7 @@ class ExperimentThread(threading.Thread):
             downscale_factor = 2.0
 
         downscaled_paths: list[str] = []
-        for image_path in image_paths:
+        for image_path in file_manifest.get("raw", []):
             src = Path(image_path)
             img = cv2.imread(str(src))
             if img is None:
@@ -318,9 +313,9 @@ class ExperimentThread(threading.Thread):
         )
         if file_manifest is not None:
             file_manifest["downscaled"].extend(downscaled_paths)
-        return downscaled_paths
 
-    def _prefilter_images(self, image_paths: list[str], file_manifest: dict | None = None) -> list[str]:
+
+    def _prefilter_images(self, file_manifest: dict | None = None) -> list[str]:
         """
         Receives a list of image paths and will perform pre filtering
         It will return a new list of image paths contain only the images that passed pre filtering
@@ -328,11 +323,10 @@ class ExperimentThread(threading.Thread):
         """
         
         log.error("Prefiltering stage not implemented")
-        return image_paths
+
 
     def _run_inference(
         self,
-        image_paths: list[str],
         experiment_dir: Path,
         file_manifest: dict | None = None,
     ) -> list[str]:
@@ -352,7 +346,7 @@ class ExperimentThread(threading.Thread):
         output_folder_full = Path(full_path) / output_folder
 
         log.info("Running inference on images...")
-        for image_path in image_paths:
+        for image_path in file_manifest.get("raw", []):
             
             # TODO remove this hardcode
             # adding the full path to the image folder
@@ -398,7 +392,11 @@ class ExperimentThread(threading.Thread):
 
     @staticmethod
     def _files_for_downlink(file_manifest: dict) -> list[str]:
-        return [*file_manifest["downscaled"], *file_manifest["results"]]
+        """
+        Returns the files that should be sent to the mainboard. downscaled images and result
+        returns empty list in case they are missing from the file manifest
+        """
+        return [*file_manifest.get("downscaled", []), *file_manifest.get("results", [])]
             
         
 

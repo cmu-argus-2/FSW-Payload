@@ -441,12 +441,9 @@ EC Orchestrator::ExecLDInference()
 
     // LD inference
     auto start = std::chrono::high_resolution_clock::now();
-    cv::Mat ld_chw_img;
-    LDPreprocessImg(img, ld_chw_img, ldnet_config.input_width, ldnet_config.input_height);
     auto end = std::chrono::high_resolution_clock::now();
     auto duration = std::chrono::duration_cast<std::chrono::milliseconds>(end - start);
-    spdlog::info("LD preprocessing (took {} ms)", duration.count());
-    
+
     int output_size;
     EC ld_net_status;
     for(const auto& region_id : original_frame_->GetRegionIDs())
@@ -464,26 +461,38 @@ EC Orchestrator::ExecLDInference()
             end = std::chrono::high_resolution_clock::now();
             duration = std::chrono::duration_cast<std::chrono::milliseconds>(end - start);
             spdlog::info("LD preloading (took {} ms)", duration.count());
+            if (ld_net_status == EC::NN_INSUFFICIENT_GPU_MEMORY)
+            {
+                spdlog::error("Insufficient GPU memory to load LD engine for region: {}.", GetRegionString(region_id));
+                return ld_net_status;
+            }
+            if (ld_net_status != EC::OK)
+            {
+                spdlog::error("Failed to load LD Net engine for region: {}. Skipping this region.", GetRegionString(region_id));
+                continue;
+            }
         }
 
         if (!ld_nets_.at(region_id)->IsInitialized())
         {
-            spdlog::warn("LDNet for region {} is not initialized. Attempting to load model.", GetRegionString(region_id));
-
-            ld_net_status = LoadLDNetEngineForRegion(region_id); // Attempt to load the engine for this region
-            if (ld_net_status != EC::OK) 
-            {
-                spdlog::error("Failed to load LD Net engine for region: {}. Skipping this region.", GetRegionString(region_id));
-                continue;
-            } else {
-                spdlog::info("Successfully loaded LD Net engine for region: {}", GetRegionString(region_id));
-            }
+            spdlog::error("LDNet for region {} is still not initialized after load attempt.", GetRegionString(region_id));
+            continue;
         }
+
+        // Preprocess using the engine's actual input dimensions (may differ from config for square engines)
+        cv::Mat ld_chw_img;
+        start = std::chrono::high_resolution_clock::now();
+        LDPreprocessImg(img, ld_chw_img,
+                        ld_nets_.at(region_id)->GetInputWidth(),
+                        ld_nets_.at(region_id)->GetInputHeight());
+        end = std::chrono::high_resolution_clock::now();
+        duration = std::chrono::duration_cast<std::chrono::milliseconds>(end - start);
+        spdlog::info("LD preprocessing for region {} (took {} ms)", GetRegionString(region_id), duration.count());
 
         spdlog::info("Running LD inference for region: {}", GetRegionString(region_id));
 
         start = std::chrono::high_resolution_clock::now();
-        
+
         output_size = ld_nets_[region_id]->GetOutputSize();
         if (ld_nets_[region_id]->IsTRT()) {
             float* raw_out = ld_nets_[region_id]->GetOutputBuffer();

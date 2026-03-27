@@ -1,5 +1,11 @@
 #include <gtest/gtest.h>
 #include "spdlog/spdlog.h"
+#include <algorithm>
+#include <filesystem>
+#include <fstream>
+#include <iomanip>
+#include <map>
+#include <sstream>
 
 // Expose private members intentionally so we can verify setter side-effects
 // and directly unit-test RCPreprocessImg / LDPreprocessImg.
@@ -480,3 +486,364 @@ TEST_F(OrchestratorTest, LoadLDNetEngines_LowMemory_StopsBeforeFirstLoad)
 
     orc.min_gpu_free_between_loads_ = 256ULL * 1024 * 1024; // restore
 }
+
+// ============================================================
+// Integration tests — Full inference on real sample images
+//
+//
+// Asserts:
+//   1. RC net detects the expected region.
+//   2. At least one landmark is a true positive (IoU > 0.5
+//      with a ground-truth box of the same class_id).
+//
+// Skipped (not failed) when: TRT engine missing, sample image
+// missing, or GPU free memory < 768 MiB.
+// ============================================================
+
+namespace {
+namespace fs = std::filesystem;
+
+struct SampleImageCase {
+    std::string region_str;  // e.g. "17R"
+    std::string image_path;  // absolute path to .png
+    std::string label_path;  // absolute path to .txt
+};
+
+struct RegionTestResult {
+    enum class Status { PENDING, PASS, FAIL, SKIP } status = Status::PENDING;
+
+    std::string skip_reason;
+    std::string error;
+
+    // RC
+    std::vector<std::string> detected_regions;
+    bool rc_correct = false;
+
+    // Ground truth
+    int gt_box_count = 0;
+
+    // LD predictions
+    int landmark_count = 0;
+    int true_positives = 0;
+
+    struct LandmarkMatch {
+        RegionID region_id;
+        int   class_id;
+        float confidence;
+        float best_iou;  // highest IoU against any same-class GT box
+        bool  is_tp;     // best_iou > 0.5
+    };
+    std::vector<LandmarkMatch> matches;
+};
+
+static void WriteInferenceReport(const std::map<std::string, RegionTestResult>& results)
+{
+    const char* env = std::getenv("INFERENCE_REPORT_PATH");
+    const std::string path = env ? env : "tests/inference_test_report.md";
+
+    std::ofstream f(path);
+    if (!f.is_open()) {
+        spdlog::error("Could not open report file: {}", path);
+        return;
+    }
+
+    // Header
+    int pass = 0, fail = 0, skip = 0;
+    for (const auto& [_, r] : results) {
+        if (r.status == RegionTestResult::Status::PASS)       ++pass;
+        else if (r.status == RegionTestResult::Status::SKIP)  ++skip;
+        else                                                   ++fail;
+    }
+
+    f << "# Inference Integration Test Report\n\n";
+    f << "**Summary:** " << pass << " passed, " << fail << " failed, " << skip << " skipped "
+      << "(" << results.size() << " total)\n\n";
+    f << "---\n\n";
+
+    for (const auto& [region, r] : results) {
+        const char* icon =
+            r.status == RegionTestResult::Status::PASS ? "PASS" :
+            r.status == RegionTestResult::Status::SKIP ? "SKIP" : "FAIL";
+
+        f << "## [" << icon << "] Region " << region << "\n\n";
+
+        if (r.status == RegionTestResult::Status::SKIP) {
+            f << "**Skipped:** " << r.skip_reason << "\n\n";
+            continue;
+        }
+
+        if (!r.error.empty())
+            f << "**Error:** " << r.error << "\n\n";
+
+        // RC
+        f << "### RC Classification\n";
+        f << "- Expected: `" << region << "`\n";
+        f << "- Detected: ";
+        if (r.detected_regions.empty()) {
+            f << "_none_\n";
+        } else {
+            for (size_t i = 0; i < r.detected_regions.size(); ++i) {
+                if (i) f << ", ";
+                f << "`" << r.detected_regions[i] << "`";
+            }
+            f << "\n";
+        }
+        f << "- RC correct: " << (r.rc_correct ? "**yes**" : "**NO**") << "\n\n";
+
+        // LD
+        f << "### Landmark Detection\n";
+        f << "- Ground-truth boxes: " << r.gt_box_count << "\n";
+        f << "- Predicted landmarks: " << r.landmark_count << "\n";
+        f << "- True positives (IoU > 0.5): " << r.true_positives << "\n";
+
+        if (!r.matches.empty()) {
+            auto sorted = r.matches;
+            std::sort(sorted.begin(), sorted.end(), [](const RegionTestResult::LandmarkMatch& a,
+                                                       const RegionTestResult::LandmarkMatch& b) {
+                if (a.region_id != b.region_id) return static_cast<int>(a.region_id) < static_cast<int>(b.region_id);
+                return a.class_id < b.class_id;
+            });
+
+            // Pre-format all cells so we can measure column widths
+            struct Row { std::string region, cls, conf, iou, tp; };
+            std::vector<Row> rows;
+            rows.reserve(sorted.size());
+            for (const auto& m : sorted) {
+                std::ostringstream conf_ss, iou_ss;
+                conf_ss << std::fixed << std::setprecision(3) << m.confidence;
+                iou_ss  << std::fixed << std::setprecision(3) << m.best_iou;
+                rows.push_back({std::string(GetRegionString(m.region_id)),
+                                std::to_string(m.class_id),
+                                conf_ss.str(), iou_ss.str(),
+                                m.is_tp ? "yes" : "no"});
+            }
+
+            // Column widths (at least as wide as the header)
+            size_t w0 = 9, w1 = 8, w2 = 10, w3 = 8, w4 = 3; // "region_id","class_id","confidence","best_iou","TP?"
+            for (const auto& row : rows) {
+                w0 = std::max(w0, row.region.size());
+                w1 = std::max(w1, row.cls.size());
+                w2 = std::max(w2, row.conf.size());
+                w3 = std::max(w3, row.iou.size());
+                w4 = std::max(w4, row.tp.size());
+            }
+
+            auto cell = [](const std::string& s, size_t w) {
+                return s + std::string(w - s.size(), ' ');
+            };
+
+            f << "\n"
+              << "| " << cell("region_id", w0) << " | " << cell("class_id",   w1)
+              << " | " << cell("confidence", w2) << " | " << cell("best_iou",  w3)
+              << " | " << cell("TP?", w4) << " |\n";
+            f << "| " << std::string(w0, '-') << " | " << std::string(w1, '-')
+              << " | " << std::string(w2, '-') << " | " << std::string(w3, '-')
+              << " | " << std::string(w4, '-') << " |\n";
+            for (const auto& row : rows) {
+                f << "| " << cell(row.region, w0) << " | " << cell(row.cls, w1)
+                  << " | " << cell(row.conf,   w2) << " | " << cell(row.iou, w3)
+                  << " | " << cell(row.tp,     w4) << " |\n";
+            }
+        }
+        f << "\n";
+    }
+
+    f.flush();
+    spdlog::info("Inference test report written to: {}", path);
+}
+
+// Collect one labeled .png per region from the sample_images folder.
+// Called once at link-time via ValuesIn(); returns empty when assets absent.
+static std::vector<SampleImageCase> CollectSampleCases()
+{
+    std::vector<SampleImageCase> result;
+    const fs::path sample_dir = fs::path(MODELS_DIR) / "V1" / "sample_images";
+    if (!fs::exists(sample_dir)) return result;
+
+    for (RegionID rid : GetAllRegionIDs())
+    {
+        const std::string region_str = std::string(GetRegionString(rid));
+        const std::string prefix = "l8_" + region_str + "_";
+        for (const auto& entry : fs::directory_iterator(sample_dir))
+        {
+            if (!entry.is_regular_file()) continue;
+            const std::string fname = entry.path().filename().string();
+            if (fname.compare(0, prefix.size(), prefix) != 0) continue;
+            if (entry.path().extension() != ".png") continue;
+            fs::path txt = entry.path();
+            txt.replace_extension(".txt");
+            if (!fs::exists(txt)) continue;
+            result.push_back({region_str, entry.path().string(), txt.string()});
+            break; // one labeled example per region is sufficient
+        }
+    }
+    return result;
+}
+
+static float ComputeIoU(const cv::Rect& a, const cv::Rect& b)
+{
+    const int inter = (a & b).area();
+    const int uni   = (a | b).area();
+    return (uni == 0) ? 0.0f : static_cast<float>(inter) / static_cast<float>(uni);
+}
+
+} // namespace
+
+class InferenceIntegrationTest : public ::testing::TestWithParam<SampleImageCase>
+{
+protected:
+    // One Orchestrator for the entire suite — avoids repeated TRT context
+    static Orchestrator* orc_;
+    static std::map<std::string, RegionTestResult> results_;
+
+    static void SetUpTestSuite()
+    {
+        const std::string models = MODELS_DIR;
+        orc_ = new Orchestrator();
+        if (orc_->SetRCNetEnginePath(models + "/V1/trained-rc/effnet_0997acc.trt") != EC::OK)
+        {
+            delete orc_;
+            orc_ = nullptr;
+            return;
+        }
+        orc_->SetLDNetEngineFolderPath(models + "/V1/trained-ld");
+    }
+
+    static void TearDownTestSuite()
+    {
+        WriteInferenceReport(results_);
+        delete orc_;
+        orc_ = nullptr;
+    }
+};
+
+Orchestrator* InferenceIntegrationTest::orc_ = nullptr;
+std::map<std::string, RegionTestResult> InferenceIntegrationTest::results_;
+
+TEST_P(InferenceIntegrationTest, FullInference_DetectsRegionAndTruePositiveLandmarks)
+{
+    const auto& p = GetParam();
+    RegionTestResult& result = results_[p.region_str];
+    result.status = RegionTestResult::Status::FAIL; // default until proven otherwise
+
+    if (!orc_) {
+        result.status = RegionTestResult::Status::SKIP;
+        result.skip_reason = "RC TRT engine not found";
+        GTEST_SKIP() << result.skip_reason;
+    }
+
+    // Guard: TRT FP16 engine exists for this region
+    const std::string engine_path = std::string(MODELS_DIR) + "/V1/trained-ld/"
+                                  + p.region_str + "/" + p.region_str
+                                  + "_weights_fp16_sz_4608.trt";
+    if (!fs::exists(engine_path)) {
+        result.status = RegionTestResult::Status::SKIP;
+        result.skip_reason = "TRT engine not found: " + engine_path;
+        GTEST_SKIP() << result.skip_reason;
+    }
+
+    // Load the sample image from disk
+    cv::Mat img = cv::imread(p.image_path, cv::IMREAD_COLOR);
+    if (img.empty()) {
+        result.error = "Failed to read image: " + p.image_path;
+        ASSERT_FALSE(img.empty()) << result.error;
+    }
+
+    // Free any LD engine left over from the previous test case and sync the
+    // device so CUDA's allocator reports accurate free-memory figures before
+    // the next load.
+    orc_->FreeLDNets();
+    cudaDeviceSynchronize();
+
+    auto frame_ptr = std::make_shared<Frame>(0, img, 0ULL);
+    orc_->GrabNewImage(frame_ptr);
+
+    {
+        const EC infer_status = orc_->ExecFullInference();
+        if (infer_status == EC::NN_INSUFFICIENT_GPU_MEMORY) {
+            result.status = RegionTestResult::Status::SKIP;
+            result.skip_reason = "Insufficient GPU memory";
+            GTEST_SKIP() << "Insufficient GPU memory for region " << p.region_str;
+        }
+        if (infer_status != EC::OK) {
+            result.error = "ExecFullInference returned error code " + std::to_string(to_uint8(infer_status));
+            ASSERT_EQ(infer_status, EC::OK) << result.error;
+        }
+    }
+
+    // --- RC: record what regions were detected ---
+    const RegionID expected_rid = GetRegionID(p.region_str);
+    const auto region_ids = frame_ptr->GetRegionIDs();
+    for (const auto& rid : region_ids)
+        result.detected_regions.push_back(std::string(GetRegionString(rid)));
+    result.rc_correct = std::find(region_ids.begin(), region_ids.end(), expected_rid) != region_ids.end();
+
+    EXPECT_TRUE(result.rc_correct)
+        << "RC net did not detect region " << p.region_str
+        << " (detected " << region_ids.size() << " region(s)).";
+
+    // --- Parse YOLO ground-truth labels (normalized cx cy w h per line) ---
+    std::vector<std::pair<int, cv::Rect>> gt_boxes; // {class_id, pixel-space Rect}
+    {
+        std::ifstream ifs(p.label_path);
+        std::string line;
+        while (std::getline(ifs, line))
+        {
+            std::istringstream iss(line);
+            int class_id;
+            float nx, ny, nw, nh;
+            if (!(iss >> class_id >> nx >> ny >> nw >> nh)) continue;
+            const int x = static_cast<int>(nx * img.cols - nw * img.cols * 0.5f);
+            const int y = static_cast<int>(ny * img.rows - nh * img.rows * 0.5f);
+            const int w = static_cast<int>(nw * img.cols);
+            const int h = static_cast<int>(nh * img.rows);
+            gt_boxes.push_back({class_id, cv::Rect(x, y, w, h)});
+        }
+    }
+    result.gt_box_count = static_cast<int>(gt_boxes.size());
+    if (gt_boxes.empty()) {
+        result.error = "No ground-truth labels in " + p.label_path;
+        ASSERT_FALSE(gt_boxes.empty()) << result.error;
+    }
+
+    // --- LD: record per-landmark match quality ---
+    const auto& landmarks = frame_ptr->GetLandmarks();
+    result.landmark_count = static_cast<int>(landmarks.size());
+
+    EXPECT_FALSE(landmarks.empty())
+        << "No landmarks detected for region " << p.region_str;
+
+    for (const auto& lm : landmarks)
+    {
+        float best_iou = 0.0f;
+        const cv::Rect pred(
+            static_cast<int>(lm.x - lm.width  * 0.5f),
+            static_cast<int>(lm.y - lm.height * 0.5f),
+            static_cast<int>(lm.width),
+            static_cast<int>(lm.height));
+
+        for (const auto& [gt_class, gt_box] : gt_boxes)
+        {
+            if (static_cast<int>(lm.class_id) != gt_class) continue;
+            best_iou = std::max(best_iou, ComputeIoU(pred, gt_box));
+        }
+
+        const bool is_tp = best_iou > 0.5f;
+        if (is_tp) ++result.true_positives;
+        result.matches.push_back({lm.region_id, static_cast<int>(lm.class_id), lm.confidence, best_iou, is_tp});
+    }
+
+    EXPECT_GT(result.true_positives, 0)
+        << "No true positive landmarks (IoU > 0.5) detected for region " << p.region_str;
+
+    if (!::testing::Test::HasFailure())
+        result.status = RegionTestResult::Status::PASS;
+}
+
+INSTANTIATE_TEST_SUITE_P(
+    SampleImages,
+    InferenceIntegrationTest,
+    ::testing::ValuesIn(CollectSampleCases()),
+    [](const ::testing::TestParamInfo<SampleImageCase>& info) {
+        return info.param.region_str;
+    });

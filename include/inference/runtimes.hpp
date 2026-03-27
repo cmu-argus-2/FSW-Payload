@@ -189,6 +189,7 @@ public:
     bool HasEmbeddedNMS() const {return embedded_nms; }
     bool HasClassAgnosticNMS() const {return class_agnostic_nms; }
     int GetTopKNMS() const {return topk_nms; }
+    bool IsTRT() const { return is_trt; }
 
     // setters
     void SetInitialized(bool initialized) { initialized_ = initialized; }
@@ -207,6 +208,9 @@ private:
 
     // True: TRT, False: ONNX
     bool is_trt = true;
+
+    // Extra GPU bytes required beyond the natural estimate before any allocation.
+    size_t gpu_reserve_bytes_ = 0;
 
     // Model with dynamic size
     bool dynamic_size_input = false;

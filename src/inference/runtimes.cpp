@@ -113,7 +113,6 @@ EC RCNet::Free()
     buffers_.free();
     if (stream_) { cudaStreamDestroy(stream_); stream_ = nullptr; }
     initialized_ = false;
-    spdlog::info("RCNet freed.");
     return EC::OK;
 }
 
@@ -197,6 +196,19 @@ EC LDNet::EnsureScratchBuffers()
         return EC::OK;
     }
 
+    {
+        size_t gpu_free = 0, gpu_total = 0;
+        cudaMemGetInfo(&gpu_free, &gpu_total);
+        const size_t required = buffers_.input_size + buffers_.output_size;
+        if (gpu_free < required || (gpu_free - required) < gpu_reserve_bytes_)
+        {
+            spdlog::error("Insufficient GPU memory for scratch buffers ({} MiB free, {} MiB needed).",
+                          gpu_free >> 20, required >> 20);
+            LogError(EC::NN_INSUFFICIENT_GPU_MEMORY);
+            return EC::NN_INSUFFICIENT_GPU_MEMORY;
+        }
+    }
+
     auto alloc_cuda = [](void** ptr, size_t bytes, const char* label) -> EC
     {
         if (bytes == 0 || *ptr != nullptr) 
@@ -251,7 +263,6 @@ EC LDNet::Free()
     }
     
     SetInitialized(false);
-    spdlog::info("LDNet freed.");
     return EC::OK;
 }
 
@@ -384,6 +395,21 @@ EC LDNet::LoadEngine(const std::string& engine_path)
         std::vector<char> engine_data(size); 
         file.read(engine_data.data(), size);
 
+        // GPU memory check before deserialization
+        {
+            size_t gpu_free = 0, gpu_total = 0;
+            cudaMemGetInfo(&gpu_free, &gpu_total);
+            const size_t required = static_cast<size_t>(size * 2.5);
+            // Overflow-safe: check reserve separately to avoid required+reserve wrapping.
+            if (gpu_free < required || (gpu_free - required) < gpu_reserve_bytes_)
+            {
+                spdlog::error("Insufficient GPU memory to deserialize engine ({} MiB free, ~{} MiB needed).",
+                              gpu_free >> 20, required >> 20);
+                LogError(EC::NN_INSUFFICIENT_GPU_MEMORY);
+                return EC::NN_INSUFFICIENT_GPU_MEMORY;
+            }
+        }
+
         // Create runtime and deserialize engine
         runtime_ = std::unique_ptr<IRuntime>(nvinfer1::createInferRuntime(trt_logger_));
         if (!runtime_) {
@@ -397,6 +423,26 @@ EC LDNet::LoadEngine(const std::string& engine_path)
             spdlog::error("Error: Failed to create CUDA engine");
             LogError(EC::NN_FAILED_TO_CREATE_ENGINE);
             return EC::NN_FAILED_TO_CREATE_ENGINE;
+        }
+
+        // Check that enough GPU memory remains for the execution context.
+        // getDeviceMemorySize() is TRT's exact figure — more accurate than the
+        // pre-flight file-size estimate above.
+        {
+            const size_t ctx_needed = engine_->getDeviceMemorySize();
+            size_t gpu_free = 0, gpu_total = 0;
+            cudaMemGetInfo(&gpu_free, &gpu_total);
+            spdlog::info("Engine loaded: context needs {} MiB, {} MiB GPU free.",
+                         ctx_needed >> 20, gpu_free >> 20);
+            if (gpu_free < ctx_needed)
+            {
+                spdlog::error("Insufficient GPU memory for execution context ({} MiB free, {} MiB needed). Freeing engine.",
+                              gpu_free >> 20, ctx_needed >> 20);
+                engine_.reset();
+                runtime_.reset();
+                LogError(EC::NN_INSUFFICIENT_GPU_MEMORY);
+                return EC::NN_INSUFFICIENT_GPU_MEMORY;
+            }
         }
 
         // Create execution context

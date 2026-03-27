@@ -34,8 +34,8 @@ public:
     void SetPreloadRCEngine(bool preload) { preload_rc_engine_ = preload; }
     void SetPreloadLDEngines(bool preload) { preload_ld_engines_ = preload; }
     void SetUseTRTForLD(bool use_trt) { ldnet_config.use_trt = use_trt; }
-    void SetRCNetEnginePath(const std::string& path);
-    void SetLDNetEngineFolderPath(const std::string& path);
+    EC SetRCNetEnginePath(const std::string& path);
+    EC SetLDNetEngineFolderPath(const std::string& path);
     void SetLDNetConfig(NET_QUANTIZATION weight_quant, int input_width, int input_height, bool embedded_nms, bool use_trt_for_ld);
 
     EC ExecRCInference();
@@ -47,13 +47,15 @@ public:
 
 private:
 
-    std::shared_ptr<Frame> current_frame_; // Current frame being processed
     std::shared_ptr<Frame> original_frame_; // Frame being processed and populated
-    int num_inference_performed_on_current_frame_ = 0; 
-    cv::Mat img_buff_; // Buffer for the current image
+    int num_rc_inferences_on_current_frame_ = 0;
+    int num_ld_inferences_on_current_frame_ = 0;
 
     bool preload_rc_engine_ = true; // Option to preload RC engine at initialization
     bool preload_ld_engines_ = false; // Option to preload LD engines at initialization
+
+    // Minimum free GPU bytes required before loading each LD engine in LoadLDNetEngines().
+    size_t min_gpu_free_between_loads_ = 256ULL * 1024 * 1024;
 
     std::string ld_engine_folder_path_ = "./models/V1/trained-ld"; // Folder path for LD engines (if loading on demand)
     std::string rc_engine_path_ = "./models/V1/trained-rc/effnet_0997acc.trt"; // File path for RC engine (if loading on demand)

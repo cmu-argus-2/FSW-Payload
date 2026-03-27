@@ -34,6 +34,7 @@ struct TelemetryFrame
     uint8_t CAPTURE_MODE;
     uint8_t CAM_STATUS[4];
     uint8_t IMU_STATUS;
+    uint16_t IMU_TEMPERATURE;
     uint8_t TASKS_IN_EXECUTION;
     uint8_t DISK_USAGE;
     uint8_t LATEST_ERROR;

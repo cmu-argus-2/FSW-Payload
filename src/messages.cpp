@@ -67,6 +67,10 @@ std::shared_ptr<Message> CreateMessage(CommandID::Type id, std::vector<uint8_t>&
     auto msg = std::make_shared<Message>(id, header_data_length, seq_count);
     msg->AddToPacket(tx_data);
 
+    if (header_data_length == 1){
+        return msg;
+    }
+
     // Always pad to 240 bytes total data for fixed-size 247-byte packets
     size_t current_size = msg->packet.size();  // 5 (header) + actual_data_size
     size_t target_size = 245;  // 5 (header) + 240 (padded data)

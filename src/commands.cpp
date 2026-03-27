@@ -108,6 +108,7 @@ void request_telemetry([[maybe_unused]] std::vector<uint8_t>& data)
         transmit_data.push_back(tm.CAM_STATUS[i]);
     }
     transmit_data.push_back(tm.IMU_STATUS);
+    SerializeToBytes(tm.IMU_TEMPERATURE, transmit_data);
     transmit_data.push_back(tm.TASKS_IN_EXECUTION);
     transmit_data.push_back(tm.DISK_USAGE);
     transmit_data.push_back(tm.LATEST_ERROR);

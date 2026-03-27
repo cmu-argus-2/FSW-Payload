@@ -22,6 +22,11 @@ path = '/dev/video3'
 resolution_height = 2592
 resolution_width = 4608
 
+[imu-device]
+chipid = 216 # 0xd8 - BMX160 chip identifier
+i2c_addr = 104 # 0x68
+i2c_path = '/dev/i2c-7'
+
 [ld_net.10S]
 enable = true
 

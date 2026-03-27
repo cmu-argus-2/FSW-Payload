@@ -238,3 +238,5 @@ logs/
 
 # ignore install folder
 deps/
+
+workspace/

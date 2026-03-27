@@ -13,8 +13,10 @@ Frame::Frame()
     _timestamp(0),
     _img_mtx(std::make_shared<std::mutex>()),
     _annotation_state(ImageState::NotEarth),
-    _rank(0.0f),
-    _processing_stage(ProcessingStage::NotPrefiltered)
+    _rank(static_cast<float>(ImageState::NotEarth)),
+    _processing_stage(ProcessingStage::NotPrefiltered),
+    _regions({}),
+    _landmarks({})
 {}
 
 
@@ -24,8 +26,10 @@ Frame::Frame(int cam_id, const cv::Mat& img, std::uint64_t timestamp)
       _timestamp(timestamp),
       _img_mtx(std::make_shared<std::mutex>()),
       _annotation_state(ImageState::NotEarth),
-      _rank(0.0f),
-      _processing_stage(ProcessingStage::NotPrefiltered)
+    _rank(static_cast<float>(ImageState::NotEarth)),
+      _processing_stage(ProcessingStage::NotPrefiltered),
+      _regions({}),
+      _landmarks({})
 {}
 
 // For rvalue reference
@@ -36,8 +40,10 @@ _img(std::move(img)),
 _timestamp(timestamp),
 _img_mtx(std::make_shared<std::mutex>()),
 _annotation_state(ImageState::NotEarth),
-_rank(0.0f),
-_processing_stage(ProcessingStage::NotPrefiltered)
+_rank(static_cast<float>(ImageState::NotEarth)),
+_processing_stage(ProcessingStage::NotPrefiltered),
+_regions({}),
+_landmarks({})
 {}
 
 Frame::Frame(const Frame& other)
@@ -47,7 +53,9 @@ Frame::Frame(const Frame& other)
       _img_mtx(std::make_shared<std::mutex>()),  // creating a new mutex per instance to avoid intercopy locking
       _annotation_state(other._annotation_state),
       _rank(other._rank),
-      _processing_stage(other._processing_stage)
+      _processing_stage(other._processing_stage),
+      _regions(other._regions),
+      _landmarks(other._landmarks)
 {}
 
 
@@ -57,7 +65,7 @@ Frame& Frame::operator=(const Frame& other)
         _img = other._img.clone(); 
         _cam_id = other._cam_id;
         _timestamp = other._timestamp;
-        _region_ids = other._region_ids;
+        _regions = other._regions;
         _landmarks = other._landmarks;
         _img_mtx = std::make_shared<std::mutex>(); // new mutex per instance
         _annotation_state = other._annotation_state;
@@ -115,10 +123,29 @@ std::uint64_t Frame::GetTimestamp() const
     return _timestamp;
 }
 
-
-const std::vector<RegionID>& Frame::GetRegionIDs() const
+const std::vector<Region>& Frame::GetRegions() const
 {
-    return _region_ids;
+    return _regions;
+}
+
+const std::vector<RegionID> Frame::GetRegionIDs() const
+{
+    std::vector<RegionID> region_ids;
+    for (const auto& region : _regions)
+    {
+        region_ids.push_back(region.id);
+    }
+    return region_ids;
+}
+
+const std::vector<float> Frame::GetRegionConfidences() const
+{
+    std::vector<float> region_confidences;
+    for (const auto& region : _regions)
+    {
+        region_confidences.push_back(region.confidence);
+    }
+    return region_confidences;
 }
 
 const std::vector<Landmark>& Frame::GetLandmarks() const
@@ -136,6 +163,11 @@ const ProcessingStage Frame::GetProcessingStage() const
     return _processing_stage;
 }
 
+void Frame::SetProcessingStage(ProcessingStage stage)
+{
+    _processing_stage = stage;
+}
+
 const float Frame::GetRank() const
 {
     return _rank;
@@ -143,14 +175,52 @@ const float Frame::GetRank() const
 
 Json Frame::toJson() const
 {
-    Json j;
+    return Json(toOrderedJson());
+}
+
+nlohmann::ordered_json Frame::toOrderedJson() const // Order the Json keys
+{
+    nlohmann::ordered_json j;
     try {
+        // 1. Image header information
         j["timestamp"] = _timestamp;
         j["cam_id"] = _cam_id;
         j["annotation_state"] = static_cast<int>(_annotation_state);
         j["processing_stage"] = static_cast<int>(_processing_stage);
         j["rank"] = _rank;
-        // TODO: landmarks and regions
+        j["detected_regions_count"] = _regions.size();
+        j["detected_landmarks_count"] = _landmarks.size();
+        // Possibly add more information from the prefiltering results to the header
+        // 2. Inference results
+        // 2.1. List of regions
+        j["regions"] = nlohmann::ordered_json::array();
+        for (size_t i = 0; i < _regions.size(); ++i)
+        {            
+            const auto& region = _regions[i];
+            nlohmann::ordered_json region_json;
+            region_json["region_" + std::to_string(i)] = {
+                {"id", region.id},
+                {"confidence", region.confidence}
+            };
+            j["regions"].push_back(region_json);
+        }
+        // 2.2. List of landmarks
+        j["landmarks"] = nlohmann::ordered_json::array();
+        for (size_t i = 0; i < _landmarks.size(); ++i)
+        {            
+            const auto& landmark = _landmarks[i];
+            nlohmann::ordered_json landmark_json;
+            landmark_json["landmark_" + std::to_string(i)] = {
+                {"x", landmark.x},
+                {"y", landmark.y},
+                {"height", landmark.height},
+                {"width", landmark.width},
+                {"confidence", landmark.confidence},
+                {"class_id", landmark.class_id},
+                {"region_id", landmark.region_id}
+            };
+            j["landmarks"].push_back(landmark_json);
+        }
         
     } catch (const std::exception& e) {
         SPDLOG_ERROR("Failed to convert Frame to JSON: {}", e.what());
@@ -158,34 +228,108 @@ Json Frame::toJson() const
     return j;
 }
 
-void Frame::fromJson(const Json& j)
+void Frame::fromJson(const Json& j) // Write values to JSON
 {
     try {
+        // 1. Image header information
         _timestamp = j.at("timestamp").get<std::uint64_t>();
         _cam_id = j.at("cam_id").get<int>();
         _annotation_state = static_cast<ImageState>(j.at("annotation_state").get<int>());
         _processing_stage = static_cast<ProcessingStage>(j.at("processing_stage").get<int>());
         _rank = j.at("rank").get<float>();
-    } 
+        int detected_regions_count = j.at("detected_regions_count").get<int>();
+        int detected_landmarks_count = j.at("detected_landmarks_count").get<int>();
+        // 2. Inference results
+        // 2.1. List of regions
+        _regions.clear();
+        if (j.contains("regions") && j.at("regions").is_array())
+        {
+            for (const auto& region_item : j.at("regions"))
+            {
+                for (const auto& [key, value] : region_item.items())
+                {
+                    RegionID region_id = static_cast<RegionID>(value.at("id").get<int>());
+                    float confidence = value.at("confidence").get<float>();
+                    _regions.emplace_back(region_id, confidence);
+                }
+            }
+        }
+        // 2.2. List of landmarks
+        _landmarks.clear();
+        if (j.contains("landmarks") && j.at("landmarks").is_array())
+        {
+            for (const auto& landmark_item : j.at("landmarks"))
+            {
+                for (const auto& [key, value] : landmark_item.items())
+                {
+                    float x = value.at("x").get<float>();
+                    float y = value.at("y").get<float>();
+                    float height = value.at("height").get<float>();
+                    float width = value.at("width").get<float>();
+                    float confidence = value.at("confidence").get<float>();
+                    uint16_t class_id = value.at("class_id").get<uint16_t>();
+                    RegionID region_id = static_cast<RegionID>(value.at("region_id").get<int>());
+                    _landmarks.emplace_back(x, y, class_id, region_id, height, width, confidence);
+                }
+            }
+        }
+    }
     catch (const std::exception& e) {
         SPDLOG_ERROR("Failed to parse Frame from JSON: {}", e.what());
     }
 }
 
-void Frame::AddRegion(RegionID region_id)
+void Frame::AddRegion(RegionID region_id, float confidence)
 {
-    _region_ids.push_back(region_id);
+    _regions.emplace_back(region_id, confidence);
+    if (_rank < static_cast<float>(ImageState::HasRegion))
+    {
+        _rank = 2.0f; // TODO: make a rank regions function for the frame
+        // Something like average or max region confidence
+    }
+    if (_annotation_state < ImageState::HasRegion)
+    {
+        _annotation_state = ImageState::HasRegion; // if it has a region, it must be earth
+    }
 }
 
-
-void Frame::AddLandmark(float x, float y, uint16_t class_id, RegionID region_id)
+void Frame::ClearRegions()
 {
-    _landmarks.emplace_back(x, y, class_id, region_id);
+    _regions.clear();
+    // TODO: potentially readjust rank and annotation state here
+}
+
+void Frame::AddLandmark(const Landmark& landmark)
+{
+    if (_rank < static_cast<float>(ImageState::HasLandmark))
+    {
+        _rank = 3.0f; // TODO: make a rank landmarks function for the frame.
+        // Maybe weighted sum of confidence and region confidence?
+    }
+    if (_annotation_state < ImageState::HasLandmark)
+    {
+        _annotation_state = ImageState::HasLandmark;
+    }
+    _landmarks.push_back(landmark);
+}
+
+void Frame::AddLandmark(float x, float y, uint16_t class_id, RegionID region_id, float height_, float width_, float confidence_)
+{
+    if (_rank < static_cast<float>(ImageState::HasLandmark))
+    {
+        _rank = 3.0f; // need to rank images with landmarks. Maybe weighted sum of confidence and region confidence?
+    }
+    if (_annotation_state < ImageState::HasLandmark)
+    {
+        _annotation_state = ImageState::HasLandmark;
+    }
+    _landmarks.emplace_back(x, y, class_id, region_id, height_, width_, confidence_);
 }
 
 void Frame::ClearLandmarks()
 {
     _landmarks.clear();
+    // TODO: potentially readjust rank and annotation state here
 }
 
 void Frame::RunPrefiltering()
@@ -204,7 +348,7 @@ void Frame::RunPrefiltering()
     else
     {
         _annotation_state = ImageState::NotEarth;
-        _rank = 0.0f;
+        _rank = static_cast<float>(ImageState::NotEarth);
     }
     
     _processing_stage = ProcessingStage::Prefiltered;

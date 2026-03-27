@@ -58,6 +58,7 @@ namespace DH // Data Handling
     long GetFileSize(std::string_view file_path); // in bytes
     long GetDirectorySize(std::string_view directory_path); 
     int CountFilesInDirectory(std::string_view directory_path);
+    std::string getExtension(const std::string& path);
 
 
     // raw_timestamp_camid.png 
@@ -68,9 +69,9 @@ namespace DH // Data Handling
     // Load in memory the latest img
     bool ReadLatestStoredRawImg(Frame& frame);
     bool ReadHighestValueStoredRawImg(Frame& frame);
-    
+
     // Load an image from disk by its path
-    bool ReadImageFromDisk(const std::string& file_path, Frame& frame_out);
+    bool ReadImageFromDisk(const std::string& file_path, Frame& frame_out, int cam_id=0, std::uint64_t timestamp=0);
 
     // Load the latest binary image file with packet header (img_<timestamp>_<camera_id>.bin)
     // Returns the file path if found, empty string otherwise

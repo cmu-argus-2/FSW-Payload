@@ -373,17 +373,34 @@ INSTANTIATE_TEST_SUITE_P(NNetConfiguration, LDPreprocessTargetTest, ::testing::V
 // ============================================================
 
 #include <cuda_runtime_api.h>
-
+/**/
 TEST_F(OrchestratorTest, SetLDNetConfig_Reinit_NoGPUMemoryLeak)
 {
-    // Preload so engines are actually on the GPU
-    orc.SetPreloadLDEngines(true);
-    orc.LoadLDNetEngines();
+    // Guard: skip if GPU headroom is too low to safely load even one engine.
+    // Two engine loads happen during the test (load + reinit), so require enough
+    // margin to avoid OOM-crashing the Jetson.
+    constexpr size_t kMinFreeBytes = 512ULL * 1024 * 1024; // 512 MiB
+    size_t free_initial, total;
+    cudaMemGetInfo(&free_initial, &total);
+    if (free_initial < kMinFreeBytes)
+    {
+        GTEST_SKIP() << "Insufficient GPU memory (" << (free_initial >> 20)
+                     << " MiB free, need " << (kMinFreeBytes >> 20) << " MiB). Skipping.";
+    }
 
-    size_t free_before, free_after, total;
+    // Load a single region engine — sufficient to detect a leak without
+    // risking OOM from loading the full fleet.
+    if (orc.ld_nets_.empty())
+    {
+        GTEST_SKIP() << "No LDNet runtimes initialised (missing model assets). Skipping.";
+    }
+    RegionID test_region = orc.ld_nets_.begin()->first;
+    ASSERT_EQ(orc.LoadLDNetEngineForRegion(test_region), EC::OK);
+
+    size_t free_before, free_after;
     cudaMemGetInfo(&free_before, &total);
 
-    // Changing config must free all existing GPU allocations before rebuilding
+    // Changing config must free the loaded engine before rebuilding.
     orc.SetLDNetConfig(orc.ldnet_config.weight_quant,
                        orc.ldnet_config.input_width,
                        orc.ldnet_config.input_height,
@@ -399,4 +416,67 @@ TEST_F(OrchestratorTest, SetLDNetConfig_Reinit_NoGPUMemoryLeak)
                 static_cast<double>(tolerance))
         << "GPU memory before: " << free_before / (1024*1024) << " MiB, "
         << "after: "             << free_after  / (1024*1024) << " MiB";
+}
+
+// ============================================================
+// OOM guard tests — no real GPU memory is consumed.
+//
+// Each test injects an impossibly large reserve value so the
+// pre-flight check fires before any CUDA allocation is made.
+// SIZE_MAX/2 is used as the reserve to avoid size_t overflow
+// in the guard's overflow-safe comparison.
+// ============================================================
+
+TEST_F(OrchestratorTest, LoadEngine_InsufficientGPUMemory_ReturnsError)
+{
+    if (orc.ld_nets_.empty())
+        GTEST_SKIP() << "No LDNet runtimes available (missing model assets).";
+
+    RegionID region = orc.ld_nets_.begin()->first;
+    // Force the guard to fire: require SIZE_MAX/2 bytes beyond the 2.5x estimate.
+    // The check is overflow-safe, so this always exceeds real free memory.
+    orc.ld_nets_[region]->gpu_reserve_bytes_ = SIZE_MAX / 2;
+
+    EXPECT_EQ(orc.LoadLDNetEngineForRegion(region), EC::NN_INSUFFICIENT_GPU_MEMORY);
+    EXPECT_FALSE(orc.ld_nets_[region]->IsInitialized()); // no engine was loaded
+
+    orc.ld_nets_[region]->gpu_reserve_bytes_ = 0; // restore
+}
+
+TEST_F(OrchestratorTest, EnsureScratchBuffers_InsufficientGPUMemory_ReturnsError)
+{
+    // Needs one real engine load to get past the initialized/context check.
+    constexpr size_t kMinFree = 128ULL * 1024 * 1024;
+    size_t gpu_free, gpu_total;
+    cudaMemGetInfo(&gpu_free, &gpu_total);
+    if (gpu_free < kMinFree)
+        GTEST_SKIP() << "Only " << (gpu_free >> 20) << " MiB GPU free — need 128 MiB to load one engine.";
+    if (orc.ld_nets_.empty())
+        GTEST_SKIP() << "No LDNet runtimes available (missing model assets).";
+
+    RegionID region = orc.ld_nets_.begin()->first;
+    ASSERT_EQ(orc.LoadLDNetEngineForRegion(region), EC::OK);
+
+    orc.ld_nets_[region]->gpu_reserve_bytes_ = SIZE_MAX / 2;
+    EXPECT_EQ(orc.ld_nets_[region]->EnsureScratchBuffers(), EC::NN_INSUFFICIENT_GPU_MEMORY);
+
+    orc.ld_nets_[region]->gpu_reserve_bytes_ = 0;
+    orc.FreeLDNetForRegion(region);
+}
+
+TEST_F(OrchestratorTest, LoadLDNetEngines_LowMemory_StopsBeforeFirstLoad)
+{
+    // Drive the between-load threshold above any realistic free memory so
+    // LoadLDNetEngines() halts immediately without touching the GPU.
+    orc.min_gpu_free_between_loads_ = SIZE_MAX / 2;
+    orc.SetPreloadLDEngines(true);
+    orc.LoadLDNetEngines();
+
+    for (const auto& [region_id, ld_net] : orc.ld_nets_)
+    {
+        EXPECT_FALSE(ld_net->IsInitialized())
+            << "Region " << GetRegionString(region_id) << " should not be loaded under simulated low GPU memory.";
+    }
+
+    orc.min_gpu_free_between_loads_ = 256ULL * 1024 * 1024; // restore
 }

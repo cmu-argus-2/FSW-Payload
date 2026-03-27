@@ -66,10 +66,11 @@ enum class ErrorCode // Error codes
     NN_FAILED_TO_CREATE_EXECUTION_CONTEXT,
     NN_FAILED_TO_LOAD_ENGINE,
     NN_ENGINE_NOT_INITIALIZED, // Runtime not initialized
-    NN_CUDA_MEMCPY_FAILED, 
-    NN_POINTER_NULL, 
-    NN_INFERENCE_FAILED, 
+    NN_CUDA_MEMCPY_FAILED,
+    NN_POINTER_NULL,
+    NN_INFERENCE_FAILED,
     NN_NO_FRAME_AVAILABLE, // No frame available for inference
+    NN_INSUFFICIENT_GPU_MEMORY, // Not enough free GPU memory to safely proceed
 
 
 

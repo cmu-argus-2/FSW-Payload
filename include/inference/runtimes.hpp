@@ -209,6 +209,9 @@ private:
     // True: TRT, False: ONNX
     bool is_trt = true;
 
+    // Extra GPU bytes required beyond the natural estimate before any allocation.
+    size_t gpu_reserve_bytes_ = 0;
+
     // Model with dynamic size
     bool dynamic_size_input = false;
 

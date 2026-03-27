@@ -59,6 +59,7 @@ if(CUDA_ENABLED)
     # find_library(CUDART_LIBRARY cudart REQUIRED)
     find_library(CUDART_LIBRARY cudart HINTS ENV CUDART_LIBRARY ${CUDA_TOOLKIT_ROOT_DIR}/lib64)
     find_library(NVINFER_LIBRARY nvinfer REQUIRED)
+    find_library(NVINFER_PLUGIN_LIBRARY nvinfer_plugin REQUIRED)
 endif()
 find_package(nlohmann_json REQUIRED)
 

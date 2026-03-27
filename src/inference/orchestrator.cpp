@@ -1,5 +1,6 @@
 #include "inference/orchestrator.hpp"
 #include "spdlog/spdlog.h"
+#include <NvInferPlugin.h>
 
 #include <algorithm>
 #include <filesystem>
@@ -18,6 +19,10 @@ Orchestrator::Orchestrator()
 : original_frame_(nullptr),
 rc_net_()
 {
+    // Must be called once before any deserializeCudaEngine().
+    // Registers all built-in TRT plugins (e.g. EfficientNMS, BatchedNMS).
+    initLibNvInferPlugins(nullptr, "");
+
     SetRCNetEnginePath(rc_engine_path_);
     SetLDNetEngineFolderPath(ld_engine_folder_path_);
 }
@@ -77,6 +82,16 @@ void Orchestrator::LoadLDNetEngines()
     size_t loaded_ld_nets = 0;
     for(const auto& region_id : GetAllRegionIDs())
     {
+        size_t gpu_free = 0, gpu_total = 0;
+        cudaMemGetInfo(&gpu_free, &gpu_total);
+        if (gpu_free < min_gpu_free_between_loads_)
+        {
+            spdlog::warn("LoadLDNetEngines: stopping early — only {} MiB GPU memory free (minimum {} MiB). "
+                         "{} engine(s) loaded so far.",
+                         gpu_free >> 20, min_gpu_free_between_loads_ >> 20, loaded_ld_nets);
+            break;
+        }
+
         ld_net_status = LoadLDNetEngineForRegion(region_id);
         if (ld_net_status == EC::OK) loaded_ld_nets++;
     }

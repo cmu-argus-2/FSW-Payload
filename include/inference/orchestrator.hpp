@@ -54,6 +54,9 @@ private:
     bool preload_rc_engine_ = true; // Option to preload RC engine at initialization
     bool preload_ld_engines_ = false; // Option to preload LD engines at initialization
 
+    // Minimum free GPU bytes required before loading each LD engine in LoadLDNetEngines().
+    size_t min_gpu_free_between_loads_ = 256ULL * 1024 * 1024;
+
     std::string ld_engine_folder_path_ = "./models/V1/trained-ld"; // Folder path for LD engines (if loading on demand)
     std::string rc_engine_path_ = "./models/V1/trained-rc/effnet_0997acc.trt"; // File path for RC engine (if loading on demand)
     LDNetConfig ldnet_config = {NET_QUANTIZATION::FP16,4608,2592,false,true};

@@ -34,8 +34,8 @@ public:
     void SetPreloadRCEngine(bool preload) { preload_rc_engine_ = preload; }
     void SetPreloadLDEngines(bool preload) { preload_ld_engines_ = preload; }
     void SetUseTRTForLD(bool use_trt) { ldnet_config.use_trt = use_trt; }
-    void SetRCNetEnginePath(const std::string& path);
-    void SetLDNetEngineFolderPath(const std::string& path);
+    EC SetRCNetEnginePath(const std::string& path);
+    EC SetLDNetEngineFolderPath(const std::string& path);
     void SetLDNetConfig(NET_QUANTIZATION weight_quant, int input_width, int input_height, bool embedded_nms, bool use_trt_for_ld);
 
     EC ExecRCInference();
@@ -47,10 +47,9 @@ public:
 
 private:
 
-    std::shared_ptr<Frame> current_frame_; // Current frame being processed
     std::shared_ptr<Frame> original_frame_; // Frame being processed and populated
-    int num_inference_performed_on_current_frame_ = 0; 
-    cv::Mat img_buff_; // Buffer for the current image
+    int num_rc_inferences_on_current_frame_ = 0;
+    int num_ld_inferences_on_current_frame_ = 0;
 
     bool preload_rc_engine_ = true; // Option to preload RC engine at initialization
     bool preload_ld_engines_ = false; // Option to preload LD engines at initialization

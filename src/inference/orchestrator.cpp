@@ -15,8 +15,7 @@ namespace Inference
 {
 
 Orchestrator::Orchestrator()
-: current_frame_(nullptr),
-original_frame_(nullptr),
+: original_frame_(nullptr),
 rc_net_()
 {
     SetRCNetEnginePath(rc_engine_path_);
@@ -59,7 +58,6 @@ void Orchestrator::FreeLDNetForRegion(RegionID region_id)
 Orchestrator::~Orchestrator()
 {
     FreeEngines();
-    current_frame_ = nullptr;
     original_frame_ = nullptr;
 }
 
@@ -104,9 +102,15 @@ EC Orchestrator::LoadLDNetEngineForRegion(RegionID region_id)
 
     if (!std::filesystem::exists(engine_path))
     {
-        spdlog::error("Cannot initialize LDNet for region {}. Missing assets. Engine does not exist: {}", 
+        spdlog::error("Cannot initialize LDNet for region {}. Missing assets. Engine does not exist: {}",
                     region_str, engine_path);
         return EC::NN_FAILED_TO_OPEN_ENGINE_FILE;
+    }
+
+    if (ld_nets_.find(region_id) == ld_nets_.end())
+    {
+        spdlog::error("No LDNet runtime for region {}. Call InitializeLDNetRuntimes first.", region_str);
+        return EC::NN_ENGINE_NOT_INITIALIZED;
     }
 
     EC ld_net_status = ld_nets_.at(region_id)->LoadEngine(engine_path);
@@ -123,32 +127,37 @@ EC Orchestrator::LoadLDNetEngineForRegion(RegionID region_id)
 
 void Orchestrator::GrabNewImage(std::shared_ptr<Frame> frame)
 {
-    if (!frame) 
+    if (!frame)
     {
         spdlog::error("Received null frame.");
         return;
     }
 
     original_frame_ = frame;
-    current_frame_ = std::make_shared<Frame>(*frame);
-    num_inference_performed_on_current_frame_ = 0;
+    num_rc_inferences_on_current_frame_ = 0;
+    num_ld_inferences_on_current_frame_ = 0;
 }
 
 size_t Orchestrator::GetMemorySize(const nvinfer1::Dims& dims, size_t element_size)
 {
     size_t size = element_size;
     for (int i = 0; i < dims.nbDims; ++i) {
-        size *= dims.d[i];
+        if (dims.d[i] < 0)
+        {
+            spdlog::error("GetMemorySize: dynamic dimension at index {} (value {}). Resolve shape before calling.", i, dims.d[i]);
+            return 0;
+        }
+        size *= static_cast<size_t>(dims.d[i]);
     }
     return size;
 }
 
-void Orchestrator::SetRCNetEnginePath(const std::string& path)
+EC Orchestrator::SetRCNetEnginePath(const std::string& path)
 {
     if (!std::filesystem::exists(path))
     {
         spdlog::error("RC Net engine file not found at path: {}", path);
-        return;
+        return EC::FILE_DOES_NOT_EXIST;
     }
     rc_engine_path_ = path;
 
@@ -159,24 +168,29 @@ void Orchestrator::SetRCNetEnginePath(const std::string& path)
 
     if (preload_rc_engine_)
     {
-        LoadRCEngine();
+        return LoadRCEngine();
     }
+    return EC::OK;
 }
 
-void Orchestrator::SetLDNetEngineFolderPath(const std::string& path)
+EC Orchestrator::SetLDNetEngineFolderPath(const std::string& path)
 {
     if (!std::filesystem::exists(path))
     {
         spdlog::error("LD Net engine folder not found at path: {}", path);
-        return;
+        return EC::FILE_DOES_NOT_EXIST;
     }
     ld_engine_folder_path_ = path;
 
     InitializeLDNetRuntimes();
+    return EC::OK;
 }
 
 void Orchestrator::InitializeLDNetRuntimes()
 {
+    FreeLDNets();
+    ld_nets_.clear();
+
     std::string engine_path;
     std::string csv_path;
     std::string region_str;
@@ -212,6 +226,7 @@ void Orchestrator::InitializeLDNetRuntimes()
 void Orchestrator::SetLDNetConfig(NET_QUANTIZATION weight_quant, int input_width, int input_height, bool embedded_nms, bool use_trt_for_ld)
 {
     ldnet_config = {weight_quant, input_width, input_height, embedded_nms, use_trt_for_ld};
+    InitializeLDNetRuntimes(); // config change invalidates the existing ld_nets_ map
 }
 
 void Orchestrator::RCPreprocessImg(const cv::Mat& img, cv::Mat& out_chw_img)
@@ -301,7 +316,7 @@ void Orchestrator::LDPreprocessImg(const cv::Mat& img, cv::Mat& out_chw_img, int
     bool swapRB = true; // true = rgb
     Scalar scale = Scalar(1.0/255.0,1.0/255.0,1.0/255.0);
     Scalar mean = Scalar(0.0,0.0,0.0);
-    ImagePaddingMode paddingMode = static_cast<ImagePaddingMode>(2);
+    ImagePaddingMode paddingMode = DNN_PMODE_LETTERBOX;
 
     Size size(target_width, target_height);
     Image2BlobParams imgParams(
@@ -338,18 +353,19 @@ EC Orchestrator::ExecRCInference()
         return EC::NN_ENGINE_NOT_INITIALIZED;
     }
 
-    if (num_inference_performed_on_current_frame_ > 0) 
+    if (num_rc_inferences_on_current_frame_ > 0)
     {
-        spdlog::warn("Inference already performed on the current frame. This will overwrite.");
-        original_frame_->ClearRegions(); // Reset per-frame RC outputs
-        original_frame_->ClearLandmarks(); // Reset per-frame LD outputs
+        spdlog::warn("RC inference already performed on the current frame. Overwriting.");
+        original_frame_->ClearRegions();
+        original_frame_->ClearLandmarks();
+        num_ld_inferences_on_current_frame_ = 0; // LD results are now invalid
     }
-    
-    img_buff_ = original_frame_->GetImg();
+
+    cv::Mat img = original_frame_->GetImg();
     cv::Mat chw_img;
 
     // Preprocess the image
-    RCPreprocessImg(img_buff_, chw_img);
+    RCPreprocessImg(img, chw_img);
     spdlog::info("Image preprocessed to CHW format with shape: {}x{}x{}", chw_img.rows, chw_img.cols, chw_img.channels());
 
     // Run the RC net 
@@ -376,6 +392,7 @@ EC Orchestrator::ExecRCInference()
     }
 
     original_frame_->SetProcessingStage(ProcessingStage::RCNeted);
+    num_rc_inferences_on_current_frame_++;
 
     if (!preload_rc_engine_) FreeRCNet(); // Free the RC engine if it was loaded on demand
 
@@ -384,20 +401,19 @@ EC Orchestrator::ExecRCInference()
 
 EC Orchestrator::ExecLDInference()
 {
-    if (!current_frame_) 
+    if (!original_frame_)
     {
         spdlog::error("No frame to process");
         LogError(EC::NN_NO_FRAME_AVAILABLE);
         return EC::NN_NO_FRAME_AVAILABLE;
     }
 
-    if (num_inference_performed_on_current_frame_ > 0) 
+    if (num_ld_inferences_on_current_frame_ > 0)
     {
-        spdlog::warn("Inference already performed on the current frame. This will overwrite.");
-        original_frame_->ClearLandmarks(); // Reset per-frame LD outputs
+        spdlog::warn("LD inference already performed on the current frame. Overwriting.");
+        original_frame_->ClearLandmarks();
     }
 
-    // TODO: Don't copy engines, just look them up and run them directly from the map if they exist
     if (original_frame_->GetRegionIDs().empty())
     {
         spdlog::warn("No regions detected by RCNet. Skipping LD inference.");
@@ -406,10 +422,12 @@ EC Orchestrator::ExecLDInference()
 
     spdlog::info("Regions detected in the frame: {}", original_frame_->GetRegionIDs().size());
 
+    cv::Mat img = original_frame_->GetImg();
+
     // LD inference
     auto start = std::chrono::high_resolution_clock::now();
     cv::Mat ld_chw_img;
-    LDPreprocessImg(img_buff_, ld_chw_img, ldnet_config.input_width, ldnet_config.input_height);
+    LDPreprocessImg(img, ld_chw_img, ldnet_config.input_width, ldnet_config.input_height);
     auto end = std::chrono::high_resolution_clock::now();
     auto duration = std::chrono::duration_cast<std::chrono::milliseconds>(end - start);
     spdlog::info("LD preprocessing (took {} ms)", duration.count());
@@ -452,7 +470,7 @@ EC Orchestrator::ExecLDInference()
         start = std::chrono::high_resolution_clock::now();
         
         output_size = ld_nets_[region_id]->GetOutputSize();
-        if (ldnet_config.use_trt) {
+        if (ld_nets_[region_id]->IsTRT()) {
             float* raw_out = ld_nets_[region_id]->GetOutputBuffer();
             ld_net_status = ld_nets_[region_id]->Infer(ld_chw_img.data, raw_out);
 
@@ -529,23 +547,18 @@ EC Orchestrator::ExecLDInference()
         if (!preload_ld_engines_) FreeLDNetForRegion(region_id); // Free the LD engine for this region if it was loaded on demand
     }
     original_frame_->SetProcessingStage(ProcessingStage::LDNeted);
-    
+    num_ld_inferences_on_current_frame_++;
+
     return EC::OK;
 }
 
 
 EC Orchestrator::ExecFullInference()
 {
-    // Run Region Classification inference
     EC rc_ec = ExecRCInference();
+    if (rc_ec != EC::OK) return rc_ec;
 
-    if (rc_ec != EC::OK)  return rc_ec;
-    
-    // Run Landmark Detection inference
-    EC ld_ec = ExecLDInference();
-    num_inference_performed_on_current_frame_++;
-
-    return ld_ec;
+    return ExecLDInference();
 }
 
 

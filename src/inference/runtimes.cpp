@@ -113,7 +113,6 @@ EC RCNet::Free()
     buffers_.free();
     if (stream_) { cudaStreamDestroy(stream_); stream_ = nullptr; }
     initialized_ = false;
-    spdlog::info("RCNet freed.");
     return EC::OK;
 }
 
@@ -251,7 +250,6 @@ EC LDNet::Free()
     }
     
     SetInitialized(false);
-    spdlog::info("LDNet freed.");
     return EC::OK;
 }
 

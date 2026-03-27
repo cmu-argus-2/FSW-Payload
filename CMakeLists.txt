@@ -138,6 +138,8 @@ if(BUILD_TESTS)
     add_subdirectory(tests)
 endif()
 
+###### STATIC_LIBRARY_OPTIONS
+add_subdirectory(scripts)
 
 ###### GLOBAL COMPILE OPTIONS 
 

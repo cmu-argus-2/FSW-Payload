@@ -189,6 +189,7 @@ public:
     bool HasEmbeddedNMS() const {return embedded_nms; }
     bool HasClassAgnosticNMS() const {return class_agnostic_nms; }
     int GetTopKNMS() const {return topk_nms; }
+    bool IsTRT() const { return is_trt; }
 
     // setters
     void SetInitialized(bool initialized) { initialized_ = initialized; }

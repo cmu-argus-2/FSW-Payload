@@ -145,7 +145,7 @@ class TrtModel:
         
         return inputs, outputs, bindings, stream
        
-            
+    
     def __call__(self,x:np.ndarray,batch_size=2):
         
         x = x.astype(self.dtype)
@@ -250,7 +250,7 @@ if __name__ == "__main__":
     region_id = "17T" #  "17R" # "17T"
     image_id = "00330" # "00330"
     tgt_imgsz = (2592,4608) # 4608, 2304, 1152
-    fp16 = False
+    fp16 = True
     fpstring = "fp16" if fp16 else "fp32"
     trt_with_nms = False
     use_jpg = False
@@ -307,7 +307,7 @@ if __name__ == "__main__":
     # Original Pytorch model inference for comparison
     # torch.device("cuda" if torch.cuda.is_available() else "cpu")
     if pt_engine_exists:
-        pt_model  = PTModel(pt_model_path, device="cpu")
+        pt_model  = PTModel(pt_model_path, "cuda" if torch.cuda.is_available() else "cpu")
         start_time = time.time()
         result = pt_model(img, 0.5, (2592,4608), True)
         pt_inference_time = time.time() - start_time
@@ -315,9 +315,16 @@ if __name__ == "__main__":
         start_time = time.time()
         pt_xywh, pt_confidences, pt_class_ids = pt_model.post_process(result, (IMAGE_WIDTH, IMAGE_HEIGHT))
         pt_postprocess_time = time.time() - start_time
+
+        # Release PyTorch's CUDA memory cache before TensorRT allocates its workspace.
+        # PyTorch's caching allocator holds onto GPU memory even after tensors are freed,
+        # which fragments the heap and forces TRT into slow allocation paths.
+        del pt_model
+        torch.cuda.synchronize()
+        torch.cuda.empty_cache()
     else:
         print(f"{pt_model_path} not found")
-    
+
     if trt_engine_exists:
         trt_model = TrtModel(trt_engine_path)
         

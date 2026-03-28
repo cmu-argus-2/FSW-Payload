@@ -106,6 +106,7 @@ void CameraManager::RunLoop()
         {
             case CAPTURE_MODE::IDLE:
             {
+                _AutoDisableIfNeeded();
                 std::unique_lock<std::mutex> lock(capture_mode_mutex);
                 capture_mode_cv.wait(lock, [this] {return !loop_flag.load() || capture_mode.load() != CAPTURE_MODE::IDLE;});
                 
@@ -362,6 +363,7 @@ void CameraManager::StopLoops()
     display_flag.store(false);
     loop_flag.store(false);
     capture_mode_cv.notify_all();
+    auto_disable_after_capture.store(false);
 
     for (auto& camera : cameras) 
     {
@@ -388,9 +390,14 @@ void CameraManager::SetCaptureMode(CAPTURE_MODE mode)
 }
 
 
-void CameraManager::SendCaptureRequest()
+bool CameraManager::SendCaptureRequest()
 {
+    if (!PrepareForCapture())
+    {
+        return false;
+    }
     SetCaptureMode(CAPTURE_MODE::CAPTURE_SINGLE);
+    return true;
 }
 
 
@@ -437,6 +444,41 @@ std::string CameraManager::GetStorageFolder()
 ProcessingStage CameraManager::GetTargetProcessingStage() const
 {
     return target_processing_stage.load();
+}
+
+bool CameraManager::PrepareForCapture()
+{
+    const int active_before = CountActiveCameras();
+    if (active_before == NUM_CAMERAS)
+    {
+        auto_disable_after_capture.store(false);
+        return true;
+    }
+
+    std::array<bool, NUM_CAMERAS> on_cameras;
+    int nb_enabled = EnableCameras(on_cameras);
+    if (CountActiveCameras() == 0)
+    {
+        SPDLOG_ERROR("Failed to enable any cameras for capture.");
+        auto_disable_after_capture.store(false);
+        return false;
+    }
+
+    auto_disable_after_capture.store(active_before == 0);
+    SPDLOG_INFO("Prepared {} additional camera(s) for capture.", nb_enabled);
+    return true;
+}
+
+void CameraManager::_AutoDisableIfNeeded()
+{
+    if (!auto_disable_after_capture.exchange(false))
+    {
+        return;
+    }
+
+    std::array<bool, NUM_CAMERAS> off_cameras;
+    int nb_disabled = DisableCameras(off_cameras);
+    SPDLOG_INFO("Auto-disabled {} camera(s) after capture completion.", nb_disabled);
 }
 
 
@@ -553,7 +595,6 @@ void CameraManager::_PerformCameraHealthCheck()
 
             case CAM_STATUS::INACTIVE:
             {
-                camera.Enable();
                 break;
             }
 

@@ -282,19 +282,25 @@ void DatasetManager::CollectionLoop()
         std::this_thread::sleep_for(std::chrono::milliseconds(100));
     }
 
-    // configure the imu manager for the dataset collection
-    imuManager.SetLogFile(current_dataset.GetIMUFilePath());
-    imuManager.SetSampleRate(current_dataset.GetIMUSampleRateHz());
-    imuManager.SetCollectionMode(current_dataset.GetIMUCollectionMode());
-    imuManager.StartCollection();
-
     // configure the camera manager for the dataset collection
     // TODO:Define folder to store images on
+    if (!cameraManager.PrepareForCapture())
+    {
+        loop_flag.store(false);
+        throw std::runtime_error("Failed to enable cameras for dataset collection.");
+    }
+
     cameraManager.SetStorageFolder(current_dataset.GetFolderPath());
     cameraManager.SetTargetProcessingStage(current_dataset.GetTargetProcessingStage());
     cameraManager.SetPeriodicCaptureRate(current_dataset.GetImageCaptureRate());
     cameraManager.SetPeriodicFramesToCapture(current_dataset.GetTargetFrameNb());
     cameraManager.SetCaptureMode(current_dataset.GetDatasetCaptureMode());
+
+    // configure the imu manager for the dataset collection
+    imuManager.SetLogFile(current_dataset.GetIMUFilePath());
+    imuManager.SetSampleRate(current_dataset.GetIMUSampleRateHz());
+    imuManager.SetCollectionMode(current_dataset.GetIMUCollectionMode());
+    imuManager.StartCollection();
 
     int no_frame_counter = 0;
     std::vector<std::tuple<uint8_t, uint64_t>> processed_frame_ids;

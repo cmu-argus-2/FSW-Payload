@@ -214,7 +214,13 @@ void capture_images([[maybe_unused]] std::vector<uint8_t> &data)
 {
     SPDLOG_INFO("Capturing image now..");
 
-    sys::cameraManager().SendCaptureRequest();
+    if (!sys::cameraManager().SendCaptureRequest())
+    {
+        SPDLOG_ERROR("Failed to prepare cameras for CAPTURE_IMAGES.");
+        std::shared_ptr<Message> msg = CreateErrorAckMessage(CommandID::CAPTURE_IMAGES, 0x51);
+        sys::payload().TransmitMessage(msg);
+        return;
+    }
 
     // Need to return true or false based on the success of the operations
     // Basically should wait until the camera has captured the image or wait later to send the ocnfirmation and just exit the task?
@@ -722,6 +728,14 @@ void request_next_file_packets(std::vector<uint8_t> &data)
 void start_roi_capture([[maybe_unused]] std::vector<uint8_t> &data)
 {
     SPDLOG_INFO("Starting periodic ROI capture..");
+
+    if (!sys::cameraManager().PrepareForCapture())
+    {
+        SPDLOG_ERROR("Failed to prepare cameras for START_ROI_CAPTURE.");
+        std::shared_ptr<Message> msg = CreateErrorAckMessage(CommandID::START_ROI_CAPTURE, 0x51);
+        sys::payload().TransmitMessage(msg);
+        return;
+    }
 
     sys::cameraManager().SetCaptureMode(CAPTURE_MODE::PERIODIC_ROI);
 

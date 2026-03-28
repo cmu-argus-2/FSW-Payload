@@ -1,10 +1,12 @@
 import os
 
-import cv2
+# import cv2
 import torch
 import torch.nn as nn
 import torchvision
 from PIL import Image
+import tensorrt as trt
+import numpy as np
 
 """
 '10S': 'California',
@@ -27,7 +29,7 @@ from PIL import Image
 
 class ClassifierEfficient(nn.Module):
 
-    def __init__(self, num_classes=16):
+    def __init__(self, num_classes=40):
         super(ClassifierEfficient, self).__init__()
 
         self.num_classes = num_classes
@@ -52,10 +54,17 @@ if __name__ == "__main__":
     device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
     model = ClassifierEfficient().to(device)
     model_weights_path = os.path.join(os.path.dirname(__file__), "effnet_0.997acc.pth")
+    # model_weights_path = os.path.join(os.path.dirname(__file__), "/home/argus/Documents/models/region_classifier/model10.pth")
     model.load_state_dict(torch.load(model_weights_path, map_location=device))
     model.eval()
+    
+    trt_model_weights_path = os.path.join(os.path.dirname(__file__), "rc_model_weights.trt")
+    
+    with open(trt_model_weights_path, "rb") as f, trt.Runtime(trt.Logger()) as runtime:
+        engine = runtime.deserialize_cuda_engine(f.read())
+    context = engine.create_execution_context()
 
-    # Mapping of regions
+    # Mapping of 16 regions
     idx_mapping = [
         "10S",
         "10T",
@@ -85,14 +94,16 @@ if __name__ == "__main__":
         ]
     )
 
-    folder_name = os.path.join(os.path.dirname(__file__), "../sample_images")
+    folder_name = os.path.join(os.path.dirname(__file__), "/home/argus/Documents/test_photos/17R")
     files = os.listdir(folder_name)
     results = {}
 
     for file in files:
+        if not file.endswith((".png", ".jpg", ".jpeg")):
+            continue
         img = Image.open(os.path.join(folder_name, file)).convert("RGB")
         #img = Image.open("tests/sample_data/inference/l9_32S_00001.png").convert("RGB")
-        img = Image.open("tests/sample_data/inference/l9_10T_00021.png").convert("RGB")
+        # img = Image.open("tests/sample_data/inference/l9_10T_00021.png").convert("RGB")
         img = transformations(img).unsqueeze(0).to(device)
 
         print(img.shape)
@@ -104,9 +115,26 @@ if __name__ == "__main__":
         print(f"Output tensor: {[f'{v:.3f}' for v in outputs.detach().cpu().numpy().flatten()]}")
         predicted = torch.where(outputs > 0.5)[1]
 
-        results[file] = [idx_mapping[p] for p in predicted]
+        # results[file] = [idx_mapping[p] for p in predicted]
         #print(f"{file}")
-        print(f"prediction: {results[file]}")
+        print(f"output: {[f'{v:.3f}' for v in outputs.detach().cpu().numpy().flatten()]}")
+        print(f"predicted indices: {predicted.cpu().numpy().flatten().tolist()}")
+        # print(f"prediction: {results[file]}")
         print("----------")
-        exit()
+        
+        # run the rc net tensorrt
+        # Prepare input for TensorRT
+        image_array = img.cpu().numpy()
+        input_data = np.ascontiguousarray(image_array.flatten(), dtype=np.float32)
+        output_data = np.empty((1,40), dtype=np.float32)
+        
+        bindings = [int(input_data.ctypes.data), int(output_data.ctypes.data)]
+        
+        context.execute_v2(bindings)
+        print(f"TensorRT output: {[f'{v:.3f}' for v in output_data.flatten()]}")
+        predicted_trt = np.where(output_data > 0.5)[1]
+        print(f"TensorRT predicted indices: {predicted_trt.flatten().tolist()}")
+        print("==========")
+        
+        # exit()
 

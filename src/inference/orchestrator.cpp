@@ -457,6 +457,8 @@ EC Orchestrator::ExecLDInference()
             continue;
         }
 
+        ld_net_status = EC::OK;
+
         if (!ld_nets_.at(region_id)->IsInitialized())
         {
             start = std::chrono::high_resolution_clock::now();

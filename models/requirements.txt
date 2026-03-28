@@ -1,4 +1,22 @@
-torch
-onnx
+git+https://github.com/cmu-argus-1/custom_ultralytics.git@main
+# ultralytics
+onnx # ==1.14.1
+protobuf==3.20.3
 onnxscript
-tensorrt-cu11
+./torch-2.3.0-cp310-cp310-linux_aarch64.whl
+./torchvision-0.18.0a0+6043bc2-cp310-cp310-linux_aarch64.whl
+./onnxruntime_gpu-1.19.0-cp310-cp310-linux_aarch64.whl
+matplotlib
+pyquaternion
+numpy<2
+h5py
+dill
+pycuda
+nvidia-cudnn-cu12
+allantools
+Cython
+pandas==1.4.3
+onnx_graphsurgeon==0.5.8
+# nvidia-ml-py # only works for pc, not jetson which is igpu
+onnxruntime==1.23.2
+onnxsim==0.6.2

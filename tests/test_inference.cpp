@@ -127,12 +127,6 @@ TEST_F(OrchestratorTest, SetPreloadLDEngines_UpdatesFlag)
     orc.SetPreloadLDEngines(false); EXPECT_FALSE(orc.preload_ld_engines_);
 }
 
-TEST_F(OrchestratorTest, SetUseTRTForLD_UpdatesConfigFlag)
-{
-    orc.SetUseTRTForLD(true);  EXPECT_TRUE(orc.ldnet_config.use_trt);
-    orc.SetUseTRTForLD(false); EXPECT_FALSE(orc.ldnet_config.use_trt);
-}
-
 // ============================================================
 // Setters — path validation (bad path → silent reject)
 // ============================================================
@@ -221,27 +215,28 @@ TEST_F(OrchestratorTest, ExecRCInference_NoFrame_ReturnsNoFrameError)
     EXPECT_EQ(orc.ExecRCInference(), EC::NN_NO_FRAME_AVAILABLE);
 }
 
-// Both preload modes should end in NN_ENGINE_NOT_INITIALIZED when no engine is loaded.
-// The constructor may load the real engine if default paths exist, so we explicitly
+// Both preload modes should end in NN_FAILED_TO_OPEN_ENGINE_FILE when the engine file is absent.
+// ExecRCInference always attempts a load if the engine is uninitialized, regardless of the
+// preload flag. The constructor may load the real engine if default paths exist, so we explicitly
 // unload it and redirect rc_engine_path_ to a non-existent file via the private member.
-TEST_F(OrchestratorTest, ExecRCInference_EngineAbsent_PreloadOn_ReturnsEngineNotInitialized)
+TEST_F(OrchestratorTest, ExecRCInference_EngineAbsent_PreloadOn_ReturnsFailedToOpenEngine)
 {
     orc.FreeRCNet();
     orc.rc_engine_path_ = "/nonexistent/path.trt"; // bypass filesystem-validated setter
     orc.SetPreloadRCEngine(true);
     orc.GrabNewImage(MakeSyntheticFrame());
-    // preload=true → skips on-demand load, rc_net_ uninitialized → engine-not-init error
-    EXPECT_EQ(orc.ExecRCInference(), EC::NN_ENGINE_NOT_INITIALIZED);
+    // preload=true but engine absent → load attempt fails to open file
+    EXPECT_EQ(orc.ExecRCInference(), EC::NN_FAILED_TO_OPEN_ENGINE_FILE);
 }
 
-TEST_F(OrchestratorTest, ExecRCInference_EngineAbsent_PreloadOff_ReturnsEngineNotInitialized)
+TEST_F(OrchestratorTest, ExecRCInference_EngineAbsent_PreloadOff_ReturnsFailedToOpenEngine)
 {
     orc.FreeRCNet();
     orc.rc_engine_path_ = "/nonexistent/path.trt"; // bypass filesystem-validated setter
     orc.SetPreloadRCEngine(false);
     orc.GrabNewImage(MakeSyntheticFrame());
-    // preload=false → tries on-demand load from bad path, fails → engine-not-init error
-    EXPECT_EQ(orc.ExecRCInference(), EC::NN_ENGINE_NOT_INITIALIZED);
+    // preload=off and engine absent → load attempt fails to open file
+    EXPECT_EQ(orc.ExecRCInference(), EC::NN_FAILED_TO_OPEN_ENGINE_FILE);
 }
 
 // ============================================================

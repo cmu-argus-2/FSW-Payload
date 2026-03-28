@@ -17,29 +17,30 @@
 
 #define DATASET_KEY_CMD "CMD"
 
-// Command functions array definition 
-std::array<CommandFunction, COMMAND_NUMBER> COMMAND_FUNCTIONS = 
-{
-    ping_ack, // PING_ACK
-    shutdown, // SHUTDOWN
-    request_telemetry, // REQUEST_TELEMETRY
-    enable_cameras, // ENABLE_CAMERAS
-    disable_cameras, // DISABLE_CAMERAS
-    capture_images, // CAPTURE_IMAGES
-    start_capture_dataset, // START_CAPTURE_DATASET
-    stop_capture_dataset, // STOP_CAPTURE_DATASET
-    request_storage_info, // REQUEST_STORAGE_INFO
-    request_image, // REQUEST_IMAGE
-    request_next_file_packet, // REQUEST_NEXT_FILE_PACKET
-    clear_storage, // CLEAR_STORAGE
-    ping_od_status, // PING_OD_STATUS
-    run_od, // RUN_OD
-    request_od_result, // REQUEST_OD_RESULT
-    synchronize_time, // SYNCHRONIZE_TIME
-    full_reset, // FULL_RESET (no implementation provided)
-    debug_display_camera, // DEBUG_DISPLAY_CAMERA
-    debug_stop_display, // DEBUG_STOP_DISPLAY
-    request_next_file_packets // REQUEST_NEXT_FILE_PACKETS
+// Command functions array definition
+std::array<CommandFunction, COMMAND_NUMBER> COMMAND_FUNCTIONS =
+    {
+        ping_ack,                  // PING_ACK
+        shutdown,                  // SHUTDOWN
+        request_telemetry,         // REQUEST_TELEMETRY
+        enable_cameras,            // ENABLE_CAMERAS
+        disable_cameras,           // DISABLE_CAMERAS
+        capture_images,            // CAPTURE_IMAGES
+        start_capture_dataset,     // START_CAPTURE_DATASET
+        stop_capture_dataset,      // STOP_CAPTURE_DATASET
+        request_storage_info,      // REQUEST_STORAGE_INFO
+        request_image,             // REQUEST_IMAGE
+        request_next_file_packet,  // REQUEST_NEXT_FILE_PACKET
+        clear_storage,             // CLEAR_STORAGE
+        ping_od_status,            // PING_OD_STATUS
+        run_od,                    // RUN_OD
+        request_od_result,         // REQUEST_OD_RESULT
+        synchronize_time,          // SYNCHRONIZE_TIME
+        full_reset,                // FULL_RESET (no implementation provided)
+        debug_display_camera,      // DEBUG_DISPLAY_CAMERA
+        debug_stop_display,        // DEBUG_STOP_DISPLAY
+        request_next_file_packets, // REQUEST_NEXT_FILE_PACKETS
+        start_roi_capture          // START_ROI_CAPTURE
 };
 
 // Define the array of strings mapping CommandID to command names
@@ -63,10 +64,10 @@ std::array<std::string_view, COMMAND_NUMBER> COMMAND_NAMES = {
     "FULL_RESET",
     "DEBUG_DISPLAY_CAMERA",
     "DEBUG_STOP_DISPLAY",
-    "REQUEST_NEXT_FILE_PACKETS"
-};
+    "REQUEST_NEXT_FILE_PACKETS",
+    "START_ROI_CAPTURE"};
 
-void ping_ack([[maybe_unused]] std::vector<uint8_t>& data)
+void ping_ack([[maybe_unused]] std::vector<uint8_t> &data)
 {
     SPDLOG_INFO("Received PING_ACK");
 
@@ -77,19 +78,18 @@ void ping_ack([[maybe_unused]] std::vector<uint8_t>& data)
     sys::payload().SetLastExecutedCmdID(CommandID::PING_ACK);
 }
 
-void shutdown([[maybe_unused]] std::vector<uint8_t>& data)
+void shutdown([[maybe_unused]] std::vector<uint8_t> &data)
 {
     SPDLOG_INFO("Initiating Payload shutdown..");
     sys::payload().Stop();
 
     std::shared_ptr<Message> msg = CreateSuccessAckMessage(CommandID::SHUTDOWN);
     sys::payload().TransmitMessage(msg);
-    
+
     sys::payload().SetLastExecutedCmdID(CommandID::SHUTDOWN);
 }
 
-
-void request_telemetry([[maybe_unused]] std::vector<uint8_t>& data)
+void request_telemetry([[maybe_unused]] std::vector<uint8_t> &data)
 {
     SPDLOG_INFO("Requesting last telemetry..");
 
@@ -134,8 +134,7 @@ void request_telemetry([[maybe_unused]] std::vector<uint8_t>& data)
     sys::payload().SetLastExecutedCmdID(CommandID::REQUEST_TELEMETRY);
 }
 
-
-void enable_cameras([[maybe_unused]] std::vector<uint8_t>& data)
+void enable_cameras([[maybe_unused]] std::vector<uint8_t> &data)
 {
     SPDLOG_INFO("Trying to enable all cameras...");
     std::array<bool, NUM_CAMERAS> on_cameras;
@@ -155,7 +154,7 @@ void enable_cameras([[maybe_unused]] std::vector<uint8_t>& data)
     {
         SPDLOG_ERROR("No cameras were enabled.");
         // TODO: Get latest error from camera subsystem instead
-        std::shared_ptr<Message> msg = CreateErrorAckMessage(CommandID::ENABLE_CAMERAS, 0x51); 
+        std::shared_ptr<Message> msg = CreateErrorAckMessage(CommandID::ENABLE_CAMERAS, 0x51);
         sys::payload().TransmitMessage(msg);
         return;
     }
@@ -173,7 +172,7 @@ void enable_cameras([[maybe_unused]] std::vector<uint8_t>& data)
     sys::payload().SetLastExecutedCmdID(CommandID::ENABLE_CAMERAS);
 }
 
-void disable_cameras([[maybe_unused]] std::vector<uint8_t>& data)
+void disable_cameras([[maybe_unused]] std::vector<uint8_t> &data)
 {
     SPDLOG_INFO("Trying to disable all cameras...");
     std::array<bool, NUM_CAMERAS> off_cameras;
@@ -211,20 +210,26 @@ void disable_cameras([[maybe_unused]] std::vector<uint8_t>& data)
     sys::payload().SetLastExecutedCmdID(CommandID::DISABLE_CAMERAS);
 }
 
-void capture_images([[maybe_unused]] std::vector<uint8_t>& data)
+void capture_images([[maybe_unused]] std::vector<uint8_t> &data)
 {
     SPDLOG_INFO("Capturing image now..");
 
-    sys::cameraManager().SendCaptureRequest();
+    if (!sys::cameraManager().SendCaptureRequest())
+    {
+        SPDLOG_ERROR("Failed to prepare cameras for CAPTURE_IMAGES.");
+        std::shared_ptr<Message> msg = CreateErrorAckMessage(CommandID::CAPTURE_IMAGES, 0x51);
+        sys::payload().TransmitMessage(msg);
+        return;
+    }
 
     // Need to return true or false based on the success of the operations
-    // Basically should wait until the camera has captured the image or wait later to send the ocnfirmation and just exit the task? 
+    // Basically should wait until the camera has captured the image or wait later to send the ocnfirmation and just exit the task?
     // TODO
 
     sys::payload().SetLastExecutedCmdID(CommandID::CAPTURE_IMAGES);
 }
 
-void start_capture_dataset([[maybe_unused]] std::vector<uint8_t>& data)
+void start_capture_dataset([[maybe_unused]] std::vector<uint8_t> &data)
 {
     SPDLOG_INFO("Starting dataset capture..");
 
@@ -240,11 +245,23 @@ void start_capture_dataset([[maybe_unused]] std::vector<uint8_t>& data)
     CAPTURE_MODE capture_mode = static_cast<CAPTURE_MODE>(data[0]);
     double max_period = static_cast<double>((data[1] << 8) | data[2]);
     uint16_t target_frame_nb = (data[3] << 8) | data[4];
-    uint64_t capture_start_time = timing::GetCurrentTimeMs();
-    IMU_COLLECTION_MODE imu_collection_mode = static_cast<IMU_COLLECTION_MODE>(data[5]);
-    uint8_t image_capture_rate = data[6];
-    float imu_sample_rate_hz = static_cast<float>(data[7]) / 10.0f;
-    ProcessingStage target_processing_stage = static_cast<ProcessingStage>(data[8]);
+    const uint32_t capture_start_time_s =
+        (static_cast<uint32_t>(data[5]) << 24) |
+        (static_cast<uint32_t>(data[6]) << 16) |
+        (static_cast<uint32_t>(data[7]) << 8) |
+        static_cast<uint32_t>(data[8]);
+
+    uint64_t capture_start_time = static_cast<uint64_t>(capture_start_time_s) * 1000ULL;
+    IMU_COLLECTION_MODE imu_collection_mode = static_cast<IMU_COLLECTION_MODE>(data[9]);
+    uint8_t image_capture_rate = data[10];
+    float imu_sample_rate_hz = static_cast<float>(data[11]) / 10.0f;
+    ProcessingStage target_processing_stage = static_cast<ProcessingStage>(data[12]);
+
+    const uint64_t now_ms = timing::GetCurrentTimeMs();
+    if (capture_start_time < now_ms)
+    {
+        capture_start_time = now_ms;
+    }
 
     if (max_period == 0.0 || target_frame_nb == 0)
     {
@@ -282,19 +299,20 @@ void start_capture_dataset([[maybe_unused]] std::vector<uint8_t>& data)
     try
     {
         ds = DatasetManager::Create(max_period, target_frame_nb, capture_mode, capture_start_time,
-                                    imu_collection_mode, image_capture_rate, imu_sample_rate_hz, 
+                                    imu_collection_mode, image_capture_rate, imu_sample_rate_hz,
                                     target_processing_stage, DATASET_KEY_CMD, sys::cameraManager(), sys::imuManager());
+        ds->SetInferenceEnabled(target_processing_stage >= ProcessingStage::RCNeted); // The inference would always run when naively set to "true"
         ds->StartCollection();
     }
-    catch(const std::exception& e)
+    catch (const std::exception &e)
     {
-        
+
         SPDLOG_ERROR("Failed to start dataset collection: {}", e.what());
         std::shared_ptr<Message> msg = CreateErrorAckMessage(CommandID::START_CAPTURE_DATASET, 0x21); // TODO example error code
         sys::payload().TransmitMessage(msg);
         return;
     }
-    
+
     // All good
     std::shared_ptr<Message> msg = CreateSuccessAckMessage(CommandID::START_CAPTURE_DATASET);
     sys::payload().TransmitMessage(msg);
@@ -302,7 +320,7 @@ void start_capture_dataset([[maybe_unused]] std::vector<uint8_t>& data)
     sys::payload().SetLastExecutedCmdID(CommandID::START_CAPTURE_DATASET);
 }
 
-void stop_capture_dataset([[maybe_unused]] std::vector<uint8_t>& data)
+void stop_capture_dataset([[maybe_unused]] std::vector<uint8_t> &data)
 {
     SPDLOG_INFO("Stopping dataset capture..");
 
@@ -312,6 +330,7 @@ void stop_capture_dataset([[maybe_unused]] std::vector<uint8_t>& data)
     auto ds = DatasetManager::GetActiveDatasetManager(DATASET_KEY_CMD);
     if (ds) // if it exists
     {
+        ds->SetInferenceEnabled(false);
         ds->StopCollection();
         DatasetProgress ds_progress = ds->QueryProgress();
         // include in message statistics about the collected data (how many frame)
@@ -335,27 +354,26 @@ void stop_capture_dataset([[maybe_unused]] std::vector<uint8_t>& data)
         SPDLOG_ERROR("No dataset collection has been started on the command side");
         std::shared_ptr<Message> msg = CreateErrorAckMessage(CommandID::STOP_CAPTURE_DATASET, 0x22); // TODO
         sys::payload().TransmitMessage(msg);
-
     }
 
     sys::payload().SetLastExecutedCmdID(CommandID::STOP_CAPTURE_DATASET);
 }
 
-void request_storage_info([[maybe_unused]] std::vector<uint8_t>& data)
+void request_storage_info([[maybe_unused]] std::vector<uint8_t> &data)
 {
     SPDLOG_INFO("Requesting storage information...");
 
     sys::payload().SetLastExecutedCmdID(CommandID::REQUEST_STORAGE_INFO);
 }
 
-void request_image([[maybe_unused]] std::vector<uint8_t>& data)
+void request_image([[maybe_unused]] std::vector<uint8_t> &data)
 {
     SPDLOG_INFO("Requesting highest value image..");
 
     // Read the latest stored raw image
     Frame frame;
     bool res = DH::ReadHighestValueStoredRawImg(frame);
-    
+
     if (!res)
     {
         SPDLOG_ERROR("Failed to read latest stored raw image");
@@ -371,12 +389,12 @@ void request_image([[maybe_unused]] std::vector<uint8_t>& data)
 
     // Create tilepack encoder and process the image directly from disk
     tilepack::TilepackEncoder encoder(
-        1,  // page_id
-        640,  // target_width
-        480,  // target_height
-        64,   // tile_w
-        32,   // tile_h
-        30    // jpeg_quality
+        1,   // page_id
+        640, // target_width
+        480, // target_height
+        64,  // tile_w
+        32,  // tile_h
+        30   // jpeg_quality
     );
 
     if (!encoder.load_image(abs_img_path))
@@ -389,7 +407,7 @@ void request_image([[maybe_unused]] std::vector<uint8_t>& data)
 
     // Generate output filename for binary file in comms folder
     std::string bin_file_path = std::string(COMMS_FOLDER) + "img_" + std::to_string(frame.GetTimestamp()) + "_" + std::to_string(frame.GetCamID()) + ".bin";
-    
+
     // Write the tilepack binary file (data-handler format with 242-byte records)
     if (!encoder.write_radio_file(bin_file_path))
     {
@@ -399,7 +417,7 @@ void request_image([[maybe_unused]] std::vector<uint8_t>& data)
         return;
     }
 
-    SPDLOG_INFO("Created tilepack binary: {} ({} packets, {} bytes compressed)", 
+    SPDLOG_INFO("Created tilepack binary: {} ({} packets, {} bytes compressed)",
                 bin_file_path, encoder.get_total_packets(), encoder.get_compressed_size());
 
     // Get file size to log info
@@ -434,11 +452,11 @@ void request_image([[maybe_unused]] std::vector<uint8_t>& data)
     sys::payload().SetLastExecutedCmdID(CommandID::REQUEST_IMAGE);
 }
 
-void request_next_file_packet(std::vector<uint8_t>& data)
+void request_next_file_packet(std::vector<uint8_t> &data)
 {
     SPDLOG_INFO("Requesting next file packet..");
-    
-    uint16_t requested_packet_nb = (data[0] << 8) | data[1]; 
+
+    uint16_t requested_packet_nb = (data[0] << 8) | data[1];
     SPDLOG_INFO("Requested packet number: {}", requested_packet_nb);
 
     // NEED TO START BY 1 so we can filter invalid commands from random commands filled with zeros
@@ -458,7 +476,6 @@ void request_next_file_packet(std::vector<uint8_t>& data)
         sys::payload().TransmitMessage(msg);
         return;
     }
-    
 
     // check if requested seq number is valid -> NO_MORE_PACKET_FOR_FILE
     if (requested_packet_nb > FileTransferManager::total_seq_count())
@@ -469,7 +486,7 @@ void request_next_file_packet(std::vector<uint8_t>& data)
         return;
     }
 
-    // Take the corresponding chunk of data, load it to ram, and send it 
+    // Take the corresponding chunk of data, load it to ram, and send it
     std::vector<uint8_t> transmit_data;
     transmit_data.reserve(Packet::MAX_DATA_LENGTH);
 
@@ -480,21 +497,20 @@ void request_next_file_packet(std::vector<uint8_t>& data)
     if (err != EC::OK)
     {
         SPDLOG_ERROR("Failed to grab file chunk.");
-        std::shared_ptr<Message> msg = CreateErrorAckMessage(CommandID::REQUEST_NEXT_FILE_PACKET, to_uint8(err)); 
+        std::shared_ptr<Message> msg = CreateErrorAckMessage(CommandID::REQUEST_NEXT_FILE_PACKET, to_uint8(err));
         sys::payload().TransmitMessage(msg);
         return;
     }
-    
+
     // transmit_data now contains the payload only (≤240 bytes)
     // CreateMessage will pad to 240 bytes and add CRC to create 247-byte UART packet
     std::shared_ptr<Message> msg = CreateMessage(CommandID::REQUEST_NEXT_FILE_PACKET, transmit_data, requested_packet_nb);
     sys::payload().TransmitMessage(msg);
 
-
     sys::payload().SetLastExecutedCmdID(CommandID::REQUEST_NEXT_FILE_PACKET);
 }
 
-void clear_storage([[maybe_unused]] std::vector<uint8_t>& data)
+void clear_storage([[maybe_unused]] std::vector<uint8_t> &data)
 {
     SPDLOG_INFO("Clearing storage..");
 
@@ -503,7 +519,7 @@ void clear_storage([[maybe_unused]] std::vector<uint8_t>& data)
     sys::payload().SetLastExecutedCmdID(CommandID::CLEAR_STORAGE);
 }
 
-void ping_od_status([[maybe_unused]] std::vector<uint8_t>& data)
+void ping_od_status([[maybe_unused]] std::vector<uint8_t> &data)
 {
 
     SPDLOG_INFO("Pinging the status of the orbit determination process...");
@@ -518,33 +534,33 @@ void ping_od_status([[maybe_unused]] std::vector<uint8_t>& data)
     // Based on the state, return more information
     switch (od_state)
     {
-        case OD_STATE::IDLE:
+    case OD_STATE::IDLE:
+    {
+        break;
+    }
+    case OD_STATE::INIT:
+    {
+        auto ds = DatasetManager::GetActiveDatasetManager(DATASET_KEY_OD);
+        if (ds) // if it exists
         {
-            break;
+            DatasetProgress ds_progress = ds->QueryProgress();
+            uint16_t nb_frames = ds_progress.current_frames;
+            uint8_t completion = static_cast<uint8_t>(ds_progress.completion);
+            transmit_data.push_back(completion);
+            SerializeToBytes(nb_frames, transmit_data);
         }
-        case OD_STATE::INIT:
+        else
         {
-            auto ds = DatasetManager::GetActiveDatasetManager(DATASET_KEY_OD);
-            if (ds) // if it exists
-            {
-                DatasetProgress ds_progress = ds->QueryProgress();
-                uint16_t nb_frames = ds_progress.current_frames;
-                uint8_t completion = static_cast<uint8_t>(ds_progress.completion);
-                transmit_data.push_back(completion);
-                SerializeToBytes(nb_frames, transmit_data);
-            }
-            else
-            {
-                // Return (error) ACK telling that no dataset is running
-                SPDLOG_ERROR("No dataset collection has been started on the command side");
-                // TODO
-            }
-            break;
+            // Return (error) ACK telling that no dataset is running
+            SPDLOG_ERROR("No dataset collection has been started on the command side");
+            // TODO
         }
-        case OD_STATE::BATCH_OPT:
-        {
-            break;
-        }
+        break;
+    }
+    case OD_STATE::BATCH_OPT:
+    {
+        break;
+    }
     }
 
     std::shared_ptr<Message> msg = CreateMessage(CommandID::PING_OD_STATUS, transmit_data);
@@ -553,7 +569,7 @@ void ping_od_status([[maybe_unused]] std::vector<uint8_t>& data)
     sys::payload().SetLastExecutedCmdID(CommandID::PING_OD_STATUS);
 }
 
-void run_od([[maybe_unused]] std::vector<uint8_t>& data)
+void run_od([[maybe_unused]] std::vector<uint8_t> &data)
 {
     SPDLOG_INFO("Running orbit determination..");
 
@@ -562,7 +578,7 @@ void run_od([[maybe_unused]] std::vector<uint8_t>& data)
     sys::payload().SetLastExecutedCmdID(CommandID::RUN_OD);
 }
 
-void request_od_result([[maybe_unused]] std::vector<uint8_t>& data)
+void request_od_result([[maybe_unused]] std::vector<uint8_t> &data)
 {
     SPDLOG_INFO("Requesting OD result..");
 
@@ -571,8 +587,7 @@ void request_od_result([[maybe_unused]] std::vector<uint8_t>& data)
     sys::payload().SetLastExecutedCmdID(CommandID::REQUEST_OD_RESULT);
 }
 
-
-void synchronize_time([[maybe_unused]] std::vector<uint8_t>& data)
+void synchronize_time([[maybe_unused]] std::vector<uint8_t> &data)
 {
     SPDLOG_INFO("Synchronizing time..");
     // TODO
@@ -580,7 +595,7 @@ void synchronize_time([[maybe_unused]] std::vector<uint8_t>& data)
     sys::payload().SetLastExecutedCmdID(CommandID::SYNCHRONIZE_TIME);
 }
 
-void full_reset([[maybe_unused]] std::vector<uint8_t>& data)
+void full_reset([[maybe_unused]] std::vector<uint8_t> &data)
 {
     SPDLOG_INFO("Performing full reset..");
 
@@ -589,12 +604,11 @@ void full_reset([[maybe_unused]] std::vector<uint8_t>& data)
     sys::payload().SetLastExecutedCmdID(CommandID::FULL_RESET);
 }
 
-
-void debug_display_camera([[maybe_unused]] std::vector<uint8_t>& data)
+void debug_display_camera([[maybe_unused]] std::vector<uint8_t> &data)
 {
     SPDLOG_INFO("Activating the display of the camera");
 
-    if (sys::cameraManager().GetDisplayFlag() == true) 
+    if (sys::cameraManager().GetDisplayFlag() == true)
     {
         SPDLOG_WARN("Display already active");
         std::shared_ptr<Message> msg = CreateSuccessAckMessage(CommandID::DEBUG_DISPLAY_CAMERA);
@@ -605,7 +619,7 @@ void debug_display_camera([[maybe_unused]] std::vector<uint8_t>& data)
     sys::cameraManager().SetDisplayFlag(true);
     // the command is already by a thread of the ThreadPool so no need to spawn a new thread here
     // This will block the thread until the display flag is set to false or all cameras are turned off
-    sys::cameraManager().RunDisplayLoop(); 
+    sys::cameraManager().RunDisplayLoop();
 
     std::shared_ptr<Message> msg = CreateSuccessAckMessage(CommandID::DEBUG_DISPLAY_CAMERA);
     sys::payload().TransmitMessage(msg);
@@ -613,7 +627,7 @@ void debug_display_camera([[maybe_unused]] std::vector<uint8_t>& data)
     sys::payload().SetLastExecutedCmdID(CommandID::DEBUG_DISPLAY_CAMERA);
 }
 
-void debug_stop_display([[maybe_unused]] std::vector<uint8_t>& data)
+void debug_stop_display([[maybe_unused]] std::vector<uint8_t> &data)
 {
     SPDLOG_INFO("Stopping the display of the camera");
     sys::cameraManager().SetDisplayFlag(false);
@@ -624,23 +638,22 @@ void debug_stop_display([[maybe_unused]] std::vector<uint8_t>& data)
 
     sys::payload().SetLastExecutedCmdID(CommandID::DEBUG_STOP_DISPLAY);
 }
-void request_next_file_packets(std::vector<uint8_t>& data)
+void request_next_file_packets(std::vector<uint8_t> &data)
 {
     SPDLOG_INFO("Requesting next file packets (batch)..");
-    
+
     if (data.size() < 3)
     {
         SPDLOG_ERROR("Invalid data size for REQUEST_NEXT_FILE_PACKETS command");
         std::shared_ptr<Message> msg = CreateErrorAckMessage(
-            CommandID::REQUEST_NEXT_FILE_PACKETS, to_uint8(EC::INVALID_COMMAND_ARGUMENTS)
-        );
+            CommandID::REQUEST_NEXT_FILE_PACKETS, to_uint8(EC::INVALID_COMMAND_ARGUMENTS));
         sys::payload().TransmitMessage(msg);
         return;
     }
 
     uint16_t start_packet_nb = (data[0] << 8) | data[1];
     uint8_t count = data[2];
-    
+
     SPDLOG_INFO("Requested batch: start packet={}, count={}", start_packet_nb, count);
 
     // NEED TO START BY 1 so we can filter invalid commands from random commands filled with zeros
@@ -648,8 +661,7 @@ void request_next_file_packets(std::vector<uint8_t>& data)
     {
         SPDLOG_ERROR("Invalid start packet number (0) for REQUEST_NEXT_FILE_PACKETS command");
         std::shared_ptr<Message> msg = CreateErrorAckMessage(
-            CommandID::REQUEST_NEXT_FILE_PACKETS, to_uint8(EC::INVALID_COMMAND_ARGUMENTS)
-        );
+            CommandID::REQUEST_NEXT_FILE_PACKETS, to_uint8(EC::INVALID_COMMAND_ARGUMENTS));
         sys::payload().TransmitMessage(msg);
         return;
     }
@@ -659,24 +671,22 @@ void request_next_file_packets(std::vector<uint8_t>& data)
     {
         SPDLOG_ERROR("No file available for transfer.");
         std::shared_ptr<Message> msg = CreateErrorAckMessage(
-            CommandID::REQUEST_NEXT_FILE_PACKETS, to_uint8(EC::NO_FILE_READY)
-        );
+            CommandID::REQUEST_NEXT_FILE_PACKETS, to_uint8(EC::NO_FILE_READY));
         sys::payload().TransmitMessage(msg);
         return;
     }
 
     uint16_t total_packets = FileTransferManager::total_seq_count();
-    
+
     for (uint8_t i = 0; i < count; i++)
     {
         uint16_t current_packet = start_packet_nb + i;
-        
+
         if (current_packet > total_packets)
         {
             SPDLOG_INFO("Reached end of file at packet {}", current_packet);
             std::shared_ptr<Message> msg = CreateErrorAckMessage(
-                CommandID::REQUEST_NEXT_FILE_PACKETS, to_uint8(EC::NO_MORE_PACKET_FOR_FILE)
-            );
+                CommandID::REQUEST_NEXT_FILE_PACKETS, to_uint8(EC::NO_MORE_PACKET_FOR_FILE));
             sys::payload().TransmitMessage(msg);
             return;
         }
@@ -692,8 +702,7 @@ void request_next_file_packets(std::vector<uint8_t>& data)
         {
             SPDLOG_ERROR("Failed to grab file chunk for packet {}", current_packet);
             std::shared_ptr<Message> msg = CreateErrorAckMessage(
-                CommandID::REQUEST_NEXT_FILE_PACKETS, to_uint8(err)
-            );
+                CommandID::REQUEST_NEXT_FILE_PACKETS, to_uint8(err));
             sys::payload().TransmitMessage(msg);
             return;
         }
@@ -701,10 +710,9 @@ void request_next_file_packets(std::vector<uint8_t>& data)
         // transmit_data now contains the payload only (≤240 bytes)
         // CreateMessage will pad to 240 bytes and add CRC to create 247-byte UART packet
         std::shared_ptr<Message> msg = CreateMessage(
-            CommandID::REQUEST_NEXT_FILE_PACKETS, transmit_data, current_packet
-        );
+            CommandID::REQUEST_NEXT_FILE_PACKETS, transmit_data, current_packet);
         sys::payload().TransmitMessage(msg);
-        
+
         // Add delay between packets to prevent UART buffer overflow on mainboard
         // CircuitPython polls at 1ms intervals, need sufficient time for processing
         // if (i < count - 1)  // Don't delay after last packet
@@ -714,4 +722,25 @@ void request_next_file_packets(std::vector<uint8_t>& data)
     }
 
     sys::payload().SetLastExecutedCmdID(CommandID::REQUEST_NEXT_FILE_PACKETS);
+}
+
+// demo 2 only: inference to mainboard
+void start_roi_capture([[maybe_unused]] std::vector<uint8_t> &data)
+{
+    SPDLOG_INFO("Starting periodic ROI capture..");
+
+    if (!sys::cameraManager().PrepareForCapture())
+    {
+        SPDLOG_ERROR("Failed to prepare cameras for START_ROI_CAPTURE.");
+        std::shared_ptr<Message> msg = CreateErrorAckMessage(CommandID::START_ROI_CAPTURE, 0x51);
+        sys::payload().TransmitMessage(msg);
+        return;
+    }
+
+    sys::cameraManager().SetCaptureMode(CAPTURE_MODE::PERIODIC_ROI);
+
+    std::shared_ptr<Message> msg = CreateSuccessAckMessage(CommandID::START_ROI_CAPTURE);
+    sys::payload().TransmitMessage(msg);
+
+    sys::payload().SetLastExecutedCmdID(CommandID::START_ROI_CAPTURE);
 }

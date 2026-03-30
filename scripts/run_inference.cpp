@@ -119,6 +119,7 @@ int main(int argc, char** argv)
     std::shared_ptr<Frame> frame_ptr = std::make_shared<Frame>(frame);
 
     orchestrator.GrabNewImage(frame_ptr); 
+
     spdlog::info("Running inference on the frame...");
     EC status = orchestrator.ExecFullInference();
     if (status != EC::OK)

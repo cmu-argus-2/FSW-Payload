@@ -1,3 +1,4 @@
+#include <algorithm>
 #include <ostream>
 #include <stdexcept>
 #include "toml.hpp"
@@ -76,7 +77,7 @@ bool Dataset::isValidConfigurationFile(const std::string& config_file_path)
         return false;
     }
 
-    return isValidConfiguration(*max_period, static_cast<uint8_t>(*target_frames), 
+    return isValidConfiguration(*max_period, static_cast<uint16_t>(*target_frames), 
                                 static_cast<CAPTURE_MODE>(*dataset_capture_mode_val),
                                 static_cast<IMU_COLLECTION_MODE>(*imu_collection_mode_val),
                                 static_cast<uint8_t>(*image_capture_rate_val),
@@ -85,7 +86,7 @@ bool Dataset::isValidConfigurationFile(const std::string& config_file_path)
                                 timing::GetCurrentTimeMs());
 }
 
-bool Dataset::isValidConfiguration(double max_period, uint8_t nb_frames, CAPTURE_MODE capture_mode, IMU_COLLECTION_MODE imu_collection_mode,
+bool Dataset::isValidConfiguration(double max_period, uint16_t nb_frames, CAPTURE_MODE capture_mode, IMU_COLLECTION_MODE imu_collection_mode,
                                     uint8_t image_capture_rate, float imu_sample_rate_hz, ProcessingStage target_processing_stage,
                                     uint64_t capture_start_time)
 {
@@ -141,7 +142,7 @@ bool Dataset::isValidConfiguration(double max_period, uint8_t nb_frames, CAPTURE
 }
 
 
-Dataset::Dataset(double max_period, uint8_t nb_frames, 
+Dataset::Dataset(double max_period, uint16_t nb_frames, 
                 CAPTURE_MODE capture_mode,
                 IMU_COLLECTION_MODE imu_collection_mode,
                 uint8_t image_capture_rate, float imu_sample_rate_hz, 
@@ -221,7 +222,7 @@ imu_log_file_path(folder_path_in + "/imu_data.csv")
     if (config.contains("maximum_period")) {
         maximum_period      = *(config["maximum_period"].value<double>());
     }
-    target_frame_nb         = static_cast<uint16_t>(*(config["target_frame_nb"].value<uint64_t>()));
+    target_frame_nb = static_cast<uint16_t>(*(config["target_frame_nb"].value<uint64_t>()));
     dataset_capture_mode    = static_cast<CAPTURE_MODE>(*(config["dataset_capture_mode"].value<uint64_t>()));
     imu_collection_mode     = static_cast<IMU_COLLECTION_MODE>(*(config["imu_collection_mode"].value<uint64_t>()));
     image_capture_rate      = static_cast<uint8_t>(*(config["image_capture_rate"].value<uint64_t>()));
@@ -241,10 +242,27 @@ Dataset& Dataset::operator=(const Dataset& other)
         dataset_capture_mode    = other.dataset_capture_mode;
         imu_collection_mode     = other.imu_collection_mode;
         image_capture_rate      = other.image_capture_rate;
+        imu_sample_rate_hz      = other.imu_sample_rate_hz;
         target_processing_stage = other.target_processing_stage;
         stored_frame_ids        = other.stored_frame_ids;
     }
     return *this;
+}
+
+void Dataset::AddStoredFrameID(const std::tuple<uint8_t, uint64_t>& frame_id)
+{
+    if (std::find(stored_frame_ids.begin(), stored_frame_ids.end(), frame_id) == stored_frame_ids.end())
+    {
+        stored_frame_ids.push_back(frame_id);
+    }
+}
+
+void Dataset::AddStoredFrameIDs(const std::vector<std::tuple<uint8_t, uint64_t>>& frame_ids)
+{
+    for (const auto& frame_id : frame_ids)
+    {
+        AddStoredFrameID(frame_id);
+    }
 }
 
 
@@ -253,7 +271,7 @@ bool Dataset::CreateConfigurationFile()
     auto tbl = toml::table{
         {"capture_start_time", static_cast<int64_t>(capture_start_time)}, 
         {"maximum_period", maximum_period},
-        {"target_frames", target_frame_nb},
+        {"target_frame_nb", target_frame_nb},
         {"dataset_capture_mode", dataset_capture_mode},
         {"imu_collection_mode", imu_collection_mode},
         {"image_capture_rate", image_capture_rate},
@@ -316,7 +334,7 @@ Json Dataset::toJson() const
     {
         // Load frame metadata from disk using the frame_id (cam_id and timestamp)
         // Check if the frame meets the criteria for each category and increment the corresponding counters
-        Json frame_metadata = DH::LoadFrameMetadataFromDisk(std::get<1>(frame_id), std::get<0>(frame_id));
+        Json frame_metadata = DH::LoadFrameMetadataFromDisk(std::get<1>(frame_id), std::get<0>(frame_id), folder_path);
         if (frame_metadata.is_null()) {
             SPDLOG_WARN("Failed to load metadata for frame ID: ({}, {})", std::get<0>(frame_id), std::get<1>(frame_id));
             continue;

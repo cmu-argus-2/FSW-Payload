@@ -76,14 +76,13 @@ namespace DH // Data Handling
 
     bool ReadLatestStoredRawImg(Frame& frame);
     bool ReadHighestValueStoredRawImg(Frame& frame);
-
+    
     // Load an image from disk by its path
     bool ReadImageFromDisk(const std::string& file_path, Frame& frame_out, int cam_id=0, std::uint64_t timestamp=0);
     // Load an image from disk by its timestamp and cam_id
     bool ReadImageFromDisk(std::uint64_t timestamp, int cam_id, Frame& frame_out);
     // Load image information to json
-    Json LoadFrameMetadataFromDisk(std::uint64_t timestamp, int cam_id);
-
+    Json LoadFrameMetadataFromDisk(std::uint64_t timestamp, int cam_id, std::string_view target_folder = IMAGES_FOLDER);
 
     // Load the latest binary image file with packet header (img_<timestamp>_<camera_id>.bin)
     // Returns the file path if found, empty string otherwise

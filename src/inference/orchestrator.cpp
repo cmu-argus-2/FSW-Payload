@@ -356,6 +356,11 @@ EC Orchestrator::ExecRCInference()
         return EC::NN_NO_FRAME_AVAILABLE;
     }
 
+    if (!preload_rc_engine_ && !rc_net_.IsInitialized()) 
+    {
+        LoadRCEngine();
+    }
+
     if (!rc_net_.IsInitialized()) 
     {
         // Either its loaded on demand or preload failed. Eitherway, try again

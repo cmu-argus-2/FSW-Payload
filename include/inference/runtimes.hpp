@@ -303,4 +303,20 @@ private:
 };
 } // namespace Inference
 
+static float ComputeIoU(const Landmark& a, const Landmark& b);
+
+// Converting the output matrix to be row-major prevents unnecessary copy -- saves ~900MB RAM usage
+// NOTE: For future reference, Eigen::Map should be RowMajor!!
+using LDOutputMatrix = Eigen::Matrix<float, Eigen::Dynamic, Eigen::Dynamic, Eigen::RowMajor>;
+using LDOutputMatrixRef = Eigen::Ref<const LDOutputMatrix>;
+
+std::vector<Landmark> LDYoloNonMaxSuppression(
+    const LDOutputMatrixRef& output_matrix,
+    RegionID region_id,
+    float conf_threshold,
+    float iou_threshold);
+
+// TODO: Commented out for now, remove if this works without it, two versions since there is also a member in LDNet
+// int GetNumLandmarksFromCSV(const std::string& csv_path);
+
 #endif // RUNTIMES_HPP

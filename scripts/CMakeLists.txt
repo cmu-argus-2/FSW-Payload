@@ -73,5 +73,5 @@ target_link_libraries(RUN_PREFILTER
 
 ##### IMU
 
-add_executable(imu_run src/imu/run_imu.cpp)
+add_executable(imu_run run_imu.cpp)
 target_link_libraries(imu_run PRIVATE PAYLOAD_LIB)

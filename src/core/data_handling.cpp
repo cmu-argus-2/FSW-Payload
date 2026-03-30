@@ -31,7 +31,6 @@ bool MakeNewDirectory(std::string_view directory_path)
     {
         SPDLOG_CRITICAL("Failed to create folder: {}.", directory_path);
     }
-    }
 
     return success;
 

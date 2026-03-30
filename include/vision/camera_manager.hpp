@@ -64,7 +64,7 @@ public:
     // Set the capture mode of the camera system
     void SetCaptureMode(CAPTURE_MODE mode);
     // Send a capture request to the cameras. Wrapper around SetCaptureMode for CAPTURE_SINGLE 
-    void SendCaptureRequest();
+    bool SendCaptureRequest();
     // Set the rate at which the camera system captures frames in PERIODIC mode
     void SetPeriodicCaptureRate(uint8_t rate);
     // Set the number of frames to capture in PERIODIC mode
@@ -87,6 +87,8 @@ public:
     int CountActiveCameras() const;
     void FillCameraStatus(uint8_t* status);
 
+    bool PrepareForCapture();
+
 private:
         
     std::atomic<CAPTURE_MODE> capture_mode;
@@ -98,6 +100,7 @@ private:
 
     std::atomic<bool> display_flag = false;
     std::atomic<bool> loop_flag = false;
+    std::atomic<bool> auto_disable_after_capture = false;
 
     std::mutex capture_mode_mutex;
     std::condition_variable capture_mode_cv;
@@ -116,6 +119,7 @@ private:
 
     void _PerformCameraHealthCheck(); // background watchdog for the cameras
     void _UpdateCamStatus();
+    void _AutoDisableIfNeeded();
 
 
 

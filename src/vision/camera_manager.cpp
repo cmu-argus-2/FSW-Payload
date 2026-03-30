@@ -106,7 +106,7 @@ void CameraManager::RunLoop()
         {
             case CAPTURE_MODE::IDLE:
             {
-                _AutoDisableIfNeeded();
+                // _AutoDisableIfNeeded();
                 std::unique_lock<std::mutex> lock(capture_mode_mutex);
                 capture_mode_cv.wait(lock, [this] {return !loop_flag.load() || capture_mode.load() != CAPTURE_MODE::IDLE;});
                 
@@ -389,7 +389,7 @@ void CameraManager::SetCaptureMode(CAPTURE_MODE mode)
     capture_mode_cv.notify_all();
 }
 
-
+/**/
 bool CameraManager::SendCaptureRequest()
 {
     if (!PrepareForCapture())

@@ -33,7 +33,6 @@ public:
     // Setters
     void SetPreloadRCEngine(bool preload) { preload_rc_engine_ = preload; }
     void SetPreloadLDEngines(bool preload) { preload_ld_engines_ = preload; }
-    void SetUseTRTForLD(bool use_trt) { ldnet_config.use_trt = use_trt; }
     EC SetRCNetEnginePath(const std::string& path);
     EC SetLDNetEngineFolderPath(const std::string& path);
     void SetLDNetConfig(NET_QUANTIZATION weight_quant, int input_width, int input_height, bool embedded_nms, bool use_trt_for_ld);

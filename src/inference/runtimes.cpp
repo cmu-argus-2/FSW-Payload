@@ -158,8 +158,13 @@ EC RCNet::Infer(const void* input_data, void* output)
         LogError(EC::NN_CUDA_MEMCPY_FAILED);
         return EC::NN_CUDA_MEMCPY_FAILED;
     }
-    // spdlog::info("Inference enqueued successfully. Waiting for completion...");
-    cudaStreamSynchronize(stream_);  
+    cudaError_t sync_err = cudaStreamSynchronize(stream_);
+    if (sync_err != cudaSuccess)
+    {
+        spdlog::error("cudaStreamSynchronize failed: {}", cudaGetErrorString(sync_err));
+        LogError(EC::NN_INFERENCE_FAILED);
+        return EC::NN_INFERENCE_FAILED;
+    }
     return EC::OK;
 }
 
@@ -461,7 +466,33 @@ EC LDNet::LoadEngine(const std::string& engine_path)
         nvinfer1::Dims in_engine = engine_->getTensorShape(ld_input_name);
         nvinfer1::Dims out_engine = engine_->getTensorShape(ld_output_name);
 
-        context_->setInputShape(ld_input_name, nvinfer1::Dims4{batch_size_, input_channels_, input_height_, input_width_});
+        // For static engines the shape is already fixed; read H/W from the engine
+        // rather than trusting the config value so engines compiled with a different
+        // resolution (e.g. square 4608x4608) load and run correctly.
+        if (in_engine.nbDims == 4 && in_engine.d[2] > 0 && in_engine.d[3] > 0)
+        {
+            if (in_engine.d[2] != input_height_ || in_engine.d[3] != input_width_)
+            {
+                spdlog::warn("Engine '{}' input dims (H={} W={}) differ from config (H={} W={}). Using engine dims.",
+                             engine_path, in_engine.d[2], in_engine.d[3], input_height_, input_width_);
+            }
+            input_height_  = static_cast<int>(in_engine.d[2]);
+            input_width_   = static_cast<int>(in_engine.d[3]);
+            num_yolo_boxes = ComputeNumYoloBoxes();
+            output_size_   = static_cast<size_t>(batch_size_) * (GetNumLandmarks() + 4) * num_yolo_boxes;
+        }
+
+        if (!context_->setInputShape(ld_input_name, nvinfer1::Dims4{batch_size_, input_channels_, input_height_, input_width_}))
+        {
+            spdlog::error("setInputShape failed for engine {}: static input dimensions are incompatible with {}x{}x{}x{}.",
+                          engine_path, batch_size_, input_channels_, input_height_, input_width_);
+            context_.reset();
+            engine_.reset();
+            runtime_.reset();
+            // stream_ has not been created yet at this point
+            LogError(EC::NN_FAILED_TO_CREATE_ENGINE);
+            return EC::NN_FAILED_TO_CREATE_ENGINE;
+        }
 
         // Allocate GPU memory for input and output, now moved to scratch buffers
         buffers_.input_size = batch_size_ * input_channels_ * input_height_ * input_width_ * sizeof(float);
@@ -613,12 +644,22 @@ EC LDNet::Infer(const void* input_data, void* output)
     err = cudaMemcpyAsync(output, buffers_.output_data, buffers_.output_size, cudaMemcpyDeviceToHost, stream_);
     if (err != cudaSuccess)
     {
-        spdlog::error("cudaMemcpyAsync (output) failed.");
+        spdlog::error("cudaMemcpyAsync (output) failed: {}", cudaGetErrorString(err));
+        // Drain the stream so any pending async error is consumed and the CUDA
+        // context is not left in a corrupted state for subsequent operations.
+        cudaStreamSynchronize(stream_);
+        cudaGetLastError(); // clear the sticky CUDA error
         LogError(EC::NN_CUDA_MEMCPY_FAILED);
         return EC::NN_CUDA_MEMCPY_FAILED;
     }
 
-    cudaStreamSynchronize(stream_);
+    cudaError_t sync_err = cudaStreamSynchronize(stream_);
+    if (sync_err != cudaSuccess)
+    {
+        spdlog::error("cudaStreamSynchronize failed: {}", cudaGetErrorString(sync_err));
+        LogError(EC::NN_INFERENCE_FAILED);
+        return EC::NN_INFERENCE_FAILED;
+    }
     return EC::OK;
 }
 

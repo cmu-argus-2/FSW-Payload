@@ -356,16 +356,17 @@ EC Orchestrator::ExecRCInference()
         return EC::NN_NO_FRAME_AVAILABLE;
     }
 
-    if (!preload_rc_engine_ && !rc_net_.IsInitialized()) 
-    {
-        LoadRCEngine();
-    }
-
     if (!rc_net_.IsInitialized()) 
     {
-        spdlog::error("RCNet is not initialized. Cannot perform inference.");
-        LogError(EC::NN_ENGINE_NOT_INITIALIZED);
-        return EC::NN_ENGINE_NOT_INITIALIZED;
+        // Either its loaded on demand or preload failed. Eitherway, try again
+        EC rc_load_status = LoadRCEngine();
+        // If it fails, don't run inference
+        if (rc_load_status != EC::OK) 
+        {
+            spdlog::error("RCNet is not initialized. Cannot perform inference.");
+            LogError(rc_load_status);
+            return rc_load_status;
+        }
     }
 
     if (num_rc_inferences_on_current_frame_ > 0)
@@ -441,14 +442,13 @@ EC Orchestrator::ExecLDInference()
 
     // LD inference
     auto start = std::chrono::high_resolution_clock::now();
-    cv::Mat ld_chw_img;
-    LDPreprocessImg(img, ld_chw_img, ldnet_config.input_width, ldnet_config.input_height);
     auto end = std::chrono::high_resolution_clock::now();
     auto duration = std::chrono::duration_cast<std::chrono::milliseconds>(end - start);
-    spdlog::info("LD preprocessing (took {} ms)", duration.count());
-    
+
     int output_size;
     EC ld_net_status;
+    std::vector<EC> ld_load_statuses;
+    std::vector<EC> ld_net_statuses;
     for(const auto& region_id : original_frame_->GetRegionIDs())
     {
         if (ld_nets_.find(region_id) == ld_nets_.end())
@@ -457,33 +457,44 @@ EC Orchestrator::ExecLDInference()
             continue;
         }
 
-        if (!preload_ld_engines_ && !ld_nets_.at(region_id)->IsInitialized())
+        ld_net_status = EC::OK;
+
+        if (!ld_nets_.at(region_id)->IsInitialized())
         {
             start = std::chrono::high_resolution_clock::now();
             ld_net_status = LoadLDNetEngineForRegion(region_id);
             end = std::chrono::high_resolution_clock::now();
             duration = std::chrono::duration_cast<std::chrono::milliseconds>(end - start);
             spdlog::info("LD preloading (took {} ms)", duration.count());
-        }
-
-        if (!ld_nets_.at(region_id)->IsInitialized())
-        {
-            spdlog::warn("LDNet for region {} is not initialized. Attempting to load model.", GetRegionString(region_id));
-
-            ld_net_status = LoadLDNetEngineForRegion(region_id); // Attempt to load the engine for this region
-            if (ld_net_status != EC::OK) 
+            if (ld_net_status != EC::OK)
             {
                 spdlog::error("Failed to load LD Net engine for region: {}. Skipping this region.", GetRegionString(region_id));
+                ld_load_statuses.push_back(ld_net_status);
                 continue;
-            } else {
-                spdlog::info("Successfully loaded LD Net engine for region: {}", GetRegionString(region_id));
+            }
+            if (!ld_nets_.at(region_id)->IsInitialized())
+            {
+                spdlog::error("LDNet for region {} is still not initialized after load attempt.", GetRegionString(region_id));
+                ld_load_statuses.push_back(EC::NN_ENGINE_NOT_INITIALIZED);
+                continue;
             }
         }
+        ld_load_statuses.push_back(ld_net_status);
+
+        // Preprocess using the engine's actual input dimensions (may differ from config for square engines)
+        cv::Mat ld_chw_img;
+        start = std::chrono::high_resolution_clock::now();
+        LDPreprocessImg(img, ld_chw_img,
+                        ld_nets_.at(region_id)->GetInputWidth(),
+                        ld_nets_.at(region_id)->GetInputHeight());
+        end = std::chrono::high_resolution_clock::now();
+        duration = std::chrono::duration_cast<std::chrono::milliseconds>(end - start);
+        spdlog::info("LD preprocessing for region {} (took {} ms)", GetRegionString(region_id), duration.count());
 
         spdlog::info("Running LD inference for region: {}", GetRegionString(region_id));
 
         start = std::chrono::high_resolution_clock::now();
-        
+
         output_size = ld_nets_[region_id]->GetOutputSize();
         if (ld_nets_[region_id]->IsTRT()) {
             float* raw_out = ld_nets_[region_id]->GetOutputBuffer();
@@ -498,7 +509,8 @@ EC Orchestrator::ExecLDInference()
                 spdlog::error("LDNet inference failed with error code: {}", to_uint8(ld_net_status));
                 LogError(ld_net_status);
                 ld_nets_[region_id]->ReleaseScratchBuffers();
-                return ld_net_status;
+                ld_net_statuses.push_back(ld_net_status);
+                continue;
             } else {
                 spdlog::info("LDNet inference completed successfully. Output size: {}", output_size);
             }
@@ -510,7 +522,8 @@ EC Orchestrator::ExecLDInference()
                 spdlog::error("LDNet output buffer is null after inference.");
                 LogError(EC::NN_POINTER_NULL);
                 ld_nets_[region_id]->ReleaseScratchBuffers();
-                return EC::NN_POINTER_NULL;
+                ld_net_statuses.push_back(EC::NN_POINTER_NULL);
+                continue;
             }
 
             int sizes[3] = {1, ld_nets_[region_id]->GetNumLandmarks() + 4, ld_nets_[region_id]->GetNumYoloBoxes()};
@@ -520,12 +533,20 @@ EC Orchestrator::ExecLDInference()
             EC postprocess_status = ld_nets_[region_id]->PostprocessOutput(output_matrix, original_frame_); // This will populate the landmarks in the original frame based on the LD output
             ld_nets_[region_id]->ReleaseScratchBuffers();
 
+            spdlog::info("LDNet inference output post-processed");
+            end = std::chrono::high_resolution_clock::now();
+            duration = std::chrono::duration_cast<std::chrono::milliseconds>(end - start);
+            spdlog::info("Post-processing (took {} ms)", duration.count());
+            
+
             if (postprocess_status != EC::OK)
             {
                 spdlog::error("LDNet postprocess failed with error code: {}", to_uint8(postprocess_status));
                 LogError(postprocess_status);
-                return postprocess_status;
+                ld_net_statuses.push_back(postprocess_status);
+                continue;
             }
+            ld_net_statuses.push_back(EC::OK);
 
         } else {
             std::vector<cv::Mat> outs;
@@ -539,28 +560,47 @@ EC Orchestrator::ExecLDInference()
             {
                 spdlog::error("LDNet inference failed with error code: {}", to_uint8(ld_net_status));
                 LogError(ld_net_status);
-                return ld_net_status;
+                ld_net_statuses.push_back(ld_net_status);
+                continue;
             } else {
                 spdlog::info("LDNet inference completed successfully. Output size: {}", output_size);
             }
             start = std::chrono::high_resolution_clock::now();
             EC postprocess_status = ld_nets_[region_id]->PostprocessOutput(outs[0], original_frame_); // This will populate the landmarks in the original frame based on the LD output
 
+            spdlog::info("LDNet inference output post-processed");
+            end = std::chrono::high_resolution_clock::now();
+            duration = std::chrono::duration_cast<std::chrono::milliseconds>(end - start);
+            spdlog::info("Post-processing (took {} ms)", duration.count());
+            
             if (postprocess_status != EC::OK)
             {
                 spdlog::error("LDNet postprocess failed with error code: {}", to_uint8(postprocess_status));
                 LogError(postprocess_status);
-                return postprocess_status;
+                ld_net_statuses.push_back(postprocess_status);
+                continue;
             }
-
+            ld_net_statuses.push_back(EC::OK);
         }
-        spdlog::info("LDNet inference output post-processed");
-        end = std::chrono::high_resolution_clock::now();
-        duration = std::chrono::duration_cast<std::chrono::milliseconds>(end - start);
-        spdlog::info("Post-processing (took {} ms)", duration.count());
+        
 
         if (!preload_ld_engines_) FreeLDNetForRegion(region_id); // Free the LD engine for this region if it was loaded on demand
     }
+
+    if (!ld_load_statuses.empty() &&
+        std::none_of(ld_load_statuses.begin(), ld_load_statuses.end(), [](EC ec){ return ec == EC::OK; }))
+    {
+        LogError(ld_load_statuses.front());
+        return ld_load_statuses.front();
+    }
+
+    if (!ld_net_statuses.empty() &&
+        std::none_of(ld_net_statuses.begin(), ld_net_statuses.end(), [](EC ec){ return ec == EC::OK; }))
+    {
+        LogError(ld_net_statuses.front());
+        return ld_net_statuses.front();
+    }
+
     original_frame_->SetProcessingStage(ProcessingStage::LDNeted);
     num_ld_inferences_on_current_frame_++;
 

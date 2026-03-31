@@ -203,8 +203,6 @@ TEST_F(DatasetTest, DatasetStorageAndRetrieval)
     EXPECT_EQ(dataset_from_json.GetFolderPath(),       folder_path + "/");
 }
 
-// ── Stubs ─────────────────────────────────────────────────────────────────────
-
 TEST_F(DatasetTest, DatasetManagerConfigurationCheck)
 {
     // TODO: Test error handling of definition of two overlapping datasets
@@ -216,3 +214,5 @@ TEST_F(DatasetTest, DatasetReprocessing)
 {
     // TODO: Test reprocessing a dataset
 }
+
+// TODO: Integration tests

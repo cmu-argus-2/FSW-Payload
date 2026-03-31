@@ -74,11 +74,6 @@ public:
 
     ~DatasetManager();
 
-    std::atomic<bool> inference_enabled{true};
-    
-    void SetInferenceEnabled(bool enabled) { inference_enabled.store(enabled); }
-    bool GetInferenceEnabled() const { return inference_enabled.load(); }
-
 private:
 
     uint64_t created_at;
@@ -94,7 +89,7 @@ private:
     bool CheckTermination();
     // Runs the loop that periodically takes the latest frames, performs any necessary preprocessing, and stores the data in the corresponding folder
     void CollectionLoop();
-    void RunInferenceOnNewFrames(
+    void ProcessFrames(
         const std::vector<std::tuple<uint8_t, uint64_t>>& frame_ids,
         std::vector<std::tuple<uint8_t, uint64_t>>& processed_frame_ids);
     std::atomic<bool> loop_flag = false;

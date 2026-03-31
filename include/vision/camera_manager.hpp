@@ -34,6 +34,19 @@ enum class CAPTURE_MODE : uint8_t {
     PERIODIC_LDMK = 5, // Camera system store frames at a fixed rate, but only stores frames with detected landmarks
 };
 
+// Returns the ProcessingStage implied by a given capture mode,
+// i.e. what has already been done to frames stored by that mode.
+inline ProcessingStage CaptureModeToProcessingStage(CAPTURE_MODE mode)
+{
+    switch (mode)
+    {
+        case CAPTURE_MODE::PERIODIC_LDMK:  return ProcessingStage::LDNeted;
+        case CAPTURE_MODE::PERIODIC_ROI:   return ProcessingStage::RCNeted;
+        case CAPTURE_MODE::PERIODIC_EARTH: return ProcessingStage::Prefiltered;
+        default:                           return ProcessingStage::NotPrefiltered;
+    }
+}
+
 
 // Main interface to manage the cameras 
 class CameraManager

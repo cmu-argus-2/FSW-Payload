@@ -211,16 +211,17 @@ bool DatasetManager::CheckTermination()
     return (progress.current_frames >= current_dataset.GetTargetFrameNb()) || (timing::GetCurrentTimeMs() - current_dataset.GetCaptureStartTime() > current_dataset.GetMaximumPeriod() * 1000);
 }
 
-void DatasetManager::RunInferenceOnNewFrames(
+void DatasetManager::ProcessFrames(
     const std::vector<std::tuple<uint8_t, uint64_t>>& frame_ids,
     std::vector<std::tuple<uint8_t, uint64_t>>& processed_frame_ids)
 {
-    static Inference::Orchestrator orchestrator;
+    const ProcessingStage target = current_dataset.GetTargetProcessingStage();
+    const ProcessingStage capture_stage = CaptureModeToProcessingStage(current_dataset.GetDatasetCaptureMode());
 
-    if (current_dataset.GetTargetProcessingStage() < ProcessingStage::RCNeted)
-    {
+    if (target <= capture_stage)
         return;
-    }
+
+    static Inference::Orchestrator orchestrator;
 
     for (const auto& frame_id : frame_ids)
     {
@@ -231,40 +232,99 @@ void DatasetManager::RunInferenceOnNewFrames(
         uint8_t cam_id = std::get<0>(frame_id);
         uint64_t timestamp = std::get<1>(frame_id);
 
-        std::string img_path = current_dataset.GetFolderPath() 
-                             + "raw_" + std::to_string(timestamp) 
+        std::string img_path = current_dataset.GetFolderPath()
+                             + "raw_" + std::to_string(timestamp)
                              + "_" + std::to_string(cam_id) + ".png";
 
         Frame frame;
         if (!DH::ReadImageFromDisk(img_path, frame, cam_id, timestamp))
         {
-            SPDLOG_ERROR("Failed to load frame ({}, {}) for inference", cam_id, timestamp);
+            SPDLOG_ERROR("Failed to load frame ({}, {}) for processing", cam_id, timestamp);
+            processed_frame_ids.push_back(frame_id); // don't retry unloadable frames
             continue;
         }
 
-        std::shared_ptr<Frame> frame_ptr = std::make_shared<Frame>(frame);
-        orchestrator.GrabNewImage(frame_ptr);
+        // Step 1: prefiltering — only if the capture mode didn't already filter earth-facing
+        if (capture_stage < ProcessingStage::Prefiltered)
+        {
+            frame.RunPrefiltering();
+            if (frame.GetImageState() < ImageState::Earth)
+            {
+                SPDLOG_INFO("Frame ({}, {}) rejected by prefiltering", cam_id, timestamp);
+                processed_frame_ids.push_back(frame_id);
+                continue;
+            }
+            if (target == ProcessingStage::Prefiltered)
+            {
+                DH::StoreFrameMetadataToDisk(frame, current_dataset.GetFolderPath());
+                processed_frame_ids.push_back(frame_id);
+                SPDLOG_INFO("Prefiltering complete for frame ({}, {})", cam_id, timestamp);
+                continue;
+            }
+        }
 
+        // Step 2: inference
+        auto frame_ptr = std::make_shared<Frame>(frame);
         EC status;
-        if (current_dataset.GetTargetProcessingStage() == ProcessingStage::RCNeted)
+
+        if (capture_stage >= ProcessingStage::RCNeted)
         {
+            // RC was already done by the camera loop — restore regions from disk, then run LD only
+            Json metadata = DH::LoadFrameMetadataFromDisk(timestamp, cam_id, current_dataset.GetFolderPath());
+            frame_ptr->fromJson(metadata);
+            orchestrator.GrabNewImage(frame_ptr);
+            status = orchestrator.ExecLDInference();
+            if (status != EC::OK)
+            {
+                SPDLOG_ERROR("LD inference failed for frame ({}, {}): error {}", cam_id, timestamp, to_uint8(status));
+                processed_frame_ids.push_back(frame_id);
+                continue;
+            }
+            if (frame_ptr->GetImageState() < ImageState::HasLandmark)
+            {
+                SPDLOG_INFO("Frame ({}, {}) has no landmarks", cam_id, timestamp);
+                processed_frame_ids.push_back(frame_id);
+                continue;
+            }
+        }
+        else if (target == ProcessingStage::RCNeted)
+        {
+            orchestrator.GrabNewImage(frame_ptr);
             status = orchestrator.ExecRCInference();
+            if (status != EC::OK)
+            {
+                SPDLOG_ERROR("RC inference failed for frame ({}, {}): error {}", cam_id, timestamp, to_uint8(status));
+                processed_frame_ids.push_back(frame_id);
+                continue;
+            }
+            if (frame_ptr->GetImageState() < ImageState::HasRegion)
+            {
+                SPDLOG_INFO("Frame ({}, {}) has no regions", cam_id, timestamp);
+                processed_frame_ids.push_back(frame_id);
+                continue;
+            }
         }
-        else
+        else // target == LDNeted, capture_stage < RCNeted — run full pipeline
         {
+            orchestrator.GrabNewImage(frame_ptr);
             status = orchestrator.ExecFullInference();
+            if (status != EC::OK)
+            {
+                SPDLOG_ERROR("Full inference failed for frame ({}, {}): error {}", cam_id, timestamp, to_uint8(status));
+                processed_frame_ids.push_back(frame_id);
+                continue;
+            }
+            if (frame_ptr->GetImageState() < ImageState::HasLandmark)
+            {
+                SPDLOG_INFO("Frame ({}, {}) has no landmarks", cam_id, timestamp);
+                processed_frame_ids.push_back(frame_id);
+                continue;
+            }
         }
-        if (status == EC::OK)
-        {
-            DH::StoreFrameMetadataToDisk(*frame_ptr, current_dataset.GetFolderPath());
-            processed_frame_ids.push_back(frame_id);
-            SPDLOG_INFO("Inference complete for frame ({}, {})", cam_id, timestamp);
-        }
-        else
-        {
-            SPDLOG_ERROR("Inference failed for frame ({}, {}): error {}", 
-                         cam_id, timestamp, to_uint8(status));
-        }
+
+        DH::StoreFrameMetadataToDisk(*frame_ptr, current_dataset.GetFolderPath());
+        processed_frame_ids.push_back(frame_id);
+        SPDLOG_INFO("Processing complete for frame ({}, {})", cam_id, timestamp);
     }
 }
 
@@ -316,10 +376,7 @@ void DatasetManager::CollectionLoop()
             current_dataset.AddStoredFrameIDs(frame_ids);
             progress.Update(new_frames, 1.0); // TODO: compute actual hit
 
-            if (inference_enabled.load())
-            {
-                RunInferenceOnNewFrames(frame_ids, processed_frame_ids);
-            }
+            ProcessFrames(frame_ids, processed_frame_ids);
 
         }
     }

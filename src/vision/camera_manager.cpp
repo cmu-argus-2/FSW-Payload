@@ -1,14 +1,15 @@
 #include "vision/camera_manager.hpp"
 #include "core/data_handling.hpp"
-#include "inference/orchestrator.hpp"
+#include "inference/inference_manager.hpp"
 
-CameraManager::CameraManager(const std::array<CameraConfig, NUM_CAMERAS>& camera_configs) 
+CameraManager::CameraManager(const std::array<CameraConfig, NUM_CAMERAS>& camera_configs, InferenceManager& inference_manager)
 :
+inferenceManager(inference_manager),
 capture_mode(CAPTURE_MODE::IDLE),
 camera_configs(camera_configs),
-cameras{{Camera(camera_configs[0].id, camera_configs[0].path), 
-    Camera(camera_configs[1].id, camera_configs[1].path), 
-    Camera(camera_configs[2].id, camera_configs[2].path), 
+cameras{{Camera(camera_configs[0].id, camera_configs[0].path),
+    Camera(camera_configs[1].id, camera_configs[1].path),
+    Camera(camera_configs[2].id, camera_configs[2].path),
     Camera(camera_configs[3].id, camera_configs[3].path)}}
 {
     _UpdateCamStatus();
@@ -177,7 +178,6 @@ void CameraManager::RunLoop()
 
             case CAPTURE_MODE::PERIODIC_ROI:
             {
-                static Inference::Orchestrator orchestrator;
                 const ProcessingStage requested_stage = GetTargetProcessingStage();
 
                 current_capture_time = std::chrono::high_resolution_clock::now();
@@ -212,7 +212,6 @@ void CameraManager::RunLoop()
                         }
                     }
 
-                    // TODO: figure out memory issues, i think disabling might help...
                     std::array<bool, NUM_CAMERAS> off_cameras;
                     DisableCameras(off_cameras);
                     SPDLOG_INFO("Cameras disabled before inference.");
@@ -220,30 +219,20 @@ void CameraManager::RunLoop()
                     for (auto& frame : captured_frames)
                     {
                         std::shared_ptr<Frame> frame_ptr = std::make_shared<Frame>(frame);
-                        orchestrator.GrabNewImage(frame_ptr);
-                        spdlog::info("Running ROI inference on camera {}", frame.GetCamID());
-                        EC status;
-                        if (requested_stage == ProcessingStage::RCNeted)
-                        {
-                            status = orchestrator.ExecRCInference();
-                        }
-                        else
-                        {
-                            status = orchestrator.ExecFullInference();
-                        }
+                        SPDLOG_INFO("Running ROI inference on camera {}", frame.GetCamID());
+                        EC status = inferenceManager.ProcessFrame(frame_ptr, requested_stage);
                         if (status == EC::OK)
                         {
                             DH::StoreFrameMetadataToDisk(*frame_ptr, GetStorageFolder());
-                            spdlog::info("Frame metadata JSON saved for camera {}", frame.GetCamID());
+                            SPDLOG_INFO("Frame metadata JSON saved for camera {}", frame.GetCamID());
                             roi_frames_captured++;
                         }
                         else
                         {
-                            spdlog::error("ROI inference failed with error code: {}", to_uint8(status));
+                            SPDLOG_ERROR("ROI inference failed with error code: {}", to_uint8(status));
                         }
                     }
 
-                    // need to reenable
                     std::array<bool, NUM_CAMERAS> on_cameras;
                     EnableCameras(on_cameras);
                     SPDLOG_INFO("Cameras re-enabled after inference.");

@@ -4,6 +4,7 @@
 */
 #include "spdlog/spdlog.h"
 #include "vision/dataset_manager.hpp"
+#include "inference/inference_manager.hpp"
 #include "core/timing.hpp"
 #include "configuration.hpp"
 #include <memory>
@@ -40,8 +41,10 @@ int main(int argc, char** argv)
     const auto& imu_config = config->GetIMUConfig();
     IMUManager imu_manager(imu_config);
 
+    InferenceManager inference_manager;
+
     const auto& cam_configs = config->GetCameraConfigs();
-    CameraManager camera_manager(cam_configs);
+    CameraManager camera_manager(cam_configs, inference_manager);
 
     std::thread imu_thread = std::thread(&IMUManager::RunLoop, &imu_manager);
 
@@ -82,7 +85,7 @@ int main(int argc, char** argv)
     // Create a new Dataset
     SPDLOG_INFO("Starting dataset collection (type {}) for {} frames at a period of {} seconds.", static_cast<uint8_t>(capture_mode), target_frame_nb, max_period);
 
-    ds = DatasetManager::Create(ds_config_folder_path, DATASET_KEY_CMD, camera_manager, imu_manager);
+    ds = DatasetManager::Create(ds_config_folder_path, DATASET_KEY_CMD, camera_manager, imu_manager, inference_manager);
 
     // ds = DatasetManager::Create(max_period, target_frame_nb, capture_mode, capture_start_time, imu_collection_mode, 
     //                                             image_capture_rate, imu_sample_rate_hz, target_processing_stage,

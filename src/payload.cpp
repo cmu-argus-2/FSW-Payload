@@ -33,7 +33,7 @@ Payload::Payload(std::unique_ptr<Configuration> _config, std::unique_ptr<Communi
 _running_instance(false),
 config(std::move(_config)),
 communication(std::move(_comms_interface)),
-camera_manager(config->GetCameraConfigs()),
+camera_manager(config->GetCameraConfigs(), inference_manager),
 imu_manager(config->GetIMUConfig()),
 state(PayloadState::STARTUP),
 thread_pool(std::make_unique<ThreadPool>(5))
@@ -361,6 +361,16 @@ const OD& Payload::GetOD() const
 OD& Payload::GetOD()
 {
     return od;
+}
+
+const InferenceManager& Payload::GetInferenceManager() const
+{
+    return inference_manager;
+}
+
+InferenceManager& Payload::GetInferenceManager()
+{
+    return inference_manager;
 }
 
 size_t Payload::GetNbTasksInExecution()

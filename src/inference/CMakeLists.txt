@@ -2,15 +2,21 @@ if(CUDA_ENABLED)
     add_library(inference
         runtimes.cpp
         orchestrator.cpp
+        inference_manager.cpp
     )
     target_link_libraries(inference
-        PRIVATE 
-            core 
+        PRIVATE
+            core
             ${OpenCV_LIBS}
             ${NVINFER_LIBRARY}
             ${NVINFER_PLUGIN_LIBRARY}
             ${CUDART_LIBRARY}
     )
 else()
-    add_library(inference INTERFACE)
+    add_library(inference
+        inference_manager.cpp
+    )
+    target_link_libraries(inference
+        PRIVATE core
+    )
 endif()

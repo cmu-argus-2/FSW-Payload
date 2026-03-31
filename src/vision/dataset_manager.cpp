@@ -8,7 +8,6 @@
 #include "core/data_handling.hpp"
 #include "core/timing.hpp"
 #include "payload.hpp"
-#include "inference/orchestrator.hpp"
 
 
 DatasetProgress::DatasetProgress(uint16_t target_nb_frames)
@@ -38,13 +37,14 @@ std::mutex DatasetManager::datasets_mtx;
 
 
 std::shared_ptr<DatasetManager> DatasetManager::Create(double max_period, uint16_t target_frame_nb, CAPTURE_MODE capture_mode, uint64_t capture_start_time,
-                            IMU_COLLECTION_MODE imu_collection_mode, uint8_t image_capture_rate, float imu_sample_rate_hz, 
+                            IMU_COLLECTION_MODE imu_collection_mode, uint8_t image_capture_rate, float imu_sample_rate_hz,
                             ProcessingStage target_processing_stage, std::string ds_key = DEFAULT_DS_KEY,
-                            CameraManager& cam_manager = sys::cameraManager(), IMUManager& imu_manager = sys::imuManager())
+                            CameraManager& cam_manager = sys::cameraManager(), IMUManager& imu_manager = sys::imuManager(),
+                            InferenceManager& inference_manager = sys::inferenceManager())
 {
 
-    Dataset dataset = Dataset(max_period, target_frame_nb, capture_mode, imu_collection_mode, 
-                                image_capture_rate, imu_sample_rate_hz, target_processing_stage, 
+    Dataset dataset = Dataset(max_period, target_frame_nb, capture_mode, imu_collection_mode,
+                                image_capture_rate, imu_sample_rate_hz, target_processing_stage,
                                 capture_start_time);
 
     // if dataset overlaps others, return false
@@ -57,7 +57,7 @@ std::shared_ptr<DatasetManager> DatasetManager::Create(double max_period, uint16
         }
     }
 
-    auto instance = std::make_shared<DatasetManager>(dataset, cam_manager, imu_manager);
+    auto instance = std::make_shared<DatasetManager>(dataset, cam_manager, imu_manager, inference_manager);
     std::lock_guard<std::mutex> lock(datasets_mtx);
     if (ds_key == DEFAULT_DS_KEY)
     {
@@ -68,9 +68,10 @@ std::shared_ptr<DatasetManager> DatasetManager::Create(double max_period, uint16
 }
 
 std::shared_ptr<DatasetManager> DatasetManager::Create(const std::string& folder_path, std::string ds_key = DEFAULT_DS_KEY,
-                            CameraManager& cam_manager = sys::cameraManager(), IMUManager& imu_manager = sys::imuManager())
+                            CameraManager& cam_manager = sys::cameraManager(), IMUManager& imu_manager = sys::imuManager(),
+                            InferenceManager& inference_manager = sys::inferenceManager())
 {
-    auto instance = std::make_shared<DatasetManager>(folder_path, cam_manager, imu_manager);
+    auto instance = std::make_shared<DatasetManager>(folder_path, cam_manager, imu_manager, inference_manager);
     std::lock_guard<std::mutex> lock(datasets_mtx);
     if (ds_key == DEFAULT_DS_KEY)
     {
@@ -112,25 +113,27 @@ std::vector<std::string> DatasetManager::ListActiveDatasetManagers()
 }
 
 DatasetManager::DatasetManager(Dataset dataset,
-                                CameraManager& cam_manager=sys::cameraManager(), 
-                                IMUManager& imu_manager=sys::imuManager())
+                                CameraManager& cam_manager, IMUManager& imu_manager,
+                                InferenceManager& inference_manager)
 :
 current_dataset(dataset),
 progress(dataset.GetTargetFrameNb()),
 cameraManager(cam_manager),
 imuManager(imu_manager),
+inferenceManager(inference_manager),
 created_at(timing::GetCurrentTimeMs())
 {
 }
 
 DatasetManager::DatasetManager(const std::string& folder_path,
-                                CameraManager& cam_manager=sys::cameraManager(), 
-                                IMUManager& imu_manager=sys::imuManager())
+                                CameraManager& cam_manager, IMUManager& imu_manager,
+                                InferenceManager& inference_manager)
 :
 current_dataset(folder_path),
 progress(current_dataset.GetTargetFrameNb()),
 cameraManager(cam_manager),
 imuManager(imu_manager),
+inferenceManager(inference_manager),
 created_at(timing::GetCurrentTimeMs())
 {
 }
@@ -221,8 +224,6 @@ void DatasetManager::ProcessFrames(
     if (target <= capture_stage)
         return;
 
-    static Inference::Orchestrator orchestrator;
-
     for (const auto& frame_id : frame_ids)
     {
         if (std::find(processed_frame_ids.begin(), processed_frame_ids.end(), frame_id)
@@ -265,61 +266,32 @@ void DatasetManager::ProcessFrames(
 
         // Step 2: inference
         auto frame_ptr = std::make_shared<Frame>(frame);
-        EC status;
 
         if (capture_stage >= ProcessingStage::RCNeted)
         {
-            // RC was already done by the camera loop — restore regions from disk, then run LD only
+            // RC was already done by the camera loop — restore regions from disk so
+            // the frame's stage and region list are correctly populated for LD inference.
             Json metadata = DH::LoadFrameMetadataFromDisk(timestamp, cam_id, current_dataset.GetFolderPath());
             frame_ptr->fromJson(metadata);
-            orchestrator.GrabNewImage(frame_ptr);
-            status = orchestrator.ExecLDInference();
-            if (status != EC::OK)
-            {
-                SPDLOG_ERROR("LD inference failed for frame ({}, {}): error {}", cam_id, timestamp, to_uint8(status));
-                processed_frame_ids.push_back(frame_id);
-                continue;
-            }
-            if (frame_ptr->GetImageState() < ImageState::HasLandmark)
-            {
-                SPDLOG_INFO("Frame ({}, {}) has no landmarks", cam_id, timestamp);
-                processed_frame_ids.push_back(frame_id);
-                continue;
-            }
         }
-        else if (target == ProcessingStage::RCNeted)
+
+        EC status = inferenceManager.ProcessFrame(frame_ptr, target);
+        if (status != EC::OK)
         {
-            orchestrator.GrabNewImage(frame_ptr);
-            status = orchestrator.ExecRCInference();
-            if (status != EC::OK)
-            {
-                SPDLOG_ERROR("RC inference failed for frame ({}, {}): error {}", cam_id, timestamp, to_uint8(status));
-                processed_frame_ids.push_back(frame_id);
-                continue;
-            }
-            if (frame_ptr->GetImageState() < ImageState::HasRegion)
-            {
-                SPDLOG_INFO("Frame ({}, {}) has no regions", cam_id, timestamp);
-                processed_frame_ids.push_back(frame_id);
-                continue;
-            }
+            SPDLOG_ERROR("Inference failed for frame ({}, {}): error {}", cam_id, timestamp, to_uint8(status));
+            processed_frame_ids.push_back(frame_id);
+            continue;
         }
-        else // target == LDNeted, capture_stage < RCNeted — run full pipeline
+
+        const ImageState min_state = (target == ProcessingStage::RCNeted)
+                                         ? ImageState::HasRegion
+                                         : ImageState::HasLandmark;
+        if (frame_ptr->GetImageState() < min_state)
         {
-            orchestrator.GrabNewImage(frame_ptr);
-            status = orchestrator.ExecFullInference();
-            if (status != EC::OK)
-            {
-                SPDLOG_ERROR("Full inference failed for frame ({}, {}): error {}", cam_id, timestamp, to_uint8(status));
-                processed_frame_ids.push_back(frame_id);
-                continue;
-            }
-            if (frame_ptr->GetImageState() < ImageState::HasLandmark)
-            {
-                SPDLOG_INFO("Frame ({}, {}) has no landmarks", cam_id, timestamp);
-                processed_frame_ids.push_back(frame_id);
-                continue;
-            }
+            SPDLOG_INFO("Frame ({}, {}) did not reach required image state for stage {}",
+                        cam_id, timestamp, ProcessingStageToString(target));
+            processed_frame_ids.push_back(frame_id);
+            continue;
         }
 
         DH::StoreFrameMetadataToDisk(*frame_ptr, current_dataset.GetFolderPath());

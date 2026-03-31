@@ -11,10 +11,12 @@
 #define NUM_CAMERAS 4
 #define MAX_PERIODIC_FRAMES_TO_CAPTURE 255
 #define DEFAULT_PERIODIC_FRAMES_TO_CAPTURE 100
-#define CAMERA_HEALTH_CHECK_INTERVAL 500 // seconds 
+#define CAMERA_HEALTH_CHECK_INTERVAL 500 // seconds
+
+class InferenceManager; // forward declaration
 
 // Configuration struct for each camera
-struct CameraConfig 
+struct CameraConfig
 {
     int64_t id;
     std::string path;
@@ -54,7 +56,7 @@ class CameraManager
 
 public:
 
-    CameraManager(const std::array<CameraConfig, NUM_CAMERAS>& camera_configs);
+    CameraManager(const std::array<CameraConfig, NUM_CAMERAS>& camera_configs, InferenceManager& inference_manager);
 
     void RunLoop();
     void StopLoops();
@@ -104,6 +106,8 @@ public:
 
 private:
         
+    InferenceManager& inferenceManager;
+
     std::atomic<CAPTURE_MODE> capture_mode;
     std::string storage_folder;
     std::mutex storage_folder_m;

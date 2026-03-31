@@ -6,6 +6,8 @@
 #include <imu/imu_manager.hpp>
 #include <vision/frame.hpp>
 
+class InferenceManager; // forward declaration
+
 #include <vector>
 #include <string>
 #include <cstdint>
@@ -45,10 +47,10 @@ public:
 
     // It is recommended to have the Create functions under a try-except to catch instantiation failures
     static std::shared_ptr<DatasetManager> Create(double max_period, uint16_t target_frame_nb, CAPTURE_MODE capture_mode, uint64_t capture_start_time,
-                                                  IMU_COLLECTION_MODE imu_collection_mode, uint8_t image_capture_rate, float imu_sample_rate_hz, 
-                                                  ProcessingStage target_processing_stage, std::string ds_key, CameraManager& cam_manager, IMUManager& imu_manager);
+                                                  IMU_COLLECTION_MODE imu_collection_mode, uint8_t image_capture_rate, float imu_sample_rate_hz,
+                                                  ProcessingStage target_processing_stage, std::string ds_key, CameraManager& cam_manager, IMUManager& imu_manager, InferenceManager& inference_manager);
     // If the folder path does not exist or does not contain a config file, it throws.
-    static std::shared_ptr<DatasetManager> Create(const std::string& folder_path, std::string key, CameraManager& cam_manager, IMUManager& imu_manager);
+    static std::shared_ptr<DatasetManager> Create(const std::string& folder_path, std::string key, CameraManager& cam_manager, IMUManager& imu_manager, InferenceManager& inference_manager);
 
     static std::shared_ptr<DatasetManager> GetActiveDatasetManager(const std::string& key);
     static void StopDatasetManager(const std::string& key);
@@ -68,9 +70,9 @@ public:
     uint64_t GetCaptureStartTime() const { return current_dataset.GetCaptureStartTime(); }
 
     // Actual constructors ~ not to be used
-    DatasetManager(Dataset dataset, CameraManager& cam_manager, IMUManager& imu_manager);
+    DatasetManager(Dataset dataset, CameraManager& cam_manager, IMUManager& imu_manager, InferenceManager& inference_manager);
     // If the folder path does not exist or does not contain a config file, it throws.
-    DatasetManager(const std::string& folder_path, CameraManager& cam_manager, IMUManager& imu_manager);
+    DatasetManager(const std::string& folder_path, CameraManager& cam_manager, IMUManager& imu_manager, InferenceManager& inference_manager);
 
     ~DatasetManager();
 
@@ -80,9 +82,9 @@ private:
 
     Dataset current_dataset;
 
-    // will this be an issue in terms of memory efficiency?
     CameraManager& cameraManager;
     IMUManager& imuManager;
+    InferenceManager& inferenceManager;
 
     DatasetProgress progress;
 

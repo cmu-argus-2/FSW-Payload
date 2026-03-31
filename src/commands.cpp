@@ -298,8 +298,7 @@ void start_capture_dataset([[maybe_unused]] std::vector<uint8_t> &data)
     {
         ds = DatasetManager::Create(max_period, target_frame_nb, capture_mode, capture_start_time,
                                     imu_collection_mode, image_capture_rate, imu_sample_rate_hz,
-                                    target_processing_stage, DATASET_KEY_CMD, sys::cameraManager(), sys::imuManager());
-        ds->SetInferenceEnabled(target_processing_stage >= ProcessingStage::RCNeted); // The inference would always run when naively set to "true"
+                                    target_processing_stage, DATASET_KEY_CMD, sys::cameraManager(), sys::imuManager(), sys::inferenceManager());
         ds->StartCollection();
     }
     catch (const std::exception &e)
@@ -328,7 +327,6 @@ void stop_capture_dataset([[maybe_unused]] std::vector<uint8_t> &data)
     auto ds = DatasetManager::GetActiveDatasetManager(DATASET_KEY_CMD);
     if (ds) // if it exists
     {
-        ds->SetInferenceEnabled(false);
         ds->StopCollection();
         DatasetProgress ds_progress = ds->QueryProgress();
         // include in message statistics about the collected data (how many frame)

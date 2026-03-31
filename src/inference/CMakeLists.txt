@@ -1,9 +1,9 @@
 if(CUDA_ENABLED)
     add_library(inference
         runtimes.cpp
-        orchestrator.cpp
         inference_manager.cpp
     )
+    target_compile_definitions(inference PUBLIC CUDA_ENABLED)
     target_link_libraries(inference
         PRIVATE
             core

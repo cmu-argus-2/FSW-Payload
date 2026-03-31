@@ -11,10 +11,14 @@ add_executable(PAYLOAD_TESTS main.cpp
 
 # Link the test executable with Google Test and the PAYLOAD library
 target_link_libraries(PAYLOAD_TESTS
-    PRIVATE 
-        GTest::gtest 
-        GTest::gtest_main 
+    PRIVATE
+        GTest::gtest
+        GTest::gtest_main
         PAYLOAD_LIB
 )
+
+if(CUDA_ENABLED)
+    target_include_directories(PAYLOAD_TESTS PRIVATE ${CUDA_INCLUDE_DIRS})
+endif()
 
 add_test(NAME PAYLOAD_TESTS COMMAND PAYLOAD_TESTS)

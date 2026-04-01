@@ -6,6 +6,9 @@
 #include <gtest/gtest.h>
 #include <opencv2/opencv.hpp>
 #include <fstream>
+#include <filesystem>
+#include "toml.hpp"
+#include "spdlog/spdlog.h"
 #include <functional>
 
 // Expose private members for ProcessFrames and DatasetManager internals.

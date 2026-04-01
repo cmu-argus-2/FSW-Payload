@@ -77,7 +77,7 @@ bool Dataset::isValidConfigurationFile(const std::string& config_file_path)
         return false;
     }
 
-    return isValidConfiguration(*max_period, static_cast<uint16_t>(*target_frames), 
+    return isValidConfiguration(*max_period, static_cast<uint8_t>(*target_frames), 
                                 static_cast<CAPTURE_MODE>(*dataset_capture_mode_val),
                                 static_cast<IMU_COLLECTION_MODE>(*imu_collection_mode_val),
                                 static_cast<uint8_t>(*image_capture_rate_val),
@@ -86,7 +86,7 @@ bool Dataset::isValidConfigurationFile(const std::string& config_file_path)
                                 timing::GetCurrentTimeMs());
 }
 
-bool Dataset::isValidConfiguration(double max_period, uint16_t nb_frames, CAPTURE_MODE capture_mode, IMU_COLLECTION_MODE imu_collection_mode,
+bool Dataset::isValidConfiguration(double max_period, uint8_t nb_frames, CAPTURE_MODE capture_mode, IMU_COLLECTION_MODE imu_collection_mode,
                                     uint8_t image_capture_rate, float imu_sample_rate_hz, ProcessingStage target_processing_stage,
                                     uint64_t capture_start_time)
 {
@@ -142,7 +142,7 @@ bool Dataset::isValidConfiguration(double max_period, uint16_t nb_frames, CAPTUR
 }
 
 
-Dataset::Dataset(double max_period, uint16_t nb_frames, 
+Dataset::Dataset(double max_period, uint8_t nb_frames, 
                 CAPTURE_MODE capture_mode,
                 IMU_COLLECTION_MODE imu_collection_mode,
                 uint8_t image_capture_rate, float imu_sample_rate_hz, 
@@ -222,7 +222,7 @@ imu_log_file_path(folder_path_in + "/imu_data.csv")
     if (config.contains("maximum_period")) {
         maximum_period      = *(config["maximum_period"].value<double>());
     }
-    target_frame_nb = static_cast<uint16_t>(*(config["target_frame_nb"].value<uint64_t>()));
+    target_frame_nb = static_cast<uint8_t>(*(config["target_frame_nb"].value<uint64_t>()));
     dataset_capture_mode    = static_cast<CAPTURE_MODE>(*(config["dataset_capture_mode"].value<uint64_t>()));
     imu_collection_mode     = static_cast<IMU_COLLECTION_MODE>(*(config["imu_collection_mode"].value<uint64_t>()));
     image_capture_rate      = static_cast<uint8_t>(*(config["image_capture_rate"].value<uint64_t>()));

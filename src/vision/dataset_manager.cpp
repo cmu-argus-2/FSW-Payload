@@ -11,7 +11,7 @@
 #include "payload.hpp"
 
 
-DatasetProgress::DatasetProgress(uint16_t target_nb_frames)
+DatasetProgress::DatasetProgress(uint8_t target_nb_frames)
 :
 hit_ratio(1.0),
 _progress_calls(0.0),
@@ -20,7 +20,7 @@ current_frames(0),
 target_frames(target_nb_frames)
 {}
 
-void DatasetProgress::Update(uint16_t nb_new_frames, double instant_hit_ratio)
+void DatasetProgress::Update(uint8_t nb_new_frames, double instant_hit_ratio)
 {
     current_frames += nb_new_frames;
     
@@ -37,7 +37,7 @@ std::unordered_map<std::string, std::shared_ptr<DatasetManager>> DatasetManager:
 std::mutex DatasetManager::datasets_mtx;
 
 
-std::shared_ptr<DatasetManager> DatasetManager::Create(double max_period, uint16_t target_frame_nb, CAPTURE_MODE capture_mode, uint64_t capture_start_time,
+std::shared_ptr<DatasetManager> DatasetManager::Create(double max_period, uint8_t target_frame_nb, CAPTURE_MODE capture_mode, uint64_t capture_start_time,
                             IMU_COLLECTION_MODE imu_collection_mode, uint8_t image_capture_rate, float imu_sample_rate_hz,
                             ProcessingStage target_processing_stage, std::string ds_key = DEFAULT_DS_KEY,
                             CameraManager& cam_manager = sys::cameraManager(), IMUManager& imu_manager = sys::imuManager(),
@@ -317,7 +317,6 @@ void DatasetManager::CollectionLoop()
     }
 
     // configure the camera manager for the dataset collection
-    // TODO:Define folder to store images on
     if (!cameraManager.PrepareForCapture())
     {
         loop_flag.store(false);
@@ -344,7 +343,7 @@ void DatasetManager::CollectionLoop()
         const int captured_frames = cameraManager.GetCapturedFramesCount();
         if (no_frame_counter < captured_frames)
         {
-            const uint16_t new_frames = static_cast<uint16_t>(captured_frames - no_frame_counter);
+            const uint8_t new_frames = static_cast<uint8_t>(captured_frames - no_frame_counter);
             no_frame_counter = captured_frames;
             std::vector<std::tuple<uint8_t, uint64_t>> frame_ids = cameraManager.GetBufferFrameIDs();
             current_dataset.AddStoredFrameIDs(frame_ids);

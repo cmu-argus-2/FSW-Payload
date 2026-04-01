@@ -165,7 +165,12 @@ bool readDatasetFromDisk(const std::string& dataset_file_path, Dataset& dataset_
         std::ifstream ifs(dataset_file_path);
         ifs >> j;
         ifs.close();
-        dataset_out.fromJson(j);
+        bool success = dataset_out.fromJson(j);
+        if (!success)
+        {
+            SPDLOG_ERROR("Failed to parse dataset from JSON: {}", dataset_file_path);
+            return false;
+        }
     }
     catch (const std::exception& e)
     {

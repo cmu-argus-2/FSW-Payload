@@ -38,7 +38,7 @@ static Dataset makeDatasetAt(uint64_t start_ms, double period_s)
 struct DatasetTest : ::testing::Test
 {
     double              max_period              = 60.0;
-    uint16_t            nb_frames               = 100;
+    uint8_t             nb_frames               = 100;
     CAPTURE_MODE        capture_mode            = CAPTURE_MODE::PERIODIC;
     IMU_COLLECTION_MODE imu_collection_mode     = IMU_COLLECTION_MODE::GYRO_ONLY;
     uint8_t             image_capture_rate      = 60;
@@ -69,8 +69,8 @@ TEST_F(DatasetTest, DatasetConfigurationCheck)
         auto saved = field; field = bad_val; EXPECT_FALSE(isValid()); field = saved;
     };
     checkInvalid(max_period,         0.0);
-    checkInvalid(nb_frames,          uint16_t(0));
-    checkInvalid(nb_frames,          uint16_t(11000));
+    checkInvalid(nb_frames,          uint8_t(0));
+    checkInvalid(nb_frames,          uint8_t(256));
     checkInvalid(capture_mode,       CAPTURE_MODE::IDLE);
     checkInvalid(capture_mode,       CAPTURE_MODE::CAPTURE_SINGLE);
     checkInvalid(image_capture_rate, uint8_t(0));

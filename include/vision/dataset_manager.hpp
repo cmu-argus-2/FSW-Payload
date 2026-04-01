@@ -30,11 +30,11 @@ struct DatasetProgress
     double hit_ratio; // ROI_IMG / TOTAL_IMG - Mostly for statistics
     double _progress_calls;
     double completion; // as a %
-    uint16_t current_frames;
-    const uint16_t target_frames;
+    uint8_t current_frames;
+    const uint8_t target_frames;
 
-    DatasetProgress(uint16_t target_nb_frames);
-    void Update(uint16_t nb_new_frames, double instant_hit_ratio = 1.0f);
+    DatasetProgress(uint8_t target_nb_frames);
+    void Update(uint8_t nb_new_frames, double instant_hit_ratio = 1.0f);
 };
 
 
@@ -46,7 +46,7 @@ public:
     // Static methods
 
     // It is recommended to have the Create functions under a try-except to catch instantiation failures
-    static std::shared_ptr<DatasetManager> Create(double max_period, uint16_t target_frame_nb, CAPTURE_MODE capture_mode, uint64_t capture_start_time,
+    static std::shared_ptr<DatasetManager> Create(double max_period, uint8_t target_frame_nb, CAPTURE_MODE capture_mode, uint64_t capture_start_time,
                                                   IMU_COLLECTION_MODE imu_collection_mode, uint8_t image_capture_rate, float imu_sample_rate_hz,
                                                   ProcessingStage target_processing_stage, std::string ds_key, CameraManager& cam_manager, IMUManager& imu_manager, InferenceManager& inference_manager);
     // If the folder path does not exist or does not contain a config file, it throws.

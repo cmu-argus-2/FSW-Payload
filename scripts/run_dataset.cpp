@@ -28,14 +28,31 @@ int main(int argc, char** argv)
     }
     SPDLOG_INFO("Configuration file {} loaded.", config_file_path);
 
-    int64_t capture_start_time = timing::GetCurrentTimeMs();
-    CAPTURE_MODE capture_mode = CAPTURE_MODE::PERIODIC; // default to periodic
+    CAPTURE_MODE capture_mode = CAPTURE_MODE::PERIODIC;
     IMU_COLLECTION_MODE imu_collection_mode = IMU_COLLECTION_MODE::GYRO_MAG_TEMP;
-    double max_period = 10.0; // default to 60s
+    double max_period = 10.0;
     uint16_t target_frame_nb = 4;
     uint8_t image_capture_rate = uint8_t(1);
     float imu_sample_rate_hz = 1.0f;
     ProcessingStage target_processing_stage = ProcessingStage::NotPrefiltered;
+
+    // Load dataset parameters from config file
+    const std::string ds_config_path = ds_config_folder_path + "/dataset_config.toml";
+    try {
+        toml::table ds_cfg = toml::parse_file(ds_config_path);
+        max_period              = ds_cfg["maximum_period"].value_or(max_period);
+        target_frame_nb         = static_cast<uint16_t>(ds_cfg["target_frame_nb"].value_or(uint64_t(target_frame_nb)));
+        capture_mode            = static_cast<CAPTURE_MODE>(ds_cfg["dataset_capture_mode"].value_or(uint64_t(capture_mode)));
+        imu_collection_mode     = static_cast<IMU_COLLECTION_MODE>(ds_cfg["imu_collection_mode"].value_or(uint64_t(imu_collection_mode)));
+        image_capture_rate      = static_cast<uint8_t>(ds_cfg["image_capture_rate"].value_or(uint64_t(image_capture_rate)));
+        imu_sample_rate_hz      = static_cast<float>(ds_cfg["imu_sample_rate_hz"].value_or(double(imu_sample_rate_hz)));
+        target_processing_stage = static_cast<ProcessingStage>(ds_cfg["target_processing_stage"].value_or(uint64_t(target_processing_stage)));
+    } catch (const toml::parse_error& err) {
+        spdlog::error("Failed to parse dataset config {}: {}", ds_config_path, err.description());
+        return 1;
+    }
+    // capture_start_time = 0 in config means "start immediately"
+    int64_t capture_start_time = timing::GetCurrentTimeMs();
 
     // collect IMU data or not flag
     const auto& imu_config = config->GetIMUConfig();
@@ -85,11 +102,9 @@ int main(int argc, char** argv)
     // Create a new Dataset
     SPDLOG_INFO("Starting dataset collection (type {}) for {} frames at a period of {} seconds.", static_cast<uint8_t>(capture_mode), target_frame_nb, max_period);
 
-    ds = DatasetManager::Create(ds_config_folder_path, DATASET_KEY_CMD, camera_manager, imu_manager, inference_manager);
-
-    // ds = DatasetManager::Create(max_period, target_frame_nb, capture_mode, capture_start_time, imu_collection_mode, 
-    //                                             image_capture_rate, imu_sample_rate_hz, target_processing_stage,
-    //                                                                 DATASET_KEY_CMD, camera_manager, imu_manager);
+    ds = DatasetManager::Create(max_period, target_frame_nb, capture_mode, capture_start_time,
+                                imu_collection_mode, image_capture_rate, imu_sample_rate_hz,
+                                target_processing_stage, DATASET_KEY_CMD, camera_manager, imu_manager, inference_manager);
     ds->StartCollection();
 
 

@@ -6,6 +6,7 @@ CameraManager::CameraManager(const std::array<CameraConfig, NUM_CAMERAS>& camera
 :
 inferenceManager(inference_manager),
 capture_mode(CAPTURE_MODE::IDLE),
+storage_folder(IMAGES_FOLDER),
 camera_configs(camera_configs),
 cameras{{Camera(camera_configs[0].id, camera_configs[0].path),
     Camera(camera_configs[1].id, camera_configs[1].path),

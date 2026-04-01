@@ -196,6 +196,7 @@ void DatasetManager::StopCollection()
     loop_cv.notify_all();
 
     cameraManager.SetCaptureMode(CAPTURE_MODE::IDLE);
+    cameraManager.SetStorageFolder(IMAGES_FOLDER);
     imuManager.Suspend();
 }
 

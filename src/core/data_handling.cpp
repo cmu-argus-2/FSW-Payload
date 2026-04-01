@@ -133,7 +133,7 @@ bool InitializeDataStorage()
 std::string StoreDatasetToDisk(Dataset& dataset) 
 {
     std::ostringstream oss;
-    oss << DATASETS_FOLDER << "dataset" << DELIMITER << dataset.GetCaptureStartTime() << ".json";
+    oss << DATASETS_FOLDER << dataset.GetCaptureStartTime() << "/dataset.json";
     std::string dataset_file_path = oss.str();
     Json j = dataset.toJson();
 
@@ -144,7 +144,7 @@ std::string StoreDatasetToDisk(Dataset& dataset)
         return "";
     }
 
-    ofs << j.dump(4);
+    ofs << j.dump(1,'\t');
     ofs.close();
     SPDLOG_INFO("Saved dataset to disk: {}", dataset_file_path);
     SPDLOG_DEBUG("Dataset file size: {} bytes", GetFileSize(dataset_file_path));

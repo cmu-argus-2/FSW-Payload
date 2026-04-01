@@ -1,3 +1,4 @@
+#include <fstream>
 #include <ostream>
 #include <stdexcept>
 #include "toml.hpp"
@@ -353,6 +354,9 @@ void DatasetManager::CollectionLoop()
 
         }
     }
+    
+    // Store dataset summary JSON inside the collection folder
+    DH::StoreDatasetToDisk(current_dataset);
 
     // terminate data collection
     StopCollection();

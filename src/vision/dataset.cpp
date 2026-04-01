@@ -392,6 +392,12 @@ bool Dataset::fromJson(const Json& j)
 
 bool Dataset::OverlapsWith(const Dataset& other) const
 {
-    return (capture_start_time >= other.capture_start_time && capture_start_time <= other.capture_start_time + other.maximum_period * 1000) ||
-           (capture_start_time + maximum_period * 1000 >= other.capture_start_time && capture_start_time + maximum_period * 1000 <= other.capture_start_time + other.maximum_period * 1000);
+    uint64_t a_start = capture_start_time;
+    uint64_t a_end   = capture_start_time + static_cast<uint64_t>(maximum_period * 1000);
+    uint64_t b_start = other.capture_start_time;
+    uint64_t b_end   = other.capture_start_time + static_cast<uint64_t>(other.maximum_period * 1000);
+
+    return (a_start >= b_start && a_start <= b_end) ||   // A's start falls inside B
+           (a_end   >= b_start && a_end   <= b_end) ||   // A's end falls inside B
+           (a_start <= b_start && a_end   >= b_end);     // A fully contains B
 }

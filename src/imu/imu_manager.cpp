@@ -37,15 +37,11 @@ void IMUManager::SetCollectionMode(IMU_COLLECTION_MODE mode) {
         return;
     }
 
+    // Pure configuration setter. Callers are responsible for calling StartCollection()
+    // to begin hardware/IO. The only side effect is suspending when mode is NONE.
     if (mode == IMU_COLLECTION_MODE::NONE) {
         Suspend(); // Put sensors in low power mode
-        state.store(IMU_STATE::IDLE);
         SPDLOG_INFO("IMU collection mode set to NONE, IMU Manager status set to: {}", GetIMUState(state.load()));
-    } else {
-        if (state.load() == IMU_STATE::IDLE) {
-            StartCollection(); // Start collection if currently idle
-        }
-        // If already in COLLECT mode, just update the collection mode
     }
     collection_mode.store(mode);
 }

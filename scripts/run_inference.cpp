@@ -75,7 +75,7 @@ int main(int argc, char** argv)
         std::string tgt_region = "17T";
         std::string sample_id = "00277";
         bool isjpg = false;
-        sample_image_path = "models/V1/sample_images/l8_" + tgt_region + "_" + sample_id;
+        sample_image_path = "models/V1/sample_images/" + tgt_region + "/l8_" + tgt_region + "_" + sample_id;
         if (isjpg) {
             sample_image_path = sample_image_path + ".jpg";
         } else {

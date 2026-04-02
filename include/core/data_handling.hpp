@@ -79,8 +79,8 @@ namespace DH // Data Handling
     
     // Load an image from disk by its path
     bool ReadImageFromDisk(const std::string& file_path, Frame& frame_out, int cam_id=0, std::uint64_t timestamp=0);
-    // Load an image from disk by its timestamp and cam_id
-    bool ReadImageFromDisk(std::uint64_t timestamp, int cam_id, Frame& frame_out);
+    // Load an image from disk by its timestamp and cam_id, optionally from a dataset folder
+    bool ReadImageFromDisk(std::uint64_t timestamp, int cam_id, Frame& frame_out, std::string_view target_folder = IMAGES_FOLDER);
     // Load image information to json
     Json LoadFrameMetadataFromDisk(std::uint64_t timestamp, int cam_id, std::string_view target_folder = IMAGES_FOLDER);
 

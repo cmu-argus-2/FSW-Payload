@@ -77,7 +77,37 @@ bool Dataset::isValidConfigurationFile(const std::string& config_file_path)
         return false;
     }
 
-    return isValidConfiguration(*max_period, static_cast<uint8_t>(*target_frames), 
+    // Validate raw integer fields against their valid ranges before narrowing casts,
+    // since truncation (e.g. uint64_t 300 -> uint8_t 44) would otherwise silently
+    // pass values that should be rejected.
+    if (*target_frames == 0 || *target_frames > MAX_SAMPLES)
+    {
+        SPDLOG_ERROR("'target_frame_nb' value {} is out of range [1, {}]", *target_frames, MAX_SAMPLES);
+        return false;
+    }
+    if (*dataset_capture_mode_val > static_cast<uint64_t>(CAPTURE_MODE::PERIODIC_LDMK) ||
+        !IsValidCaptureMode(static_cast<CAPTURE_MODE>(*dataset_capture_mode_val)))
+    {
+        SPDLOG_ERROR("'dataset_capture_mode' value {} is not a valid capture mode", *dataset_capture_mode_val);
+        return false;
+    }
+    if (*imu_collection_mode_val > static_cast<uint64_t>(IMU_COLLECTION_MODE::GYRO_MAG_TEMP))
+    {
+        SPDLOG_ERROR("'imu_collection_mode' value {} is out of range", *imu_collection_mode_val);
+        return false;
+    }
+    if (*image_capture_rate_val == 0 || *image_capture_rate_val > 255)
+    {
+        SPDLOG_ERROR("'image_capture_rate' value {} is out of range [1, 255]", *image_capture_rate_val);
+        return false;
+    }
+    if (*target_processing_stage_val > static_cast<uint64_t>(ProcessingStage::LDNeted))
+    {
+        SPDLOG_ERROR("'target_processing_stage' value {} is out of range", *target_processing_stage_val);
+        return false;
+    }
+
+    return isValidConfiguration(*max_period, static_cast<uint8_t>(*target_frames),
                                 static_cast<CAPTURE_MODE>(*dataset_capture_mode_val),
                                 static_cast<IMU_COLLECTION_MODE>(*imu_collection_mode_val),
                                 static_cast<uint8_t>(*image_capture_rate_val),
@@ -102,9 +132,9 @@ bool Dataset::isValidConfiguration(double max_period, uint8_t nb_frames, CAPTURE
         return false;
     }
     
-    if (nb_frames > MAX_SAMPLES || nb_frames <= 0)
+    if (nb_frames == 0)
     {
-        SPDLOG_ERROR("Target frame number {} exceeds the maximum allowed {}", nb_frames, MAX_SAMPLES);
+        SPDLOG_ERROR("Target frame number must be at least 1");
         return false;
     }
 

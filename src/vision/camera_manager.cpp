@@ -417,7 +417,10 @@ void CameraManager::SetStorageFolder(const std::string& s)
     }
     std::lock_guard<std::mutex> lock(storage_folder_m);
     storage_folder = s;
-    SPDLOG_INFO("Camera storage folder set to: {}", s);
+    if (!storage_folder.empty() && storage_folder.back() != '/') {
+        storage_folder += '/';
+    }
+    SPDLOG_INFO("Camera storage folder set to: {}", storage_folder);
 }
 
 void CameraManager::SetTargetProcessingStage(ProcessingStage stage)

@@ -37,8 +37,6 @@ void IMUManager::SetCollectionMode(IMU_COLLECTION_MODE mode) {
         return;
     }
 
-    // Pure configuration setter. Callers are responsible for calling StartCollection()
-    // to begin hardware/IO. The only side effect is suspending when mode is NONE.
     if (mode == IMU_COLLECTION_MODE::NONE) {
         Suspend(); // Put sensors in low power mode
         SPDLOG_INFO("IMU collection mode set to NONE, IMU Manager status set to: {}", GetIMUState(state.load()));
@@ -72,9 +70,9 @@ void IMUManager::RunLoop() {
     auto elapsed = now_point - last_point;
     auto samp_period = std::chrono::duration<double>(1.0 / sample_rate_hz);
 
-    BMI160::SensorData gyroData;
-    BMI160::SensorData magData;
-    float temperature;
+    BMI160::SensorData gyroData{};
+    BMI160::SensorData magData{};
+    float temperature = 0.0f;
     uint8_t errReg;
     int32_t ret;
     uint64_t timestamp;
@@ -95,7 +93,10 @@ void IMUManager::RunLoop() {
                 ret = ReadSensorData(gyroData, magData, &temperature);
                 if (ret != BMI160::RTN_NO_ERROR) {
                     SPDLOG_ERROR("Failed to read sensor data during collection, code {}", ret);
-                    ofs << timestamp << " ms, ERROR " << ret << '\n';
+                    {
+                        std::lock_guard<std::mutex> lock(ofs_mutex);
+                        ofs << timestamp << " ms, ERROR " << ret << '\n';
+                    }
                 } else {
                     LogSensorData(timestamp, gyroData, magData, temperature);
                 }
@@ -165,18 +166,22 @@ int IMUManager::StartCollection() {
     }
     bmi160.setMagnConf();
 
-    // 3. Open log file for writing
-    ofs.open(log_file, std::ios::out | std::ios::trunc);
-    if (!ofs) {
-        SPDLOG_ERROR("Failed to open {} for writing", log_file);
-        state.store(IMU_STATE::ERROR_DEVICE); // Update state to error
-        SPDLOG_INFO("IMU Manager status set to: {}", GetIMUState(state.load()));
-        return 1;
-    } else {
+    // 3. Open log file for writing — kept open until Suspend()
+    {
+        std::lock_guard<std::mutex> lock(ofs_mutex);
+        if (ofs.is_open()) {
+            ofs.close();
+        }
+        ofs.open(log_file, std::ios::out | std::ios::trunc);
+        if (!ofs) {
+            SPDLOG_ERROR("Failed to open {} for writing", log_file);
+            state.store(IMU_STATE::ERROR_DEVICE);
+            SPDLOG_INFO("IMU Manager status set to: {}", GetIMUState(state.load()));
+            return 1;
+        }
         SPDLOG_INFO("Logging gyro data to {}", log_file);
         ofs << "Timestamp_ms, Gyro_X_dps, Gyro_Y_dps, Gyro_Z_dps, Mag_X_uT, Mag_Y_uT, Mag_Z_uT, Temperature_C\n";
     }
-    ofs.close();
     
     state.store(IMU_STATE::COLLECT); // Update state to collecting
     SPDLOG_INFO("IMU Manager status set to: {}", GetIMUState(state.load()));
@@ -195,11 +200,15 @@ int IMUManager::Suspend() {
     bmi160.setSensorPowerMode(BMI160::ACC, BMI160::SUSPEND);
     bmi160.setSensorPowerMode(BMI160::MAG, BMI160::SUSPEND);
 
-    // Close file logging stream if open
-    ofs.close();
-    
-    state.store(IMU_STATE::IDLE); // Update state to idle
+    // Set state first so RunLoop stops entering COLLECT before we close the file
+    state.store(IMU_STATE::IDLE);
     SPDLOG_INFO("IMU Manager status set to: {}", GetIMUState(state.load()));
+
+    // Close file logging stream if open
+    {
+        std::lock_guard<std::mutex> lock(ofs_mutex);
+        ofs.close();
+    }
 
     // if there is data to be read
     int32_t ret;
@@ -319,12 +328,16 @@ int32_t IMUManager::ReadSensorStatus(bool *gyrSelfTestOk, bool *magManOp, bool *
 }
 
 void IMUManager::LogSensorData(uint64_t timestamp, const BMI160::SensorData &gyroData, const BMI160::SensorData &magData, float temperature) {
-    ofs.open(log_file, std::ios::out | std::ios::app);
-    if (!ofs) {
-        SPDLOG_ERROR("Failed to open {} for writing", log_file);
-        state.store(IMU_STATE::ERROR_DEVICE); // Update state to error
-        SPDLOG_INFO("IMU Manager status set to: {}", GetIMUState(state.load()));
-        return;
+    std::lock_guard<std::mutex> lock(ofs_mutex);
+    if (!ofs.is_open()) {
+        SPDLOG_WARN("Log file not open, attempting to reopen {}", log_file);
+        ofs.open(log_file, std::ios::out | std::ios::app);
+        if (!ofs) {
+            SPDLOG_ERROR("Failed to reopen {} for writing, dropping sample", log_file);
+            state.store(IMU_STATE::ERROR_DEVICE);
+            SPDLOG_INFO("IMU Manager status set to: {}", GetIMUState(state.load()));
+            return;
+        }
     }
     ofs << timestamp << ','
         << std::fixed << std::setprecision(6)
@@ -337,6 +350,4 @@ void IMUManager::LogSensorData(uint64_t timestamp, const BMI160::SensorData &gyr
         << temperature << '\n';
 
     ofs.flush();
-
-    ofs.close();
 }

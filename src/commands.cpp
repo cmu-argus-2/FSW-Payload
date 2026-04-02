@@ -242,21 +242,45 @@ void start_capture_dataset([[maybe_unused]] std::vector<uint8_t> &data)
     // 1 byte IMU sample rate in 0.1Hz (max 25 Hz)
     // 1 byte target processing stage for the dataset (e.g. prefilter, RCNet, LDNet, etc.)
 
-    CAPTURE_MODE capture_mode = static_cast<CAPTURE_MODE>(data[0]);
-    double max_period = static_cast<double>((data[1] << 8) | data[2]);
-    uint16_t target_frame_nb = (data[3] << 8) | data[4];
-    const uint32_t capture_start_time_s =
-        (static_cast<uint32_t>(data[5]) << 24) |
-        (static_cast<uint32_t>(data[6]) << 16) |
-        (static_cast<uint32_t>(data[7]) << 8) |
-        static_cast<uint32_t>(data[8]);
+    bool hardcoded = true;
 
-    uint64_t capture_start_time = static_cast<uint64_t>(capture_start_time_s) * 1000ULL;
-    IMU_COLLECTION_MODE imu_collection_mode = static_cast<IMU_COLLECTION_MODE>(data[9]);
-    uint8_t image_capture_rate = data[10];
-    float imu_sample_rate_hz = static_cast<float>(data[11]) / 10.0f;
-    ProcessingStage target_processing_stage = static_cast<ProcessingStage>(data[12]);
+    CAPTURE_MODE capture_mode;
+    double max_period;
+    uint16_t target_frame_nb;
+    uint32_t capture_start_time_s;
+    uint64_t capture_start_time;
+    IMU_COLLECTION_MODE imu_collection_mode;
+    uint8_t image_capture_rate;
+    float imu_sample_rate_hz;
+    ProcessingStage target_processing_stage;
 
+    if (hardcoded) { 
+        capture_mode = CAPTURE_MODE::PERIODIC;
+        max_period = 600;
+        target_frame_nb = 255;
+        capture_start_time_s = 16843779UL;   // (1<<24)|(5<<16)|(50<<8)|3
+        capture_start_time = 16843779000ULL;
+        imu_collection_mode = IMU_COLLECTION_MODE::GYRO_ONLY; // data[9] not provided
+        image_capture_rate = 60;   // data[10] not provided
+        imu_sample_rate_hz = 1.0f;  // data[11] not provided
+        target_processing_stage = ProcessingStage::LDNeted; // data[12] not provided
+    } else {
+        capture_mode = static_cast<CAPTURE_MODE>(data[0]);
+        max_period = static_cast<double>((data[1] << 8) | data[2]);
+        target_frame_nb = (data[3] << 8) | data[4];
+        capture_start_time_s =
+            (static_cast<uint32_t>(data[5]) << 24) |
+            (static_cast<uint32_t>(data[6]) << 16) |
+            (static_cast<uint32_t>(data[7]) << 8) |
+            static_cast<uint32_t>(data[8]);
+
+        capture_start_time = static_cast<uint64_t>(capture_start_time_s) * 1000ULL;
+        imu_collection_mode = static_cast<IMU_COLLECTION_MODE>(data[9]);
+        image_capture_rate = data[10];
+        imu_sample_rate_hz = static_cast<float>(data[11]) / 10.0f;
+        target_processing_stage = static_cast<ProcessingStage>(data[12]);
+    }
+    
     const uint64_t now_ms = timing::GetCurrentTimeMs();
     if (capture_start_time < now_ms)
     {
@@ -301,7 +325,7 @@ void start_capture_dataset([[maybe_unused]] std::vector<uint8_t> &data)
         ds = DatasetManager::Create(max_period, target_frame_nb, capture_mode, capture_start_time,
                                     imu_collection_mode, image_capture_rate, imu_sample_rate_hz,
                                     target_processing_stage, DATASET_KEY_CMD, sys::cameraManager(), sys::imuManager());
-        ds->SetInferenceEnabled(target_processing_stage >= ProcessingStage::RCNeted); // The inference would always run when naively set to "true"
+        ds->SetInferenceEnabled(true); // The inference would always run when naively set to "true"
         ds->StartCollection();
     }
     catch (const std::exception &e)

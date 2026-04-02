@@ -50,6 +50,7 @@ public:
     uint8_t GetImageCaptureRate() const { return image_capture_rate; }
     float GetIMUSampleRateHz() const { return imu_sample_rate_hz; }
     ProcessingStage GetTargetProcessingStage() const { return target_processing_stage; }
+    void SetTargetProcessingStage(ProcessingStage stage) { target_processing_stage = stage; }
     std::string GetFolderPath() const { return folder_path; }
     std::string GetIMUFilePath() const { return imu_log_file_path; }
     std::vector<std::tuple<uint8_t, uint64_t>> GetStoredFrameIDs() const { return stored_frame_ids; }

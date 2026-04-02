@@ -64,7 +64,7 @@ public:
     // Set the capture mode of the camera system
     void SetCaptureMode(CAPTURE_MODE mode);
     // Send a capture request to the cameras. Wrapper around SetCaptureMode for CAPTURE_SINGLE 
-    void SendCaptureRequest();
+    bool SendCaptureRequest();
     // Set the rate at which the camera system captures frames in PERIODIC mode
     void SetPeriodicCaptureRate(uint8_t rate);
     // Set the number of frames to capture in PERIODIC mode
@@ -86,6 +86,7 @@ public:
     CAPTURE_MODE GetCaptureMode() const;
     int CountActiveCameras() const;
     void FillCameraStatus(uint8_t* status);
+    bool PrepareForCapture();
 
 private:
         
@@ -98,26 +99,22 @@ private:
 
     std::atomic<bool> display_flag = false;
     std::atomic<bool> loop_flag = false;
+    std::atomic<bool> auto_disable_after_capture = false;
 
     std::mutex capture_mode_mutex;
     std::condition_variable capture_mode_cv;
     
-    std::atomic<uint8_t> periodic_capture_rate = 60; // Default rate of 60 seconds
-    std::atomic<uint8_t> periodic_frames_to_capture = DEFAULT_PERIODIC_FRAMES_TO_CAPTURE; // After the request is serviced, it gets back to the default value
+    std::atomic<uint8_t> periodic_capture_rate = 60;
+    std::atomic<uint8_t> periodic_frames_to_capture = DEFAULT_PERIODIC_FRAMES_TO_CAPTURE;
     std::atomic<uint8_t> periodic_frames_captured = 0;
     std::atomic<ProcessingStage> target_processing_stage = ProcessingStage::NotPrefiltered;
 
-    // Buffer to store the latest frame IDs (cam_id, timestamp) for each camera. 
     std::vector<std::tuple<uint8_t, uint64_t>> buffer_frame_ids;
-
-
     std::array<CAM_STATUS, NUM_CAMERAS> cam_status;
 
-
-    void _PerformCameraHealthCheck(); // background watchdog for the cameras
+    void _PerformCameraHealthCheck();
     void _UpdateCamStatus();
-
-
+    void _AutoDisableIfNeeded();
 
 };
 

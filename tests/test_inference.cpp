@@ -646,7 +646,8 @@ static void WriteInferenceReport(const std::map<std::string, RegionTestResult>& 
     spdlog::info("Inference test report written to: {}", path);
 }
 
-// Collect one labeled .png per region from the sample_images folder.
+// Collect one labeled image per region from the sample_images folder.
+// Expected naming: l8_{regionstr}_{imageid}.jpg or .png with a matching .txt label.
 // Called once at link-time via ValuesIn(); returns empty when assets absent.
 static std::vector<SampleImageCase> CollectSampleCases()
 {
@@ -657,16 +658,19 @@ static std::vector<SampleImageCase> CollectSampleCases()
     for (RegionID rid : GetAllRegionIDs())
     {
         const std::string region_str = std::string(GetRegionString(rid));
-        const std::string prefix = "l8_" + region_str + "_";
-        for (const auto& entry : fs::directory_iterator(sample_dir))
+        const fs::path region_dir = sample_dir / region_str;
+        if (!fs::exists(region_dir) || !fs::is_directory(region_dir)) continue;
+        const std::string expected_prefix = "l8_" + region_str + "_";
+        for (const auto& entry : fs::directory_iterator(region_dir))
         {
             if (!entry.is_regular_file()) continue;
+            const auto ext = entry.path().extension();
+            if (ext != ".jpg" && ext != ".png") continue;
             const std::string fname = entry.path().filename().string();
-            if (fname.compare(0, prefix.size(), prefix) != 0) continue;
-            if (entry.path().extension() != ".png") continue;
+            if (fname.rfind(expected_prefix, 0) != 0) continue;
             fs::path txt = entry.path();
             txt.replace_extension(".txt");
-            if (!fs::exists(txt)) continue;
+            if (!fs::exists(txt) || fs::file_size(txt) == 0) continue;
             result.push_back({region_str, entry.path().string(), txt.string()});
             break; // one labeled example per region is sufficient
         }

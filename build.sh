@@ -21,6 +21,10 @@ done
 echo "Building in ${BUILD_TYPE} mode"
 echo "NN module is ${ENABLE_VISION_NN}"
 
+# Ensure models submodule is initialised and LFS objects are present
+git submodule update --init models
+git -C models lfs pull
+
 # Create binary directory
 mkdir -p bin
 

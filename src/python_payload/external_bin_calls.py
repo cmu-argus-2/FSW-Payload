@@ -7,8 +7,43 @@ import os
 import subprocess
 
 
+def run_prefiltering(img_path, output_folder_path):
+    run_path = "/home/argus-payload/Documents/FSW-Payload"
+    bin_name = "./bin/RUN_PREFILTERING"
 
+    parsed = {
+        "passed": False,
+        "is_significant": False,
+        "dominant_type": "unknown",
+    }
 
+    result = subprocess.run(
+        [bin_name, img_path, output_folder_path],
+        cwd=run_path,
+        capture_output=True,
+        text=True,
+    )
+
+    if result.returncode != 0:
+        print(f"[prefilter] Binary failed (exit {result.returncode}) for {img_path}")
+        print(f"[prefilter] stderr: {result.stderr.strip()}")
+        return parsed
+
+    for line in result.stdout.splitlines():
+        line = line.strip()
+        if line.startswith("Passed:"):
+            parsed["passed"] = line.split(":", 1)[1].strip().lower() == "yes"
+        elif line.startswith("Significant:"):
+            parsed["is_significant"] = line.split(":", 1)[1].strip().lower() == "yes"
+        elif line.startswith("Dominant Type:"):
+            parsed["dominant_type"] = line.split(":", 1)[1].strip().lower()
+
+    print(f"[prefilter] {Path(img_path).name}: "
+          f"passed={parsed['passed']} "
+          f"is_significant={parsed['is_significant']} "
+          f"dominant_type={parsed['dominant_type']}")
+
+    return parsed
 
 def run_inference(img_path, output_folder_path):
     """

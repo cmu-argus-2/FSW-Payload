@@ -11,6 +11,7 @@ from thread_shared import PayloadState, experiment_queue, log, state_manager, tx
 from file_downlink_manager import FileDownlinkManager
 
 from external_bin_calls import run_inference
+from external_bin_calls import run_prefiltering
 
 from splat.splat.telemetry_codec import Command, pack
 
@@ -137,6 +138,7 @@ class ExperimentThread(threading.Thread):
         if level_processing & self.PROCESS_PREFILTER_BIT:
             state_manager.set(PayloadState.PREFILTERING)
             self._prefilter_images(
+                experiment_dir,
                 file_manifest,
             )
         log.debug("After prefiltering: %s", file_manifest)
@@ -315,14 +317,50 @@ class ExperimentThread(threading.Thread):
             file_manifest["downscaled"].extend(downscaled_paths)
 
 
-    def _prefilter_images(self, file_manifest: dict | None = None) -> list[str]:
+    def _prefilter_images(
+        self, 
+        experiment_dir: Path,
+        file_manifest: dict | None = None) -> list[str]:
         """
         Receives a list of image paths and will perform pre filtering
-        It will return a new list of image paths contain only the images that passed pre filtering
-        For each of the images path, it will create a json file containing the results of the prefiltering
+        Saves to prefiltered path
         """
+        output_folder = experiment_dir / "prefiltered"
+        output_folder.mkdir(parents=True, exist_ok=True)
+
+        kept_paths: list[str] = []
+
+        for image_path in file_manifest.get("raw", []):
+            log.info("Running prefiltering on %s", image_path)
+            prefilter_result = run_prefiltering(str(image_path), str(output_folder) + "/")
+
+            log.info(
+                "Prefilter result for %s: passed=%s is_significant=%s dominant_type=%s",
+                image_path,
+                prefilter_result["passed"],
+                prefilter_result["is_significant"],
+                prefilter_result["dominant_type"],
+            )
+
+            if prefilter_result["is_significant"]:
+                src = Path(image_path)
+                dst = output_folder / src.name
+                shutil.copy2(src, dst)
+                kept_paths.append(str(dst))
+                log.info("Image kept (is_significant): %s", dst)
+            else:
+                log.info(
+                    "Image rejected (dominant_type=%s): %s",
+                    prefilter_result["dominant_type"],
+                    image_path,
+                )
+
+        log.info("Prefiltering complete: %d/%d images kept",
+                len(kept_paths), len(file_manifest.get("raw", [])))
+
+        file_manifest["results"].extend(kept_paths)
+        return kept_paths
         
-        log.error("Prefiltering stage not implemented")
 
 
     def _run_inference(

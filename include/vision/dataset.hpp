@@ -64,7 +64,7 @@ public:
     // Actual constructors ~ not to be used
     Dataset(double max_period, uint8_t nb_frames, CAPTURE_MODE capture_mode, IMU_COLLECTION_MODE imu_collection_mode,
             uint8_t image_capture_rate, float imu_sample_rate_hz, ProcessingStage target_processing_stage,
-            uint64_t capture_start_time);
+            uint64_t capture_start_time=0);
 
     // TODO: Rethink if function below is truly needed, seems redundant with json
     Dataset(const std::string& folder_path);

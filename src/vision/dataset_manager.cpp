@@ -48,18 +48,18 @@ std::shared_ptr<DatasetManager> DatasetManager::Create(double max_period, uint8_
                                 image_capture_rate, imu_sample_rate_hz, target_processing_stage,
                                 capture_start_time);
 
-    // if dataset overlaps others, return false
+    auto instance = std::make_shared<DatasetManager>(dataset, cam_manager, imu_manager, inference_manager);
+    std::lock_guard<std::mutex> lock(datasets_mtx);
+
+    // Overlap check and insertion are now one atomic critical section.
     for (const auto& entry : active_datasets)
     {
-        auto existing_ds = entry.second;
-        if (dataset.OverlapsWith(existing_ds->current_dataset)) {
+        if (dataset.OverlapsWith(entry.second->current_dataset)) {
             SPDLOG_ERROR("Failed to create DatasetManager: overlapping with an active dataset (key: {})", entry.first);
             throw std::invalid_argument("Overlapping dataset.");
         }
     }
 
-    auto instance = std::make_shared<DatasetManager>(dataset, cam_manager, imu_manager, inference_manager);
-    std::lock_guard<std::mutex> lock(datasets_mtx);
     if (ds_key == DEFAULT_DS_KEY)
     {
         ds_key = std::to_string(instance->created_at);
@@ -83,7 +83,7 @@ std::shared_ptr<DatasetManager> DatasetManager::Create(const std::string& folder
 }
 
 
-std::shared_ptr<DatasetManager> DatasetManager::GetActiveDatasetManager(const std::string& key = DEFAULT_DS_KEY)
+std::shared_ptr<DatasetManager> DatasetManager::GetActiveDatasetManager(const std::string& key)
 {
     std::lock_guard<std::mutex> lock(datasets_mtx);
     auto it = active_datasets.find(key);

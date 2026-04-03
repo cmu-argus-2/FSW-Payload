@@ -42,8 +42,8 @@ uint8_t CameraManager::SaveLatestFrames(bool only_earth)
 {
     uint8_t save_count = 0;
     const bool needs_prefilter = only_earth || GetTargetProcessingStage() >= ProcessingStage::Prefiltered;
-    buffer_frame_ids.clear();
-    for (std::size_t i = 0; i < NUM_CAMERAS; ++i) 
+    std::vector<std::tuple<uint8_t, uint64_t>> new_ids;
+    for (std::size_t i = 0; i < NUM_CAMERAS; ++i)
     {
         if (cameras[i].GetStatus() == CAM_STATUS::ACTIVE && cameras[i].IsNewFrameAvailable())
         {
@@ -53,7 +53,7 @@ uint8_t CameraManager::SaveLatestFrames(bool only_earth)
             {
                 buffer_frame.RunPrefiltering();
             }
-            
+
             if (only_earth && buffer_frame.GetImageState() < ImageState::Earth)
             {
                 SPDLOG_INFO("CAM{}: Frame skipped (not Earth)", cameras[i].GetID());
@@ -61,10 +61,14 @@ uint8_t CameraManager::SaveLatestFrames(bool only_earth)
                 continue;
             }
             [[maybe_unused]] std::string img_path = DH::StoreFrameToDisk(buffer_frame, GetStorageFolder());
-            buffer_frame_ids.push_back(std::make_tuple(cameras[i].GetID(), buffer_frame.GetTimestamp()));
+            new_ids.push_back(std::make_tuple(cameras[i].GetID(), buffer_frame.GetTimestamp()));
             cameras[i].SetOffNewFrameFlag();
             save_count++;
-        }  
+        }
+    }
+    {
+        std::lock_guard<std::mutex> lock(buffer_frame_ids_m);
+        buffer_frame_ids = std::move(new_ids);
     }
     return save_count;
 }
@@ -345,6 +349,7 @@ int CameraManager::GetCapturedFramesCount() const
 
 std::vector<std::tuple<uint8_t, uint64_t>> CameraManager::GetBufferFrameIDs() const
 {
+    std::lock_guard<std::mutex> lock(buffer_frame_ids_m);
     return buffer_frame_ids;
 }
 

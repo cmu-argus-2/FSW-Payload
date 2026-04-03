@@ -383,6 +383,84 @@ TEST_F(DatasetManagerTest, OverlapRejection)
     EXPECT_NO_THROW(createDM(820000, 10.0, "after"));  // clear of base window
 }
 
+// ── DatasetManager concurrent Create ─────────────────────────────────────────
+
+// Two threads race to create overlapping datasets.
+// With datasets_mtx covering the overlap check + insertion atomically,
+// exactly one must succeed and one must throw — never both succeed.
+// This test would non-deterministically pass under the old (unlocked) code.
+TEST_F(DatasetManagerTest, ConcurrentCreate_OverlapIsExclusive)
+{
+    std::atomic<int> ready{0};
+    std::atomic<int> successes{0};
+    std::atomic<int> rejections{0};
+    std::string folder_a, folder_b;
+    std::mutex folder_mtx;
+
+    // Windows [4000000, 4060000] and [4010000, 4070000] overlap.
+    auto worker = [&](uint64_t start_ms, const std::string& key, std::string& folder_out) {
+        ready.fetch_add(1);
+        while (ready.load() < 2) {}  // spin until both threads are lined up
+        try {
+            auto dm = DatasetManager::Create(60.0, 5, CAPTURE_MODE::PERIODIC, start_ms,
+                                             IMU_COLLECTION_MODE::GYRO_ONLY, 60, 1.0f,
+                                             ProcessingStage::NotPrefiltered, key,
+                                             cam_mgr, imu_mgr, im);
+            std::lock_guard<std::mutex> lk(folder_mtx);
+            folder_out = dm->current_dataset.GetFolderPath();
+            successes.fetch_add(1);
+        } catch (const std::invalid_argument&) {
+            rejections.fetch_add(1);
+        }
+    };
+
+    std::thread t1(worker, 4000000, "conc_overlap_a", std::ref(folder_a));
+    std::thread t2(worker, 4010000, "conc_overlap_b", std::ref(folder_b));
+    t1.join();
+    t2.join();
+
+    if (!folder_a.empty()) test_folders.push_back(folder_a);
+    if (!folder_b.empty()) test_folders.push_back(folder_b);
+
+    EXPECT_EQ(successes.load(),  1) << "Both overlapping Creates succeeded — mutex did not protect the check+insert";
+    EXPECT_EQ(rejections.load(), 1);
+}
+
+// Two threads race to create non-overlapping datasets; both must succeed.
+TEST_F(DatasetManagerTest, ConcurrentCreate_NonOverlapBothSucceed)
+{
+    std::atomic<int> ready{0};
+    std::atomic<int> successes{0};
+    std::string folder_a, folder_b;
+    std::mutex folder_mtx;
+
+    // Windows [5000000, 5010000] and [6000000, 6010000] are clearly disjoint.
+    auto worker = [&](uint64_t start_ms, const std::string& key, std::string& folder_out) {
+        ready.fetch_add(1);
+        while (ready.load() < 2) {}
+        try {
+            auto dm = DatasetManager::Create(10.0, 5, CAPTURE_MODE::PERIODIC, start_ms,
+                                             IMU_COLLECTION_MODE::GYRO_ONLY, 60, 1.0f,
+                                             ProcessingStage::NotPrefiltered, key,
+                                             cam_mgr, imu_mgr, im);
+            std::lock_guard<std::mutex> lk(folder_mtx);
+            folder_out = dm->current_dataset.GetFolderPath();
+            successes.fetch_add(1);
+        } catch (...) {}
+    };
+
+    std::thread t1(worker, 5000000, "conc_nooverlap_a", std::ref(folder_a));
+    std::thread t2(worker, 6000000, "conc_nooverlap_b", std::ref(folder_b));
+    t1.join();
+    t2.join();
+
+    if (!folder_a.empty()) test_folders.push_back(folder_a);
+    if (!folder_b.empty()) test_folders.push_back(folder_b);
+
+    EXPECT_EQ(successes.load(), 2) << "Non-overlapping concurrent Creates should both succeed";
+    EXPECT_EQ(DatasetManager::ListActiveDatasetManagers().size(), 2u);
+}
+
 // ── DatasetManager termination check ─────────────────────────────────────────
 
 TEST_F(DatasetManagerTest, IsCompleted)

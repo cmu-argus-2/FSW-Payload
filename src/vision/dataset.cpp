@@ -177,7 +177,7 @@ Dataset::Dataset(double max_period, uint8_t nb_frames,
                 IMU_COLLECTION_MODE imu_collection_mode,
                 uint8_t image_capture_rate, float imu_sample_rate_hz, 
                 ProcessingStage target_processing_stage,
-                uint64_t capture_start_time=timing::GetCurrentTimeMs())
+                uint64_t capture_start_time)
 :
 capture_start_time(capture_start_time),
 maximum_period(max_period),
@@ -225,10 +225,13 @@ imu_log_file_path(folder_path_in + "/imu_data.csv")
     
     std::string candidate_folder = folder_path_in;
     // Correct the folder path if needed
-    if (candidate_folder.back() != '/')
+    if (!candidate_folder.empty() && candidate_folder.back() != '/')
     {
         candidate_folder += '/';
     }
+    folder_path = candidate_folder;  
+    imu_log_file_path = folder_path + "imu_data.csv";
+    
     // check if config path exists
     if (!DH::fs::exists(candidate_folder + DATASET_CONFIG_FILE_NAME))
     {

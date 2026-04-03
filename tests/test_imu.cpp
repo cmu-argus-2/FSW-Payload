@@ -274,4 +274,114 @@ TEST(IMUManagerTest, ThreadSafeStartStopCycles)
     std::remove("test_imu_cycles.csv");
 }
 
+// Test that GYRO_ONLY mode logs only gyro columns
+TEST(IMUManagerTest, DataCollectionAndLogging_GyroOnly)
+{
+    IMUManager imuManager(IMUConfig{
+        .chipid = 0xD8,
+        .i2c_addr = 0x68,
+        .i2c_path = "/dev/i2c-7"
+    });
+    std::thread imuThread(&IMUManager::RunLoop, &imuManager);
+
+    imuManager.SetSampleRate(25.0f);
+    imuManager.SetLogFile("test_imu_gyro_only.csv");
+    imuManager.SetCollectionMode(IMU_COLLECTION_MODE::GYRO_ONLY);
+    imuManager.StartCollection();
+
+    std::this_thread::sleep_for(std::chrono::seconds(1));
+
+    imuManager.Suspend();
+    imuManager.StopLoop();
+    if (imuThread.joinable()) {
+        imuThread.join();
+    }
+
+    std::ifstream logFile("test_imu_gyro_only.csv");
+    ASSERT_TRUE(logFile.is_open());
+    std::string line;
+    int lineCount = 0;
+    while (std::getline(logFile, line)) {
+        if (lineCount == 0) {
+            EXPECT_EQ(line, "Timestamp_ms, Gyro_X_dps, Gyro_Y_dps, Gyro_Z_dps");
+            lineCount++;
+            continue;
+        }
+        lineCount++;
+        std::istringstream iss(line);
+        uint64_t timestamp;
+        float gyroX, gyroY, gyroZ;
+        char comma;
+        ASSERT_TRUE(iss >> timestamp >> comma >> gyroX >> comma >> gyroY >> comma >> gyroZ)
+            << "Log line format incorrect for GYRO_ONLY: " << line;
+        // Ensure no extra fields
+        std::string extra;
+        EXPECT_FALSE(std::getline(iss, extra) && !extra.empty())
+            << "Unexpected extra data in GYRO_ONLY line: " << line;
+        EXPECT_LE(std::abs(gyroX), 125.0f);
+        EXPECT_LE(std::abs(gyroY), 125.0f);
+        EXPECT_LE(std::abs(gyroZ), 125.0f);
+    }
+    EXPECT_GT(lineCount, 24);
+
+    logFile.close();
+    std::remove("test_imu_gyro_only.csv");
+}
+
+// Test that GYRO_TEMP mode logs only gyro + temperature columns
+TEST(IMUManagerTest, DataCollectionAndLogging_GyroTemp)
+{
+    IMUManager imuManager(IMUConfig{
+        .chipid = 0xD8,
+        .i2c_addr = 0x68,
+        .i2c_path = "/dev/i2c-7"
+    });
+    std::thread imuThread(&IMUManager::RunLoop, &imuManager);
+
+    imuManager.SetSampleRate(25.0f);
+    imuManager.SetLogFile("test_imu_gyro_temp.csv");
+    imuManager.SetCollectionMode(IMU_COLLECTION_MODE::GYRO_TEMP);
+    imuManager.StartCollection();
+
+    std::this_thread::sleep_for(std::chrono::seconds(1));
+
+    imuManager.Suspend();
+    imuManager.StopLoop();
+    if (imuThread.joinable()) {
+        imuThread.join();
+    }
+
+    std::ifstream logFile("test_imu_gyro_temp.csv");
+    ASSERT_TRUE(logFile.is_open());
+    std::string line;
+    int lineCount = 0;
+    while (std::getline(logFile, line)) {
+        if (lineCount == 0) {
+            EXPECT_EQ(line, "Timestamp_ms, Gyro_X_dps, Gyro_Y_dps, Gyro_Z_dps, Temperature_C");
+            lineCount++;
+            continue;
+        }
+        lineCount++;
+        std::istringstream iss(line);
+        uint64_t timestamp;
+        float gyroX, gyroY, gyroZ, temperature;
+        char comma;
+        ASSERT_TRUE(iss >> timestamp >> comma >> gyroX >> comma >> gyroY >> comma >> gyroZ >> comma >> temperature)
+            << "Log line format incorrect for GYRO_TEMP: " << line;
+        // Ensure no extra fields (mag columns should not be present)
+        std::string extra;
+        EXPECT_FALSE(std::getline(iss, extra) && !extra.empty())
+            << "Unexpected extra data in GYRO_TEMP line: " << line;
+        EXPECT_LE(std::abs(gyroX), 125.0f);
+        EXPECT_LE(std::abs(gyroY), 125.0f);
+        EXPECT_LE(std::abs(gyroZ), 125.0f);
+        EXPECT_GE(temperature, -40.0f);
+        EXPECT_LE(temperature, 85.0f);
+    }
+    EXPECT_GT(lineCount, 24);
+
+    logFile.close();
+    std::remove("test_imu_gyro_temp.csv");
+}
+
 // TODO: Error handling tests

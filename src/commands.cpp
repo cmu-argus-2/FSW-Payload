@@ -227,90 +227,129 @@ void capture_images([[maybe_unused]] std::vector<uint8_t> &data)
     sys::payload().SetLastExecutedCmdID(CommandID::CAPTURE_IMAGES);
 }
 
-void start_capture_dataset([[maybe_unused]] std::vector<uint8_t> &data)
+void start_capture_dataset(std::vector<uint8_t> &data)
 {
     SPDLOG_INFO("Starting dataset capture..");
 
-    // 1 byte for Image Capture Mode
-    // 2 bytes max period (for now)
-    // 2 bytes nb_frames
-    // 4 bytes capture start time - unix timestamp in s. If less than current time, will be overridden to current time
-    // 1 byte IMU collection mode
-    // 1 byte image capture rate (for periodic mode)
-    // 1 byte IMU sample rate in 0.1Hz (max 25 Hz)
-    // 1 byte target processing stage for the dataset (e.g. prefilter, RCNet, LDNet, etc.)
+    // Wire format (13 bytes):
+    // [0]     capture_mode          (CAPTURE_MODE enum)
+    // [1..2]  max_period            (uint16_t, seconds)
+    // [3..4]  target_frame_nb       (uint16_t wire, capped to uint8_t, max MAX_SAMPLES)
+    // [5..8]  capture_start_time    (uint32_t, unix timestamp in seconds)
+    // [9]     imu_collection_mode   (IMU_COLLECTION_MODE enum)
+    // [10]    image_capture_rate    (uint8_t, seconds between captures)
+    // [11]    imu_sample_rate       (uint8_t, in 0.1 Hz units, e.g. 250 = 25.0 Hz)
+    // [12]    target_processing_stage (ProcessingStage enum)
 
-    CAPTURE_MODE capture_mode = static_cast<CAPTURE_MODE>(data[0]);
-    double max_period = static_cast<double>((data[1] << 8) | data[2]);
-    uint16_t target_frame_nb = (data[3] << 8) | data[4];
-    const uint32_t capture_start_time_s =
+    if (data.size() < 13)
+    {
+        SPDLOG_ERROR("START_CAPTURE_DATASET: insufficient data ({} bytes, need 13)", data.size());
+        std::shared_ptr<Message> msg = CreateErrorAckMessage(CommandID::START_CAPTURE_DATASET, 0x20);
+        sys::payload().TransmitMessage(msg);
+        return;
+    }
+
+    // Validate enum raw bytes before casting — casting an out-of-range byte to an
+    // enum class is undefined behaviour.
+    if (data[0] < static_cast<uint8_t>(CAPTURE_MODE::PERIODIC) ||
+        data[0] > static_cast<uint8_t>(CAPTURE_MODE::PERIODIC_LDMK))
+    {
+        SPDLOG_ERROR("START_CAPTURE_DATASET: invalid capture_mode byte {}", data[0]);
+        std::shared_ptr<Message> msg = CreateErrorAckMessage(CommandID::START_CAPTURE_DATASET, 0x20);
+        sys::payload().TransmitMessage(msg);
+        return;
+    }
+    if (data[9] > static_cast<uint8_t>(IMU_COLLECTION_MODE::GYRO_MAG_TEMP))
+    {
+        SPDLOG_ERROR("START_CAPTURE_DATASET: invalid imu_collection_mode byte {}", data[9]);
+        std::shared_ptr<Message> msg = CreateErrorAckMessage(CommandID::START_CAPTURE_DATASET, 0x20);
+        sys::payload().TransmitMessage(msg);
+        return;
+    }
+    if (data[12] > static_cast<uint8_t>(ProcessingStage::LDNeted))
+    {
+        SPDLOG_ERROR("START_CAPTURE_DATASET: invalid target_processing_stage byte {}", data[12]);
+        std::shared_ptr<Message> msg = CreateErrorAckMessage(CommandID::START_CAPTURE_DATASET, 0x20);
+        sys::payload().TransmitMessage(msg);
+        return;
+    }
+
+    // Parse fields
+    const CAPTURE_MODE       capture_mode             = static_cast<CAPTURE_MODE>(data[0]);
+    const double             max_period               = static_cast<double>((data[1] << 8) | data[2]);
+    const uint16_t           target_frame_nb_raw      = static_cast<uint16_t>((data[3] << 8) | data[4]);
+    const uint32_t           capture_start_time_s     =
         (static_cast<uint32_t>(data[5]) << 24) |
         (static_cast<uint32_t>(data[6]) << 16) |
-        (static_cast<uint32_t>(data[7]) << 8) |
-        static_cast<uint32_t>(data[8]);
+        (static_cast<uint32_t>(data[7]) << 8)  |
+         static_cast<uint32_t>(data[8]);
+    const IMU_COLLECTION_MODE imu_collection_mode     = static_cast<IMU_COLLECTION_MODE>(data[9]);
+    const uint8_t             image_capture_rate       = data[10];
+    const float               imu_sample_rate_hz       = static_cast<float>(data[11]) / 10.0f;
+    const ProcessingStage     target_processing_stage  = static_cast<ProcessingStage>(data[12]);
 
+    // target_frame_nb is uint8_t in Dataset (max MAX_SAMPLES = 255); validate before narrowing.
+    if (target_frame_nb_raw == 0 || target_frame_nb_raw > MAX_SAMPLES)
+    {
+        SPDLOG_ERROR("START_CAPTURE_DATASET: target_frame_nb {} out of range [1, {}]",
+                     target_frame_nb_raw, MAX_SAMPLES);
+        std::shared_ptr<Message> msg = CreateErrorAckMessage(CommandID::START_CAPTURE_DATASET, 0x20);
+        sys::payload().TransmitMessage(msg);
+        return;
+    }
+    const uint8_t target_frame_nb = static_cast<uint8_t>(target_frame_nb_raw);
+
+    // Clamp start time to now if already in the past
     uint64_t capture_start_time = static_cast<uint64_t>(capture_start_time_s) * 1000ULL;
-    IMU_COLLECTION_MODE imu_collection_mode = static_cast<IMU_COLLECTION_MODE>(data[9]);
-    uint8_t image_capture_rate = data[10];
-    float imu_sample_rate_hz = static_cast<float>(data[11]) / 10.0f;
-    ProcessingStage target_processing_stage = static_cast<ProcessingStage>(data[12]);
-
     const uint64_t now_ms = timing::GetCurrentTimeMs();
     if (capture_start_time < now_ms)
     {
         capture_start_time = now_ms;
     }
 
-    if (max_period == 0.0 || target_frame_nb == 0)
+    // Semantic validation: period bounds, rate bounds, capture mode consistency
+    if (!Dataset::isValidConfiguration(max_period, target_frame_nb, capture_mode, imu_collection_mode,
+                                       image_capture_rate, imu_sample_rate_hz, target_processing_stage,
+                                       capture_start_time))
     {
-        uint8_t ERR_PERIODIC = 0x20; // TODO define elsewhere
-        SPDLOG_ERROR("Invalid data for START_CAPTURE_DATASET command");
-        // error ack
+        SPDLOG_ERROR("START_CAPTURE_DATASET: parameter validation failed");
         std::shared_ptr<Message> msg = CreateErrorAckMessage(CommandID::START_CAPTURE_DATASET, 0x20);
         sys::payload().TransmitMessage(msg);
         return;
     }
 
     auto ds = DatasetManager::GetActiveDatasetManager(DATASET_KEY_CMD);
-
-    if (ds) // if already exists
+    if (ds)
     {
-        // need to ensure it's actually running
         if (ds->Running())
         {
-            // if running: TODO: return ERROR ACK saying that a dataset is already running
-            // If completed, stop it then too
             SPDLOG_ERROR("Dataset already running under key {}, ignoring command", DATASET_KEY_CMD);
             std::shared_ptr<Message> msg = CreateErrorAckMessage(CommandID::START_CAPTURE_DATASET, 0x21);
             sys::payload().TransmitMessage(msg);
             return;
         }
-        else
-        {
-            ds->StopDatasetManager(DATASET_KEY_CMD); // remove it (will create a new one)
-        }
+        DatasetManager::StopDatasetManager(DATASET_KEY_CMD);
     }
 
-    // Create a new Dataset
-    SPDLOG_INFO("Starting dataset collection (type {}) for {} frames at a max period of {} seconds.", static_cast<uint8_t>(capture_mode), target_frame_nb, max_period);
+    SPDLOG_INFO("Starting dataset collection (mode {}) for {} frames, max period {} s",
+                static_cast<uint8_t>(capture_mode), target_frame_nb, max_period);
 
     try
     {
         ds = DatasetManager::Create(max_period, target_frame_nb, capture_mode, capture_start_time,
                                     imu_collection_mode, image_capture_rate, imu_sample_rate_hz,
-                                    target_processing_stage, DATASET_KEY_CMD, sys::cameraManager(), sys::imuManager(), sys::inferenceManager());
+                                    target_processing_stage, DATASET_KEY_CMD,
+                                    sys::cameraManager(), sys::imuManager(), sys::inferenceManager());
         ds->StartCollection();
     }
     catch (const std::exception &e)
     {
-
         SPDLOG_ERROR("Failed to start dataset collection: {}", e.what());
-        std::shared_ptr<Message> msg = CreateErrorAckMessage(CommandID::START_CAPTURE_DATASET, 0x21); // TODO example error code
+        std::shared_ptr<Message> msg = CreateErrorAckMessage(CommandID::START_CAPTURE_DATASET, 0x21);
         sys::payload().TransmitMessage(msg);
         return;
     }
 
-    // All good
     std::shared_ptr<Message> msg = CreateSuccessAckMessage(CommandID::START_CAPTURE_DATASET);
     sys::payload().TransmitMessage(msg);
 
@@ -325,23 +364,11 @@ void stop_capture_dataset([[maybe_unused]] std::vector<uint8_t> &data)
     // TODO return true or false based on the success of the operations
 
     auto ds = DatasetManager::GetActiveDatasetManager(DATASET_KEY_CMD);
-    if (ds) // if it exists
+    if (ds)
     {
-        ds->StopCollection();
-        DatasetProgress ds_progress = ds->QueryProgress();
-        // include in message statistics about the collected data (how many frame)
-        uint16_t nb_frames = ds_progress.current_frames;
-        uint8_t completion = static_cast<uint8_t>(ds_progress.completion);
+        DatasetManager::StopDatasetManager(DATASET_KEY_CMD);
 
-        // Stop dataset process and remove from registry
-        ds->StopDatasetManager(DATASET_KEY_CMD);
-
-        // Create success ACK message with stats
-        std::vector<uint8_t> transmit_data;
-        transmit_data.push_back(ACK_SUCCESS);
-        transmit_data.push_back(completion);
-        SerializeToBytes(nb_frames, transmit_data);
-        std::shared_ptr<Message> msg = CreateMessage(CommandID::STOP_CAPTURE_DATASET, transmit_data);
+        std::shared_ptr<Message> msg = CreateSuccessAckMessage(CommandID::STOP_CAPTURE_DATASET);
         sys::payload().TransmitMessage(msg);
     }
     else

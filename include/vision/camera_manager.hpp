@@ -127,8 +127,9 @@ private:
     std::atomic<uint8_t> periodic_frames_captured = 0;
     std::atomic<ProcessingStage> target_processing_stage = ProcessingStage::NotPrefiltered;
 
-    // Buffer to store the latest frame IDs (cam_id, timestamp) for each camera. 
+    // Buffer to store the latest frame IDs (cam_id, timestamp) for each camera.
     std::vector<std::tuple<uint8_t, uint64_t>> buffer_frame_ids;
+    mutable std::mutex buffer_frame_ids_m;
 
 
     std::array<CAM_STATUS, NUM_CAMERAS> cam_status;

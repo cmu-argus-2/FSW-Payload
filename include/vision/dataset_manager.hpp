@@ -52,7 +52,7 @@ public:
     // If the folder path does not exist or does not contain a config file, it throws.
     static std::shared_ptr<DatasetManager> Create(const std::string& folder_path, std::string key, CameraManager& cam_manager, IMUManager& imu_manager, InferenceManager& inference_manager);
 
-    static std::shared_ptr<DatasetManager> GetActiveDatasetManager(const std::string& key);
+    static std::shared_ptr<DatasetManager> GetActiveDatasetManager(const std::string& key = DEFAULT_DS_KEY);
     static void StopDatasetManager(const std::string& key);
     static std::vector<std::string> ListActiveDatasetManagers();
 

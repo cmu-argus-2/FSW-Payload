@@ -518,6 +518,16 @@ bool ReadImageFromDisk(std::uint64_t timestamp, int cam_id, Frame& frame_out, st
 
 Json LoadFrameMetadataFromDisk(std::uint64_t timestamp, int cam_id, std::string_view target_folder)
 {
+    std::filesystem::path folder_path(target_folder);
+    if (!std::filesystem::is_directory(folder_path))
+    {
+        SPDLOG_ERROR("ReadImageFromDisk: target folder does not exist: {}", target_folder);
+        return false;
+    }
+    std::string folder = folder_path.string();
+    if (folder.back() != '/')
+        folder += '/';
+    
     std::ostringstream oss;
     oss << target_folder << "frame" << DELIMITER << timestamp << DELIMITER << cam_id << ".json";
     std::string file_path = oss.str();

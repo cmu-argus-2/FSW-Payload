@@ -180,7 +180,19 @@ int IMUManager::StartCollection() {
             return 1;
         }
         SPDLOG_INFO("Logging gyro data to {}", log_file);
-        ofs << "Timestamp_ms, Gyro_X_dps, Gyro_Y_dps, Gyro_Z_dps, Mag_X_uT, Mag_Y_uT, Mag_Z_uT, Temperature_C\n";
+        switch (collection_mode.load()) {
+            case IMU_COLLECTION_MODE::GYRO_ONLY:
+                ofs << "Timestamp_ms, Gyro_X_dps, Gyro_Y_dps, Gyro_Z_dps\n";
+                break;
+            case IMU_COLLECTION_MODE::GYRO_TEMP:
+                ofs << "Timestamp_ms, Gyro_X_dps, Gyro_Y_dps, Gyro_Z_dps, Temperature_C\n";
+                break;
+            case IMU_COLLECTION_MODE::GYRO_MAG_TEMP:
+                ofs << "Timestamp_ms, Gyro_X_dps, Gyro_Y_dps, Gyro_Z_dps, Mag_X_uT, Mag_Y_uT, Mag_Z_uT, Temperature_C\n";
+                break;
+            default:
+                break;
+        }
     }
     
     state.store(IMU_STATE::COLLECT); // Update state to collecting
@@ -339,15 +351,21 @@ void IMUManager::LogSensorData(uint64_t timestamp, const BMI160::SensorData &gyr
             return;
         }
     }
-    ofs << timestamp << ','
+    auto mode = collection_mode.load();
+    ofs << timestamp
         << std::fixed << std::setprecision(6)
-        << gyroData.xAxis.scaled << ','
-        << gyroData.yAxis.scaled << ','
-        << gyroData.zAxis.scaled << ','
-        << magData.xAxis.scaled << ','
-        << magData.yAxis.scaled << ','
-        << magData.zAxis.scaled << ','
-        << temperature << '\n';
+        << ',' << gyroData.xAxis.scaled
+        << ',' << gyroData.yAxis.scaled
+        << ',' << gyroData.zAxis.scaled;
+    if (mode == IMU_COLLECTION_MODE::GYRO_MAG_TEMP) {
+        ofs << ',' << magData.xAxis.scaled
+            << ',' << magData.yAxis.scaled
+            << ',' << magData.zAxis.scaled;
+    }
+    if (mode == IMU_COLLECTION_MODE::GYRO_TEMP || mode == IMU_COLLECTION_MODE::GYRO_MAG_TEMP) {
+        ofs << ',' << temperature;
+    }
+    ofs << '\n';
 
     ofs.flush();
 }

@@ -7,6 +7,7 @@ add_executable(PAYLOAD_TESTS main.cpp
     test_inference.cpp
     test_imu.cpp
     test_dataset.cpp
+    test_commands.cpp
 )
 
 # Link the test executable with Google Test and the PAYLOAD library

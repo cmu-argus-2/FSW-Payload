@@ -213,7 +213,11 @@ DatasetProgress DatasetManager::QueryProgress() const
 
 bool DatasetManager::CheckTermination()
 {
-    return (progress.current_frames >= current_dataset.GetTargetFrameNb()) || (timing::GetCurrentTimeMs() - current_dataset.GetCaptureStartTime() > current_dataset.GetMaximumPeriod() * 1000);
+    const uint64_t now_ms   = timing::GetCurrentTimeMs();
+    const uint64_t start_ms = current_dataset.GetCaptureStartTime();
+    const bool period_elapsed = now_ms > start_ms &&
+                                (now_ms - start_ms) > static_cast<uint64_t>(current_dataset.GetMaximumPeriod() * 1000.0);
+    return (progress.current_frames >= current_dataset.GetTargetFrameNb()) || period_elapsed;
 }
 
 void DatasetManager::ProcessFrames(

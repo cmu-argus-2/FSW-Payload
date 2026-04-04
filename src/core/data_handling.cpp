@@ -522,14 +522,14 @@ Json LoadFrameMetadataFromDisk(std::uint64_t timestamp, int cam_id, std::string_
     if (!std::filesystem::is_directory(folder_path))
     {
         SPDLOG_ERROR("ReadImageFromDisk: target folder does not exist: {}", target_folder);
-        return false;
+        return Json(); // Return empty JSON on failure
     }
     std::string folder = folder_path.string();
     if (folder.back() != '/')
         folder += '/';
     
     std::ostringstream oss;
-    oss << target_folder << "frame" << DELIMITER << timestamp << DELIMITER << cam_id << ".json";
+    oss << folder << "frame" << DELIMITER << timestamp << DELIMITER << cam_id << ".json";
     std::string file_path = oss.str();
 
     std::ifstream ifs(file_path);

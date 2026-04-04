@@ -16,6 +16,8 @@
 #include "configuration.hpp"
 #include "core/timing.hpp"
 
+#undef private
+
 namespace fs = std::filesystem;
 
 /*

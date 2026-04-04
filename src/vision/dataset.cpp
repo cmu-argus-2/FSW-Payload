@@ -84,6 +84,14 @@ bool Dataset::isValidConfigurationFile(const std::string& config_file_path)
         return false;
     }
 
+    // capture start time — must be present; constructor dereferences this unconditionally
+    std::optional<int64_t> capture_start_time_val = config["capture_start_time"].value<int64_t>();
+    if (!capture_start_time_val)
+    {
+        SPDLOG_ERROR("Missing or invalid 'capture_start_time' in configuration.");
+        return false;
+    }
+
     // Validate raw integer fields against their valid ranges before narrowing casts,
     // since truncation (e.g. uint64_t 300 -> uint8_t 44) would otherwise silently
     // pass values that should be rejected.
@@ -418,7 +426,7 @@ bool Dataset::fromJson(const Json& j)
     imu_log_file_path = j.at("imu_log_file_path").get<std::string>();
     capture_start_time = j.at("capture_start_time").get<uint64_t>();
     maximum_period = j.at("maximum_period").get<double>();
-    target_frame_nb = j.at("target_frame_nb").get<uint16_t>();
+    target_frame_nb = j.at("target_frame_nb").get<uint8_t>();
     dataset_capture_mode = static_cast<CAPTURE_MODE>(j.at("dataset_capture_mode").get<uint64_t>());
     imu_collection_mode = static_cast<IMU_COLLECTION_MODE>(j.at("imu_collection_mode").get<uint64_t>());
     image_capture_rate = j.at("image_capture_rate").get<uint8_t>();

@@ -22,6 +22,8 @@
 #include "configuration.hpp"
 #include <core/errors.hpp>
 
+#undef private
+
 #define ERASE_TEST_FILES false
 
 namespace fs = std::filesystem;
@@ -144,6 +146,10 @@ TEST_F(DatasetTest, DatasetConfigurationCheck)
             [](toml::table& c){ c.erase("imu_sample_rate_hz"); c.insert("imu_sample_rate_hz", 1.0f); }},
         {"target_processing_stage",
             [](toml::table& c){ c.insert("target_processing_stage", -1); },
+            [](toml::table& c){ c.erase("target_processing_stage"); c.insert("target_processing_stage", 0); }},
+        {"capture_start_time",
+            // wrong type (string) → value<int64_t>() returns nullopt
+            [](toml::table& c){ c.insert("capture_start_time", "not_a_timestamp"); },
             [](toml::table& c){ /* last field — no restore needed */ }},
     };
 

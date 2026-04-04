@@ -750,6 +750,7 @@ TEST_P(InferenceIntegrationTest, FullInference_DetectsRegionAndTruePositiveLandm
     // Free any LD engine left over from the previous test case and sync the
     // device so CUDA's allocator reports accurate free-memory figures before
     // the next load.
+    orc_->FreeLDNets();
     cudaDeviceSynchronize();
 
     auto frame_ptr = std::make_shared<Frame>(0, img, 0ULL);

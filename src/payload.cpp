@@ -33,7 +33,7 @@ Payload::Payload(std::unique_ptr<Configuration> _config, std::unique_ptr<Communi
 _running_instance(false),
 config(std::move(_config)),
 communication(std::move(_comms_interface)),
-camera_manager(config->GetCameraConfigs()),
+camera_manager(config->GetCameraConfigs(), inference_manager),
 imu_manager(config->GetIMUConfig()),
 state(PayloadState::STARTUP),
 thread_pool(std::make_unique<ThreadPool>(5))
@@ -250,8 +250,6 @@ const PayloadState& Payload::GetState() const {
 void Payload::StartCameraThread()
 {
     // Launch camera thread
-    std::array<bool, NUM_CAMERAS> temp;
-    [[maybe_unused]] int nb_enabled_cams = camera_manager.EnableCameras(temp);
     camera_thread = std::thread(&CameraManager::RunLoop, &camera_manager);
 }
 
@@ -363,6 +361,16 @@ const OD& Payload::GetOD() const
 OD& Payload::GetOD()
 {
     return od;
+}
+
+const InferenceManager& Payload::GetInferenceManager() const
+{
+    return inference_manager;
+}
+
+InferenceManager& Payload::GetInferenceManager()
+{
+    return inference_manager;
 }
 
 size_t Payload::GetNbTasksInExecution()

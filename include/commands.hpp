@@ -25,8 +25,8 @@ namespace CommandID {
         ENABLE_CAMERAS = 3,
         DISABLE_CAMERAS = 4,
         CAPTURE_IMAGES = 5,
-        START_CAPTURE_IMAGES_PERIODICALLY = 6,
-        STOP_CAPTURE_IMAGES = 7,
+        START_CAPTURE_DATASET = 6,
+        STOP_CAPTURE_DATASET = 7,
         REQUEST_STORAGE_INFO = 8,
         REQUEST_IMAGE = 9,
         REQUEST_NEXT_FILE_PACKET = 10,
@@ -51,8 +51,8 @@ inline constexpr CommandID::Type ALL_COMMAND_IDS[] =
     CommandID::ENABLE_CAMERAS,
     CommandID::DISABLE_CAMERAS,
     CommandID::CAPTURE_IMAGES,
-    CommandID::START_CAPTURE_IMAGES_PERIODICALLY,
-    CommandID::STOP_CAPTURE_IMAGES,
+    CommandID::START_CAPTURE_DATASET,
+    CommandID::STOP_CAPTURE_DATASET,
     CommandID::REQUEST_STORAGE_INFO,
     CommandID::REQUEST_IMAGE,
     CommandID::REQUEST_NEXT_FILE_PACKET,
@@ -76,8 +76,8 @@ void request_telemetry(std::vector<uint8_t>& data);
 void enable_cameras(std::vector<uint8_t>& data);
 void disable_cameras(std::vector<uint8_t>& data);
 void capture_images(std::vector<uint8_t>& data);
-void start_capture_images_periodically(std::vector<uint8_t>& data);
-void stop_capture_images(std::vector<uint8_t>& data);
+void start_capture_dataset(std::vector<uint8_t>& data);
+void stop_capture_dataset(std::vector<uint8_t>& data);
 void request_storage_info(std::vector<uint8_t>& data);
 void request_image(std::vector<uint8_t>& data);
 void request_next_file_packet(std::vector<uint8_t>& data);

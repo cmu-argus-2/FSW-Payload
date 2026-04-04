@@ -1,14 +1,16 @@
 #include "vision/camera_manager.hpp"
 #include "core/data_handling.hpp"
-#include "inference/orchestrator.hpp"
+#include "inference/inference_manager.hpp"
 
-CameraManager::CameraManager(const std::array<CameraConfig, NUM_CAMERAS>& camera_configs) 
+CameraManager::CameraManager(const std::array<CameraConfig, NUM_CAMERAS>& camera_configs, InferenceManager& inference_manager)
 :
+inferenceManager(inference_manager),
 capture_mode(CAPTURE_MODE::IDLE),
+storage_folder(IMAGES_FOLDER),
 camera_configs(camera_configs),
-cameras{{Camera(camera_configs[0].id, camera_configs[0].path), 
-    Camera(camera_configs[1].id, camera_configs[1].path), 
-    Camera(camera_configs[2].id, camera_configs[2].path), 
+cameras{{Camera(camera_configs[0].id, camera_configs[0].path),
+    Camera(camera_configs[1].id, camera_configs[1].path),
+    Camera(camera_configs[2].id, camera_configs[2].path),
     Camera(camera_configs[3].id, camera_configs[3].path)}}
 {
     _UpdateCamStatus();
@@ -39,27 +41,34 @@ void CameraManager::CaptureFrames()
 uint8_t CameraManager::SaveLatestFrames(bool only_earth)
 {
     uint8_t save_count = 0;
-    for (std::size_t i = 0; i < NUM_CAMERAS; ++i) 
+    const bool needs_prefilter = only_earth || GetTargetProcessingStage() >= ProcessingStage::Prefiltered;
+    std::vector<std::tuple<uint8_t, uint64_t>> new_ids;
+    for (std::size_t i = 0; i < NUM_CAMERAS; ++i)
     {
         if (cameras[i].GetStatus() == CAM_STATUS::ACTIVE && cameras[i].IsNewFrameAvailable())
         {
             Frame buffer_frame = cameras[i].GetBufferFrame();
 
-            if (buffer_frame.GetProcessingStage() == ProcessingStage::NotPrefiltered)
+            if (needs_prefilter && buffer_frame.GetProcessingStage() == ProcessingStage::NotPrefiltered)
             {
                 buffer_frame.RunPrefiltering();
             }
-            
+
             if (only_earth && buffer_frame.GetImageState() < ImageState::Earth)
             {
                 SPDLOG_INFO("CAM{}: Frame skipped (not Earth)", cameras[i].GetID());
                 cameras[i].SetOffNewFrameFlag();
                 continue;
             }
-            [[maybe_unused]] std::string img_path = DH::StoreFrameToDisk(buffer_frame, IMAGES_FOLDER);
+            [[maybe_unused]] std::string img_path = DH::StoreFrameToDisk(buffer_frame, GetStorageFolder());
+            new_ids.push_back(std::make_tuple(cameras[i].GetID(), buffer_frame.GetTimestamp()));
             cameras[i].SetOffNewFrameFlag();
             save_count++;
-        }  
+        }
+    }
+    {
+        std::lock_guard<std::mutex> lock(buffer_frame_ids_m);
+        buffer_frame_ids = std::move(new_ids);
     }
     return save_count;
 }
@@ -103,8 +112,9 @@ void CameraManager::RunLoop()
         {
             case CAPTURE_MODE::IDLE:
             {
+                // _AutoDisableIfNeeded();
                 std::unique_lock<std::mutex> lock(capture_mode_mutex);
-                capture_mode_cv.wait(lock, [this] { return !loop_flag.load() || !(capture_mode.load() != CAPTURE_MODE::IDLE); });
+                capture_mode_cv.wait(lock, [this] {return !loop_flag.load() || capture_mode.load() != CAPTURE_MODE::IDLE;});
                 
                 break;
             }
@@ -173,7 +183,7 @@ void CameraManager::RunLoop()
 
             case CAPTURE_MODE::PERIODIC_ROI:
             {
-                static Inference::Orchestrator orchestrator;
+                const ProcessingStage requested_stage = GetTargetProcessingStage();
 
                 current_capture_time = std::chrono::high_resolution_clock::now();
                 auto elapsed_seconds = std::chrono::duration_cast<std::chrono::seconds>(current_capture_time - last_capture_time).count();
@@ -201,13 +211,12 @@ void CameraManager::RunLoop()
                                 continue;
                             }
 
-                            DH::StoreFrameToDisk(buffer_frame, IMAGES_FOLDER);
+                            DH::StoreFrameToDisk(buffer_frame, GetStorageFolder());
                             captured_frames.push_back(buffer_frame);
                             cameras[i].SetOffNewFrameFlag();
                         }
                     }
 
-                    // TODO: figure out memory issues, i think disabling might help...
                     std::array<bool, NUM_CAMERAS> off_cameras;
                     DisableCameras(off_cameras);
                     SPDLOG_INFO("Cameras disabled before inference.");
@@ -215,22 +224,20 @@ void CameraManager::RunLoop()
                     for (auto& frame : captured_frames)
                     {
                         std::shared_ptr<Frame> frame_ptr = std::make_shared<Frame>(frame);
-                        orchestrator.GrabNewImage(frame_ptr);
-                        spdlog::info("Running ROI inference on camera {}", frame.GetCamID());
-                        EC status = orchestrator.ExecFullInference();
+                        SPDLOG_INFO("Running ROI inference on camera {}", frame.GetCamID());
+                        EC status = inferenceManager.ProcessFrame(frame_ptr, requested_stage);
                         if (status == EC::OK)
                         {
-                            DH::StoreFrameMetadataToDisk(*frame_ptr);
-                            spdlog::info("Frame metadata JSON saved for camera {}", frame.GetCamID());
+                            DH::StoreFrameMetadataToDisk(*frame_ptr, GetStorageFolder());
+                            SPDLOG_INFO("Frame metadata JSON saved for camera {}", frame.GetCamID());
                             roi_frames_captured++;
                         }
                         else
                         {
-                            spdlog::error("ROI inference failed with error code: {}", to_uint8(status));
+                            SPDLOG_ERROR("ROI inference failed with error code: {}", to_uint8(status));
                         }
                     }
 
-                    // need to reenable
                     std::array<bool, NUM_CAMERAS> on_cameras;
                     EnableCameras(on_cameras);
                     SPDLOG_INFO("Cameras re-enabled after inference.");
@@ -335,15 +342,27 @@ CameraConfig* CameraManager::GetCameraConfig(int cam_id)
     return nullptr; // Return nullptr if the ID is not found
 }
 
+int CameraManager::GetCapturedFramesCount() const
+{
+    return periodic_frames_captured.load();
+}
+
+std::vector<std::tuple<uint8_t, uint64_t>> CameraManager::GetBufferFrameIDs() const
+{
+    std::lock_guard<std::mutex> lock(buffer_frame_ids_m);
+    return buffer_frame_ids;
+}
+
 void CameraManager::StopLoops()
 {
     display_flag.store(false);
     loop_flag.store(false);
     capture_mode_cv.notify_all();
+    auto_disable_after_capture.store(false);
 
     for (auto& camera : cameras) 
     {
-        camera.StopCaptureLoop();
+        camera.Disable();
     }
 
     SPDLOG_INFO("Stopped camera loops...");
@@ -362,12 +381,18 @@ bool CameraManager::GetDisplayFlag() const
 void CameraManager::SetCaptureMode(CAPTURE_MODE mode)
 {
     capture_mode.store(mode);
+    capture_mode_cv.notify_all();
 }
 
-
-void CameraManager::SendCaptureRequest()
+/**/
+bool CameraManager::SendCaptureRequest()
 {
+    if (!PrepareForCapture())
+    {
+        return false;
+    }
     SetCaptureMode(CAPTURE_MODE::CAPTURE_SINGLE);
+    return true;
 }
 
 
@@ -382,6 +407,76 @@ void CameraManager::SetPeriodicFramesToCapture(uint8_t frames)
 {
     periodic_frames_to_capture = frames;
     SPDLOG_INFO("Periodic frames to capture set to: {}", frames);
+}
+
+
+void CameraManager::SetStorageFolder(const std::string& s)
+{
+    if (!DH::fs::exists(s))
+    {
+        if (!DH::MakeNewDirectory(s))
+        {
+            SPDLOG_ERROR("Failed to create storage folder: {}", s);
+            return;
+        }
+    }
+    std::lock_guard<std::mutex> lock(storage_folder_m);
+    storage_folder = s;
+    if (!storage_folder.empty() && storage_folder.back() != '/') {
+        storage_folder += '/';
+    }
+    SPDLOG_INFO("Camera storage folder set to: {}", storage_folder);
+}
+
+void CameraManager::SetTargetProcessingStage(ProcessingStage stage)
+{
+    target_processing_stage.store(stage);
+}
+
+std::string CameraManager::GetStorageFolder()
+{
+    std::lock_guard<std::mutex> lock(storage_folder_m);
+    return storage_folder;
+}
+
+ProcessingStage CameraManager::GetTargetProcessingStage() const
+{
+    return target_processing_stage.load();
+}
+
+bool CameraManager::PrepareForCapture()
+{
+    const int active_before = CountActiveCameras();
+    if (active_before == NUM_CAMERAS)
+    {
+        auto_disable_after_capture.store(false);
+        return true;
+    }
+
+    std::array<bool, NUM_CAMERAS> on_cameras;
+    int nb_enabled = EnableCameras(on_cameras);
+    if (CountActiveCameras() == 0)
+    {
+        SPDLOG_ERROR("Failed to enable any cameras for capture.");
+        auto_disable_after_capture.store(false);
+        return false;
+    }
+
+    auto_disable_after_capture.store(active_before == 0);
+    SPDLOG_INFO("Prepared {} additional camera(s) for capture.", nb_enabled);
+    return true;
+}
+
+void CameraManager::_AutoDisableIfNeeded()
+{
+    if (!auto_disable_after_capture.exchange(false))
+    {
+        return;
+    }
+
+    std::array<bool, NUM_CAMERAS> off_cameras;
+    int nb_disabled = DisableCameras(off_cameras);
+    SPDLOG_INFO("Auto-disabled {} camera(s) after capture completion.", nb_disabled);
 }
 
 
@@ -498,7 +593,6 @@ void CameraManager::_PerformCameraHealthCheck()
 
             case CAM_STATUS::INACTIVE:
             {
-                camera.Enable();
                 break;
             }
 

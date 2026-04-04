@@ -14,7 +14,7 @@ This file contains classes and functions providing file services and data handli
 #include <opencv2/opencv.hpp>
 #include "spdlog/spdlog.h"
 #include "vision/frame.hpp"
-
+#include "vision/dataset.hpp"
 #include "core/errors.hpp"
 
 #define ROOT_DISK "/"
@@ -60,18 +60,29 @@ namespace DH // Data Handling
     int CountFilesInDirectory(std::string_view directory_path);
     std::string getExtension(const std::string& path);
 
-
-    // raw_timestamp_camid.png 
+    // Store a dataset on disk
+    std::string StoreDatasetToDisk(Dataset& dataset);
+    // Load a dataset from disk by its .json file path
+    bool readDatasetFromDisk(const std::string& dataset_file_path, Dataset& dataset_out);
+    
+    // Store a raw image and frame class information to disk
     std::string StoreFrameToDisk(Frame& frame, std::string_view target_folder = IMAGES_FOLDER);
+    // raw_timestamp_camid.png 
     std::string StoreRawImgToDisk(std::uint64_t timestamp, int cam_id, const cv::Mat& img, std::string_view target_folder = IMAGES_FOLDER);
+    // frame_timestamp_camid.json
     void StoreFrameMetadataToDisk(Frame& frame, std::string_view target_folder = IMAGES_FOLDER);
 
-    // Load in memory the latest img
+    // Load frames in memory
+
     bool ReadLatestStoredRawImg(Frame& frame);
     bool ReadHighestValueStoredRawImg(Frame& frame);
-
+    
     // Load an image from disk by its path
     bool ReadImageFromDisk(const std::string& file_path, Frame& frame_out, int cam_id=0, std::uint64_t timestamp=0);
+    // Load an image from disk by its timestamp and cam_id, optionally from a dataset folder
+    bool ReadImageFromDisk(std::uint64_t timestamp, int cam_id, Frame& frame_out, std::string_view target_folder = IMAGES_FOLDER);
+    // Load image information to json
+    Json LoadFrameMetadataFromDisk(std::uint64_t timestamp, int cam_id, std::string_view target_folder = IMAGES_FOLDER);
 
     // Load the latest binary image file with packet header (img_<timestamp>_<camera_id>.bin)
     // Returns the file path if found, empty string otherwise

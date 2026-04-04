@@ -130,20 +130,89 @@ bool InitializeDataStorage()
     // TODO retry if failure
 }
 
+std::string StoreDatasetToDisk(Dataset& dataset) 
+{
+    std::ostringstream oss;
+    oss << DATASETS_FOLDER << dataset.GetCaptureStartTime() << "/dataset.json";
+    std::string dataset_file_path = oss.str();
+    Json j = dataset.toJson();
+
+    std::ofstream ofs(dataset_file_path, std::ios::out | std::ios::trunc);
+    if (!ofs.is_open())
+    {
+        SPDLOG_ERROR("Failed to write dataset to disk: {}", dataset_file_path);
+        return "";
+    }
+
+    ofs << j.dump(1,'\t');
+    ofs.close();
+    SPDLOG_INFO("Saved dataset to disk: {}", dataset_file_path);
+    SPDLOG_DEBUG("Dataset file size: {} bytes", GetFileSize(dataset_file_path));
+
+    return dataset_file_path;
+}
+
+bool readDatasetFromDisk(const std::string& dataset_file_path, Dataset& dataset_out)
+{
+    if (!fs::exists(dataset_file_path)) 
+    {
+        SPDLOG_ERROR("Dataset file does not exist: {}", dataset_file_path);
+        return false;
+    }
+    Json j;
+    try
+    {
+        std::ifstream ifs(dataset_file_path);
+        ifs >> j;
+        ifs.close();
+        bool success = dataset_out.fromJson(j);
+        if (!success)
+        {
+            SPDLOG_ERROR("Failed to parse dataset from JSON: {}", dataset_file_path);
+            return false;
+        }
+    }
+    catch (const std::exception& e)
+    {
+        SPDLOG_ERROR("Failed to read dataset from disk {}: {}", dataset_file_path, e.what());
+        return false;
+    }
+    return true;
+}
+
 std::string StoreFrameToDisk(Frame& frame, std::string_view target_folder)
 {
-    StoreFrameMetadataToDisk(frame, target_folder);
-    return StoreRawImgToDisk(frame.GetTimestamp(), frame.GetCamID(), frame.GetImg(), target_folder);
+    std::filesystem::path folder_path(target_folder);
+    if (!std::filesystem::is_directory(folder_path))
+    {
+        SPDLOG_ERROR("StoreFrameToDisk: target folder does not exist: {}", target_folder);
+        return "";
+    }
+    // Append separator so sub-path joins work uniformly
+    std::string folder = folder_path.string();
+    if (folder.back() != '/')
+        folder += '/';
+
+    std::string img_path = StoreRawImgToDisk(frame.GetTimestamp(), frame.GetCamID(), frame.GetImg(), folder);
+    StoreFrameMetadataToDisk(frame, folder);
+    return img_path;
 }
 
 void StoreFrameMetadataToDisk(Frame& frame, std::string_view target_folder)
 {
-    // Implementation for storing frame metadata to disk
-    std::ostringstream oss;
-    oss << target_folder << "raw" << DELIMITER << frame.GetTimestamp() << DELIMITER << frame.GetCamID() << ".json";
-    std::string file_path = oss.str();
+    std::filesystem::path folder_path(target_folder);
+    if (!std::filesystem::is_directory(folder_path))
+    {
+        SPDLOG_ERROR("StoreFrameMetadataToDisk: target folder does not exist: {}", target_folder);
+        return;
+    }
+    std::string folder = folder_path.string();
+    if (folder.back() != '/')
+        folder += '/';
 
-    // const cv::Mat& img = frame.GetImg();
+    std::ostringstream oss;
+    oss << folder << "frame" << DELIMITER << frame.GetTimestamp() << DELIMITER << frame.GetCamID() << ".json";
+    std::string file_path = oss.str();
 
     nlohmann::ordered_json j = frame.toOrderedJson();
 
@@ -156,50 +225,30 @@ void StoreFrameMetadataToDisk(Frame& frame, std::string_view target_folder)
 
     ofs << j.dump(1,'\t');
     ofs.close();
-    /*
-    std::ostringstream oss;
-    oss << target_folder << "raw" << DELIMITER << frame.GetTimestamp() << DELIMITER << frame.GetCamID() << ".png";
-    std::string img_file_path = oss.str();
-
-    j["img_path"] = img_file_path;
-    
-    std::ostringstream js;
-    js << "{\n";
-    js << "  \"timestamp\": " << frame.GetTimestamp() << ",\n";
-    js << "  \"cam_id\": " << frame.GetCamID() << ",\n";
-    // Cast to int to avoid streaming as a `char` (uint8_t prints as character)
-    js << "  \"annotation_state\": " <<  static_cast<int>(frame.GetImageState()) << ",\n";
-    js << "  \"processing_stage\": " << static_cast<int>(frame.GetProcessingStage()) << ",\n";
-    // TODO: regions and landmarks
-    js << "  \"rank\": " << frame.GetRank() << "\n";
-    js << "}\n";
-    
-
-    std::ofstream ofs(file_path, std::ios::out | std::ios::trunc);
-    if (!ofs.is_open())
-    {
-        SPDLOG_ERROR("Failed to write metadata to disk: {}", file_path);
-        return;
-    }
-
-    ofs << js.str();
-    ofs.close();
-    */
     SPDLOG_INFO("Saved metadata to disk: {}", file_path);
     SPDLOG_DEBUG("Metadata file size: {} bytes", GetFileSize(file_path));
-
 }
 
 std::string StoreRawImgToDisk(std::uint64_t timestamp, int cam_id, const cv::Mat& img, std::string_view target_folder)
 {
+    std::filesystem::path folder_path(target_folder);
+    if (!std::filesystem::is_directory(folder_path))
+    {
+        SPDLOG_ERROR("StoreRawImgToDisk: target folder does not exist: {}", target_folder);
+        return "";
+    }
+    std::string folder = folder_path.string();
+    if (folder.back() != '/')
+        folder += '/';
+
     std::ostringstream oss;
-    oss << target_folder << "raw" << DELIMITER << timestamp << DELIMITER << cam_id << ".png";
+    oss << folder << "raw" << DELIMITER << timestamp << DELIMITER << cam_id << ".png";
     std::string file_path = oss.str();
     cv::imwrite(file_path, img);
     SPDLOG_INFO("Saved img to disk: {}", file_path);
     SPDLOG_INFO("File size: {} bytes", GetFileSize(file_path));
-    SPDLOG_DEBUG("Total size of folder {}: {} bytes", target_folder, GetDirectorySize(target_folder));
-    SPDLOG_DEBUG("Number of files in folder {}: {}", target_folder, CountFilesInDirectory(target_folder));
+    SPDLOG_DEBUG("Total size of folder {}: {} bytes", folder, GetDirectorySize(folder));
+    SPDLOG_DEBUG("Number of files in folder {}: {}", folder, CountFilesInDirectory(folder));
 
     return file_path; // return value optimized 
 }
@@ -430,6 +479,8 @@ std::string GetLatestImgBinPath()
 
 }
 
+// TODO: investigate the overloaded functions, ensure safety
+
 bool ReadImageFromDisk(const std::string& file_path, Frame& frame_out, int cam_id, std::uint64_t timestamp)
 {
     // Load the image into memory
@@ -446,6 +497,61 @@ bool ReadImageFromDisk(const std::string& file_path, Frame& frame_out, int cam_i
 
     SPDLOG_INFO("Image loaded successfully from disk: {}", file_path);
     return true;
+}
+
+bool ReadImageFromDisk(std::uint64_t timestamp, int cam_id, Frame& frame_out, std::string_view target_folder)
+{
+    std::filesystem::path folder_path(target_folder);
+    if (!std::filesystem::is_directory(folder_path))
+    {
+        SPDLOG_ERROR("ReadImageFromDisk: target folder does not exist: {}", target_folder);
+        return false;
+    }
+    std::string folder = folder_path.string();
+    if (folder.back() != '/')
+        folder += '/';
+
+    std::ostringstream oss;
+    oss << folder << "raw" << DELIMITER << timestamp << DELIMITER << cam_id << ".png";
+    return ReadImageFromDisk(oss.str(), frame_out, cam_id, timestamp);
+}
+
+Json LoadFrameMetadataFromDisk(std::uint64_t timestamp, int cam_id, std::string_view target_folder)
+{
+    std::filesystem::path folder_path(target_folder);
+    if (!std::filesystem::is_directory(folder_path))
+    {
+        SPDLOG_ERROR("ReadImageFromDisk: target folder does not exist: {}", target_folder);
+        return Json(); // Return empty JSON on failure
+    }
+    std::string folder = folder_path.string();
+    if (folder.back() != '/')
+        folder += '/';
+    
+    std::ostringstream oss;
+    oss << folder << "frame" << DELIMITER << timestamp << DELIMITER << cam_id << ".json";
+    std::string file_path = oss.str();
+
+    std::ifstream ifs(file_path);
+    if (!ifs.is_open())
+    {
+        SPDLOG_ERROR("Failed to load frame metadata from disk: {}", file_path);
+        return Json(); // Return empty JSON on failure
+    }
+
+    Json j;
+    try
+    {
+        ifs >> j;
+    }
+    catch (const std::exception& e)
+    {
+        SPDLOG_ERROR("Failed to parse JSON metadata from file {}: {}", file_path, e.what());
+        return Json(); // Return empty JSON on failure
+    }
+
+    SPDLOG_INFO("Frame metadata loaded successfully from disk: {}", file_path);
+    return j;
 }
 
 EC ReadFileChunk(std::string_view file_path, uint32_t start_byte, uint32_t length, std::vector<uint8_t>& data_out)

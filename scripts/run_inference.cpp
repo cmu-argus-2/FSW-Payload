@@ -4,7 +4,8 @@
 #include "vision/frame.hpp"
 #include "core/data_handling.hpp"
 #include "core/timing.hpp"
-#include "inference/orchestrator.hpp"
+#include "inference/inference_manager.hpp"
+#include "inference/types.hpp"
 #include "vision/regions.hpp"
 #include <opencv2/dnn.hpp>
 #include <opencv2/imgproc.hpp>
@@ -74,7 +75,7 @@ int main(int argc, char** argv)
         std::string tgt_region = "17T";
         std::string sample_id = "00277";
         bool isjpg = false;
-        sample_image_path = "models/V1/sample_images/l8_" + tgt_region + "_" + sample_id;
+        sample_image_path = "models/V1/sample_images/" + tgt_region + "/l8_" + tgt_region + "_" + sample_id;
         if (isjpg) {
             sample_image_path = sample_image_path + ".jpg";
         } else {
@@ -88,23 +89,22 @@ int main(int argc, char** argv)
     }
     // Parameters that define the model
     // TRT Example
-    Inference::NET_QUANTIZATION weight_quant = Inference::NET_QUANTIZATION::FP16;
+    NET_QUANTIZATION weight_quant = NET_QUANTIZATION::FP16;
     int input_width = 4608;
     int input_height = 2592;
     bool embedded_nms = false;
     bool use_trt_for_ld = true;
     // ONNX example
-    // Inference::NET_QUANTIZATION weight_quant = Inference::NET_QUANTIZATION::FP32;
+    // NET_QUANTIZATION weight_quant = NET_QUANTIZATION::FP32;
     // int input_width = 4608;
     // int input_height = 4608;
     // bool embedded_nms = false;
     // bool use_trt_for_ld = false;
 
-    Inference::Orchestrator orchestrator;
-    orchestrator.SetRCNetEnginePath(rc_trt_file_path);
-    orchestrator.SetLDNetConfig(weight_quant, input_width, input_height, embedded_nms, use_trt_for_ld);
-    orchestrator.SetLDNetEngineFolderPath(ld_trt_folder_path);
-    // orchestrator.Initialize(rc_trt_file_path, ld_trt_folder_path);
+    InferenceManager inference_manager;
+    inference_manager.SetRCNetEnginePath(rc_trt_file_path);
+    inference_manager.SetLDNetConfig(weight_quant, input_width, input_height, embedded_nms, use_trt_for_ld);
+    inference_manager.SetLDNetEngineFolderPath(ld_trt_folder_path);
 
     spdlog::info("Using image file: {}", sample_image_path);
 
@@ -118,10 +118,8 @@ int main(int argc, char** argv)
 
     std::shared_ptr<Frame> frame_ptr = std::make_shared<Frame>(frame);
 
-    orchestrator.GrabNewImage(frame_ptr); 
-
     spdlog::info("Running inference on the frame...");
-    EC status = orchestrator.ExecFullInference();
+    EC status = inference_manager.ProcessFrame(frame_ptr, ProcessingStage::LDNeted);
     if (status != EC::OK)
     {
         spdlog::error("Inference failed with error code: {}", to_uint8(status));

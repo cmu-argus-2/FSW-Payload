@@ -2,9 +2,9 @@
 #include "spdlog/spdlog.h"
 #include "vision/frame.hpp"
 #include "vision/camera_manager.hpp"
+#include "inference/inference_manager.hpp"
 #include "core/data_handling.hpp"
 #include "core/timing.hpp"
-#include "inference/orchestrator.hpp"
 #include "vision/regions.hpp"
 #include "configuration.hpp"
 
@@ -24,7 +24,8 @@ int main(int argc, char** argv)
     auto config = std::make_unique<Configuration>();
     config->LoadConfiguration("config/config.toml");
     const auto& cam_configs = config->GetCameraConfigs();
-    CameraManager cam_manager(cam_configs);
+    InferenceManager inference_manager;
+    CameraManager cam_manager(cam_configs, inference_manager);
 
     spdlog::info("Enabling cameras...");
     std::array<bool, NUM_CAMERAS> activated;
@@ -56,11 +57,9 @@ int main(int argc, char** argv)
     std::array<bool, NUM_CAMERAS> disabled;
     cam_manager.DisableCameras(disabled);
 
-    // Initialize orchestrator
-    Inference::Orchestrator orchestrator;
-    orchestrator.SetRCNetEnginePath(rc_trt_file_path);
-    orchestrator.SetLDNetEngineFolderPath(ld_trt_folder_path);
-    // orchestrator.Initialize(rc_trt_file_path, ld_trt_folder_path);
+    // Configure inference manager
+    inference_manager.SetRCNetEnginePath(rc_trt_file_path);
+    inference_manager.SetLDNetEngineFolderPath(ld_trt_folder_path);
 
     // Run inference on each frame
     for (auto& frame : frames)
@@ -73,10 +72,9 @@ int main(int argc, char** argv)
         DH::StoreFrameToDisk(frame, "data/images/");
 
         std::shared_ptr<Frame> frame_ptr = std::make_shared<Frame>(frame);
-        orchestrator.GrabNewImage(frame_ptr);
 
         spdlog::info("Running inference on frame from camera {}...", frame.GetCamID());
-        EC status = orchestrator.ExecFullInference();
+        EC status = inference_manager.ProcessFrame(frame_ptr, ProcessingStage::LDNeted);
         if (status != EC::OK)
         {
             spdlog::error("Inference failed with error code: {}", to_uint8(status));

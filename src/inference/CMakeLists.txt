@@ -1,15 +1,22 @@
-
-
-add_library(inference
-    runtimes.cpp
-    orchestrator.cpp
-)
-
-target_link_libraries(inference
-    PRIVATE
-        core
-        ${OpenCV_LIBS}
-        ${NVINFER_LIBRARY}
-        ${NVINFER_PLUGIN_LIBRARY}
-        ${CUDART_LIBRARY}
-)
+if(CUDA_ENABLED)
+    add_library(inference
+        runtimes.cpp
+        inference_manager.cpp
+    )
+    target_compile_definitions(inference PUBLIC CUDA_ENABLED)
+    target_link_libraries(inference
+        PRIVATE
+            core
+            ${OpenCV_LIBS}
+            ${NVINFER_LIBRARY}
+            ${NVINFER_PLUGIN_LIBRARY}
+            ${CUDART_LIBRARY}
+    )
+else()
+    add_library(inference
+        inference_manager.cpp
+    )
+    target_link_libraries(inference
+        PRIVATE core
+    )
+endif()

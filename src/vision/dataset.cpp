@@ -24,6 +24,54 @@ std::vector<std::string> Dataset::ListAllStoredDatasets()
     return dataset_folders;
 }
 
+// Validates raw (pre-cast) dataset parameter values against the same rules as
+// isValidConfiguration and isValidConfigurationFile. Called by both to avoid
+// duplicating the range checks.
+bool Dataset::validateRawParams(double max_period, uint64_t target_frame_nb,
+                                uint64_t capture_mode, uint64_t imu_mode,
+                                uint64_t image_rate, float imu_rate,
+                                uint64_t proc_stage)
+{
+    if (max_period < ABSOLUTE_MINIMUM_PERIOD || max_period > ABSOLUTE_MAXIMUM_PERIOD)
+    {
+        SPDLOG_ERROR("'maximum_period' value {} is out of range [{}, {}]",
+                     max_period, ABSOLUTE_MINIMUM_PERIOD, ABSOLUTE_MAXIMUM_PERIOD);
+        return false;
+    }
+    if (target_frame_nb == 0 || target_frame_nb > MAX_SAMPLES)
+    {
+        SPDLOG_ERROR("'target_frame_nb' value {} is out of range [1, {}]", target_frame_nb, MAX_SAMPLES);
+        return false;
+    }
+    if (capture_mode > static_cast<uint64_t>(CAPTURE_MODE::PERIODIC_LDMK) ||
+        !IsValidCaptureMode(static_cast<CAPTURE_MODE>(capture_mode)))
+    {
+        SPDLOG_ERROR("'dataset_capture_mode' value {} is not a valid capture mode", capture_mode);
+        return false;
+    }
+    if (imu_mode > static_cast<uint64_t>(IMU_COLLECTION_MODE::GYRO_MAG_TEMP))
+    {
+        SPDLOG_ERROR("'imu_collection_mode' value {} is out of range", imu_mode);
+        return false;
+    }
+    if (image_rate == 0 || image_rate > MAX_SAMPLES)
+    {
+        SPDLOG_ERROR("'image_capture_rate' value {} is out of range [1, {}]", image_rate, MAX_SAMPLES);
+        return false;
+    }
+    if (imu_rate <= 0.0f || imu_rate > 25.0f)
+    {
+        SPDLOG_ERROR("'imu_sample_rate_hz' value {} is out of range (0, 25]", imu_rate);
+        return false;
+    }
+    if (proc_stage > static_cast<uint64_t>(ProcessingStage::LDNeted))
+    {
+        SPDLOG_ERROR("'target_processing_stage' value {} is out of range", proc_stage);
+        return false;
+    }
+    return true;
+}
+
 bool Dataset::isValidConfigurationFile(const std::string& config_file_path)
 {
     toml::table config;
@@ -33,102 +81,30 @@ bool Dataset::isValidConfigurationFile(const std::string& config_file_path)
         SPDLOG_ERROR("Failed to parse configuration file '{}': {}", config_file_path, e.what());
         return false;
     }
-    
-    std::optional<double> max_period = config["maximum_period"].value<double>();
-    if (!max_period)
-    {
-        SPDLOG_ERROR("Missing or invalid 'maximum_period' in configuration.");
-        return false;
-    }
 
-    std::optional<uint64_t> target_frames = config["target_frame_nb"].value<uint64_t>();
-    if (!target_frames)
-    {
-        SPDLOG_ERROR("Missing or invalid 'target_frame_nb' in configuration.");
-        return false;
-    }
-
-    std::optional<uint64_t> dataset_capture_mode_val = config["dataset_capture_mode"].value<uint64_t>();
-    if (!dataset_capture_mode_val)
-    {
-        SPDLOG_ERROR("Missing or invalid 'dataset_capture_mode' in configuration.");
-        return false;
-    }
-
-    // imu collection mode
+    // Read all fields and verify they are present with the right type.
+    std::optional<double>   max_period              = config["maximum_period"].value<double>();
+    std::optional<uint64_t> target_frames           = config["target_frame_nb"].value<uint64_t>();
+    std::optional<uint64_t> dataset_capture_mode_val= config["dataset_capture_mode"].value<uint64_t>();
     std::optional<uint64_t> imu_collection_mode_val = config["imu_collection_mode"].value<uint64_t>();
-    if (!imu_collection_mode_val)
-    {
-        SPDLOG_ERROR("Missing or invalid 'imu_collection_mode' in configuration.");
-        return false;
-    }
-
-    // image capture rate
-    std::optional<uint64_t> image_capture_rate_val = config["image_capture_rate"].value<uint64_t>();
-    if (!image_capture_rate_val)    {
-        SPDLOG_ERROR("Missing or invalid 'image_capture_rate' in configuration.");
-        return false;
-    }
-
-    // imu sample rate
-    std::optional<double> imu_sample_rate_hz_val = config["imu_sample_rate_hz"].value<double>();
-    if (!imu_sample_rate_hz_val)    {
-        SPDLOG_ERROR("Missing or invalid 'imu_sample_rate_hz' in configuration.");
-        return false;
-    }
-
-    // target processing stage
+    std::optional<uint64_t> image_capture_rate_val  = config["image_capture_rate"].value<uint64_t>();
+    std::optional<double>   imu_sample_rate_hz_val  = config["imu_sample_rate_hz"].value<double>();
     std::optional<uint64_t> target_processing_stage_val = config["target_processing_stage"].value<uint64_t>();
-    if (!target_processing_stage_val)    {
-        SPDLOG_ERROR("Missing or invalid 'target_processing_stage' in configuration.");
-        return false;
-    }
+    std::optional<int64_t>  capture_start_time_val  = config["capture_start_time"].value<int64_t>();
 
-    // capture start time — must be present; constructor dereferences this unconditionally
-    std::optional<int64_t> capture_start_time_val = config["capture_start_time"].value<int64_t>();
-    if (!capture_start_time_val)
-    {
-        SPDLOG_ERROR("Missing or invalid 'capture_start_time' in configuration.");
-        return false;
-    }
+    if (!max_period)             { SPDLOG_ERROR("Missing or invalid 'maximum_period'.");           return false; }
+    if (!target_frames)          { SPDLOG_ERROR("Missing or invalid 'target_frame_nb'.");          return false; }
+    if (!dataset_capture_mode_val){ SPDLOG_ERROR("Missing or invalid 'dataset_capture_mode'.");    return false; }
+    if (!imu_collection_mode_val){ SPDLOG_ERROR("Missing or invalid 'imu_collection_mode'.");      return false; }
+    if (!image_capture_rate_val) { SPDLOG_ERROR("Missing or invalid 'image_capture_rate'.");       return false; }
+    if (!imu_sample_rate_hz_val) { SPDLOG_ERROR("Missing or invalid 'imu_sample_rate_hz'.");       return false; }
+    if (!target_processing_stage_val){ SPDLOG_ERROR("Missing or invalid 'target_processing_stage'."); return false; }
+    if (!capture_start_time_val) { SPDLOG_ERROR("Missing or invalid 'capture_start_time'.");       return false; }
 
-    // Validate raw integer fields against their valid ranges before narrowing casts,
-    // since truncation (e.g. uint64_t 300 -> uint8_t 44) would otherwise silently
-    // pass values that should be rejected.
-    if (*target_frames == 0 || *target_frames > MAX_SAMPLES)
-    {
-        SPDLOG_ERROR("'target_frame_nb' value {} is out of range [1, {}]", *target_frames, MAX_SAMPLES);
-        return false;
-    }
-    if (*dataset_capture_mode_val > static_cast<uint64_t>(CAPTURE_MODE::PERIODIC_LDMK) ||
-        !IsValidCaptureMode(static_cast<CAPTURE_MODE>(*dataset_capture_mode_val)))
-    {
-        SPDLOG_ERROR("'dataset_capture_mode' value {} is not a valid capture mode", *dataset_capture_mode_val);
-        return false;
-    }
-    if (*imu_collection_mode_val > static_cast<uint64_t>(IMU_COLLECTION_MODE::GYRO_MAG_TEMP))
-    {
-        SPDLOG_ERROR("'imu_collection_mode' value {} is out of range", *imu_collection_mode_val);
-        return false;
-    }
-    if (*image_capture_rate_val == 0 || *image_capture_rate_val > 255)
-    {
-        SPDLOG_ERROR("'image_capture_rate' value {} is out of range [1, 255]", *image_capture_rate_val);
-        return false;
-    }
-    if (*target_processing_stage_val > static_cast<uint64_t>(ProcessingStage::LDNeted))
-    {
-        SPDLOG_ERROR("'target_processing_stage' value {} is out of range", *target_processing_stage_val);
-        return false;
-    }
-
-    return isValidConfiguration(*max_period, static_cast<uint8_t>(*target_frames),
-                                static_cast<CAPTURE_MODE>(*dataset_capture_mode_val),
-                                static_cast<IMU_COLLECTION_MODE>(*imu_collection_mode_val),
-                                static_cast<uint8_t>(*image_capture_rate_val),
-                                static_cast<float>(*imu_sample_rate_hz_val),
-                                static_cast<ProcessingStage>(*target_processing_stage_val),
-                                timing::GetCurrentTimeMs());
+    return validateRawParams(*max_period, *target_frames, *dataset_capture_mode_val,
+                             *imu_collection_mode_val, *image_capture_rate_val,
+                             static_cast<float>(*imu_sample_rate_hz_val),
+                             *target_processing_stage_val);
 }
 
 bool Dataset::isValidConfiguration(double max_period, uint8_t nb_frames, CAPTURE_MODE capture_mode, IMU_COLLECTION_MODE imu_collection_mode,
@@ -412,27 +388,75 @@ Json Dataset::toJson() const
     return j;
 }
 
+// Returns the value at j[key] as std::optional<T>, or nullopt if the key is
+// absent, the value is null, or the JSON type does not match T.
+template<typename T>
+static std::optional<T> json_get(const Json& j, const std::string& key)
+{
+    if (!j.contains(key) || j.at(key).is_null())
+        return std::nullopt;
+    const auto& v = j.at(key);
+    if constexpr (std::is_same_v<T, double> || std::is_same_v<T, float>) {
+        if (!v.is_number()) return std::nullopt;
+    } else if constexpr (std::is_unsigned_v<T>) {
+        // Accept both signed and unsigned JSON integers (enums and uint8_t are
+        // stored as signed by nlohmann's default serializer), but reject negatives.
+        if (!v.is_number_integer()) return std::nullopt;
+        if (!v.is_number_unsigned() && v.get<int64_t>() < 0) return std::nullopt;
+    } else if constexpr (std::is_integral_v<T>) {
+        if (!v.is_number_integer()) return std::nullopt;
+    } else if constexpr (std::is_same_v<T, std::string>) {
+        if (!v.is_string()) return std::nullopt;
+    }
+    return v.get<T>();
+}
+
 bool Dataset::fromJson(const Json& j)
 {
-    if (!j.contains("folder_path") || !j.contains("capture_start_time") || !j.contains("maximum_period") || 
-        !j.contains("target_frame_nb") || !j.contains("dataset_capture_mode") || !j.contains("imu_collection_mode") ||
-        !j.contains("image_capture_rate") || !j.contains("imu_sample_rate_hz") || !j.contains("target_processing_stage")
-        || !j.contains("imu_log_file_path") || !j.contains("frame_id_list"))
-    {
-        SPDLOG_ERROR("JSON object is missing required fields to construct a Dataset.");
+    // Read every field through the type-safe helper; any wrong type or missing
+    // field produces nullopt and is reported before we touch member variables.
+    const auto folder_path_opt      = json_get<std::string>(j, "folder_path");
+    const auto imu_log_path_opt     = json_get<std::string>(j, "imu_log_file_path");
+    const auto capture_start_opt    = json_get<uint64_t>(j, "capture_start_time");
+    const auto max_period_opt       = json_get<double>(j, "maximum_period");
+    const auto target_frame_opt     = json_get<uint64_t>(j, "target_frame_nb");
+    const auto capture_mode_opt     = json_get<uint64_t>(j, "dataset_capture_mode");
+    const auto imu_mode_opt         = json_get<uint64_t>(j, "imu_collection_mode");
+    const auto image_rate_opt       = json_get<uint64_t>(j, "image_capture_rate");
+    const auto imu_rate_opt         = json_get<float>(j, "imu_sample_rate_hz");
+    const auto proc_stage_opt       = json_get<uint64_t>(j, "target_processing_stage");
+
+    if (!folder_path_opt)   { SPDLOG_ERROR("fromJson: missing or wrong-typed field 'folder_path'");           return false; }
+    if (!imu_log_path_opt)  { SPDLOG_ERROR("fromJson: missing or wrong-typed field 'imu_log_file_path'");     return false; }
+    if (!capture_start_opt) { SPDLOG_ERROR("fromJson: missing or wrong-typed field 'capture_start_time'");    return false; }
+    if (!max_period_opt)    { SPDLOG_ERROR("fromJson: missing or wrong-typed field 'maximum_period'");        return false; }
+    if (!target_frame_opt)  { SPDLOG_ERROR("fromJson: missing or wrong-typed field 'target_frame_nb'");       return false; }
+    if (!capture_mode_opt)  { SPDLOG_ERROR("fromJson: missing or wrong-typed field 'dataset_capture_mode'");  return false; }
+    if (!imu_mode_opt)      { SPDLOG_ERROR("fromJson: missing or wrong-typed field 'imu_collection_mode'");   return false; }
+    if (!image_rate_opt)    { SPDLOG_ERROR("fromJson: missing or wrong-typed field 'image_capture_rate'");    return false; }
+    if (!imu_rate_opt)      { SPDLOG_ERROR("fromJson: missing or wrong-typed field 'imu_sample_rate_hz'");    return false; }
+    if (!proc_stage_opt)    { SPDLOG_ERROR("fromJson: missing or wrong-typed field 'target_processing_stage'"); return false; }
+
+    if (!j.contains("frame_id_list") || !j.at("frame_id_list").is_array()) {
+        SPDLOG_ERROR("fromJson: missing or wrong-typed field 'frame_id_list'");
         return false;
     }
-    folder_path = j.at("folder_path").get<std::string>();
-    imu_log_file_path = j.at("imu_log_file_path").get<std::string>();
-    capture_start_time = j.at("capture_start_time").get<uint64_t>();
-    maximum_period = j.at("maximum_period").get<double>();
-    target_frame_nb = j.at("target_frame_nb").get<uint8_t>();
-    dataset_capture_mode = static_cast<CAPTURE_MODE>(j.at("dataset_capture_mode").get<uint64_t>());
-    imu_collection_mode = static_cast<IMU_COLLECTION_MODE>(j.at("imu_collection_mode").get<uint64_t>());
-    image_capture_rate = j.at("image_capture_rate").get<uint8_t>();
-    imu_sample_rate_hz = j.at("imu_sample_rate_hz").get<float>();
-    target_processing_stage = static_cast<ProcessingStage>(j.at("target_processing_stage").get<uint64_t>());
-    stored_frame_ids = j.at("frame_id_list").get<std::vector<std::tuple<uint8_t, uint64_t>>>();
+
+    if (!validateRawParams(*max_period_opt, *target_frame_opt, *capture_mode_opt,
+                           *imu_mode_opt, *image_rate_opt, *imu_rate_opt, *proc_stage_opt))
+        return false;
+
+    folder_path             = *folder_path_opt;
+    imu_log_file_path       = *imu_log_path_opt;
+    capture_start_time      = *capture_start_opt;
+    maximum_period          = *max_period_opt;
+    target_frame_nb         = static_cast<uint8_t>(*target_frame_opt);
+    dataset_capture_mode    = static_cast<CAPTURE_MODE>(*capture_mode_opt);
+    imu_collection_mode     = static_cast<IMU_COLLECTION_MODE>(*imu_mode_opt);
+    image_capture_rate      = static_cast<uint8_t>(*image_rate_opt);
+    imu_sample_rate_hz      = *imu_rate_opt;
+    target_processing_stage = static_cast<ProcessingStage>(*proc_stage_opt);
+    stored_frame_ids        = j.at("frame_id_list").get<std::vector<std::tuple<uint8_t, uint64_t>>>();
 
     return true;
 }

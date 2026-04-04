@@ -87,7 +87,10 @@ private:
     std::vector<std::tuple<uint8_t, uint64_t>> stored_frame_ids; // for statistics, not intended to be used for loading frames (too heavy)
 
     bool CreateConfigurationFile();
-    
+    static bool validateRawParams(double max_period, uint64_t target_frame_nb,
+                                  uint64_t capture_mode, uint64_t imu_mode,
+                                  uint64_t image_rate, float imu_rate,
+                                  uint64_t proc_stage);
 };
 
 #endif // DATASET_HPP

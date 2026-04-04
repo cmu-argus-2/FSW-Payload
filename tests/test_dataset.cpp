@@ -206,6 +206,125 @@ TEST_F(DatasetTest, DatasetStorageAndRetrieval)
     EXPECT_EQ(from_json.GetFolderPath(),       folder + "/");
 }
 
+// ── validateRawParams: upper-bound violations via isValidConfigurationFile ────
+//
+// The existing DatasetConfigurationCheck table tests missing fields and values
+// that are too low. These cases add the upper-bound violations that exercise
+// the "wrapping" guards added to validateRawParams.
+
+TEST_F(DatasetTest, IsValidConfigurationFile_RejectsUpperBoundViolations)
+{
+    Dataset dataset = makeDataset();
+    const std::string config_path =
+        "data/datasets/" + std::to_string(capture_start_time) + "/dataset_config.toml";
+
+    toml::table config = toml::parse_file(config_path);
+    auto writeConfig = [&] {
+        std::ofstream f(config_path, std::ofstream::out | std::ofstream::trunc);
+        f << config;
+    };
+    auto expectBad = [&](const std::string& field, auto bad_val, auto good_val) {
+        config.erase(field); config.insert(field, bad_val); writeConfig();
+        EXPECT_FALSE(Dataset::isValidConfigurationFile(config_path))
+            << field << " = " << bad_val << " should be rejected";
+        config.erase(field); config.insert(field, good_val);
+    };
+
+    expectBad("maximum_period",          20000.0,  60.0);   // > ABSOLUTE_MAXIMUM_PERIOD (10800)
+    expectBad("target_frame_nb",         300,      100);    // > MAX_SAMPLES (255)
+    expectBad("imu_collection_mode",     99,       2);      // > GYRO_MAG_TEMP
+    expectBad("image_capture_rate",      300,      60);     // > MAX_SAMPLES (255)
+    expectBad("imu_sample_rate_hz",      30.0,     1.0);    // > 25 Hz
+    expectBad("target_processing_stage", 99,       0);      // > LDNeted
+
+    if (ERASE_TEST_FILES)
+        fs::remove_all("data/datasets/" + std::to_string(capture_start_time) + "/");
+}
+
+// ── validateRawParams: exercised via fromJson ─────────────────────────────────
+//
+// fromJson reads values, validates them via validateRawParams, and only assigns
+// on success. A failed call must return false and leave the object unchanged.
+
+TEST_F(DatasetTest, FromJson_RejectsInvalidParams)
+{
+    Dataset dataset = makeDataset();
+    const Json valid_j = dataset.toJson();
+
+    // fromJson only writes fields after all validation passes, so the object is
+    // safe to reuse across cases — a failed call leaves it unmodified.
+    auto expectBad = [&](const std::string& field, Json bad_val) {
+        Json j = valid_j;
+        j[field] = std::move(bad_val);
+        EXPECT_FALSE(dataset.fromJson(j)) << "fromJson should reject " << field << " = " << j[field];
+    };
+
+    // Below minimum
+    expectBad("maximum_period",          0.0);
+    expectBad("target_frame_nb",         0);
+    expectBad("image_capture_rate",      0);
+    expectBad("imu_sample_rate_hz",      0.0);
+    expectBad("dataset_capture_mode",    0);   // IDLE — not a valid collection mode
+
+    // Above maximum / out of enum range
+    expectBad("maximum_period",          20000.0);  // > ABSOLUTE_MAXIMUM_PERIOD (10800)
+    expectBad("target_frame_nb",         300);      // > MAX_SAMPLES (255)
+    expectBad("image_capture_rate",      300);      // > MAX_SAMPLES (255)
+    expectBad("imu_sample_rate_hz",      30.0);     // > 25 Hz
+    expectBad("imu_collection_mode",     99);
+    expectBad("dataset_capture_mode",    99);
+    expectBad("target_processing_stage", 99);
+
+    // Valid JSON must still succeed and update fields correctly
+    EXPECT_TRUE(dataset.fromJson(valid_j));
+    EXPECT_EQ(dataset.GetMaximumPeriod(),   60.0);
+    EXPECT_EQ(dataset.GetTargetFrameNb(),   100);
+
+    if (ERASE_TEST_FILES)
+        fs::remove_all("data/datasets/" + std::to_string(capture_start_time) + "/");
+}
+
+TEST_F(DatasetTest, FromJson_RejectsWrongTypes)
+{
+    Dataset dataset = makeDataset();
+    const Json valid_j = dataset.toJson();
+
+    // Wrong JSON type for each field — the optional helper must catch these
+    // without throwing and return false.
+    auto expectBadType = [&](const std::string& field, Json bad_val) {
+        Json j = valid_j;
+        j[field] = std::move(bad_val);
+        EXPECT_FALSE(dataset.fromJson(j)) << "fromJson should reject wrong type for " << field;
+    };
+
+    // Numeric fields given a string
+    expectBadType("maximum_period",          "not-a-number");
+    expectBadType("target_frame_nb",         "not-a-number");
+    expectBadType("dataset_capture_mode",    "not-a-number");
+    expectBadType("imu_collection_mode",     "not-a-number");
+    expectBadType("image_capture_rate",      "not-a-number");
+    expectBadType("imu_sample_rate_hz",      "not-a-number");
+    expectBadType("target_processing_stage", "not-a-number");
+    expectBadType("capture_start_time",      "not-a-number");
+
+    // String fields given a number
+    expectBadType("folder_path",      42);
+    expectBadType("imu_log_file_path", 42);
+
+    // Unsigned field given a signed negative value
+    expectBadType("target_frame_nb",  -1);
+    expectBadType("capture_start_time", -1);
+
+    // Array field given a scalar
+    expectBadType("frame_id_list", 0);
+
+    // Valid JSON must still succeed after all the failed attempts
+    EXPECT_TRUE(dataset.fromJson(valid_j));
+
+    if (ERASE_TEST_FILES)
+        fs::remove_all("data/datasets/" + std::to_string(capture_start_time) + "/");
+}
+
 // ── Dataset::AddStoredFrameIDs ────────────────────────────────────────────────
 
 TEST_F(DatasetTest, AddStoredFrameIDs_Deduplication)

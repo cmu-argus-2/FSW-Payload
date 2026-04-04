@@ -203,8 +203,13 @@ int IMUManager::StartCollection() {
 
 int IMUManager::Suspend() {
     if (state.load() == IMU_STATE::ERROR_DEVICE_NOT_FOUND) {
-        SPDLOG_ERROR("Cannot suspend, IMU device not found");
-        return 1; // Error, device not found
+        SPDLOG_WARN("IMU device not found, skipping suspend");
+        return 1;
+    }
+    if (state.load() == IMU_STATE::IDLE) {
+        // Sensors are already suspended (Suspend() is called at init, and only
+        // StartCollection() transitions out of IDLE). Skip hardware calls.
+        return 0;
     }
     // Set all sensors to suspend mode but gyro to still have access to temperature data
     // gyro fast start up mode saves power and still allows for power consumption

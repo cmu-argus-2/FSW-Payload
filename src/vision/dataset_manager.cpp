@@ -314,9 +314,12 @@ void DatasetManager::CollectionLoop()
 
     // wait until 
     
-    while (timing::GetCurrentTimeMs() < current_dataset.GetCaptureStartTime())
     {
-        std::this_thread::sleep_for(std::chrono::milliseconds(100));
+        const auto start = std::chrono::system_clock::time_point(
+            std::chrono::milliseconds(current_dataset.GetCaptureStartTime()));
+        std::unique_lock<std::mutex> lk(loop_mtx);
+        loop_cv.wait_until(lk, start, [this] { return !loop_flag.load(); });
+        if (!loop_flag.load()) return;
     }
 
     // configure the camera manager for the dataset collection

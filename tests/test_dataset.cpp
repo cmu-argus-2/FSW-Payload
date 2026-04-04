@@ -96,6 +96,10 @@ TEST_F(DatasetTest, DatasetConfigurationCheck)
     EXPECT_EQ(dataset.GetFolderPath(),  folder);
     EXPECT_EQ(dataset.GetIMUFilePath(), folder + "imu_data.csv");
 
+    // isValidConfigurationFile returns false (not throws) for missing or malformed files
+    EXPECT_FALSE(Dataset::isValidConfigurationFile("data/datasets/nonexistent/dataset_config.toml"));
+    EXPECT_FALSE(Dataset::isValidConfigurationFile("/dev/null"));  // empty file → parse error
+
     // Config file: valid on creation, invalid after corruption
     const std::string config_path = folder + "dataset_config.toml";
     EXPECT_TRUE(Dataset::isValidConfigurationFile(config_path));
@@ -521,6 +525,29 @@ TEST_F(DatasetManagerTest, ProcessFrames_BlackImageRejectedByPrefilter)
     dm->ProcessFrames({id}, processed);
     ASSERT_EQ(processed.size(), 1u);
     EXPECT_EQ(processed[0], id);
+}
+
+// ── DatasetManager async start/stop ──────────────────────────────────────────
+
+TEST_F(DatasetManagerTest, StopBeforeStartTime_ExitsPromptly)
+{
+    // Start time is 60 seconds in the future; the collection thread will enter
+    // wait_until and block. StopCollection must interrupt that wait immediately
+    // via loop_cv.notify_all() rather than sleeping until the start time.
+    const uint64_t future_ms = timing::GetCurrentTimeMs() + 60000;
+    auto dm = createDM(future_ms, 60.0, "early_stop");
+
+    dm->StartCollection();
+    ASSERT_TRUE(dm->Running());
+
+    const auto t0 = std::chrono::steady_clock::now();
+    dm->StopCollection();
+    const auto elapsed_ms = std::chrono::duration_cast<std::chrono::milliseconds>(
+        std::chrono::steady_clock::now() - t0).count();
+
+    EXPECT_FALSE(dm->Running());
+    EXPECT_LT(elapsed_ms, 1000) << "StopCollection blocked for " << elapsed_ms
+                                << " ms — loop_cv interrupt likely not working";
 }
 
 // ── Stubs for future tests ────────────────────────────────────────────────────

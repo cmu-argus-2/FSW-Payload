@@ -198,11 +198,13 @@ TEST_F(CommandTest, StartDataset_FrameNbOverflow_Rejected)
 
 TEST_F(CommandTest, StartDataset_FrameNbMaxValid_Accepted)
 {
-    // 255 == MAX_SAMPLES — boundary that must pass the range check
-    auto data = ValidStartData();
+    // 255 == MAX_SAMPLES — boundary that must pass the range check.
+    // Future start time keeps the thread in loop_cv.wait_until, avoiding
+    // Argus initialisation in the test environment (see PassesValidationFailsAtRuntime).
+    const uint32_t future_s = static_cast<uint32_t>(timing::GetCurrentTimeMs() / 1000 + 60);
+    auto data = ValidStartData(future_s);
     data[3] = 0x00; data[4] = 0xFF;
     start_capture_dataset(data);
-    // Will fail at runtime (no cameras) asynchronously, but NOT at validation: expect ACK_SUCCESS not 0x20
     EXPECT_EQ(AckStatus(PopMsg()), ACK_SUCCESS);
     auto dm = DatasetManager::GetActiveDatasetManager(DS_CMD_KEY);
     if (dm) test_folders.push_back(dm->current_dataset.GetFolderPath());
@@ -241,13 +243,13 @@ TEST_F(CommandTest, StartDataset_IMURateExceedsMax_Rejected)
 
 TEST_F(CommandTest, StartDataset_ValidData_PassesValidationFailsAtRuntime)
 {
-    // All 13 bytes are valid. The command gets past every check, calls
-    // DatasetManager::Create and StartCollection. StartCollection launches
-    // the collection loop asynchronously and returns immediately, so the
-    // command sends a success ACK right away. PrepareForCapture will fail
-    // (no real cameras in test env) asynchronously inside the thread.
-    // The key assertion is ACK_SUCCESS, NOT 0x20 — proving validation passed.
-    auto data = ValidStartData();
+    // All 13 bytes are valid — the command must pass every validation check and
+    // return ACK_SUCCESS. We use a future start time so the collection thread
+    // sits in loop_cv.wait_until rather than calling PrepareForCapture, which
+    // would initialise the Argus camera library and hang the test process.
+    // TearDown cleans up via StopDatasetManager, which interrupts the wait.
+    const uint32_t future_s = static_cast<uint32_t>(timing::GetCurrentTimeMs() / 1000 + 60);
+    auto data = ValidStartData(future_s);
     start_capture_dataset(data);
     auto msg = PopMsg();
     EXPECT_EQ(msg->packet[0], CommandID::START_CAPTURE_DATASET);

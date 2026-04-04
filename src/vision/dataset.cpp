@@ -1,4 +1,5 @@
 #include <algorithm>
+#include <filesystem>
 #include <ostream>
 #include <stdexcept>
 #include "toml.hpp"
@@ -25,7 +26,13 @@ std::vector<std::string> Dataset::ListAllStoredDatasets()
 
 bool Dataset::isValidConfigurationFile(const std::string& config_file_path)
 {
-    toml::table config = toml::parse_file(config_file_path);
+    toml::table config;
+    try {
+        config = toml::parse_file(config_file_path);
+    } catch (const std::exception& e) {
+        SPDLOG_ERROR("Failed to parse configuration file '{}': {}", config_file_path, e.what());
+        return false;
+    }
     
     std::optional<double> max_period = config["maximum_period"].value<double>();
     if (!max_period)

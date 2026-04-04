@@ -95,7 +95,8 @@ private:
         const std::vector<std::tuple<uint8_t, uint64_t>>& frame_ids,
         std::vector<std::tuple<uint8_t, uint64_t>>& processed_frame_ids);
     std::atomic<bool> loop_flag = false;
-    
+    std::thread collection_thread;
+
     std::mutex loop_mtx;
     std::condition_variable loop_cv;
 

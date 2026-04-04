@@ -42,10 +42,8 @@ static void DrainTxQueue()
 
 static void ClearActiveDatasets()
 {
-    for (const auto& key : DatasetManager::ListActiveDatasetManagers()) {
-        auto ref = DatasetManager::GetActiveDatasetManager(key);
+    for (const auto& key : DatasetManager::ListActiveDatasetManagers())
         DatasetManager::StopDatasetManager(key);
-    }
 }
 
 // ACK packet layout: [cmd_id][seq_hi][seq_lo][len_hi][len_lo][status_byte]
@@ -204,8 +202,8 @@ TEST_F(CommandTest, StartDataset_FrameNbMaxValid_Accepted)
     auto data = ValidStartData();
     data[3] = 0x00; data[4] = 0xFF;
     start_capture_dataset(data);
-    // Will fail at runtime (no cameras), but NOT at validation: expect 0x21 not 0x20
-    EXPECT_EQ(AckStatus(PopMsg()), 0x21);
+    // Will fail at runtime (no cameras) asynchronously, but NOT at validation: expect ACK_SUCCESS not 0x20
+    EXPECT_EQ(AckStatus(PopMsg()), ACK_SUCCESS);
     auto dm = DatasetManager::GetActiveDatasetManager(DS_CMD_KEY);
     if (dm) test_folders.push_back(dm->current_dataset.GetFolderPath());
 }
@@ -244,16 +242,17 @@ TEST_F(CommandTest, StartDataset_IMURateExceedsMax_Rejected)
 TEST_F(CommandTest, StartDataset_ValidData_PassesValidationFailsAtRuntime)
 {
     // All 13 bytes are valid. The command gets past every check, calls
-    // DatasetManager::Create and StartCollection. PrepareForCapture fails
-    // (no real cameras in test env) and throws → error ACK 0x21.
-    // The key assertion is 0x21, NOT 0x20 — proving validation passed.
+    // DatasetManager::Create and StartCollection. StartCollection launches
+    // the collection loop asynchronously and returns immediately, so the
+    // command sends a success ACK right away. PrepareForCapture will fail
+    // (no real cameras in test env) asynchronously inside the thread.
+    // The key assertion is ACK_SUCCESS, NOT 0x20 — proving validation passed.
     auto data = ValidStartData();
     start_capture_dataset(data);
     auto msg = PopMsg();
     EXPECT_EQ(msg->packet[0], CommandID::START_CAPTURE_DATASET);
-    EXPECT_EQ(AckStatus(msg), 0x21);
+    EXPECT_EQ(AckStatus(msg), ACK_SUCCESS);
 
-    // Dataset was registered before StartCollection threw; clean up folder.
     auto dm = DatasetManager::GetActiveDatasetManager(DS_CMD_KEY);
     if (dm) test_folders.push_back(dm->current_dataset.GetFolderPath());
 }

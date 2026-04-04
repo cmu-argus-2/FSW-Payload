@@ -311,12 +311,8 @@ struct DatasetManagerTest : ::testing::Test
 
     void TearDown() override
     {
-        // Hold a local ref per entry so the DatasetManager destructor does not
-        // run while datasets_mtx is locked inside StopDatasetManager.
-        for (const auto& key : DatasetManager::ListActiveDatasetManagers()) {
-            auto ref = DatasetManager::GetActiveDatasetManager(key);
+        for (const auto& key : DatasetManager::ListActiveDatasetManagers())
             DatasetManager::StopDatasetManager(key);
-        }
         for (const auto& f : test_folders) fs::remove_all(f);
     }
 
@@ -350,9 +346,8 @@ TEST_F(DatasetManagerTest, Registry_CRUD)
     EXPECT_NE(std::find(keys.begin(), keys.end(), "key_a"), keys.end());
     EXPECT_NE(std::find(keys.begin(), keys.end(), "key_b"), keys.end());
 
-    // Stop removes from registry (hold local ref to avoid destructor under lock)
-    { auto ref = DatasetManager::GetActiveDatasetManager("key_a");
-      DatasetManager::StopDatasetManager("key_a"); }
+    // Stop removes from registry
+    DatasetManager::StopDatasetManager("key_a");
     EXPECT_EQ(DatasetManager::GetActiveDatasetManager("key_a"), nullptr);
     EXPECT_EQ(DatasetManager::ListActiveDatasetManagers().size(), 1u);
 }

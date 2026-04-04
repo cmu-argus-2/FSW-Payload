@@ -107,8 +107,14 @@ int main(int argc, char** argv)
                                 target_processing_stage, DATASET_KEY_CMD, camera_manager, imu_manager, inference_manager);
     ds->StartCollection();
 
+    // StartCollection is asynchronous — block here until the collection loop
+    // finishes naturally (frame target met or period elapsed).
+    while (ds->Running())
+    {
+        std::this_thread::sleep_for(std::chrono::milliseconds(100));
+    }
 
-    // Close Dataset Manager
+    // Close Dataset Manager (joins the collection thread internally)
     ds->StopDatasetManager(DATASET_KEY_CMD);
 
     // close threads

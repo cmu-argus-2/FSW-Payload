@@ -93,13 +93,15 @@ std::shared_ptr<DatasetManager> DatasetManager::GetActiveDatasetManager(const st
 
 void DatasetManager::StopDatasetManager(const std::string& key)
 {
-    std::lock_guard<std::mutex> lock(datasets_mtx);
-    auto it = active_datasets.find(key);
-    if (it != active_datasets.end())
+    std::shared_ptr<DatasetManager> dm;
     {
-        it->second->StopCollection();
+        std::lock_guard<std::mutex> lock(datasets_mtx);
+        auto it = active_datasets.find(key);
+        if (it == active_datasets.end()) return;
+        dm = std::move(it->second);
         active_datasets.erase(it);
     }
+    dm->StopCollection();
 }
 
 std::vector<std::string> DatasetManager::ListActiveDatasetManagers()
@@ -145,18 +147,10 @@ DatasetManager::~DatasetManager()
     {
         StopCollection();
     }
-    std::lock_guard<std::mutex> lock(datasets_mtx);
-    for (auto it = active_datasets.begin(); it != active_datasets.end(); )
-    {
-        if (it->second.get() == this)
-        {
-            it = active_datasets.erase(it);
-        }
-        else
-        {
-            ++it;
-        }
-    }
+    // If the loop completed naturally it called StopCollection itself (setting
+    // loop_flag = false), but the thread still needs to be joined.
+    if (collection_thread.joinable())
+        collection_thread.join();
 }
 
 
@@ -185,7 +179,7 @@ bool DatasetManager::StartCollection()
     }
 
     loop_flag.store(true);
-    CollectionLoop();
+    collection_thread = std::thread(&DatasetManager::CollectionLoop, this);
 
     return true;
 }
@@ -195,6 +189,11 @@ void DatasetManager::StopCollection()
 {
     loop_flag.store(false);
     loop_cv.notify_all();
+
+    // Avoid self-join: CollectionLoop calls StopCollection at its own end,
+    // so skip the join when called from within the collection thread itself.
+    if (collection_thread.joinable() && collection_thread.get_id() != std::this_thread::get_id())
+        collection_thread.join();
 
     cameraManager.SetCaptureMode(CAPTURE_MODE::IDLE);
     cameraManager.SetStorageFolder(IMAGES_FOLDER);
@@ -324,7 +323,8 @@ void DatasetManager::CollectionLoop()
     if (!cameraManager.PrepareForCapture())
     {
         loop_flag.store(false);
-        throw std::runtime_error("Failed to enable cameras for dataset collection.");
+        SPDLOG_ERROR("Failed to enable cameras for dataset collection.");
+        return;
     }
 
     cameraManager.SetStorageFolder(current_dataset.GetFolderPath());

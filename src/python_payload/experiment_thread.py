@@ -17,6 +17,8 @@ from splat.splat.telemetry_codec import Command, pack
 
 import math
 import os
+import shutil
+
 
 
 class ExperimentThread(threading.Thread):
@@ -335,14 +337,25 @@ class ExperimentThread(threading.Thread):
             prefilter_result = run_prefiltering(str(image_path), str(output_folder) + "/")
 
             log.info(
-                "Prefilter result for %s: passed=%s is_significant=%s dominant_type=%s",
+                "Prefilter result for %s: passed=%s is_significant=%s dominant_type=%s | "
+                "hue=%.1f sat=%.1f brightness=%.1f color_std=%.1f contrast_std=%.1f "
+                "cloudiness=%d%% avg_rgb=(%.0f,%.0f,%.0f)",
                 image_path,
                 prefilter_result["passed"],
                 prefilter_result["is_significant"],
                 prefilter_result["dominant_type"],
+                prefilter_result["avg_hue"],
+                prefilter_result["avg_saturation"],
+                prefilter_result["avg_value"],
+                prefilter_result["color_std"],
+                prefilter_result["contrast_std"],
+                prefilter_result["cloudiness"],
+                prefilter_result["avg_rgb"][0],
+                prefilter_result["avg_rgb"][1],
+                prefilter_result["avg_rgb"][2],
             )
 
-            if prefilter_result["is_significant"]:
+            if prefilter_result["passed"]:
                 src = Path(image_path)
                 dst = output_folder / src.name
                 shutil.copy2(src, dst)
@@ -358,7 +371,7 @@ class ExperimentThread(threading.Thread):
         log.info("Prefiltering complete: %d/%d images kept",
                 len(kept_paths), len(file_manifest.get("raw", [])))
 
-        file_manifest["results"].extend(kept_paths)
+        file_manifest["prefiltered"].extend(kept_paths)
         return kept_paths
         
 
@@ -378,7 +391,7 @@ class ExperimentThread(threading.Thread):
         
 
         log.info("Running inference on images...")
-        for image_path in file_manifest.get("raw", []):
+        for image_path in file_manifest.get("prefiltered", []):
 
             log.info(f"Running inference on {image_path} and {output_folder}")
             run_inference(str(image_path), f"{str(output_folder)}/")
@@ -414,6 +427,7 @@ class ExperimentThread(threading.Thread):
         return {
             "raw": [],
             "downscaled": [],
+            "prefiltered": [],
             "results": [],
         }
 
@@ -423,7 +437,8 @@ class ExperimentThread(threading.Thread):
         Returns the files that should be sent to the mainboard. downscaled images and result
         returns empty list in case they are missing from the file manifest
         """
-        return [*file_manifest.get("downscaled", []), *file_manifest.get("results", [])]
+        return [*file_manifest.get("downscaled", []), 
+        *file_manifest.get("results", [])]
             
         
 

@@ -10,10 +10,6 @@ namespace fs = std::filesystem;
 
 struct PrefilterResult {
     bool passed;
-    bool is_significant;
-    std::string dominant_type;
-    
-    // Core metrics
     float color_std;
     float contrast_std;
     float avg_color_rgb[3];
@@ -21,15 +17,20 @@ struct PrefilterResult {
     float avg_saturation;
     float avg_value;
     int cloudiness;
-    
+    bool is_significant;
+    char dominant_type[32];
+    char error[128];
+
     PrefilterResult() 
-        : passed(true), is_significant(false), dominant_type(""),
+        : passed(false), is_significant(false),
           color_std(0.0f), contrast_std(0.0f),
           avg_hue(0.0f), avg_saturation(0.0f), avg_value(0.0f),
           cloudiness(0) {
         avg_color_rgb[0] = 0.0f;
         avg_color_rgb[1] = 0.0f;
         avg_color_rgb[2] = 0.0f;
+        dominant_type[0] = '\0';
+        error[0] = '\0';
     }
 };
 
@@ -43,7 +44,7 @@ PrefilterResult prefilter_image(
     PrefilterResult result;
     result.passed = false; // Default to false
     result.is_significant = false;
-    result.dominant_type = "";
+    result.dominant_type[0] = '\0';
 
     // Get RGB and HSV versions
     cv::Mat img_rgb;
@@ -98,7 +99,7 @@ PrefilterResult prefilter_image(
     }
     else if (is_cloudy) {
         result.passed = false;
-        result.dominant_type = "cloudy";
+        strncpy(result.dominant_type, "cloudy", sizeof(result.dominant_type));
     }
     // else if (is_blue) {
     //     result.passed = false;
@@ -106,20 +107,20 @@ PrefilterResult prefilter_image(
     // }
     else if (is_black) {
         result.passed = false;
-        result.dominant_type = "black";
+        strncpy(result.dominant_type, "black", sizeof(result.dominant_type));
     }
     else if (is_white) {
         result.passed = false;
-        result.dominant_type = "white";
+        strncpy(result.dominant_type, "white", sizeof(result.dominant_type));
     }
     else if (is_green) {
         result.passed = true;
         result.is_significant = true;
-        result.dominant_type = "green";
+        strncpy(result.dominant_type, "green", sizeof(result.dominant_type));
     }
     else {
-        result.passed = true;
-        result.dominant_type = "single_color";
+        result.passed = false;
+        strncpy(result.dominant_type, "single_color", sizeof(result.dominant_type));
     }
 
     result.color_std = static_cast<float>(avg_color_rgb);
@@ -132,92 +133,111 @@ PrefilterResult prefilter_image(
     result.avg_value = static_cast<float>(avg_value);
     result.cloudiness = cloudiness;
 
+    // std::cout << "  Type:        " << (result.dominant_type.empty() ? "none" : result.dominant_type) << std::endl;
+    // std::cout << "  Passed:      " << (result.passed ? "yes" : "no") << std::endl;
+    // std::cout << "  Significant: " << (result.is_significant ? "yes" : "no") << std::endl;
+    // std::cout << "  --- Color ---" << std::endl;
+    // std::cout << "  Hue:         " << result.avg_hue << " (blue=90-130, green=34-85)" << std::endl;
+    // std::cout << "  Saturation:  " << result.avg_saturation << " (threshold >50 for color detection)" << std::endl;
+    // std::cout << "  Brightness:  " << result.avg_value << " (black<50, white>200)" << std::endl;
+    // std::cout << "  Color Std:   " << result.color_std << " (threshold=" << color_threshold << ")" << std::endl;
+    // std::cout << "  Avg RGB:     (" << result.avg_color_rgb[0] << ", " << result.avg_color_rgb[1] << ", " << result.avg_color_rgb[2] << ")" << std::endl;
+    // std::cout << "  --- Texture ---" << std::endl;
+    // std::cout << "  Contrast Std:" << result.contrast_std << " (threshold=" << contrast_threshold << ")" << std::endl;
+    // std::cout << "  Cloudiness:  " << result.cloudiness << "% (threshold=" << cloudiness_threshold << "%, white_px>" << white_threshold << ")" << std::endl;
+    // std::cout << "  --- Flags ---" << std::endl;
+    // std::cout << "  has_variety: " << (has_variety ? "yes" : "no") << " (color>" << color_threshold << " && contrast>" << contrast_threshold << ")" << std::endl;
+    // std::cout << "  is_green:    " << (is_green ? "yes" : "no") << std::endl;
+    // std::cout << "  is_cloudy:   " << (is_cloudy ? "yes" : "no") << std::endl;
+    // std::cout << "  is_black:    " << (is_black ? "yes" : "no") << std::endl;
+    // std::cout << "  is_white:    " << (is_white ? "yes" : "no") << std::endl;
+
     return result;
 }
 
 
 
-int main(int argc, char* argv[]) {
-    // Test directory
-    std::string home_dir = std::getenv("HOME");
-    fs::path test_dir = fs::path(home_dir) / "Desktop" / "prefilter_test";
+// int main(int argc, char* argv[]) {
+//     // Test directory
+//     std::string home_dir = std::getenv("HOME");
+//     fs::path test_dir = fs::path(home_dir) / "Desktop" / "prefilter_test";
     
-    if (!fs::exists(test_dir)) {
-        std::cerr << "Error: Directory " << test_dir << " does not exist" << std::endl;
-        return 1;
-    }
+//     if (!fs::exists(test_dir)) {
+//         std::cerr << "Error: Directory " << test_dir << " does not exist" << std::endl;
+//         return 1;
+//     }
     
-    // Get all image files
-    std::vector<std::string> image_extensions = {".jpg", ".jpeg", ".png", ".bmp", ".tif", ".tiff"};
-    std::vector<fs::path> image_files;
+//     // Get all image files
+//     std::vector<std::string> image_extensions = {".jpg", ".jpeg", ".png", ".bmp", ".tif", ".tiff"};
+//     std::vector<fs::path> image_files;
     
-    for (const auto& entry : fs::directory_iterator(test_dir)) {
-        if (entry.is_regular_file()) {
-            std::string ext = entry.path().extension().string();
-            std::transform(ext.begin(), ext.end(), ext.begin(), ::tolower);
-            if (std::find(image_extensions.begin(), image_extensions.end(), ext) != image_extensions.end()) {
-                image_files.push_back(entry.path());
-            }
-        }
-    }
+//     for (const auto& entry : fs::directory_iterator(test_dir)) {
+//         if (entry.is_regular_file()) {
+//             std::string ext = entry.path().extension().string();
+//             std::transform(ext.begin(), ext.end(), ext.begin(), ::tolower);
+//             if (std::find(image_extensions.begin(), image_extensions.end(), ext) != image_extensions.end()) {
+//                 image_files.push_back(entry.path());
+//             }
+//         }
+//     }
     
-    if (image_files.empty()) {
-        std::cout << "No image files found in " << test_dir << std::endl;
-        return 1;
-    }
+//     if (image_files.empty()) {
+//         std::cout << "No image files found in " << test_dir << std::endl;
+//         return 1;
+//     }
     
-    std::sort(image_files.begin(), image_files.end());
+//     std::sort(image_files.begin(), image_files.end());
     
-    std::cout << "\nTesting " << image_files.size() << " images from " << test_dir << "\n" << std::endl;
-    std::cout << std::string(70, '=') << std::endl;
+//     std::cout << "\nTesting " << image_files.size() << " images from " << test_dir << "\n" << std::endl;
+//     std::cout << std::string(70, '=') << std::endl;
     
-    int passed_count = 0;
-    int rejected_count = 0;
+//     int passed_count = 0;
+//     int rejected_count = 0;
     
-    // Default thresholds for testing
-    int cloudiness_threshold = 20;
-    int white_threshold = 200;
-    int color_threshold = 15;
-    int contrast_threshold = 20;
+//     // Default thresholds for testing
+//     int cloudiness_threshold = 20;
+//     int white_threshold = 200;
+//     int color_threshold = 15;
+//     int contrast_threshold = 20;
     
-    for (const auto& img_file : image_files) {
-        try {
-            cv::Mat img = cv::imread(img_file.string());
-            if (img.empty()) {
-                std::cout << "\n" << img_file.filename().string() << std::endl;
-                std::cout << "  ERROR: Failed to load image" << std::endl;
-                rejected_count++;
-                continue;
-            }
+//     for (const auto& img_file : image_files) {
+//         try {
+//             cv::Mat img = cv::imread(img_file.string());
+//             if (img.empty()) {
+//                 std::cout << "\n" << img_file.filename().string() << std::endl;
+//                 std::cout << "  ERROR: Failed to load image" << std::endl;
+//                 rejected_count++;
+//                 continue;
+//             }
             
-            PrefilterResult result = prefilter_image(img, cloudiness_threshold, white_threshold, color_threshold, contrast_threshold);
+//             PrefilterResult result = prefilter_image(img, cloudiness_threshold, white_threshold, color_threshold, contrast_threshold);
             
-            std::string status = result.passed ? "PASSED ✓" : "REJECTED ✗";
-            if (result.passed) {
-                passed_count++;
-            } else {
-                rejected_count++;
-            }
+//             std::string status = result.passed ? "PASSED ✓" : "REJECTED ✗";
+//             if (result.passed) {
+//                 passed_count++;
+//             } else {
+//                 rejected_count++;
+//             }
             
-            std::cout << "\n" << img_file.filename().string() << std::endl;
-            std::cout << "  Status: " << status << std::endl;
-            std::cout << "  Type: " << result.dominant_type << std::endl;
-            std::cout << "  Significant: " << (result.is_significant ? "yes" : "no") << std::endl;
-            std::cout << "  Cloudiness: " << result.cloudiness 
-                      << " | Brightness: " << result.avg_value 
-                      << " | Color Std: " << result.color_std 
-                      << " | Contrast Std: " << result.contrast_std << std::endl;
+//             std::cout << "\n" << img_file.filename().string() << std::endl;
+//             std::cout << "  Status: " << status << std::endl;
+//             std::cout << "  Type: " << result.dominant_type << std::endl;
+//             std::cout << "  Significant: " << (result.is_significant ? "yes" : "no") << std::endl;
+//             std::cout << "  Cloudiness: " << result.cloudiness 
+//                       << " | Brightness: " << result.avg_value 
+//                       << " | Color Std: " << result.color_std 
+//                       << " | Contrast Std: " << result.contrast_std << std::endl;
             
-        } catch (const std::exception& e) {
-            std::cout << "\n" << img_file.filename().string() << std::endl;
-            std::cout << "  ERROR: " << e.what() << std::endl;
-            rejected_count++;
-        }
-    }
+//         } catch (const std::exception& e) {
+//             std::cout << "\n" << img_file.filename().string() << std::endl;
+//             std::cout << "  ERROR: " << e.what() << std::endl;
+//             rejected_count++;
+//         }
+//     }
     
-    std::cout << "\n" << std::string(70, '=') << std::endl;
-    std::cout << "SUMMARY: " << passed_count << " passed, " << rejected_count << " rejected" << std::endl;
-    std::cout << std::string(70, '=') << std::endl;
+//     std::cout << "\n" << std::string(70, '=') << std::endl;
+//     std::cout << "SUMMARY: " << passed_count << " passed, " << rejected_count << " rejected" << std::endl;
+//     std::cout << std::string(70, '=') << std::endl;
     
-    return 0;
-}
+//     return 0;
+// }

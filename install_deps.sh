@@ -18,6 +18,7 @@ sudo apt install -y \
   build-essential \
   cmake \
   git \
+  git-lfs \
   nano \
   v4l-utils \
   clang \

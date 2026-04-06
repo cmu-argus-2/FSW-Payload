@@ -15,6 +15,8 @@ target_link_libraries(PAYLOAD_TESTS
         GTest::gtest 
         GTest::gtest_main 
         PAYLOAD_LIB
+        Eigen3::Eigen
+        spice
 )
 
 add_test(NAME PAYLOAD_TESTS COMMAND PAYLOAD_TESTS)

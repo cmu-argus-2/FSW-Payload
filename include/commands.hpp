@@ -38,7 +38,7 @@ namespace CommandID {
         FULL_RESET = 16,
         DEBUG_DISPLAY_CAMERA = 17,
         DEBUG_STOP_DISPLAY = 18,
-        REQUEST_NEXT_FILE_PACKETS = 19  
+        REQUEST_NEXT_FILE_PACKETS = 19
     };
 }
 

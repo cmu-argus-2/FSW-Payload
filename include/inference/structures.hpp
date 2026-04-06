@@ -5,7 +5,7 @@
 
 namespace Inference
 {
-
+// TODO: Redefinition, check if this can be removed
 static constexpr int FULL_RES_WIDTH = 4608;
 static constexpr int FULL_RES_HEIGHT = 2592;
 static constexpr int DOWNSCALED_RES_WIDTH = 224;

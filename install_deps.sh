@@ -21,7 +21,6 @@ sudo apt install -y \
   nano \
   v4l-utils \
   clang \
-  libopencv-dev \
   libgoogle-glog-dev \
   libgflags-dev \
   libatlas-base-dev \
@@ -34,7 +33,9 @@ sudo apt install -y \
   libprotobuf-dev \
   protobuf-compiler \
   libhdf5-dev \
+  libtbb-dev \
   ccache
+#  libopencv-dev \
 
 # Uncomment this line if you get ccache related issues
 # sudo apt-get install --reinstall -y ccache

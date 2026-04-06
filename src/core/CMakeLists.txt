@@ -11,5 +11,5 @@ add_library(core
 
 # target_link_libraries(core <dependencies>)
 target_link_libraries(core
-    PRIVATE spdlog::spdlog nlohmann_json::nlohmann_json
+    PRIVATE ${PAYLOAD_SPDLOG_TARGET} nlohmann_json::nlohmann_json
 )

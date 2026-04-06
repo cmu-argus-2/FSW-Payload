@@ -233,3 +233,5 @@ logs/
 # ignore install folder
 deps/
 !deps/Spice
+
+workspace/

@@ -1,4 +1,0 @@
-torch
-onnx
-onnxscript
-tensorrt-cu11

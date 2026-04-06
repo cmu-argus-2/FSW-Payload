@@ -1,0 +1,1 @@
+Testing images for the inference should be in the models submodule from now on.

@@ -40,7 +40,7 @@ TEST(DataHandling, FixedPacketRoundTrip) {
 TEST(Tilepack, EncodeImageMatchesMainboardRadioFile) {
     using namespace tilepack;
 
-    const auto base_path = std::filesystem::path(__FILE__).parent_path() / "tilepack_test";
+    const auto base_path = std::filesystem::path(__FILE__).parent_path().parent_path() / "scripts" / "tilepack_test";
     const auto image_path = base_path / "test_image.jpg";
     const auto reference_path = base_path / "image_radio_file_mainboard_dh.bin";
     const auto output_path = base_path / "image_radio_file_cpp.bin";

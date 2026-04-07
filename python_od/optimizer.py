@@ -33,6 +33,7 @@ import scipy.linalg
 
 from data_loader import get_state_timestamps
 from residuals import (
+    IntegratorType,
     angular_dynamics_residual_fix_bias,
     keplerian_accel,
     landmark_residual,
@@ -227,9 +228,10 @@ def build_and_solve(
     landmark_measurements:  np.ndarray,   # (N_lmk,  7): [t, bx, by, bz, lx, ly, lz]
     landmark_group_starts:  np.ndarray,   # (N_lmk,)  bool
     gyro_measurements:      np.ndarray,   # (N_gyro,  4): [t, wx, wy, wz]
-    max_dt:     float = 60.0,
-    uma_std:    float = UMA_STD_DEV,
-    ipopt_opts: dict  | None = None,
+    max_dt:          float          = 60.0,
+    uma_std:         float          = UMA_STD_DEV,
+    integrator_type: IntegratorType = IntegratorType.FORWARD_EULER,
+    ipopt_opts:      dict | None    = None,
 ) -> dict:
     """
     Build and solve the constrained fixed-bias batch OD problem.
@@ -237,6 +239,10 @@ def build_and_solve(
     Linear dynamics are enforced as IPOPT equality constraints; the unmodelled
     acceleration a[i] absorbs any model error and is penalised by a Gaussian
     prior with standard deviation uma_std [km/s²].
+
+    Parameters
+    ----------
+    integrator_type : IntegratorType
 
     Returns a dict:
         state_timestamps    : (N,)      float64
@@ -262,7 +268,8 @@ def build_and_solve(
     print(f"[optimizer] {N} states | "
           f"{len(lmk_group_indices)} landmark groups | "
           f"{len(gyro_indices)} gyro measurements | "
-          f"span {ts[-1] - ts[0]:.1f} s  |  UMA σ = {uma_std:.2e} km/s²")
+          f"span {ts[-1] - ts[0]:.1f} s  |  UMA σ = {uma_std:.2e} km/s²  |  "
+          f"integrator = {integrator_type.value}")
 
     # ── 2. Decision variables ──────────────────────────────────────────────────
     opti = ca.Opti()
@@ -283,7 +290,7 @@ def build_and_solve(
     for i in range(N_uma):
         dt  = float(ts[i + 1] - ts[i])
         c6  = linear_dynamics_constraint(r[:, i], v[:, i], r[:, i + 1], v[:, i + 1],
-                                          a[:, i], dt)
+                                          a[:, i], dt, integrator_type)
         opti.subject_to(c6 == 0)
         dyn_constraint_syms.append(c6)
 

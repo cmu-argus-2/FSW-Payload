@@ -9,12 +9,81 @@ Matches the cost functors in:
   include/navigation/pose_dynamics.hpp
   include/navigation/measurement_residuals.hpp
 """
+from __future__ import annotations
+
+from enum import Enum
+
 import casadi as ca
 
 from quaternion import angle_axis_to_quat, quat_conjugate, quat_inv_rotate, quat_product
 
 # ── Physical constants ──────────────────────────────────────────────────────────
 GM_EARTH = 3.9860044188e5   # km^3 / s^2
+
+
+# ── Numerical integration ───────────────────────────────────────────────────────
+
+class IntegratorType(Enum):
+    """Numerical integrator Options"""
+    FORWARD_EULER = "forward_euler"
+    RK4           = "rk4"
+
+
+class OrbitalDynamics:
+    """
+    Continuous-time two-body orbital dynamics with unmodelled acceleration.
+
+    State: x = [r; v]  (6-vector, km / km·s⁻¹)
+    Input: u = uma      (3-vector, km·s⁻²) — held constant over each interval
+
+    xdot = f(r, v, uma) = [v;  a_kepler(r) + uma]
+    """
+
+    @staticmethod
+    def f(r: ca.MX, v: ca.MX, uma: ca.MX) -> tuple[ca.MX, ca.MX]:
+        """Return (rdot, vdot) for the continuous-time two-body + UMA dynamics."""
+        rdot = v
+        vdot = keplerian_accel(r) + uma
+        return rdot, vdot
+
+
+class NumericalIntegrator:
+    """
+    Numerical integrator for orbital dynamics
+    """
+
+    @staticmethod
+    def forward_euler(
+        r0: ca.MX, v0: ca.MX, uma: ca.MX, dt: float
+    ) -> tuple[ca.MX, ca.MX]:
+        """x_{k+1} = x_k + dt · f(x_k, u_k)"""
+        rdot, vdot = OrbitalDynamics.f(r0, v0, uma)
+        return r0 + dt * rdot, v0 + dt * vdot
+
+    @staticmethod
+    def rk4(
+        r0: ca.MX, v0: ca.MX, uma: ca.MX, dt: float
+    ) -> tuple[ca.MX, ca.MX]:
+        """Runge-Kutta 4th order numerical integrtion"""
+        k1r, k1v = OrbitalDynamics.f(r0,                          v0,                          uma)
+        k2r, k2v = OrbitalDynamics.f(r0 + 0.5 * dt * k1r,         v0 + 0.5 * dt * k1v,         uma)
+        k3r, k3v = OrbitalDynamics.f(r0 + 0.5 * dt * k2r,         v0 + 0.5 * dt * k2v,         uma)
+        k4r, k4v = OrbitalDynamics.f(r0 +       dt * k3r,         v0 +       dt * k3v,         uma)
+        r1 = r0 + (dt / 6.0) * (k1r + 2.0 * k2r + 2.0 * k3r + k4r)
+        v1 = v0 + (dt / 6.0) * (k1v + 2.0 * k2v + 2.0 * k3v + k4v)
+        return r1, v1
+
+    @staticmethod
+    def integrate(
+        r0: ca.MX, v0: ca.MX, uma: ca.MX, dt: float,
+        integrator_type: IntegratorType = IntegratorType.FORWARD_EULER,
+    ) -> tuple[ca.MX, ca.MX]:
+        """Select integrator"""
+        if integrator_type is IntegratorType.FORWARD_EULER:
+            return NumericalIntegrator.forward_euler(r0, v0, uma, dt)
+        if integrator_type is IntegratorType.RK4:
+            return NumericalIntegrator.rk4(r0, v0, uma, dt)
+        raise ValueError(f"Unknown IntegratorType: {integrator_type}")
 
 
 # ── Linear (orbital) dynamics ───────────────────────────────────────────────────
@@ -30,19 +99,17 @@ def linear_dynamics_constraint(
     r1: ca.MX, v1: ca.MX,
     uma: ca.MX,
     dt: float,
+    integrator_type: IntegratorType = IntegratorType.FORWARD_EULER,
 ) -> ca.MX:
     """
-    Forward-Euler dynamics constraint violation (6-vector), should equal zero.
+    Dynamics constraint violation (6-vector), should equal zero.
 
-    The unmodelled acceleration (UMA) corrects the two-body model:
-        r1_pred = r0 + v0 * dt + 0.5 * uma * dt²
-        v1_pred = v0 + (a_kepler(r0) + uma) * dt
+    Uncertainty in dynamics expressed through UMA time-varying parameters.
+    Propagation uses a numerical integrator from the available options.
 
     Returns  [r1 - r1_pred; v1 - v1_pred]  which is enforced as == 0.
     """
-    a0      = keplerian_accel(r0)
-    r1_pred = r0 + v0 * dt + 0.5 * uma * dt ** 2
-    v1_pred = v0 + (a0 + uma) * dt
+    r1_pred, v1_pred = NumericalIntegrator.integrate(r0, v0, uma, dt, integrator_type)
     return ca.vertcat(r1 - r1_pred, v1 - v1_pred)
 
 

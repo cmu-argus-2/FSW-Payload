@@ -293,7 +293,7 @@ def plot_errors(true_states, est_states, est_covars):
     ax.set_xlabel("time (s) since start")
     ax.set_title("Attitude Error Norm")
     ax.grid(True)
-    ax.set_ylim(0, np.minimum(np.max(angle_error_norm)*1.1,180))
+    ax.set_ylim(0, np.minimum(max(np.max(angle_error_norm), np.max(3 * att_norm_std)) * 1.1, 180))
     # ax.legend(loc="upper right")
     plt.tight_layout()
     plt.subplots_adjust(top=0.92)

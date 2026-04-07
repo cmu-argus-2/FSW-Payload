@@ -14,13 +14,13 @@ Or from within python_od/:
 import sys
 from pathlib import Path
 
-import numpy as np
-
-# Allow running from either the repo root or the python_od/ directory.
 sys.path.insert(0, str(Path(__file__).parent))
+
+import numpy as np
 
 from data_loader import load_h5
 from optimizer import build_and_solve, save_results
+from residuals import IntegratorType
 
 # ── Paths ───────────────────────────────────────────────────────────────────────
 DATA_DIR   = Path("data/datasets/batch_opt_gen")
@@ -45,6 +45,12 @@ def main() -> None:
         landmark_group_starts,
         gyro_measurements,
         max_dt=60.0,
+        uma_std=1e-5,
+        integrator_type=IntegratorType.RK4,
+        use_j2=True,
+        use_drag=True,
+        bc_inv_nominal=0.0,
+        bc_inv_std=1.0,
     )
 
     # ── Report ──────────────────────────────────────────────────────────────────

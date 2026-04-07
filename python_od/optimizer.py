@@ -9,8 +9,9 @@ Decision variables:
   b     — fixed gyro bias     (3,)  [rad/s]     global
 
 Equality constraints (IPOPT enforces these to machine precision):
-  linear dynamics:  r_{i+1} = r_i + v_i dt + ½ a_i dt²
-                    v_{i+1} = v_i + (a_kepler(r_i) + a_i) dt
+  linear dynamics:  propagate([r_i; v_i]) via Forward Euler or RK4 using
+                    f(r,v) = [v; a_kepler(r) + a_J2(r) + a_drag(r,v) + a_i]
+                    (J2 and drag are optional; a_i is the per-interval UMA)
   quaternion norm:  ||q_i||² = 1
 
 Soft cost (quadratic):
@@ -34,8 +35,9 @@ import scipy.linalg
 from data_loader import get_state_timestamps
 from residuals import (
     IntegratorType,
+    OrbitalDynamics,
     angular_dynamics_residual_fix_bias,
-    keplerian_accel,
+    drag_prior_residual,
     landmark_residual,
     linear_dynamics_constraint,
     uma_prior_residual,
@@ -83,23 +85,26 @@ def _quat_tangent_basis(q: np.ndarray) -> np.ndarray:
     return Q[:, 1:]   # 4×3
 
 
-def _build_tangent_projection(q_vals: np.ndarray, N: int, N_uma: int) -> np.ndarray:
+def _build_tangent_projection(
+    q_vals: np.ndarray, N: int, N_uma: int, use_bc_inv: bool = False
+) -> np.ndarray:
     """
     Build the (n_full) × (n_reduced) tangent-space projection matrix T.
 
-    Full parameter vector  x = [vec(r); vec(v); vec(q); vec(a); b]
-    sizes:                      3N       3N       4N      3·N_uma  3
-    n_full = 10N + 3·N_uma + 3
+    Full parameter vector  x = [vec(r); vec(v); vec(q); vec(a); b; (bc_inv)]
+    sizes:                      3N       3N       4N      3·N_uma  3   (1)
+    n_full = 10N + 3·N_uma + 3 (+ 1 if use_bc_inv)
 
-    Reduced (tangent) vector x_t = [vec(r); vec(v); vec(q_t); vec(a); b]
-    sizes:                           3N       3N       3N       3·N_uma  3
-    n_reduced = 9N + 3·N_uma + 3
+    Reduced (tangent) vector x_t = [vec(r); vec(v); vec(q_t); vec(a); b; (bc_inv)]
+    sizes:                           3N       3N       3N       3·N_uma  3   (1)
+    n_reduced = 9N + 3·N_uma + 3 (+ 1 if use_bc_inv)
 
     Only the quaternion blocks need non-trivial projection (4→3 per state).
     All other blocks are identity.
     """
-    n_full    = 10 * N + 3 * N_uma + 3
-    n_reduced =  9 * N + 3 * N_uma + 3
+    n_bc      = 1 if use_bc_inv else 0
+    n_full    = 10 * N + 3 * N_uma + 3 + n_bc
+    n_reduced =  9 * N + 3 * N_uma + 3 + n_bc
     T = np.zeros((n_full, n_reduced))
 
     # r block
@@ -120,7 +125,12 @@ def _build_tangent_projection(q_vals: np.ndarray, N: int, N_uma: int) -> np.ndar
     T[a_row : a_row + 3*N_uma, a_col : a_col + 3*N_uma] = np.eye(3 * N_uma)
 
     # b (bias) block
-    T[a_row + 3*N_uma:, a_col + 3*N_uma:] = np.eye(3)
+    T[a_row + 3*N_uma : a_row + 3*N_uma + 3,
+      a_col + 3*N_uma : a_col + 3*N_uma + 3] = np.eye(3)
+
+    # bc_inv block (scalar, identity) — only present when estimating drag
+    if use_bc_inv:
+        T[-1, -1] = 1.0
 
     return T
 
@@ -135,6 +145,8 @@ def _compute_covariance(
     a: ca.MX,
     b: ca.MX,
     N: int,
+    uma_std: float,
+    bc_inv: ca.MX | None = None,
 ) -> dict[str, np.ndarray]:
     """
     Approximate covariance from the augmented Jacobian at the solution.
@@ -142,7 +154,8 @@ def _compute_covariance(
     For a constrained least-squares problem the covariance comes from:
         Σ ≈ (J_aug^T J_aug)^{-1}
     where J_aug stacks:
-      • The Jacobian of all soft cost residuals (angular, landmark, UMA prior)
+      • The Jacobian of all soft cost residuals (angular, landmark, UMA prior,
+        and drag prior when bc_inv is estimated)
       • The Jacobian of the dynamics equality constraints, scaled by a tight
         normalisation factor — this captures the constraint coupling between
         states and UMA without needing to form the full KKT matrix.
@@ -152,22 +165,23 @@ def _compute_covariance(
     Returns
     -------
     dict with:
-        pos_var  : (N, 3)       position variance        [km²]
-        vel_var  : (N, 3)       velocity variance        [(km/s)²]
-        rot_var  : (N, 3)       attitude tangent variance [rad²]
-        uma_var  : (N_uma, 3)   UMA variance             [(km/s²)²]
-        bias_var : (3,)         gyro bias variance       [(rad/s)²]
+        pos_var    : (N, 3)       position variance        [km²]
+        vel_var    : (N, 3)       velocity variance        [(km/s)²]
+        rot_var    : (N, 3)       attitude tangent variance [rad²]
+        uma_var    : (N_uma, 3)   UMA variance             [(km/s²)²]
+        bias_var   : (3,)         gyro bias variance       [(rad/s)²]
+        bc_inv_var : float        drag bc_inv variance     [(km²/kg)²]  (only if bc_inv given)
     """
     print("[covariance] Building symbolic Jacobian …")
 
-    N_uma = N - 1
+    N_uma      = N - 1
+    use_bc_inv = bc_inv is not None
+
     # Full symbolic parameter vector (column-major vectorisation)
     x_sym = ca.vertcat(ca.vec(r), ca.vec(v), ca.vec(q), ca.vec(a), b)
+    if use_bc_inv:
+        x_sym = ca.vertcat(x_sym, bc_inv)
 
-    # Dynamics constraints are included with a tight normalisation so their
-    # Jacobian propagates the state-UMA coupling into the covariance.
-    # The normalisation cancels out of (J^T J)^{-1} for well-constrained
-    # directions, leaving only the information from the soft residuals.
     DYN_NORM = 1e-6   # km / (km/s) representative scale — tunable
     dyn_sym  = ca.vertcat(*[c / DYN_NORM for c in dyn_constraint_syms])
 
@@ -190,12 +204,14 @@ def _compute_covariance(
         a_val.ravel(order="F"),
         np.asarray(b_val).ravel(),
     ])
+    if use_bc_inv:
+        x_val = np.concatenate([x_val, [float(sol.value(bc_inv))]])
 
     print("[covariance] Evaluating Jacobian at solution …")
     J_val = np.array(J_fn(x_val))
 
     print("[covariance] Projecting to tangent space …")
-    T = _build_tangent_projection(q_val.T, N, N_uma)
+    T = _build_tangent_projection(q_val.T, N, N_uma, use_bc_inv=use_bc_inv)
     J_reduced = J_val @ T
 
     # Diagonal of (J^T J)^{-1} via SVD — avoids forming J^T J explicitly
@@ -206,20 +222,22 @@ def _compute_covariance(
     S_safe   = np.where(S > tol, S, np.inf)
     cov_diag = np.sum((Vt.T / S_safe) ** 2, axis=1)
 
-    n_reduced = 9 * N + 3 * N_uma + 3
     pos_var  = cov_diag[             :  3*N         ].reshape(N,     3, order="F")
     vel_var  = cov_diag[ 3*N         :  6*N         ].reshape(N,     3, order="F")
     rot_var  = cov_diag[ 6*N         :  9*N         ].reshape(N,     3, order="F")
     uma_var  = cov_diag[ 9*N         :  9*N+3*N_uma ].reshape(N_uma, 3, order="F")
-    bias_var = cov_diag[ 9*N+3*N_uma :               ]
+    bias_var = cov_diag[ 9*N+3*N_uma :  9*N+3*N_uma+3 ]
 
-    return {
+    result = {
         "pos_var":  pos_var,
         "vel_var":  vel_var,
         "rot_var":  rot_var,
         "uma_var":  uma_var,
         "bias_var": bias_var,
     }
+    if use_bc_inv:
+        result["bc_inv_var"] = float(cov_diag[9*N + 3*N_uma + 3])
+    return result
 
 
 # ── Main solver ─────────────────────────────────────────────────────────────────
@@ -231,7 +249,11 @@ def build_and_solve(
     max_dt:          float          = 60.0,
     uma_std:         float          = UMA_STD_DEV,
     integrator_type: IntegratorType = IntegratorType.FORWARD_EULER,
-    ipopt_opts:      dict | None    = None,
+    use_j2:           bool        = False,
+    use_drag:         bool        = False,
+    bc_inv_nominal:   float       = 0.0,
+    bc_inv_std:       float | None = None,
+    ipopt_opts:       dict | None  = None,
 ) -> dict:
     """
     Build and solve the constrained fixed-bias batch OD problem.
@@ -243,6 +265,18 @@ def build_and_solve(
     Parameters
     ----------
     integrator_type : IntegratorType
+        FORWARD_EULER (default) or RK4.
+    use_j2 : bool
+        Include J2 zonal harmonic gravity perturbation in the dynamics model.
+    use_drag : bool
+        Include exponential-density atmospheric drag in the dynamics model.
+        When True, bc_inv_nominal and bc_inv_std must be provided.
+    bc_inv_nominal : float
+        Prior mean / initial guess for Cd·A/m  [km²/kg].
+        Unit conversion: 1 m²/kg = 1×10⁻⁶ km²/kg.
+        Typical 3U CubeSat (Cd=2.2, A=0.03 m², m=4 kg): bc_inv ≈ 1.65×10⁻⁸ km²/kg.
+    bc_inv_std : float | None
+        Prior standard deviation for bc_inv  [km²/kg].  Required when use_drag=True.
 
     Returns a dict:
         state_timestamps    : (N,)      float64
@@ -265,20 +299,32 @@ def build_and_solve(
     gyro_at_state: dict[int, int] = {si: j for j, si in enumerate(gyro_indices)}
     lmk_groups = _build_landmark_groups(landmark_group_starts, lmk_group_indices)
 
+    if use_drag and bc_inv_std is None:
+        raise ValueError("bc_inv_std must be provided when use_drag=True")
+
+    physics_flags = (
+        ("J2 " if use_j2 else "") +
+        (f"drag(bc_inv₀={bc_inv_nominal:.2e} ±{bc_inv_std:.2e} km²/kg) " if use_drag else "") or
+        "2-body"
+    ).strip()
     print(f"[optimizer] {N} states | "
           f"{len(lmk_group_indices)} landmark groups | "
           f"{len(gyro_indices)} gyro measurements | "
           f"span {ts[-1] - ts[0]:.1f} s  |  UMA σ = {uma_std:.2e} km/s²  |  "
-          f"integrator = {integrator_type.value}")
+          f"integrator = {integrator_type.value}  |  physics = {physics_flags}")
 
     # ── 2. Decision variables ──────────────────────────────────────────────────
     opti = ca.Opti()
 
-    r = opti.variable(3, N)      # positions   [km]
-    v = opti.variable(3, N)      # velocities  [km/s]
-    q = opti.variable(4, N)      # quaternions [x,y,z,w]
-    a = opti.variable(3, N_uma)  # UMA per interval [km/s²]
-    b = opti.variable(3)         # fixed gyro bias [rad/s]
+    r      = opti.variable(3, N)      # positions   [km]
+    v      = opti.variable(3, N)      # velocities  [km/s]
+    q      = opti.variable(4, N)      # quaternions [x,y,z,w]
+    a      = opti.variable(3, N_uma)  # UMA per interval [km/s²]
+    b      = opti.variable(3)         # fixed gyro bias [rad/s]
+    bc_inv = opti.variable(1) if use_drag else None  # drag ballistic coeff. inverse [km²/kg]
+
+    dynamics = OrbitalDynamics(use_j2=use_j2, use_drag=use_drag,
+                               bc_inv=bc_inv if use_drag else 0.0)
 
     # ── 3. Equality constraints ────────────────────────────────────────────────
     # Quaternion unit norm
@@ -288,9 +334,10 @@ def build_and_solve(
     # Linear dynamics (hard): store constraint expressions for residuals / covariance
     dyn_constraint_syms: list[ca.MX] = []
     for i in range(N_uma):
-        dt  = float(ts[i + 1] - ts[i])
-        c6  = linear_dynamics_constraint(r[:, i], v[:, i], r[:, i + 1], v[:, i + 1],
-                                          a[:, i], dt, integrator_type)
+        t0 = float(ts[i])
+        dt = float(ts[i + 1] - ts[i])
+        c6 = linear_dynamics_constraint(r[:, i], v[:, i], r[:, i + 1], v[:, i + 1],
+                                         a[:, i], t0, dt, integrator_type, dynamics)
         opti.subject_to(c6 == 0)
         dyn_constraint_syms.append(c6)
 
@@ -305,6 +352,12 @@ def build_and_solve(
         res = uma_prior_residual(a[:, i], uma_std)
         uma_res_syms.append(res)
         obj += ca.dot(res, res)
+
+    # — Drag bc_inv prior —
+    bc_inv_res_sym: ca.MX | None = None
+    if use_drag:
+        bc_inv_res_sym = drag_prior_residual(bc_inv, bc_inv_nominal, bc_inv_std)
+        obj += bc_inv_res_sym ** 2
 
     # — Angular dynamics (fixed bias) —
     for i in range(N_uma):
@@ -339,6 +392,8 @@ def build_and_solve(
     for i in range(N_uma):
         opti.set_initial(a[:, i], [0.0, 0.0, 0.0])
     opti.set_initial(b, INIT_B)
+    if use_drag:
+        opti.set_initial(bc_inv, bc_inv_nominal)
 
     # ── 6. IPOPT ───────────────────────────────────────────────────────────────
     opts: dict = {
@@ -371,15 +426,22 @@ def build_and_solve(
     residuals_flat = np.concatenate([lin_vals, ang_vals, lmk_vals])
 
     # ── 8. Covariance ─────────────────────────────────────────────────────────
-    cost_residuals = uma_res_syms + [r for r in angular_res_syms if r is not None] + landmark_res_syms
-    cov = _compute_covariance(cost_residuals, dyn_constraint_syms, sol, r, v, q, a, b, N)
+    cost_residuals = (
+        uma_res_syms
+        + ([bc_inv_res_sym] if bc_inv_res_sym is not None else [])
+        + [res for res in angular_res_syms if res is not None]
+        + landmark_res_syms
+    )
+    cov = _compute_covariance(cost_residuals, dyn_constraint_syms, sol,
+                              r, v, q, a, b, N, uma_std,
+                              bc_inv=bc_inv if use_drag else None)
 
     # ── 9. Extract solution ────────────────────────────────────────────────────
     a_val = np.asarray(sol.value(a))
     if a_val.ndim == 1:
         a_val = a_val.reshape(3, 1)
 
-    return {
+    result = {
         "state_timestamps":  ts,
         "positions":         sol.value(r).T,    # (N, 3)
         "velocities":        sol.value(v).T,    # (N, 3)
@@ -389,6 +451,10 @@ def build_and_solve(
         "residuals":         residuals_flat,
         **cov,
     }
+    if use_drag:
+        result["bc_inv"] = float(sol.value(bc_inv))   # km²/kg
+
+    return result
 
 
 # ── Output ──────────────────────────────────────────────────────────────────────

@@ -121,6 +121,9 @@ public:
     void ClearLandmarks();
     void RunPrefiltering();
 
+    bool HasRegion()   const { return _annotation_state >= ImageState::HasRegion; }
+    bool HasLandmark() const { return _annotation_state >= ImageState::HasLandmark; }
+
     bool IsBlurred();
 
 private:

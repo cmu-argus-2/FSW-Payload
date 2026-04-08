@@ -342,22 +342,19 @@ void DatasetManager::CollectionLoop()
     imuManager.SetCollectionMode(current_dataset.GetIMUCollectionMode());
     imuManager.StartCollection();
 
-    int no_frame_counter = 0;
+    cameraManager.DrainBufferFrameIDs();
+
     std::vector<std::tuple<uint8_t, uint64_t>> processed_frame_ids;
     while (loop_flag.load() && !CheckTermination())
     {
         std::this_thread::sleep_for(std::chrono::milliseconds(100));
-        const int captured_frames = cameraManager.GetCapturedFramesCount();
-        if (no_frame_counter < captured_frames)
+
+        auto frame_ids = cameraManager.DrainBufferFrameIDs();
+        if (!frame_ids.empty())
         {
-            const uint8_t new_frames = static_cast<uint8_t>(captured_frames - no_frame_counter);
-            no_frame_counter = captured_frames;
-            std::vector<std::tuple<uint8_t, uint64_t>> frame_ids = cameraManager.GetBufferFrameIDs();
             current_dataset.AddStoredFrameIDs(frame_ids);
-            progress.Update(new_frames, 1.0); // TODO: compute actual hit
-
+            progress.Update(static_cast<uint8_t>(frame_ids.size()), 1.0); // TODO: compute actual hit
             ProcessFrames(frame_ids, processed_frame_ids);
-
         }
     }
     

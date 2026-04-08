@@ -66,11 +66,12 @@ public:
 
     CameraConfig* GetCameraConfig(int cam_id);
     int GetCapturedFramesCount() const;
-    std::vector<std::tuple<uint8_t, uint64_t>> GetBufferFrameIDs() const;
+    std::vector<std::tuple<uint8_t, uint64_t>> GetBufferFrameIDs() const; // non-destructive read
+    std::vector<std::tuple<uint8_t, uint64_t>> DrainBufferFrameIDs();     // returns and clears
 
     void CaptureFrames();
 
-    uint8_t SaveLatestFrames(bool only_earth = false);
+    uint8_t SaveLatestFrames(CAPTURE_MODE mode = CAPTURE_MODE::PERIODIC);
 
     // Copy the latest frames from each camera to the provided vector and return the number of frames copied
     uint8_t CopyFrames(std::vector<Frame>& vec_frames, bool only_earth = true);

@@ -333,25 +333,33 @@ void start_capture_dataset(std::vector<uint8_t> &data)
 
     SPDLOG_INFO("Starting dataset collection (mode {}) for {} frames, max period {} s",
                 static_cast<uint8_t>(capture_mode), target_frame_nb, max_period);
-
+    
+    bool success = true;
     try
     {
         ds = DatasetManager::Create(max_period, target_frame_nb, capture_mode, capture_start_time,
                                     imu_collection_mode, image_capture_rate, imu_sample_rate_hz,
                                     target_processing_stage, DATASET_KEY_CMD,
                                     sys::cameraManager(), sys::imuManager(), sys::inferenceManager());
-        ds->StartCollection();
+        success = ds->StartCollection();
     }
     catch (const std::exception &e)
     {
+        success = false;
         SPDLOG_ERROR("Failed to start dataset collection: {}", e.what());
+    }
+
+    if (success)
+    {
+        std::shared_ptr<Message> msg = CreateSuccessAckMessage(CommandID::START_CAPTURE_DATASET);
+        sys::payload().TransmitMessage(msg);
+    }
+    else
+    {
         std::shared_ptr<Message> msg = CreateErrorAckMessage(CommandID::START_CAPTURE_DATASET, 0x21);
         sys::payload().TransmitMessage(msg);
         return;
     }
-
-    std::shared_ptr<Message> msg = CreateSuccessAckMessage(CommandID::START_CAPTURE_DATASET);
-    sys::payload().TransmitMessage(msg);
 
     sys::payload().SetLastExecutedCmdID(CommandID::START_CAPTURE_DATASET);
 }
@@ -377,6 +385,7 @@ void stop_capture_dataset([[maybe_unused]] std::vector<uint8_t> &data)
         SPDLOG_ERROR("No dataset collection has been started on the command side");
         std::shared_ptr<Message> msg = CreateErrorAckMessage(CommandID::STOP_CAPTURE_DATASET, 0x22); // TODO
         sys::payload().TransmitMessage(msg);
+        return;
     }
 
     sys::payload().SetLastExecutedCmdID(CommandID::STOP_CAPTURE_DATASET);

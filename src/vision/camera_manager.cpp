@@ -107,7 +107,6 @@ uint8_t CameraManager::SaveLatestFrames(CAPTURE_MODE mode)
             if (mode == CAPTURE_MODE::PERIODIC_ROI)
             {
                 DH::StoreFrameToDisk(*frame_ptr, GetStorageFolder());
-                DH::StoreFrameMetadataToDisk(*frame_ptr, GetStorageFolder());
                 new_ids.emplace_back(frame_ptr->GetCamID(), frame_ptr->GetTimestamp());
                 saved_count++;
                 continue;
@@ -124,7 +123,6 @@ uint8_t CameraManager::SaveLatestFrames(CAPTURE_MODE mode)
             if (frame_ptr->HasLandmark())
             {
                 DH::StoreFrameToDisk(*frame_ptr, GetStorageFolder());
-                DH::StoreFrameMetadataToDisk(*frame_ptr, GetStorageFolder());
                 new_ids.emplace_back(frame_ptr->GetCamID(), frame_ptr->GetTimestamp());
                 saved_count++;
             }

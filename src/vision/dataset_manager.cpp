@@ -20,7 +20,8 @@ target_frames(target_nb_frames)
 
 void DatasetProgress::Update(uint8_t nb_new_frames)
 {
-    current_frames += nb_new_frames;
+    const uint16_t new_total = static_cast<uint16_t>(current_frames) + nb_new_frames;
+    current_frames = static_cast<uint8_t>(std::min<uint16_t>(new_total, target_frames));
 
     completion = static_cast<double>(current_frames) / static_cast<double>(target_frames);
     SPDLOG_INFO("Current progress: {} / {}", current_frames, target_frames);
@@ -359,7 +360,8 @@ void DatasetManager::CollectionLoop()
             current_dataset.AddStoredFrameIDs(frame_ids);
             {
                 std::lock_guard<std::mutex> lock(progress_mtx);
-                progress.Update(static_cast<uint8_t>(frame_ids.size()));
+                progress.Update(static_cast<uint8_t>(
+                    std::min(frame_ids.size(), static_cast<size_t>(UINT8_MAX))));
             }
             ProcessFrames(frame_ids, processed_frame_ids);
         }

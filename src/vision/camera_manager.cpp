@@ -209,7 +209,12 @@ void CameraManager::RunLoop()
                 auto now = std::chrono::high_resolution_clock::now();
                 if (std::chrono::duration_cast<std::chrono::seconds>(now - last_capture).count() >= periodic_capture_rate)
                 {
-                    periodic_frames_captured += SaveLatestFrames(mode);
+                    {
+                        const uint8_t  saved     = SaveLatestFrames(mode);
+                        const uint16_t new_total = static_cast<uint16_t>(periodic_frames_captured.load()) + saved;
+                        periodic_frames_captured = static_cast<uint8_t>(
+                            std::min<uint16_t>(new_total, periodic_frames_to_capture.load()));
+                    }
                     SPDLOG_INFO("Periodic capture: {}/{} frames saved",
                                 periodic_frames_captured.load(), periodic_frames_to_capture.load());
 

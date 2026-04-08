@@ -406,6 +406,36 @@ TEST(DatasetProgressTest, UpdateAccumulation)
     EXPECT_NEAR(p.completion, 1.0, 1e-9);
 }
 
+TEST(DatasetProgressTest, Update_SaturatesAtTarget)
+{
+    // A batch that overshoots the target must clamp, not exceed it.
+    DatasetProgress p(5);
+    p.Update(3);
+    EXPECT_EQ(p.current_frames, 3u);
+
+    // 3 + 4 = 7 > target(5) → clamp to 5
+    p.Update(4);
+    EXPECT_EQ(p.current_frames, 5u);
+    EXPECT_NEAR(p.completion, 1.0, 1e-9);
+
+    // Further updates after saturation must not advance the counter.
+    p.Update(10);
+    EXPECT_EQ(p.current_frames, 5u);
+}
+
+TEST(DatasetProgressTest, Update_NoUint8Wrap)
+{
+    // Worst-case arithmetic: 253 + 4 = 257, which wraps to 1 under naive uint8_t addition.
+    // With NUM_CAMERAS = 4, a single SaveLatestFrames call can return 4.
+    DatasetProgress p(255);
+    p.Update(253);
+    EXPECT_EQ(p.current_frames, 253u);
+
+    p.Update(4);  // 253 + 4 = 257 → must clamp to 255, NOT wrap to 1
+    EXPECT_EQ(p.current_frames, 255u);
+    EXPECT_NEAR(p.completion, 1.0, 1e-9);
+}
+
 // ── DatasetManagerTest fixture ────────────────────────────────────────────────
 
 struct DatasetManagerTest : ::testing::Test
@@ -662,6 +692,50 @@ TEST_F(DatasetManagerTest, StopBeforeStartTime_ExitsPromptly)
     EXPECT_FALSE(dm->Running());
     EXPECT_LT(elapsed_ms, 1000) << "StopCollection blocked for " << elapsed_ms
                                 << " ms — loop_cv interrupt likely not working";
+}
+
+
+// ── CameraManager frame-count saturation ─────────────────────────────────────
+//
+// periodic_frames_captured is atomic<uint8_t>.  With NUM_CAMERAS == 4, a single
+// SaveLatestFrames call can return 4.  If the counter is already near UINT8_MAX
+// the naive "+= saved" wraps to a small value, making the termination check
+// (captured >= to_capture) permanently false and collection never stopping.
+
+TEST_F(DatasetManagerTest, CameraManager_FrameCount_SaturatesAtTarget)
+{
+    // target = 5, already at 3, incoming batch = 4 → must clamp to 5, not reach 7.
+    cam_mgr.periodic_frames_to_capture = 5;
+    cam_mgr.periodic_frames_captured   = 3;
+
+    const uint8_t  saved     = 4;
+    const uint16_t new_total = static_cast<uint16_t>(cam_mgr.periodic_frames_captured.load()) + saved;
+    cam_mgr.periodic_frames_captured = static_cast<uint8_t>(
+        std::min<uint16_t>(new_total, cam_mgr.periodic_frames_to_capture.load()));
+
+    EXPECT_EQ(cam_mgr.periodic_frames_captured.load(), 5u);
+    EXPECT_GE(cam_mgr.periodic_frames_captured.load(),
+              cam_mgr.periodic_frames_to_capture.load())
+        << "Termination check must fire after saturation";
+}
+
+TEST_F(DatasetManagerTest, CameraManager_FrameCount_NoUint8Wrap)
+{
+    // 253 + 4 = 257 wraps to 1 under naive uint8_t arithmetic.
+    // With target = 254 the old code would never terminate.
+    cam_mgr.periodic_frames_to_capture = 254;
+    cam_mgr.periodic_frames_captured   = 253;
+
+    const uint8_t  saved     = 4;
+    const uint16_t new_total = static_cast<uint16_t>(cam_mgr.periodic_frames_captured.load()) + saved;
+    cam_mgr.periodic_frames_captured = static_cast<uint8_t>(
+        std::min<uint16_t>(new_total, cam_mgr.periodic_frames_to_capture.load()));
+
+    EXPECT_EQ(cam_mgr.periodic_frames_captured.load(), 254u)
+        << "Counter must clamp to target, not wrap to 1";
+    EXPECT_GE(cam_mgr.periodic_frames_captured.load(),
+              cam_mgr.periodic_frames_to_capture.load())
+        << "Termination check must fire";
 }
 
 // ── Stubs for future tests ────────────────────────────────────────────────────

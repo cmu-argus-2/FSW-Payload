@@ -18,7 +18,8 @@ def run_inference(img_path, output_folder_path):
     will move to the run path and run the binary from there 
     """
     
-    run_path = "/home/argus-payload/Documents/FSW-Payload"
+    # run_path = "/home/argus-payload/Documents/FSW-Payload"
+    run_path = "."
     bin_name = "./bin/RUN_INFERENCE"
     
     rc_model = "models/V1/trained-rc/effnet_0997acc.trt"

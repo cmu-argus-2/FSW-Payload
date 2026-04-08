@@ -60,6 +60,7 @@ public:
     bool fromJson(const Json& j);
 
     bool OverlapsWith(const Dataset& other) const;
+    void InitializeOnDisk();
 
     // Actual constructors ~ not to be used
     Dataset(double max_period, uint8_t nb_frames, CAPTURE_MODE capture_mode, IMU_COLLECTION_MODE imu_collection_mode,

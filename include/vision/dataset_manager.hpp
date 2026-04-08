@@ -27,7 +27,6 @@ class InferenceManager; // forward declaration
 struct DatasetProgress
 {
     
-    double _progress_calls;
     double completion; // as a %
     uint8_t current_frames;
     const uint8_t target_frames;

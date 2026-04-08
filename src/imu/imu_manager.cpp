@@ -37,6 +37,11 @@ void IMUManager::SetCollectionMode(IMU_COLLECTION_MODE mode) {
         return;
     }
 
+    if (state.load() != IMU_STATE::IDLE) {
+        SPDLOG_WARN("Cannot set collection mode while IMU is not IDLE (current state: {})", GetIMUState(state.load()));
+        return;
+    }
+
     if (mode == IMU_COLLECTION_MODE::NONE) {
         Suspend(); // Put sensors in low power mode
         SPDLOG_INFO("IMU collection mode set to NONE, IMU Manager status set to: {}", GetIMUState(state.load()));
@@ -137,7 +142,12 @@ void IMUManager::StopLoop() {
 int IMUManager::StartCollection() {
     if (state.load() == IMU_STATE::ERROR_DEVICE_NOT_FOUND) {
         SPDLOG_ERROR("Cannot start collection, IMU device not found");
-        return 1; // Error, device not found
+        return 1;
+    }
+
+    if (state.load() == IMU_STATE::COLLECT) {
+        SPDLOG_ERROR("Cannot start collection, IMU is already collecting");
+        return 1;
     }
 
     if (collection_mode.load() == IMU_COLLECTION_MODE::NONE) {

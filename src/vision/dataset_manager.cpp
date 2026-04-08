@@ -13,7 +13,6 @@
 
 DatasetProgress::DatasetProgress(uint8_t target_nb_frames)
 :
-_progress_calls(0.0),
 completion(0.0),
 current_frames(0),
 target_frames(target_nb_frames)
@@ -22,7 +21,6 @@ target_frames(target_nb_frames)
 void DatasetProgress::Update(uint8_t nb_new_frames)
 {
     current_frames += nb_new_frames;
-    _progress_calls++;
 
     completion = static_cast<double>(current_frames) / static_cast<double>(target_frames);
     SPDLOG_INFO("Current progress: {} / {}", current_frames, target_frames);
@@ -55,6 +53,8 @@ std::shared_ptr<DatasetManager> DatasetManager::Create(double max_period, uint8_
             throw std::invalid_argument("Overlapping dataset.");
         }
     }
+
+    dataset.InitializeOnDisk();
 
     if (ds_key == DEFAULT_DS_KEY)
     {
@@ -275,7 +275,12 @@ void DatasetManager::ProcessFrames(
             // RC was already done by the camera loop — restore regions from disk so
             // the frame's stage and region list are correctly populated for LD inference.
             Json metadata = DH::LoadFrameMetadataFromDisk(timestamp, cam_id, current_dataset.GetFolderPath());
-            frame_ptr->fromJson(metadata);
+            if (!frame_ptr->fromJson(metadata))
+            {
+                SPDLOG_ERROR("Failed to restore metadata for frame ({}, {}), skipping", cam_id, timestamp);
+                processed_frame_ids.push_back(frame_id);
+                continue;
+            }
         }
 
         EC status = inferenceManager.ProcessFrame(frame_ptr, target);

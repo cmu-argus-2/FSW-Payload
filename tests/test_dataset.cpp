@@ -479,14 +479,14 @@ TEST_F(DatasetManagerTest, OverlapRejection)
 {
     createDM(700000, 60.0, "base");  // window [700000, 760000]
 
-    // Dataset constructor creates the folder before the overlap check throws.
-    test_folders.push_back("data/datasets/710000/");
     EXPECT_THROW(
         DatasetManager::Create(10.0, 5, CAPTURE_MODE::PERIODIC, 710000,
                                IMU_COLLECTION_MODE::GYRO_ONLY, 60, 1.0f,
                                ProcessingStage::NotPrefiltered, "overlap",
                                cam_mgr, imu_mgr, im),
         std::invalid_argument);
+
+    EXPECT_FALSE(fs::exists("data/datasets/710000/")) << "Overlap rejection must not leave a folder on disk";
 
     EXPECT_NO_THROW(createDM(820000, 10.0, "after"));  // clear of base window
 }
@@ -532,6 +532,9 @@ TEST_F(DatasetManagerTest, ConcurrentCreate_OverlapIsExclusive)
 
     EXPECT_EQ(successes.load(),  1) << "Both overlapping Creates succeeded — mutex did not protect the check+insert";
     EXPECT_EQ(rejections.load(), 1);
+
+    std::string rejected_folder = folder_a.empty() ? "data/datasets/4000000/" : "data/datasets/4010000/";
+    EXPECT_FALSE(fs::exists(rejected_folder)) << "Rejected overlapping Create must not leave a folder on disk";
 }
 
 // Two threads race to create non-overlapping datasets; both must succeed.

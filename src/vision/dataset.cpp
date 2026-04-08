@@ -188,15 +188,18 @@ target_processing_stage(target_processing_stage)
     // TODO: may want to rethink this dataset naming approach, since dataset collection will start
     // with some delay from the creation of this
     folder_path = DATASETS_FOLDER + std::to_string(capture_start_time) + "/";
+    imu_log_file_path = folder_path + "imu_data.csv";
+}
 
+void Dataset::InitializeOnDisk()
+{
     bool res = DH::MakeNewDirectory(folder_path);
     if (!res)
     {
         SPDLOG_ERROR("Failed to create {}", folder_path);
     }
 
-    CreateConfigurationFile(); 
-    imu_log_file_path = folder_path + "imu_data.csv";
+    CreateConfigurationFile();
 }
 
 

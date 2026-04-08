@@ -58,6 +58,5 @@ def main():
     import subprocess
     subprocess.run(["sudo", "/usr/sbin/shutdown", "-h", "now"])
 
-main()
 if __name__ == "__main__":
     main()

@@ -322,6 +322,8 @@ void CameraManager::ResetCaptureState()
 {
     std::lock_guard<std::mutex> lock(buffer_frame_ids_m);
     periodic_frames_captured = 0;
+    periodic_frames_to_capture = DEFAULT_PERIODIC_FRAMES_TO_CAPTURE;
+    periodic_capture_rate = 60;
     buffer_frame_ids.clear();
 }
 

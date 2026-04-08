@@ -5,7 +5,6 @@
 #include <mutex>
 #include <condition_variable>
 #include <atomic>
-// #include <vision/dataset_manager.hpp>
 
 #define OD_DEFAULT_COLLECTION_PERIOD 10
 #define OD_DEFAULT_COLLECTION_SAMPLES 30

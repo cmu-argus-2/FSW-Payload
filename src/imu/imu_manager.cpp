@@ -140,6 +140,11 @@ int IMUManager::StartCollection() {
         return 1; // Error, device not found
     }
 
+    if (collection_mode.load() == IMU_COLLECTION_MODE::NONE) {
+        SPDLOG_INFO("IMU collection mode is NONE, skipping StartCollection");
+        return 0;
+    }
+
     // 1. Set Sensor Power modes
     if (bmi160.setSensorPowerMode(BMI160::GYRO, BMI160::NORMAL) != BMI160::RTN_NO_ERROR) {
         state.store(IMU_STATE::ERROR_DEVICE); // Update state to error

@@ -1,6 +1,7 @@
 #include "vision/prefiltering.hpp"
 #include <iostream>
 #include <opencv2/opencv.hpp>
+#include <nlohmann/json.hpp>
 // using namespace cv;
 
 PrefilterResult prefilter_image(const cv::Mat& img, int cloudiness_threshold, int white_threshold, int color_threshold, int contrast_threshold) {
@@ -96,4 +97,41 @@ PrefilterResult prefilter_image(const cv::Mat& img, int cloudiness_threshold, in
     result.cloudiness = cloudiness;
 
     return result;
+}
+
+nlohmann::ordered_json PrefilterResultToJson(const PrefilterResult& res)
+{
+    return nlohmann::ordered_json{
+        {"passed",         res.passed},
+        {"cloudiness",     res.cloudiness},
+        {"color_std",      res.color_std},
+        {"contrast_std",   res.contrast_std},
+        {"avg_color_rgb",  nlohmann::ordered_json::array({res.avg_color_rgb[0], res.avg_color_rgb[1], res.avg_color_rgb[2]})},
+        {"avg_hue",        res.avg_hue},
+        {"avg_saturation", res.avg_saturation},
+        {"avg_value",      res.avg_value},
+        {"is_significant", res.is_significant},
+        {"dominant_type",  res.dominant_type},
+        {"error",          res.error}
+    };
+}
+
+PrefilterResult PrefilterResultFromJson(const nlohmann::json& j)
+{
+    PrefilterResult res{};
+    res.passed         = j.at("passed").get<bool>();
+    res.cloudiness     = j.at("cloudiness").get<int>();
+    res.color_std      = j.at("color_std").get<float>();
+    res.contrast_std   = j.at("contrast_std").get<float>();
+    const auto& rgb    = j.at("avg_color_rgb");
+    res.avg_color_rgb[0] = rgb[0].get<float>();
+    res.avg_color_rgb[1] = rgb[1].get<float>();
+    res.avg_color_rgb[2] = rgb[2].get<float>();
+    res.avg_hue        = j.at("avg_hue").get<float>();
+    res.avg_saturation = j.at("avg_saturation").get<float>();
+    res.avg_value      = j.at("avg_value").get<float>();
+    res.is_significant = j.at("is_significant").get<bool>();
+    res.dominant_type  = j.at("dominant_type").get<std::string>();
+    res.error          = j.at("error").get<std::string>();
+    return res;
 }

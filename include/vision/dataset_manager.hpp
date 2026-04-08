@@ -27,14 +27,13 @@ class InferenceManager; // forward declaration
 struct DatasetProgress
 {
     
-    double hit_ratio; // ROI_IMG / TOTAL_IMG - Mostly for statistics
     double _progress_calls;
     double completion; // as a %
     uint8_t current_frames;
     const uint8_t target_frames;
 
     DatasetProgress(uint8_t target_nb_frames);
-    void Update(uint8_t nb_new_frames, double instant_hit_ratio = 1.0f);
+    void Update(uint8_t nb_new_frames);
 };
 
 

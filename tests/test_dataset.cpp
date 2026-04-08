@@ -394,30 +394,14 @@ TEST(DatasetProgressTest, UpdateAccumulation)
     DatasetProgress p(10);
     EXPECT_EQ(p.current_frames, 0);
     EXPECT_DOUBLE_EQ(p.completion, 0.0);
-    EXPECT_DOUBLE_EQ(p.hit_ratio, 1.0);  // default
 
-    p.Update(3, 0.6);
+    p.Update(3);
     EXPECT_EQ(p.current_frames, 3);
     EXPECT_NEAR(p.completion, 0.3, 1e-9);
-    EXPECT_NEAR(p.hit_ratio,  0.6, 1e-9);
 
-    p.Update(7, 1.0);
+    p.Update(7);
     EXPECT_EQ(p.current_frames, 10);
     EXPECT_NEAR(p.completion, 1.0, 1e-9);
-}
-
-TEST(DatasetProgressTest, CumulativeHitRatioAverage)
-{
-    // Formula: hit_ratio = (new + n_prev * prev) / (n_prev + 1)
-    DatasetProgress p(10);
-    p.Update(2, 0.4);
-    EXPECT_NEAR(p.hit_ratio, 0.4, 1e-9);                       // (0.4 + 0*1.0) / 1
-
-    p.Update(3, 0.8);
-    EXPECT_NEAR(p.hit_ratio, 0.6, 1e-9);                       // (0.8 + 1*0.4) / 2
-
-    p.Update(5, 1.0);
-    EXPECT_NEAR(p.hit_ratio, (1.0 + 2.0*0.6) / 3.0, 1e-9);    // (1.0 + 2*0.6) / 3
 }
 
 // ── DatasetManagerTest fixture ────────────────────────────────────────────────
@@ -593,7 +577,7 @@ TEST_F(DatasetManagerTest, IsCompleted)
     auto dm = createDM(future, 60.0, "pending");
     EXPECT_FALSE(dm->IsCompleted());
 
-    dm->progress.Update(dm->current_dataset.GetTargetFrameNb(), 1.0);
+    dm->progress.Update(dm->current_dataset.GetTargetFrameNb());
     EXPECT_TRUE(dm->IsCompleted());  // frame count met
 
     EXPECT_TRUE(createDM(1, 0.1, "expired")->IsCompleted());  // period elapsed

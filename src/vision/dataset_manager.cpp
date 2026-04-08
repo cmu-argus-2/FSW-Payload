@@ -13,19 +13,15 @@
 
 DatasetProgress::DatasetProgress(uint8_t target_nb_frames)
 :
-hit_ratio(1.0),
 _progress_calls(0.0),
 completion(0.0),
 current_frames(0),
 target_frames(target_nb_frames)
 {}
 
-void DatasetProgress::Update(uint8_t nb_new_frames, double instant_hit_ratio)
+void DatasetProgress::Update(uint8_t nb_new_frames)
 {
     current_frames += nb_new_frames;
-    
-    // cumulative average
-    hit_ratio = (instant_hit_ratio + _progress_calls * hit_ratio) / (_progress_calls + 1);
     _progress_calls++;
 
     completion = static_cast<double>(current_frames) / static_cast<double>(target_frames);
@@ -354,7 +350,7 @@ void DatasetManager::CollectionLoop()
         if (!frame_ids.empty())
         {
             current_dataset.AddStoredFrameIDs(frame_ids);
-            progress.Update(static_cast<uint8_t>(frame_ids.size()), 1.0); // TODO: compute actual hit
+            progress.Update(static_cast<uint8_t>(frame_ids.size()));
             ProcessFrames(frame_ids, processed_frame_ids);
         }
     }

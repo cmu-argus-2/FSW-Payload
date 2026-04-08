@@ -54,7 +54,7 @@ std::shared_ptr<DatasetManager> DatasetManager::Create(double max_period, uint8_
         }
     }
 
-    dataset.InitializeOnDisk();
+    instance->current_dataset.InitializeOnDisk();
 
     if (ds_key == DEFAULT_DS_KEY)
     {
@@ -275,12 +275,13 @@ void DatasetManager::ProcessFrames(
             // RC was already done by the camera loop — restore regions from disk so
             // the frame's stage and region list are correctly populated for LD inference.
             Json metadata = DH::LoadFrameMetadataFromDisk(timestamp, cam_id, current_dataset.GetFolderPath());
-            if (!frame_ptr->fromJson(metadata))
+            if (metadata.empty())
             {
                 SPDLOG_ERROR("Failed to restore metadata for frame ({}, {}), skipping", cam_id, timestamp);
                 processed_frame_ids.push_back(frame_id);
                 continue;
             }
+            frame_ptr->fromJson(metadata);
         }
 
         EC status = inferenceManager.ProcessFrame(frame_ptr, target);

@@ -175,6 +175,7 @@ void CameraManager::RunLoop()
 
     auto last_health_check = std::chrono::high_resolution_clock::now();
     auto last_capture      = std::chrono::high_resolution_clock::now();
+    CAPTURE_MODE prev_mode = CAPTURE_MODE::IDLE;
 
     while (loop_flag.load())
     {
@@ -202,6 +203,9 @@ void CameraManager::RunLoop()
 
             default: // all PERIODIC* modes share the same rate-limited dispatch
             {
+                if (prev_mode != mode)
+                    last_capture -= std::chrono::seconds(periodic_capture_rate.load());
+
                 auto now = std::chrono::high_resolution_clock::now();
                 if (std::chrono::duration_cast<std::chrono::seconds>(now - last_capture).count() >= periodic_capture_rate)
                 {
@@ -230,6 +234,7 @@ void CameraManager::RunLoop()
             last_health_check = now;
         }
 
+        prev_mode = mode;
         _UpdateCamStatus();
     }
 

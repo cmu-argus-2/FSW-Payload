@@ -58,9 +58,11 @@ struct DatasetTest : ::testing::Test
     }
 
     Dataset makeDataset() const {
-        return Dataset(max_period, nb_frames, capture_mode, imu_collection_mode,
-                       image_capture_rate, imu_sample_rate_hz,
-                       target_processing_stage, capture_start_time);
+        Dataset d(max_period, nb_frames, capture_mode, imu_collection_mode,
+                  image_capture_rate, imu_sample_rate_hz,
+                  target_processing_stage, capture_start_time);
+        d.InitializeOnDisk();
+        return d;
     }
 };
 

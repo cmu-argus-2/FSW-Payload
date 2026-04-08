@@ -1,4 +1,15 @@
-"""UART communication between mainboard and Jetson."""
+"""
+
+UART communication between mainboard and Jetson.
+
+To be able to shutdown the jetson without running python with sudo
+you need to make sure that the user is able to run sudo shutdown without needing to input the password
+for that you need to run "sudo visudo" and add the following line to the end of the file
+
+argus-payload ALL=(ALL) NOPASSWD: /usr/sbin/shutdown
+
+if your user is not argus-payload, please change accordingly
+"""
 
 import threading
 import time
@@ -42,7 +53,10 @@ def main():
     uart_thread.join(timeout=2)
     command_thread.join(timeout=2)
     log.info("Shutdown complete")
-
+    
+    # run shutdown command
+    import subprocess
+    subprocess.run(["sudo", "/usr/sbin/shutdown", "-h", "now"])
 
 main()
 if __name__ == "__main__":

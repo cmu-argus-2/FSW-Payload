@@ -204,6 +204,7 @@ bool DatasetManager::Running()
 
 DatasetProgress DatasetManager::QueryProgress() const
 {
+    std::lock_guard<std::mutex> lock(progress_mtx);
     return progress;
 }
 
@@ -350,7 +351,10 @@ void DatasetManager::CollectionLoop()
         if (!frame_ids.empty())
         {
             current_dataset.AddStoredFrameIDs(frame_ids);
-            progress.Update(static_cast<uint8_t>(frame_ids.size()));
+            {
+                std::lock_guard<std::mutex> lock(progress_mtx);
+                progress.Update(static_cast<uint8_t>(frame_ids.size()));
+            }
             ProcessFrames(frame_ids, processed_frame_ids);
         }
     }

@@ -86,6 +86,7 @@ private:
     InferenceManager& inferenceManager;
 
     DatasetProgress progress;
+    mutable std::mutex progress_mtx;
 
     bool CheckTermination();
     // Runs the loop that periodically takes the latest frames, performs any necessary preprocessing, and stores the data in the corresponding folder

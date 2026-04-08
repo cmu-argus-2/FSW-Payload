@@ -322,6 +322,8 @@ void DatasetManager::CollectionLoop()
         if (!loop_flag.load()) return;
     }
 
+    cameraManager.ResetCaptureState();
+
     // configure the camera manager for the dataset collection
     if (!cameraManager.PrepareForCapture())
     {
@@ -341,8 +343,6 @@ void DatasetManager::CollectionLoop()
     imuManager.SetSampleRate(current_dataset.GetIMUSampleRateHz());
     imuManager.SetCollectionMode(current_dataset.GetIMUCollectionMode());
     imuManager.StartCollection();
-
-    cameraManager.DrainBufferFrameIDs();
 
     std::vector<std::tuple<uint8_t, uint64_t>> processed_frame_ids;
     while (loop_flag.load() && !CheckTermination())

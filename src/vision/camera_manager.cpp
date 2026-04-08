@@ -318,6 +318,13 @@ std::vector<std::tuple<uint8_t, uint64_t>> CameraManager::DrainBufferFrameIDs()
     return out;
 }
 
+void CameraManager::ResetCaptureState()
+{
+    std::lock_guard<std::mutex> lock(buffer_frame_ids_m);
+    periodic_frames_captured = 0;
+    buffer_frame_ids.clear();
+}
+
 void CameraManager::StopLoops()
 {
     display_flag.store(false);

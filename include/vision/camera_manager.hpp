@@ -68,6 +68,7 @@ public:
     int GetCapturedFramesCount() const;
     std::vector<std::tuple<uint8_t, uint64_t>> GetBufferFrameIDs() const; // non-destructive read
     std::vector<std::tuple<uint8_t, uint64_t>> DrainBufferFrameIDs();     // returns and clears
+    void ResetCaptureState();  // zeros periodic_frames_captured and clears buffer_frame_ids atomically
 
     void CaptureFrames();
 

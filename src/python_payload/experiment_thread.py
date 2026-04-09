@@ -230,7 +230,7 @@ class ExperimentThread(threading.Thread):
             cameras[sensor_id] = camera
 
         # wait 2 seconds for camera to stabilize
-        time.sleep(2)  # no need to sleep while experimnet with things
+        time.sleep(2)
         
         return cameras
 

@@ -31,8 +31,7 @@ OD_Config::OD_Config()
 
 OD::OD(const std::string& config_path)
 : 
-process_state(OD_STATE::IDLE),
-dataset_collector(nullptr)
+process_state(OD_STATE::IDLE)
 {
     SPDLOG_INFO("Will read OD configuration file...");
     ReadConfig(config_path);

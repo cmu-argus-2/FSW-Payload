@@ -7,11 +7,13 @@
 #include <mutex>
 #include <memory>
 #include <tuple>
+#include <optional>
 
 #include <opencv2/opencv.hpp>
 
 #include <vision/regions.hpp>
 #include <vision/ld.hpp>
+#include <vision/prefiltering.hpp>
 #include <nlohmann/json.hpp>
 using Json = nlohmann::json;
 
@@ -108,18 +110,26 @@ public:
     const std::vector<RegionID> GetRegionIDs() const;
     const std::vector<float> GetRegionConfidences() const;
     const std::vector<Landmark>& GetLandmarks() const;
-    
+    const std::optional<PrefilterResult>& GetPrefilterResult() const;
+
     void AddRegion(const Region& region);
     void AddRegion(RegionID region_id, float confidence);
+    void ClearRegion(RegionID region_id);
     void ClearRegions();
-    void AddLandmark(const Landmark& landmark); 
+    void AddLandmark(const Landmark& landmark);
     void AddLandmark(float x, float y, uint16_t class_id, RegionID region_id, float height_, float width_, float confidence_);
     void ClearLandmarks();
     void RunPrefiltering();
 
+    bool HasRegion()   const { return _annotation_state >= ImageState::HasRegion; }
+    bool HasLandmark() const { return _annotation_state >= ImageState::HasLandmark; }
+
     bool IsBlurred();
 
 private:
+    void UpdateRank();
+    void UpdateAnnotationState();
+
     int _cam_id;
     cv::Mat _img;
     std::uint64_t _timestamp;
@@ -129,6 +139,7 @@ private:
     ProcessingStage _processing_stage;
     std::vector<Region> _regions;  // Container for regions
     std::vector<Landmark> _landmarks;  // Container for landmarks
+    std::optional<PrefilterResult> _prefilter_result;
 
     // mutex is not copyable
     std::shared_ptr<std::mutex> _img_mtx; // using shared_ptr for copyability (private anyway)

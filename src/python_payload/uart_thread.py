@@ -4,7 +4,7 @@ import time
 
 import serial
 
-from thread_shared import BAUD, MAX_PACKET_SIZE, PORT, TIMEOUT, log, rx_queue, tx_queue
+from thread_shared import BAUD, PORT, MAX_PACKET_SIZE, TIMEOUT, log, rx_queue, tx_queue
 
 
 class UartThread(threading.Thread):
@@ -27,7 +27,7 @@ class UartThread(threading.Thread):
             log.error("Serial error: %s", exc)
             self.stop_event.set()
 
-    def _read(self, ser: serial.Serial, max_packet_size=609):
+    def _read(self, ser: serial.Serial, max_packet_size=MAX_PACKET_SIZE):
         available = ser.in_waiting
         if available > 0:
             chunk = ser.read(available)
@@ -62,9 +62,9 @@ class UartThread(threading.Thread):
             except queue.Empty:
                 break
 
-            # Pad every outgoing packet to 609 bytes
-            if len(packet) < 609:
-                packet = packet + b"\x00" * (609 - len(packet))
+            # Pad every outgoing packet to MAX_PACKET_SIZE bytes
+            if len(packet) < MAX_PACKET_SIZE:
+                packet = packet + b"\x00" * (MAX_PACKET_SIZE - len(packet))
 
             ser.write(packet)
             log.debug("TX %d bytes: %s", len(packet), packet.hex()[:20])

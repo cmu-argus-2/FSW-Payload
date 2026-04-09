@@ -7,8 +7,8 @@ import threading
 # ---------------------------------------------------------------------------
 PORT = "/dev/ttyTHS1"
 BAUD = 460800
-MAX_PACKET_SIZE = 255
-TIMEOUT = (MAX_PACKET_SIZE * 16) * 8 / BAUD  # seconds
+MAX_PACKET_SIZE = 609
+TIMEOUT = (MAX_PACKET_SIZE * ( 8 + 2 )) / BAUD  # timeout to drop a packet reconstruction. Max packet size plus some margin
 
 logging.basicConfig(
     level=logging.DEBUG,

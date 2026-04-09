@@ -5,6 +5,7 @@
 #include <string>
 #include <atomic>
 #include <fstream>
+#include <mutex>
 
 enum class IMU_STATE : uint8_t 
 {
@@ -13,6 +14,15 @@ enum class IMU_STATE : uint8_t
     ERROR_DEVICE = 2,    // Error state with operational IMU
     ERROR_DEVICE_NOT_FOUND = 3 // Device not found
 };
+
+enum class IMU_COLLECTION_MODE : uint8_t
+{
+    NONE = 0,
+    GYRO_ONLY = 1,
+    GYRO_TEMP = 2,
+    GYRO_MAG_TEMP = 3,
+};
+
 
 constexpr std::string_view GetIMUState(IMU_STATE state) {
     switch (state) {
@@ -55,11 +65,13 @@ class IMUManager
         // setters
         void SetSampleRate(float rate_hz);
         void SetLogFile(const std::string& file_path);
+        void SetCollectionMode(IMU_COLLECTION_MODE mode);
 
         // getters
         uint8_t GetIMUManagerStatus();
-        float GetSampleRate() const { return sample_rate_hz; }
-        std::string GetLogFile() const { return log_file; }
+        float GetSampleRate() const;
+        std::string GetLogFile() const;
+        IMU_COLLECTION_MODE GetCollectionMode() const;
 
         // IMU Manager main loop control
         void RunLoop();
@@ -89,11 +101,13 @@ class IMUManager
         IMUConfig config;
 
         std::atomic<IMU_STATE> state;
+        std::atomic<IMU_COLLECTION_MODE> collection_mode;
         float sample_rate_hz= 1.0f; // default sample rate
         std::atomic<bool> loop_flag = false; // flag to control the main loop
         // TODO: Error handling, protection for file writing, etc.
         std::string log_file = "imu_log.csv"; // default log file path
         std::ofstream ofs; // output file stream for logging
+        std::mutex ofs_mutex; // protects ofs across RunLoop and control threads
 
 };
 

@@ -25,7 +25,6 @@ echo "NN module is ${ENABLE_VISION_NN}"
 git submodule update --init models
 git -C models lfs pull
 
-
 # Create binary directory
 mkdir -p bin
 
@@ -37,7 +36,11 @@ mkdir -p build
 cd build/
 
 # Run CMake with the specified build type
-cmake -DCMAKE_BUILD_TYPE=${BUILD_TYPE} -DBUILD_TESTS=ON -DNN_ENABLED=${ENABLE_VISION_NN} .. 
+cmake -DCMAKE_BUILD_TYPE=${BUILD_TYPE} \
+      -DBUILD_TESTS=ON \
+      -DNN_ENABLED=${ENABLE_VISION_NN} \
+      -DCUDA_ENABLED=${ENABLE_VISION_NN} \
+      ..
 
 # Build the project with multiple cores
 make -j$(nproc)

@@ -317,8 +317,9 @@ EC LDNet::parseModelName(const std::string& name, LDNetConfig& ldnet_config)
         ldnet_config.embedded_nms = false;
     }
 
-    // Parse remaining pattern: 17R_weights_fp16_sz_4608
-    std::regex pattern(R"(([^_]+)_weights_([^_]+)_sz_(\d+))");
+    // Parse remaining pattern: 17R_weights_fp16_sz_4608  (square)
+    //                      or: 17R_weights_fp16_sz_2592x4608  (non-square, HxW)
+    std::regex pattern(R"(([^_]+)_weights_([^_]+)_sz_(\d+)(?:x(\d+))?)");
     std::smatch match;
 
     if (!std::regex_match(base_name, match, pattern))
@@ -329,7 +330,8 @@ EC LDNet::parseModelName(const std::string& name, LDNetConfig& ldnet_config)
 
     // match[1] = model region
     // match[2] = precision
-    // match[3] = input size
+    // match[3] = height (non-square) or size (square)
+    // match[4] = width  (non-square only)
 
     if (match[2] == "fp16")
     {
@@ -349,14 +351,14 @@ EC LDNet::parseModelName(const std::string& name, LDNetConfig& ldnet_config)
         return EC::NN_FAILED_TO_LOAD_ENGINE;
     }
 
-    ldnet_config.input_width = std::stoi(match[3]);
-
-    if (ldnet_config.use_trt)
+    if (match[4].matched)   // HxW → non-square input
     {
-        ldnet_config.input_height = 2592;
+        ldnet_config.input_height = std::stoi(match[3]);
+        ldnet_config.input_width  = std::stoi(match[4]);
     }
-    else
+    else                    // single number → square input
     {
+        ldnet_config.input_width  = std::stoi(match[3]);
         ldnet_config.input_height = ldnet_config.input_width;
     }
 

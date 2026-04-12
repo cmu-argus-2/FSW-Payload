@@ -23,6 +23,17 @@ inline std::string GetQuantString(NET_QUANTIZATION quant) {
     }
 }
 
+// Path helpers: derive model paths from a version integer.
+// RC:  models/trained-rc/V{N}/rc_model_weights.trt
+// LD:  models/trained-ld/V{N}/
+inline std::string RCEnginePath(int version) {
+    return "./models/trained-rc/V" + std::to_string(version) + "/rc_model_weights.trt";
+}
+
+inline std::string LDFolderPath(int version) {
+    return "./models/trained-ld/V" + std::to_string(version);
+}
+
 // Parameters used to define the LD model file name (from region + config)
 struct LDNetConfig {
     NET_QUANTIZATION weight_quant;
@@ -35,7 +46,10 @@ struct LDNetConfig {
         std::string fp16_string = GetQuantString(weight_quant);
         std::string nms_string = embedded_nms ? "_nms" : "";
         std::string file_ext = use_trt ? "trt" : "onnx";
-        return "_weights_" + fp16_string + "_sz_" + std::to_string(input_width) + nms_string + "." + file_ext;
+        std::string size_str = (input_height == input_width)
+            ? std::to_string(input_width)
+            : std::to_string(input_height) + "x" + std::to_string(input_width);
+        return "_weights_" + fp16_string + "_sz_" + size_str + nms_string + "." + file_ext;
     }
 };
 

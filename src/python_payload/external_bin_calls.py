@@ -22,8 +22,8 @@ def run_inference(img_path, output_folder_path):
     run_path = "."
     bin_name = "./bin/RUN_INFERENCE"
     
-    rc_model = "models/V1/trained-rc/effnet_0997acc.trt"
-    ld_model = "models/V1/trained-ld"
+    rc_model = "models/trained-rc/V2/rc_model_weights.trt"
+    ld_model = "models/trained-ld/V2"
     
     print(f"Running inference on {img_path}")
     print(f"Output folder: {output_folder_path}")

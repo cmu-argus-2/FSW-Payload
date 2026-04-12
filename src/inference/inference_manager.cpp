@@ -57,6 +57,16 @@ EC InferenceManager::SetLDNetEngineFolderPath(const std::string& path)
     return EC::OK;
 }
 
+EC InferenceManager::SetRCNetVersion(int version)
+{
+    return SetRCNetEnginePath(Inference::RCEnginePath(version));
+}
+
+EC InferenceManager::SetLDNetVersion(int version)
+{
+    return SetLDNetEngineFolderPath(Inference::LDFolderPath(version));
+}
+
 void InferenceManager::SetLDNetConfig(NET_QUANTIZATION weight_quant, int input_width,
                                       int input_height, bool embedded_nms, bool use_trt_for_ld)
 {
@@ -667,6 +677,18 @@ EC InferenceManager::SetRCNetEnginePath(const std::string& path)
 EC InferenceManager::SetLDNetEngineFolderPath(const std::string& path)
 {
     ld_engine_folder_path_ = path; // No filesystem check without CUDA
+    return EC::OK;
+}
+
+EC InferenceManager::SetRCNetVersion(int version)
+{
+    rc_engine_path_ = Inference::RCEnginePath(version);
+    return EC::OK;
+}
+
+EC InferenceManager::SetLDNetVersion(int version)
+{
+    ld_engine_folder_path_ = Inference::LDFolderPath(version);
     return EC::OK;
 }
 

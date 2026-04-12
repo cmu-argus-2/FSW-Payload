@@ -103,9 +103,9 @@ void build_ceres_problem(StateEstimates& state_estimates,
                          double uma_std_dev,
                          double gyro_wn_std_dev_rad_s,
                          double gyro_bias_instability,
-                         double landmark_std_dev,
-                        ceres::EigenQuaternionManifold* quaternion_manifold,
-                        ceres::Problem* problem);
+                         const Eigen::VectorXd& landmark_uncertainties,
+                         ceres::EigenQuaternionManifold* quaternion_manifold,
+                         ceres::Problem* problem);
 
 /**
  * @brief Solves the batched nonlinear least squares optimization problem for orbit determination using Ceres Solver.
@@ -133,10 +133,13 @@ void build_ceres_problem(StateEstimates& state_estimates,
  */
 
 // std::pair <StateEstimates, Eigen::Vector3d>
+// landmark_uncertainties: one sigma (radians) per landmark row; 3σ = half the smaller
+// bbox dimension / focal_length_px. Pass an empty vector to use the default 0.009.
 std::tuple <StateEstimates, std::vector<double>, std::vector<double>>
 solve_ceres_batch_opt(const LandmarkMeasurements& landmark_measurements,
                       const LandmarkGroupStarts& landmark_group_starts,
                       const GyroMeasurements& gyro_measurements,
+                      const Eigen::VectorXd& landmark_uncertainties,
                       BATCH_OPT_config bo_config);
 
 #endif // BATCH_OPTIMIZATION_HPP

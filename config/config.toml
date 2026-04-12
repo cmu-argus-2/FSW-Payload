@@ -1,26 +1,42 @@
-[camera-device.cam1]
+
+# TODO: Check camera orientation
+[camera-device.cam1] # +x
 id = 0
 path = '/dev/video0'
 resolution_height = 2592
 resolution_width = 4608
+# Rotation from camera frame to spacecraft body frame (row-major 3x3)
+cam_to_body = [0.0, 0.0, 1.0, -1.0, 0.0, 0.0, 0.0, -1.0, 0.0]
 
-[camera-device.cam2]
+[camera-device.cam2] # y+
 id = 1
 path = '/dev/video1'
 resolution_height = 2592
 resolution_width = 4608
+cam_to_body = [1.0, 0.0, 0.0, 0.0, 0.0, 1.0, 0.0, -1.0, 0.0]
 
-[camera-device.cam3]
+[camera-device.cam3] # x-
 id = 2
 path = '/dev/video2'
 resolution_height = 2592
 resolution_width = 4608
+cam_to_body = [0.0, 0.0, -1.0, 1.0, 0.0, 0.0, 0.0, -1.0, 0.0]
 
-[camera-device.cam4]
+[camera-device.cam4] # y-
 id = 3
 path = '/dev/video3'
 resolution_height = 2592
 resolution_width = 4608
+cam_to_body = [-1.0, 0.0, 0.0, 0.0, 0.0, -1.0, 0.0, -1.0, 0.0]
+
+# Shared camera intrinsics (same lens for all cameras)
+# camera_matrix: intrinsic matrix K stored row-major [fx, 0, cx, 0, fy, cy, 0, 0, 1]
+# cx = resolution_width / 2, cy = resolution_height / 2 (principal point at centre)
+# fx, fy: focal length in pixels — set to 0.0 until calibrated
+[camera-calibration]
+camera_matrix = [0.0, 0.0, 2304.0, 0.0, 0.0, 1296.0, 0.0, 0.0, 1.0]
+# Distortion coefficients [k1, k2, p1, p2, k3] — set to 0.0 until calibrated
+dist_coeffs = [0.0, 0.0, 0.0, 0.0, 0.0]
 
 [imu-device]
 chipid = 216 # 0xd8 - BMX160 chip identifier
@@ -76,7 +92,7 @@ enable = true
 enable = true
 
 [region-classifier]
-model_path = 'models/rc/rc_net_script.pt'
+model_path = 'models/rc/rc_net_script.pt' # [UNUSED]
 num_classes = 16
 region_ids = [ '10S', '10T', '11R', '12R', '16T', '17R', '17T', '18S', '32S', '32T', '33S', '33T', '53S', '52S', '54S', '54T' ]
 resolution = 224

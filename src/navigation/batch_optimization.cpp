@@ -139,7 +139,7 @@ void build_ceres_problem(StateEstimates& state_estimates,
                          double uma_std_dev,
                          double gyro_wn_std_dev_rad_s,
                          double gyro_bias_instability,
-                         double landmark_std_dev,
+                         const Eigen::VectorXd& landmark_uncertainties,
                          ceres::EigenQuaternionManifold* quaternion_manifold,
                          ceres::Problem* problem) {
 
@@ -266,7 +266,7 @@ void build_ceres_problem(StateEstimates& state_estimates,
             problem->AddResidualBlock(
                 // Ceres will automatically take ownership of the cost function and cost functor
                 new ceres::AutoDiffCostFunction<LandmarkCostFunctor, 3, 3, 4>(
-                        new LandmarkCostFunctor{landmark_row, landmark_std_dev}),
+                        new LandmarkCostFunctor{landmark_row, landmark_uncertainties(landmark_idx)}),
                 new ceres::LossFunctionWrapper(
                     new ceres::HuberLoss(3.0), ceres::TAKE_OWNERSHIP),
                 pos_estimate,
@@ -399,6 +399,7 @@ std::tuple <StateEstimates, std::vector<double>, std::vector<double>>
 solve_ceres_batch_opt(const LandmarkMeasurements& landmark_measurements,
                       const LandmarkGroupStarts& landmark_group_starts,
                       const GyroMeasurements& gyro_measurements,
+                      const Eigen::VectorXd& landmark_uncertainties,
                       BATCH_OPT_config bo_config) {
     // Unpack configuration
     const double max_dt = bo_config.max_dt;
@@ -448,9 +449,12 @@ solve_ceres_batch_opt(const LandmarkMeasurements& landmark_measurements,
     double uma_std_dev = 1; // km/s^2
     const double gyro_wn_std_dev_rad_s = 0.0008726; //0.001; // rad/s
     const double gyro_bias_instability = 1; // 0.0001; // rad/s^2
-    // TODO: this information should be obtained from the output of the LD nets
-    const double landmark_std_dev = 0.009; // very conservative assumption of 1/2 degree error
-    // landmark std dev from 1/2 bounding box size (1/12 deg of lat/long) -> earth surface distance -> camera fov
+    // Per-landmark bearing uncertainty (one sigma, radians).
+    // Falls back to 0.009 rad (~0.5 deg) if no per-landmark values were supplied.
+    const Eigen::VectorXd& lm_sigmas =
+        (landmark_uncertainties.size() == landmark_measurements.rows())
+        ? landmark_uncertainties
+        : Eigen::VectorXd::Constant(landmark_measurements.rows(), 0.009).eval();
 
     
 
@@ -470,7 +474,7 @@ solve_ceres_batch_opt(const LandmarkMeasurements& landmark_measurements,
                          uma_std_dev,
                          gyro_wn_std_dev_rad_s,
                          gyro_bias_instability,
-                         landmark_std_dev,
+                         lm_sigmas,
                          &quaternion_manifold,
                          &problem);
 

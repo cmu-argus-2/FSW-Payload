@@ -22,6 +22,9 @@ void Configuration::LoadConfiguration(std::string config_path)
     // Parse IMU configuration
     ParseIMUConfig();
 
+    // Parse camera calibration
+    ParseCameraCalibration();
+
     this->configured = true;
 
 }
@@ -98,10 +101,59 @@ const std::array<CameraConfig, NUM_CAMERAS>& Configuration::GetCameraConfigs() c
     return camera_configs;
 }
 
-
 const IMUConfig& Configuration::GetIMUConfig() const
 {
     return imu_config;
+}
+
+const CameraCalibration& Configuration::GetCameraCalibration() const
+{
+    return camera_calibration;
+}
+
+void Configuration::ParseCameraCalibration()
+{
+    // Helper: read a 9-element TOML array into a 3×3 CV_64F matrix.
+    // Returns an identity matrix if the key is missing or malformed.
+    auto parse_mat3x3 = [](const toml::table& t, std::string_view key) -> cv::Mat {
+        cv::Mat M = cv::Mat::eye(3, 3, CV_64F);
+        const auto* arr = t[key].as_array();
+        if (!arr || arr->size() != 9) {
+            SPDLOG_WARN("Camera calibration: '{}' missing or not a 9-element array, using identity", key);
+            return M;
+        }
+        for (int i = 0; i < 9; ++i)
+            M.at<double>(i / 3, i % 3) = arr->at(i).value_or(0.0);
+        return M;
+    };
+
+    // Shared intrinsics from [camera-calibration]
+    const auto* calib_table = config["camera-calibration"].as_table();
+    if (!calib_table) {
+        SPDLOG_WARN("Camera calibration: [camera-calibration] section missing, using defaults");
+    } else {
+        camera_calibration.camera_matrix = parse_mat3x3(*calib_table, "camera_matrix");
+
+        cv::Mat D = cv::Mat::zeros(1, 5, CV_64F);
+        const auto* dist_arr = (*calib_table)["dist_coeffs"].as_array();
+        if (!dist_arr || dist_arr->size() != 5) {
+            SPDLOG_WARN("Camera calibration: 'dist_coeffs' missing or not a 5-element array, using zeros");
+        } else {
+            for (int i = 0; i < 5; ++i)
+                D.at<double>(0, i) = dist_arr->at(i).value_or(0.0);
+        }
+        camera_calibration.dist_coeffs = D;
+    }
+
+    // Per-camera cam_to_body from each [camera-device.camN]
+    std::size_t idx = 0;
+    for (const auto& [key, value] : *camera_devices_config)
+    {
+        const auto* cam_table = value.as_table();
+        if (cam_table && idx < NUM_CAMERAS)
+            camera_calibration.cam_to_body[idx] = parse_mat3x3(*cam_table, "cam_to_body");
+        ++idx;
+    }
 }
 
 template <typename T> T get_or_warn(const toml::table& t, std::string_view key, T def, std::string_view msg_key)

@@ -5,6 +5,11 @@
 #include <mutex>
 #include <condition_variable>
 #include <atomic>
+#include <string>
+#include "navigation/od_measurements.hpp"
+
+// Forward declaration — full definition in configuration.hpp
+struct CameraCalibration;
 
 #define OD_DEFAULT_COLLECTION_PERIOD 10
 #define OD_DEFAULT_COLLECTION_SAMPLES 30
@@ -69,6 +74,20 @@ public:
     void StartExperiment();
     bool IsExperimentDone() const;
 
+    // Quick pre-check: does the dataset folder contain enough LDNeted frames with
+    // landmarks and IMU data that spans the collection window?
+    // Returns false (with reason logged) if OD is clearly infeasible.
+    bool IsODPossible(const std::string& dataset_folder) const;
+
+    // Convert a completed dataset folder into the measurement matrices required by the
+    // batch optimizer. Stores the result internally; call before _DoBatchOptimization.
+    // calibration  — shared intrinsics + per-camera cam_to_body rotation matrices
+    // ld_model_folder — e.g. "models/trained-ld/V2", used to locate bounding_boxes.csv
+    // Returns true on success; false if conversion fails (logged).
+    bool DatasetPrepare(const std::string& dataset_folder,
+                        const CameraCalibration& calibration,
+                        const std::string& ld_model_folder);
+
 
 
 private:
@@ -91,8 +110,11 @@ private:
 
     // std::shared_ptr<DatasetManager> dataset_collector;
 
+    ODMeasurements measurements_;
+    bool measurements_ready_ = false;
+
     // Check if the OD is running
-    bool PingRunningStatus(); 
+    bool PingRunningStatus();
 
     /* 
     Must be called frequently within the DoXXX function process so the OD process can stop properly and save correctly its states for the next run

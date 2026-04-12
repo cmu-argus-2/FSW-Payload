@@ -1,6 +1,13 @@
 #ifndef UTILS_HPP
 #define UTILS_HPP
 
+#include <cstdint>
+
+// Seconds between the Unix epoch (1970-01-01) and J2000 (2000-01-01 11:58:55.816 UTC).
+// Use this to convert a Unix timestamp in seconds to J2000 seconds with sub-second
+// precision: t_J2000 = unix_seconds - J2000_EPOCH_UNIX_S
+inline constexpr int64_t J2000_EPOCH_UNIX_S = 946727936LL;
+
 #include <eigen3/Eigen/Core>
 #include <eigen3/Eigen/Dense>
 #include <opencv2/calib3d.hpp>

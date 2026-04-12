@@ -11,6 +11,7 @@ add_library(navigation
 )
 
 target_link_libraries(navigation
-        PRIVATE Eigen3::Eigen HighFive::HighFive Ceres::ceres HDF5::HDF5 spice opencv_calib3d)
+        PRIVATE Eigen3::Eigen HighFive::HighFive Ceres::ceres HDF5::HDF5 spice opencv_calib3d
+                nlohmann_json::nlohmann_json)
 
 # target_link_libraries(navigation <dependencies>)

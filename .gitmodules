@@ -1,3 +1,6 @@
+[submodule "src/python_payload/splat"]
+	path = src/python_payload/splat
+	url = https://github.com/cmu-argus-2/splat.git
 [submodule "models"]
 	path = models
 	url = https://github.com/cmu-argus-2/Vision-Models.git

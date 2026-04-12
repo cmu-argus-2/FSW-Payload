@@ -1,3 +1,6 @@
+[submodule "src/python_payload/splat"]
+	path = src/python_payload/splat
+	url = https://github.com/cmu-argus-2/splat.git
 [submodule "deps/Spice"]
 	path = deps/Spice
 	url = https://github.com/OpenSpace/Spice.git

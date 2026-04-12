@@ -182,16 +182,11 @@ void OD::LogConfig()
 
 } 
 
-bool OD::PingRunningStatus()
-{
-    return loop_flag.load();
-}
-
 bool OD::HandleStop()
 {
     bool return_status = false;
 
-    if (!PingRunningStatus())
+    if (!loop_flag.load())
     {
         // Need to save some data and states for the next run
         return_status = true;

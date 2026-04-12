@@ -32,7 +32,6 @@ std::array<CommandFunction, COMMAND_NUMBER> COMMAND_FUNCTIONS =
         request_image,             // REQUEST_IMAGE
         request_next_file_packet,  // REQUEST_NEXT_FILE_PACKET
         clear_storage,             // CLEAR_STORAGE
-        ping_od_status,            // PING_OD_STATUS
         run_od,                    // RUN_OD
         request_od_result,         // REQUEST_OD_RESULT
         synchronize_time,          // SYNCHRONIZE_TIME
@@ -56,7 +55,6 @@ std::array<std::string_view, COMMAND_NUMBER> COMMAND_NAMES = {
     "REQUEST_IMAGE",
     "REQUEST_NEXT_FILE_PACKET",
     "CLEAR_STORAGE",
-    "PING_OD_STATUS",
     "RUN_OD",
     "REQUEST_OD_RESULT",
     "SYNCHRONIZE_TIME",
@@ -549,56 +547,6 @@ void clear_storage([[maybe_unused]] std::vector<uint8_t> &data)
     // TODO
 
     sys::payload().SetLastExecutedCmdID(CommandID::CLEAR_STORAGE);
-}
-
-void ping_od_status([[maybe_unused]] std::vector<uint8_t> &data)
-{
-
-    SPDLOG_INFO("Pinging the status of the orbit determination process...");
-
-    // TODO
-    OD_STATE od_state = sys::od().GetState();
-    std::vector<uint8_t> transmit_data;
-
-    // Add the current ststae to pcket
-    transmit_data.push_back(static_cast<uint8_t>(od_state));
-
-    // Based on the state, return more information
-    switch (od_state)
-    {
-    case OD_STATE::IDLE:
-    {
-        break;
-    }
-    case OD_STATE::INIT:
-    {
-        auto ds = DatasetManager::GetActiveDatasetManager(DATASET_KEY_OD);
-        if (ds) // if it exists
-        {
-            DatasetProgress ds_progress = ds->QueryProgress();
-            uint16_t nb_frames = ds_progress.current_frames;
-            uint8_t completion = static_cast<uint8_t>(ds_progress.completion);
-            transmit_data.push_back(completion);
-            SerializeToBytes(nb_frames, transmit_data);
-        }
-        else
-        {
-            // Return (error) ACK telling that no dataset is running
-            SPDLOG_ERROR("No dataset collection has been started on the command side");
-            // TODO
-        }
-        break;
-    }
-    case OD_STATE::BATCH_OPT:
-    {
-        break;
-    }
-    }
-
-    std::shared_ptr<Message> msg = CreateMessage(CommandID::PING_OD_STATUS, transmit_data);
-    sys::payload().TransmitMessage(msg);
-
-    sys::payload().SetLastExecutedCmdID(CommandID::PING_OD_STATUS);
 }
 
 void run_od([[maybe_unused]] std::vector<uint8_t> &data)

@@ -113,10 +113,7 @@ private:
     ODMeasurements measurements_;
     bool measurements_ready_ = false;
 
-    // Check if the OD is running
-    bool PingRunningStatus();
-
-    /* 
+    /*
     Must be called frequently within the DoXXX function process so the OD process can stop properly and save correctly its states for the next run
     - Return True if states have been saved and the process must stop 
     Example usage: 

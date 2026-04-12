@@ -102,6 +102,10 @@ public:
     const ProcessingStage GetProcessingStage() const;
     void SetProcessingStage(ProcessingStage stage);
     const float GetRank() const;
+    int GetRCNetVersion() const { return _rcnet_version; }
+    int GetLDNetVersion() const { return _ldnet_version; }
+    void SetRCNetVersion(int v) { _rcnet_version = v; }
+    void SetLDNetVersion(int v) { _ldnet_version = v; }
     Json toJson() const;
     nlohmann::ordered_json toOrderedJson() const;
     void fromJson(const Json& j);
@@ -137,6 +141,8 @@ private:
     ImageState _annotation_state;
     float _rank; // score to rank images with the same annotation_state (higher = better)
     ProcessingStage _processing_stage;
+    int _rcnet_version = -1;  // -1 = not run
+    int _ldnet_version = -1;  // -1 = not run
     std::vector<Region> _regions;  // Container for regions
     std::vector<Landmark> _landmarks;  // Container for landmarks
     std::optional<PrefilterResult> _prefilter_result;

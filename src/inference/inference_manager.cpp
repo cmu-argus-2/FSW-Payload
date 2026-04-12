@@ -59,11 +59,13 @@ EC InferenceManager::SetLDNetEngineFolderPath(const std::string& path)
 
 EC InferenceManager::SetRCNetVersion(int version)
 {
+    rc_version_ = version;
     return SetRCNetEnginePath(Inference::RCEnginePath(version));
 }
 
 EC InferenceManager::SetLDNetVersion(int version)
 {
+    ld_version_ = version;
     return SetLDNetEngineFolderPath(Inference::LDFolderPath(version));
 }
 
@@ -440,6 +442,7 @@ EC InferenceManager::ExecRCInference()
     }
 
     current_frame_->SetProcessingStage(ProcessingStage::RCNeted);
+    current_frame_->SetRCNetVersion(rc_version_);
     num_rc_inferences_on_current_frame_++;
 
     if (!preload_rc_engine_) FreeRCNet();
@@ -635,6 +638,7 @@ EC InferenceManager::ExecLDInference()
     }
 
     current_frame_->SetProcessingStage(ProcessingStage::LDNeted);
+    current_frame_->SetLDNetVersion(ld_version_);
     num_ld_inferences_on_current_frame_++;
 
     return EC::OK;

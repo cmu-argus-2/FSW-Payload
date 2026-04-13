@@ -136,25 +136,76 @@ TEST_F(OrchestratorTest, SetPreloadLDEngines_UpdatesFlag)
 
 TEST_F(OrchestratorTest, SetRCNetEnginePath_InvalidPath_Rejected)
 {
-    std::string original = im.rc_engine_path_;
+    std::string original_path    = im.rc_engine_path_;
+    int         original_version = im.rc_version_;
     EXPECT_EQ(im.SetRCNetEnginePath("/bad/path/engine.trt"), EC::FILE_DOES_NOT_EXIST);
-    EXPECT_EQ(im.rc_engine_path_, original);
+    EXPECT_EQ(im.rc_engine_path_, original_path);
+    EXPECT_EQ(im.rc_version_,     original_version);
 }
 
 TEST_F(OrchestratorTest, SetRCNetEnginePath_EmptyPath_Rejected)
 {
-    std::string original = im.rc_engine_path_;
+    std::string original_path    = im.rc_engine_path_;
+    int         original_version = im.rc_version_;
     EXPECT_EQ(im.SetRCNetEnginePath(""), EC::FILE_DOES_NOT_EXIST);
-    EXPECT_EQ(im.rc_engine_path_, original);
+    EXPECT_EQ(im.rc_engine_path_, original_path);
+    EXPECT_EQ(im.rc_version_,     original_version);
 }
 
 TEST_F(OrchestratorTest, SetLDNetEngineFolderPath_InvalidPath_Rejected)
 {
-    std::string original = im.ld_engine_folder_path_;
+    std::string original_path    = im.ld_engine_folder_path_;
+    int         original_version = im.ld_version_;
     EXPECT_EQ(im.SetLDNetEngineFolderPath("/bad/folder"), EC::FILE_DOES_NOT_EXIST);
-    EXPECT_EQ(im.ld_engine_folder_path_, original);
+    EXPECT_EQ(im.ld_engine_folder_path_, original_path);
+    EXPECT_EQ(im.ld_version_,            original_version);
 }
 
+
+// --- SetRCNetEnginePath / SetLDNetEngineFolderPath: version parsing on success ---
+
+// When the path follows the standard convention the version int is parsed from it.
+TEST_F(OrchestratorTest, SetRCNetEnginePath_StandardPath_ParsesVersion)
+{
+    const std::string v3_path = Inference::RCEnginePath(3);
+    if (!std::filesystem::exists(v3_path))
+        GTEST_SKIP() << "RC V3 engine not present: " << v3_path;
+    EXPECT_EQ(im.SetRCNetEnginePath(v3_path), EC::OK);
+    EXPECT_EQ(im.rc_version_, 3);
+}
+
+TEST_F(OrchestratorTest, SetLDNetEngineFolderPath_StandardPath_ParsesVersion)
+{
+    const std::string v3_path = Inference::LDFolderPath(3);
+    if (!std::filesystem::exists(v3_path))
+        GTEST_SKIP() << "LD V3 folder not present: " << v3_path;
+    EXPECT_EQ(im.SetLDNetEngineFolderPath(v3_path), EC::OK);
+    EXPECT_EQ(im.ld_version_, 3);
+}
+
+// When a valid but non-standard path is set, the version is reset to the sentinel -1.
+TEST_F(OrchestratorTest, SetRCNetEnginePath_NonStandardPath_SetsVersionSentinel)
+{
+    // Create a temporary file so the filesystem check passes.
+    const std::string tmp = "/tmp/custom_rc_engine.trt";
+    std::ofstream(tmp).close();
+
+    ASSERT_EQ(im.SetRCNetEnginePath(tmp), EC::OK);
+    EXPECT_EQ(im.rc_version_, -1);
+
+    std::filesystem::remove(tmp);
+}
+
+TEST_F(OrchestratorTest, SetLDNetEngineFolderPath_NonStandardPath_SetsVersionSentinel)
+{
+    const std::string tmp = "/tmp/custom_ld_folder";
+    std::filesystem::create_directory(tmp);
+
+    ASSERT_EQ(im.SetLDNetEngineFolderPath(tmp), EC::OK);
+    EXPECT_EQ(im.ld_version_, -1);
+
+    std::filesystem::remove(tmp);
+}
 
 TEST_F(OrchestratorTest, DefaultRCPath_IsVersion2)
 {

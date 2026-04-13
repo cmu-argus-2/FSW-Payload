@@ -125,7 +125,7 @@ int run(int argc, char** argv)
     if (!DH::ReadImageFromDisk(sample_image_path, frame, 0,  static_cast<uint64_t>(timestamp)))
     {
         spdlog::error("Failed to read image from disk: {}", sample_image_path);
-        return 1;
+        return to_uint8(EC::FILE_NOT_FOUND);
     }
 
     std::shared_ptr<Frame> frame_ptr = std::make_shared<Frame>(frame);

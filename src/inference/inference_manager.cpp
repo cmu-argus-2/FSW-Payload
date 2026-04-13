@@ -1,6 +1,44 @@
 #include "inference/inference_manager.hpp"
 #include "spdlog/spdlog.h"
 
+namespace {
+
+// Returns the version integer from a standard RCEnginePath(.../V{N}/rc_model_weights.trt),
+// or -1 if the path doesn't match the convention.
+int ParseRCVersion(const std::string& path)
+{
+    static constexpr std::string_view suffix = "/rc_model_weights.trt";
+    if (path.size() <= suffix.size()) return -1;
+    if (path.compare(path.size() - suffix.size(), suffix.size(), suffix) != 0) return -1;
+    const std::string dir = path.substr(0, path.size() - suffix.size());
+    const auto slash = dir.rfind('/');
+    const std::string vpart = (slash == std::string::npos) ? dir : dir.substr(slash + 1);
+    if (vpart.size() < 2 || vpart[0] != 'V') return -1;
+    int v = 0;
+    for (char c : vpart.substr(1)) {
+        if (c < '0' || c > '9') return -1;
+        v = v * 10 + (c - '0');
+    }
+    return v > 0 ? v : -1;
+}
+
+// Returns the version integer from a standard LDFolderPath(.../V{N}),
+// or -1 if the path doesn't match the convention.
+int ParseLDVersion(const std::string& path)
+{
+    const auto slash = path.rfind('/');
+    const std::string vpart = (slash == std::string::npos) ? path : path.substr(slash + 1);
+    if (vpart.size() < 2 || vpart[0] != 'V') return -1;
+    int v = 0;
+    for (char c : vpart.substr(1)) {
+        if (c < '0' || c > '9') return -1;
+        v = v * 10 + (c - '0');
+    }
+    return v > 0 ? v : -1;
+}
+
+} // namespace
+
 #ifdef CUDA_ENABLED
 
 #include "inference/runtimes.hpp"
@@ -43,6 +81,7 @@ EC InferenceManager::SetRCNetEnginePath(const std::string& path)
         return EC::FILE_DOES_NOT_EXIST;
     }
     rc_engine_path_ = path;
+    rc_version_ = ParseRCVersion(path); // -1 if path doesn't follow standard convention
     return EC::OK;
 }
 
@@ -54,6 +93,7 @@ EC InferenceManager::SetLDNetEngineFolderPath(const std::string& path)
         return EC::FILE_DOES_NOT_EXIST;
     }
     ld_engine_folder_path_ = path;
+    ld_version_ = ParseLDVersion(path); // -1 if path doesn't follow standard convention
     return EC::OK;
 }
 
@@ -63,9 +103,7 @@ EC InferenceManager::SetRCNetVersion(int version)
         SPDLOG_ERROR("InferenceManager: RC version must be > 0, got {}", version);
         return EC::NN_INVALID_VERSION;
     }
-    EC ec = SetRCNetEnginePath(Inference::RCEnginePath(version));
-    if (ec == EC::OK) rc_version_ = version;
-    return ec;
+    return SetRCNetEnginePath(Inference::RCEnginePath(version));
 }
 
 EC InferenceManager::SetLDNetVersion(int version)
@@ -74,9 +112,7 @@ EC InferenceManager::SetLDNetVersion(int version)
         SPDLOG_ERROR("InferenceManager: LD version must be > 0, got {}", version);
         return EC::NN_INVALID_VERSION;
     }
-    EC ec = SetLDNetEngineFolderPath(Inference::LDFolderPath(version));
-    if (ec == EC::OK) ld_version_ = version;
-    return ec;
+    return SetLDNetEngineFolderPath(Inference::LDFolderPath(version));
 }
 
 void InferenceManager::SetLDNetConfig(NET_QUANTIZATION weight_quant, int input_width,
@@ -685,12 +721,14 @@ InferenceManager::~InferenceManager() = default;
 EC InferenceManager::SetRCNetEnginePath(const std::string& path)
 {
     rc_engine_path_ = path; // No filesystem check without CUDA
+    rc_version_ = ParseRCVersion(path);
     return EC::OK;
 }
 
 EC InferenceManager::SetLDNetEngineFolderPath(const std::string& path)
 {
     ld_engine_folder_path_ = path; // No filesystem check without CUDA
+    ld_version_ = ParseLDVersion(path);
     return EC::OK;
 }
 
@@ -699,9 +737,7 @@ EC InferenceManager::SetRCNetVersion(int version)
     if (version <= 0) {
         return EC::NN_INVALID_VERSION;
     }
-    rc_engine_path_ = Inference::RCEnginePath(version);
-    rc_version_ = version;
-    return EC::OK;
+    return SetRCNetEnginePath(Inference::RCEnginePath(version));
 }
 
 EC InferenceManager::SetLDNetVersion(int version)
@@ -709,9 +745,7 @@ EC InferenceManager::SetLDNetVersion(int version)
     if (version <= 0) {
         return EC::NN_INVALID_VERSION;
     }
-    ld_engine_folder_path_ = Inference::LDFolderPath(version);
-    ld_version_ = version;
-    return EC::OK;
+    return SetLDNetEngineFolderPath(Inference::LDFolderPath(version));
 }
 
 void InferenceManager::SetLDNetConfig(NET_QUANTIZATION weight_quant, int input_width,

@@ -104,8 +104,8 @@ public:
     const float GetRank() const;
     int GetRCNetVersion() const { return _rcnet_version; }
     int GetLDNetVersion() const { return _ldnet_version; }
-    void SetRCNetVersion(int v) { _rcnet_version = v; }
-    void SetLDNetVersion(int v) { _ldnet_version = v; }
+    void SetRCNetVersion(int v) { if (v > 0) _rcnet_version = v; }
+    void SetLDNetVersion(int v) { if (v > 0) _ldnet_version = v; }
     Json toJson() const;
     nlohmann::ordered_json toOrderedJson() const;
     void fromJson(const Json& j);

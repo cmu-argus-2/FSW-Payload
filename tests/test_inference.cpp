@@ -166,29 +166,84 @@ TEST_F(OrchestratorTest, DefaultLDPath_IsVersion2)
     EXPECT_EQ(im.ld_engine_folder_path_, Inference::LDFolderPath(2));
 }
 
+TEST_F(OrchestratorTest, DefaultRCVersion_Is2)
+{
+    EXPECT_EQ(im.rc_version_, 2);
+}
+
+TEST_F(OrchestratorTest, DefaultLDVersion_Is2)
+{
+    EXPECT_EQ(im.ld_version_, 2);
+}
+
+// --- Zero / negative versions must be rejected before any filesystem access ---
+
+TEST_F(OrchestratorTest, SetRCNetVersion_ZeroVersion_Rejected)
+{
+    std::string original_path = im.rc_engine_path_;
+    int original_version      = im.rc_version_;
+    EXPECT_EQ(im.SetRCNetVersion(0), EC::NN_INVALID_VERSION);
+    EXPECT_EQ(im.rc_engine_path_, original_path);
+    EXPECT_EQ(im.rc_version_,     original_version);
+}
+
+TEST_F(OrchestratorTest, SetRCNetVersion_NegativeVersion_Rejected)
+{
+    std::string original_path = im.rc_engine_path_;
+    int original_version      = im.rc_version_;
+    EXPECT_EQ(im.SetRCNetVersion(-5), EC::NN_INVALID_VERSION);
+    EXPECT_EQ(im.rc_engine_path_, original_path);
+    EXPECT_EQ(im.rc_version_,     original_version);
+}
+
+TEST_F(OrchestratorTest, SetLDNetVersion_ZeroVersion_Rejected)
+{
+    std::string original_path = im.ld_engine_folder_path_;
+    int original_version      = im.ld_version_;
+    EXPECT_EQ(im.SetLDNetVersion(0), EC::NN_INVALID_VERSION);
+    EXPECT_EQ(im.ld_engine_folder_path_, original_path);
+    EXPECT_EQ(im.ld_version_,           original_version);
+}
+
+TEST_F(OrchestratorTest, SetLDNetVersion_NegativeVersion_Rejected)
+{
+    std::string original_path = im.ld_engine_folder_path_;
+    int original_version      = im.ld_version_;
+    EXPECT_EQ(im.SetLDNetVersion(-1), EC::NN_INVALID_VERSION);
+    EXPECT_EQ(im.ld_engine_folder_path_, original_path);
+    EXPECT_EQ(im.ld_version_,           original_version);
+}
+
+// --- Non-existent version: path must not change AND version int must not change ---
+
 TEST_F(OrchestratorTest, SetRCNetVersion_InvalidVersion_Rejected)
 {
-    std::string original = im.rc_engine_path_;
+    std::string original_path = im.rc_engine_path_;
+    int original_version      = im.rc_version_;
     EXPECT_EQ(im.SetRCNetVersion(99), EC::FILE_DOES_NOT_EXIST);
-    EXPECT_EQ(im.rc_engine_path_, original);
+    EXPECT_EQ(im.rc_engine_path_, original_path);
+    EXPECT_EQ(im.rc_version_,     original_version);
 }
 
 TEST_F(OrchestratorTest, SetLDNetVersion_InvalidVersion_Rejected)
 {
-    std::string original = im.ld_engine_folder_path_;
+    std::string original_path = im.ld_engine_folder_path_;
+    int original_version      = im.ld_version_;
     EXPECT_EQ(im.SetLDNetVersion(99), EC::FILE_DOES_NOT_EXIST);
-    EXPECT_EQ(im.ld_engine_folder_path_, original);
+    EXPECT_EQ(im.ld_engine_folder_path_, original_path);
+    EXPECT_EQ(im.ld_version_,           original_version);
 }
+
+// --- Valid version: both path and version int must update (skipped if files absent) ---
 
 TEST_F(OrchestratorTest, SetRCNetVersion_ValidVersion_UpdatesPath)
 {
-    // SetRCNetVersion generates the standard rc_model_weights.trt path.
-    // Skip if V2 hasn't been renamed to the standard convention yet.
     const std::string v2_path = std::string(MODELS_DIR) + "/trained-rc/V2/rc_model_weights.trt";
     if (!std::filesystem::exists(v2_path))
         GTEST_SKIP() << "RC V2 not yet using standard naming: " << v2_path;
     EXPECT_EQ(im.SetRCNetVersion(2), EC::OK);
     EXPECT_EQ(im.rc_engine_path_, Inference::RCEnginePath(2));
+    EXPECT_EQ(im.rc_version_, 2);
 }
 
 TEST_F(OrchestratorTest, SetLDNetVersion_ValidVersion_UpdatesPath)
@@ -198,6 +253,7 @@ TEST_F(OrchestratorTest, SetLDNetVersion_ValidVersion_UpdatesPath)
         GTEST_SKIP() << "LD V2 folder not found: " << v2_path;
     EXPECT_EQ(im.SetLDNetVersion(2), EC::OK);
     EXPECT_EQ(im.ld_engine_folder_path_, Inference::LDFolderPath(2));
+    EXPECT_EQ(im.ld_version_, 2);
 }
 
 // ============================================================
@@ -529,6 +585,53 @@ TEST_F(OrchestratorTest, LoadLDNetEngines_LowMemory_StopsBeforeFirstLoad)
     }
 
     im.min_gpu_free_between_loads_ = 256ULL * 1024 * 1024; // restore
+}
+
+// ============================================================
+// Frame version setters
+// ============================================================
+
+TEST(FrameVersionTest, DefaultVersions_AreSentinel)
+{
+    Frame f;
+    EXPECT_EQ(f.GetRCNetVersion(), -1);
+    EXPECT_EQ(f.GetLDNetVersion(), -1);
+}
+
+TEST(FrameVersionTest, SetRCNetVersion_ValidVersion_Updates)
+{
+    Frame f;
+    f.SetRCNetVersion(3);
+    EXPECT_EQ(f.GetRCNetVersion(), 3);
+}
+
+TEST(FrameVersionTest, SetLDNetVersion_ValidVersion_Updates)
+{
+    Frame f;
+    f.SetLDNetVersion(2);
+    EXPECT_EQ(f.GetLDNetVersion(), 2);
+}
+
+TEST(FrameVersionTest, SetRCNetVersion_ZeroVersion_IgnoredSentinelPreserved)
+{
+    Frame f;
+    f.SetRCNetVersion(0);
+    EXPECT_EQ(f.GetRCNetVersion(), -1);
+}
+
+TEST(FrameVersionTest, SetLDNetVersion_NegativeVersion_IgnoredSentinelPreserved)
+{
+    Frame f;
+    f.SetLDNetVersion(-3);
+    EXPECT_EQ(f.GetLDNetVersion(), -1);
+}
+
+TEST(FrameVersionTest, SetRCNetVersion_InvalidAfterValid_DoesNotOverwrite)
+{
+    Frame f;
+    f.SetRCNetVersion(2);
+    f.SetRCNetVersion(0);
+    EXPECT_EQ(f.GetRCNetVersion(), 2);
 }
 
 // ============================================================

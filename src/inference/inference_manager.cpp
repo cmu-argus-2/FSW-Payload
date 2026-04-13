@@ -59,14 +59,24 @@ EC InferenceManager::SetLDNetEngineFolderPath(const std::string& path)
 
 EC InferenceManager::SetRCNetVersion(int version)
 {
-    rc_version_ = version;
-    return SetRCNetEnginePath(Inference::RCEnginePath(version));
+    if (version <= 0) {
+        SPDLOG_ERROR("InferenceManager: RC version must be > 0, got {}", version);
+        return EC::NN_INVALID_VERSION;
+    }
+    EC ec = SetRCNetEnginePath(Inference::RCEnginePath(version));
+    if (ec == EC::OK) rc_version_ = version;
+    return ec;
 }
 
 EC InferenceManager::SetLDNetVersion(int version)
 {
-    ld_version_ = version;
-    return SetLDNetEngineFolderPath(Inference::LDFolderPath(version));
+    if (version <= 0) {
+        SPDLOG_ERROR("InferenceManager: LD version must be > 0, got {}", version);
+        return EC::NN_INVALID_VERSION;
+    }
+    EC ec = SetLDNetEngineFolderPath(Inference::LDFolderPath(version));
+    if (ec == EC::OK) ld_version_ = version;
+    return ec;
 }
 
 void InferenceManager::SetLDNetConfig(NET_QUANTIZATION weight_quant, int input_width,
@@ -686,13 +696,21 @@ EC InferenceManager::SetLDNetEngineFolderPath(const std::string& path)
 
 EC InferenceManager::SetRCNetVersion(int version)
 {
+    if (version <= 0) {
+        return EC::NN_INVALID_VERSION;
+    }
     rc_engine_path_ = Inference::RCEnginePath(version);
+    rc_version_ = version;
     return EC::OK;
 }
 
 EC InferenceManager::SetLDNetVersion(int version)
 {
+    if (version <= 0) {
+        return EC::NN_INVALID_VERSION;
+    }
     ld_engine_folder_path_ = Inference::LDFolderPath(version);
+    ld_version_ = version;
     return EC::OK;
 }
 

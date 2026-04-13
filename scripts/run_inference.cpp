@@ -240,18 +240,21 @@ int run(int argc, char** argv)
 
 int main(int argc, char** argv)
 {
+    int ret;
     try
     {
-        return run(argc, argv);
+        ret = run(argc, argv);
     }
     catch (const std::exception& e)
     {
         spdlog::critical("Unhandled exception: {}", e.what());
-        return to_uint8(EC::PLACEHOLDER);
+        ret = to_uint8(EC::PLACEHOLDER);
     }
     catch (...)
     {
         spdlog::critical("Unhandled unknown exception");
-        return to_uint8(EC::PLACEHOLDER);
+        ret = to_uint8(EC::PLACEHOLDER);
     }
+    cudaDeviceReset();
+    return ret;
 }

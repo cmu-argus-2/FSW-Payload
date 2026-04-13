@@ -258,15 +258,15 @@ EC LDNet::ReleaseScratchBuffers()
 EC LDNet::Free()
 {
     if (is_trt) {
-        ReleaseScratchBuffers();
         if (context_) context_.reset();
         if (engine_)  engine_.reset();
         if (runtime_) runtime_.reset();
         if (stream_) { cudaStreamDestroy(stream_); stream_ = nullptr; }
+        ReleaseScratchBuffers();
     } else {
         net_.reset();
     }
-    
+
     SetInitialized(false);
     return EC::OK;
 }

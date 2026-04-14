@@ -6,7 +6,7 @@
 #include <mutex>
 #include <condition_variable>
 #include "spdlog/spdlog.h"
-#include "camera.hpp"
+#include "camera.hpp"  // also defines CameraISPConfig
 
 #define NUM_CAMERAS 4
 #define MAX_PERIODIC_FRAMES_TO_CAPTURE 255
@@ -15,13 +15,14 @@
 
 class InferenceManager; // forward declaration
 
-// Configuration struct for each camera
+// Per-camera identity and resolution
 struct CameraConfig
 {
     int64_t id;
     std::string path;
     int64_t width;
     int64_t height;
+    bool enabled = true;
 };
 
 
@@ -56,7 +57,9 @@ class CameraManager
 
 public:
 
-    CameraManager(const std::array<CameraConfig, NUM_CAMERAS>& camera_configs, InferenceManager& inference_manager);
+    CameraManager(const std::array<CameraConfig, NUM_CAMERAS>& camera_configs,
+                  const CameraISPConfig& isp_config,
+                  InferenceManager& inference_manager);
 
     void RunLoop();
     void StopLoops();
@@ -109,6 +112,7 @@ public:
 private:
         
     InferenceManager& inferenceManager;
+    CameraISPConfig isp_config;
 
     std::atomic<CAPTURE_MODE> capture_mode;
     std::string storage_folder;

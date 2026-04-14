@@ -61,7 +61,8 @@ int main(int argc, char** argv)
     InferenceManager inference_manager;
 
     const auto& cam_configs = config->GetCameraConfigs();
-    CameraManager camera_manager(cam_configs, inference_manager);
+    const auto& isp_config  = config->GetCameraISPConfig();
+    CameraManager camera_manager(cam_configs, isp_config, inference_manager);
 
     std::thread imu_thread = std::thread(&IMUManager::RunLoop, &imu_manager);
 

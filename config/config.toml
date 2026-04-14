@@ -3,24 +3,47 @@ id = 0
 path = '/dev/video0'
 resolution_height = 2592
 resolution_width = 4608
+enabled = true
 
 [camera-device.cam2]
 id = 1
 path = '/dev/video1'
 resolution_height = 2592
 resolution_width = 4608
+enabled = true
 
 [camera-device.cam3]
 id = 2
 path = '/dev/video2'
 resolution_height = 2592
 resolution_width = 4608
+enabled = true
 
 [camera-device.cam4]
 id = 3
 path = '/dev/video3'
 resolution_height = 2592
 resolution_width = 4608
+enabled = true
+
+# Shared ISP parameters applied to all cameras (nvarguscamerasrc properties).
+# Omit a field to keep its default value.
+[camera-isp]
+wbmode               = 0      # 0=auto, 1=incandescent, 2=fluorescent, 3=warm-fluorescent, 4=daylight, 5=cloudy, 6=twilight, 7=shade, 8=manual
+aelock               = false  # lock auto-exposure
+awblock              = false  # lock auto-white-balance
+ee_mode              = 1      # edge enhancement: 0=off, 1=fast, 2=high-quality
+ee_strength          = -1.0   # -1 = driver default
+aeantibanding        = 1      # AE antibanding: 0=off, 1=auto, 2=50Hz, 3=60Hz
+exposurecompensation = 0.0    # EV compensation in stops
+tnr_mode             = 1      # temporal noise reduction: 0=off, 1=fast, 2=high-quality
+tnr_strength         = -1.0   # -1 = driver default
+saturation           = 1.0    # colour saturation multiplier (0.0–2.0)
+fps                  = 10
+max_buffers          = 2
+# exposuretimerange  = [13000, 683709000]  # nanoseconds — uncomment to override
+# gainrange          = [1.0, 16.0]         # sensor gain — uncomment to override
+# ispdigitalgainrange = [1.0, 8.0]         # ISP digital gain — uncomment to override
 
 [imu-device]
 chipid = 216 # 0xd8 - BMX160 chip identifier

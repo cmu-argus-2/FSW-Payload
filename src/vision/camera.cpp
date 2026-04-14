@@ -1,13 +1,16 @@
 #include <cstdint>
 #include <chrono>
+#include <sstream>
 #include "spdlog/spdlog.h"
 #include "vision/camera.hpp"
+#include "vision/camera_manager.hpp"
 #include "core/timing.hpp"
 
-Camera::Camera(int cam_id, std::string path)
-: 
+Camera::Camera(int cam_id, std::string path, const CameraISPConfig& isp)
+:
 width(DEFAULT_FRAME_WIDTH),
 height(DEFAULT_FRAME_HEIGHT),
+isp_config(isp),
 cam_status(CAM_STATUS::INACTIVE),
 last_error(CAM_ERROR::NO_ERROR),
 consecutive_error_count(0),
@@ -35,16 +38,41 @@ bool Camera::Enable()
     {
         SPDLOG_INFO("CAM{}: Attempting to open camera at {}", cam_id, cam_path);
 
-        std::string gst_pipeline = "nvarguscamerasrc sensor-id=" + std::to_string(cam_id) + 
-                                   " ! video/x-raw(memory:NVMM),width=" + std::to_string(width) + 
-                                   ",height=" + std::to_string(height) + 
-                                   ",framerate=" + std::to_string(DEFAULT_CAMERA_FPS) + "/1" +
-                                   ",format=NV12" +
-                                   " ! nvvidconv" +
-                                   " ! video/x-raw,format=BGRx" +
-                                   " ! videoconvert" + 
-                                   " ! video/x-raw,format=BGR" +
-                                   " ! appsink drop=true max-buffers=2";  
+        std::ostringstream gst;
+        gst << "nvarguscamerasrc sensor-id=" << cam_id
+            << " wbmode=" << isp_config.wbmode
+            << " aelock=" << (isp_config.aelock ? "true" : "false")
+            << " awblock=" << (isp_config.awblock ? "true" : "false")
+            << " ee-mode=" << isp_config.ee_mode;
+        if (isp_config.ee_strength >= 0.0f)
+            gst << " ee-strength=" << isp_config.ee_strength;
+        gst << " aeantibanding=" << isp_config.aeantibanding
+            << " exposurecompensation=" << isp_config.exposurecompensation
+            << " tnr-mode=" << isp_config.tnr_mode;
+        if (isp_config.tnr_strength >= 0.0f)
+            gst << " tnr-strength=" << isp_config.tnr_strength;
+        gst << " saturation=" << isp_config.saturation;
+        if (isp_config.exposuretimerange.has_value())
+            gst << " exposuretimerange=\"" << isp_config.exposuretimerange->first
+                << " " << isp_config.exposuretimerange->second << "\"";
+        if (isp_config.gainrange.has_value())
+            gst << " gainrange=\"" << isp_config.gainrange->first
+                << " " << isp_config.gainrange->second << "\"";
+        if (isp_config.ispdigitalgainrange.has_value())
+            gst << " ispdigitalgainrange=\"" << isp_config.ispdigitalgainrange->first
+                << " " << isp_config.ispdigitalgainrange->second << "\"";
+        gst << " ! video/x-raw(memory:NVMM)"
+            << ",width=" << width
+            << ",height=" << height
+            << ",framerate=" << isp_config.fps << "/1"
+            << ",format=NV12"
+            << " ! nvvidconv"
+            << " ! video/x-raw,format=BGRx"
+            << " ! videoconvert"
+            << " ! video/x-raw,format=BGR"
+            << " ! appsink drop=true max-buffers=" << isp_config.max_buffers;
+
+        std::string gst_pipeline = gst.str();
         
         SPDLOG_INFO("CAM{}: GStreamer pipeline: {}", cam_id, gst_pipeline);
         
@@ -58,7 +86,7 @@ bool Camera::Enable()
         SPDLOG_INFO("CAM{}: Camera opened successfully", cam_id);
 
         // Note: Resolution and FPS are set in the GStreamer pipeline, not via cap.set()
-        SPDLOG_INFO("CAM{}: Camera configured for {}x{} @ {} fps", cam_id, width, height, DEFAULT_CAMERA_FPS);
+        SPDLOG_INFO("CAM{}: Camera configured for {}x{} @ {} fps", cam_id, width, height, isp_config.fps);
 
         // grab a few frames to initialize
         cv::Mat dummy_frame;

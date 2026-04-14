@@ -2,16 +2,19 @@
 #include "core/data_handling.hpp"
 #include "inference/inference_manager.hpp"
 
-CameraManager::CameraManager(const std::array<CameraConfig, NUM_CAMERAS>& camera_configs, InferenceManager& inference_manager)
+CameraManager::CameraManager(const std::array<CameraConfig, NUM_CAMERAS>& camera_configs,
+                             const CameraISPConfig& isp_config,
+                             InferenceManager& inference_manager)
 :
 inferenceManager(inference_manager),
+isp_config(isp_config),
 capture_mode(CAPTURE_MODE::IDLE),
 storage_folder(IMAGES_FOLDER),
 camera_configs(camera_configs),
-cameras{{Camera(camera_configs[0].id, camera_configs[0].path),
-    Camera(camera_configs[1].id, camera_configs[1].path),
-    Camera(camera_configs[2].id, camera_configs[2].path),
-    Camera(camera_configs[3].id, camera_configs[3].path)}}
+cameras{{Camera(camera_configs[0].id, camera_configs[0].path, isp_config),
+    Camera(camera_configs[1].id, camera_configs[1].path, isp_config),
+    Camera(camera_configs[2].id, camera_configs[2].path, isp_config),
+    Camera(camera_configs[3].id, camera_configs[3].path, isp_config)}}
 {
     _UpdateCamStatus();
     SPDLOG_INFO("Camera Manager initialized");
@@ -495,9 +498,13 @@ int CameraManager::EnableCameras(std::array<bool, NUM_CAMERAS>& id_activated_cam
     id_activated_cams.fill(false); // Initialize to false
     int count = 0;
 
-    for (size_t i = 0; i < NUM_CAMERAS; ++i) 
+    for (size_t i = 0; i < NUM_CAMERAS; ++i)
     {
-        cameras[i].Enable(); 
+        if (!camera_configs[i].enabled) {
+            SPDLOG_INFO("CAM{}: disabled in config, skipping", camera_configs[i].id);
+            continue;
+        }
+        cameras[i].Enable();
 
         if (cameras[i].GetStatus() == CAM_STATUS::ACTIVE)
         {

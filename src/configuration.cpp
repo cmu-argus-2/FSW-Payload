@@ -18,6 +18,7 @@ void Configuration::LoadConfiguration(std::string config_path)
 
     // Parse camera configurations after loading the config
     ParseCameraDevicesConfig();
+    ParseCameraISPConfig();
 
     // Parse IMU configuration
     ParseIMUConfig();
@@ -44,9 +45,10 @@ void Configuration::ParseCameraDevicesConfig()
         if (cam_table) {
             CameraConfig cam_config;
             // TODO (Error handling): some of these shouldn't be optional
-            cam_config.id     = get_or_warn<int64_t>(*cam_table, "id", 0, "id");
-            cam_config.width  = get_or_warn<int64_t>(*cam_table, "resolution_width", 640, "resolution_width");
-            cam_config.height = get_or_warn<int64_t>(*cam_table, "resolution_height", 480, "resolution_height");
+            cam_config.id      = get_or_warn<int64_t>(*cam_table, "id", 0, "id");
+            cam_config.width   = get_or_warn<int64_t>(*cam_table, "resolution_width", 640, "resolution_width");
+            cam_config.height  = get_or_warn<int64_t>(*cam_table, "resolution_height", 480, "resolution_height");
+            cam_config.enabled = get_or_warn<bool>(*cam_table, "enabled", true, "enabled");
 
             if (auto p = cam_table->get_as<std::string>("path"))
                 cam_config.path = (*p).get();
@@ -58,6 +60,48 @@ void Configuration::ParseCameraDevicesConfig()
             camera_configs[idx] = cam_config;
             ++idx;
         }
+    }
+}
+
+void Configuration::ParseCameraISPConfig()
+{
+    auto* tbl = config["camera-isp"].as_table();
+    if (!tbl) {
+        SPDLOG_INFO("No [camera-isp] section found in config — using all defaults.");
+        return;
+    }
+
+    camera_isp_config.wbmode               = static_cast<int>(get_or_warn<int64_t>(*tbl, "wbmode", 0, "wbmode"));
+    camera_isp_config.aelock               = get_or_warn<bool>(*tbl, "aelock", false, "aelock");
+    camera_isp_config.awblock              = get_or_warn<bool>(*tbl, "awblock", false, "awblock");
+    camera_isp_config.ee_mode              = static_cast<int>(get_or_warn<int64_t>(*tbl, "ee_mode", 1, "ee_mode"));
+    camera_isp_config.ee_strength          = static_cast<float>(get_or_warn<double>(*tbl, "ee_strength", -1.0, "ee_strength"));
+    camera_isp_config.aeantibanding        = static_cast<int>(get_or_warn<int64_t>(*tbl, "aeantibanding", 1, "aeantibanding"));
+    camera_isp_config.exposurecompensation = static_cast<float>(get_or_warn<double>(*tbl, "exposurecompensation", 0.0, "exposurecompensation"));
+    camera_isp_config.tnr_mode             = static_cast<int>(get_or_warn<int64_t>(*tbl, "tnr_mode", 1, "tnr_mode"));
+    camera_isp_config.tnr_strength         = static_cast<float>(get_or_warn<double>(*tbl, "tnr_strength", -1.0, "tnr_strength"));
+    camera_isp_config.saturation           = static_cast<float>(get_or_warn<double>(*tbl, "saturation", 1.0, "saturation"));
+    camera_isp_config.fps                  = static_cast<int>(get_or_warn<int64_t>(*tbl, "fps", DEFAULT_CAMERA_FPS, "fps"));
+    camera_isp_config.max_buffers          = static_cast<int>(get_or_warn<int64_t>(*tbl, "max_buffers", 2, "max_buffers"));
+
+    // Optional range: [min, max] TOML arrays
+    if (auto arr = tbl->get_as<toml::array>("exposuretimerange"); arr && arr->size() == 2) {
+        auto lo = arr->get_as<int64_t>(0);
+        auto hi = arr->get_as<int64_t>(1);
+        if (lo && hi)
+            camera_isp_config.exposuretimerange = {(*lo).get(), (*hi).get()};
+    }
+    if (auto arr = tbl->get_as<toml::array>("gainrange"); arr && arr->size() == 2) {
+        auto lo = arr->get_as<double>(0);
+        auto hi = arr->get_as<double>(1);
+        if (lo && hi)
+            camera_isp_config.gainrange = {static_cast<float>((*lo).get()), static_cast<float>((*hi).get())};
+    }
+    if (auto arr = tbl->get_as<toml::array>("ispdigitalgainrange"); arr && arr->size() == 2) {
+        auto lo = arr->get_as<double>(0);
+        auto hi = arr->get_as<double>(1);
+        if (lo && hi)
+            camera_isp_config.ispdigitalgainrange = {static_cast<float>((*lo).get()), static_cast<float>((*hi).get())};
     }
 }
 
@@ -96,6 +140,11 @@ void Configuration::ParseIMUConfig()
 const std::array<CameraConfig, NUM_CAMERAS>& Configuration::GetCameraConfigs() const
 {
     return camera_configs;
+}
+
+const CameraISPConfig& Configuration::GetCameraISPConfig() const
+{
+    return camera_isp_config;
 }
 
 

@@ -27,8 +27,9 @@ int main(int argc, char** argv)
     auto config = std::make_unique<Configuration>();
     config->LoadConfiguration("config/config.toml");
     const auto& cam_configs = config->GetCameraConfigs();
+    const auto& isp_config  = config->GetCameraISPConfig();
     InferenceManager inference_manager;
-    CameraManager cam_manager(cam_configs, inference_manager);
+    CameraManager cam_manager(cam_configs, isp_config, inference_manager);
 
     spdlog::info("Enabling cameras...");
     std::array<bool, NUM_CAMERAS> activated;

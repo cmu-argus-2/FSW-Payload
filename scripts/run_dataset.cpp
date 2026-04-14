@@ -84,42 +84,50 @@ int run(int argc, char** argv)
         if (camera_thread.joinable()) camera_thread.join();
     };
 
-    auto ds = DatasetManager::GetActiveDatasetManager(DATASET_KEY_CMD);
-
-    if (ds) // if already exists
+    try
     {
-        // need to ensure it's actually running
-        if (ds->Running())
+        auto ds = DatasetManager::GetActiveDatasetManager(DATASET_KEY_CMD);
+
+        if (ds) // if already exists
         {
-            // if running: TODO: return ERROR ACK saying that a dataset is already running
-            // If completed, stop it then too
-            SPDLOG_ERROR("Dataset already running under key {}, ignoring command", DATASET_KEY_CMD);
-            stop_threads();
-            return to_uint8(EC::PLACEHOLDER);
+            // need to ensure it's actually running
+            if (ds->Running())
+            {
+                // if running: TODO: return ERROR ACK saying that a dataset is already running
+                // If completed, stop it then too
+                SPDLOG_ERROR("Dataset already running under key {}, ignoring command", DATASET_KEY_CMD);
+                stop_threads();
+                return to_uint8(EC::PLACEHOLDER);
+            }
+            else
+            {
+                ds->StopDatasetManager(DATASET_KEY_CMD); // remove it (will create a new one)
+            }
         }
-        else
+
+        // Create a new Dataset
+        SPDLOG_INFO("Starting dataset collection (type {}) for {} frames at a period of {} seconds.", static_cast<uint8_t>(capture_mode), target_frame_nb, max_period);
+
+        ds = DatasetManager::Create(max_period, target_frame_nb, capture_mode, capture_start_time,
+                                    imu_collection_mode, image_capture_rate, imu_sample_rate_hz,
+                                    target_processing_stage, DATASET_KEY_CMD, camera_manager, imu_manager, inference_manager);
+        ds->StartCollection();
+
+        // StartCollection is asynchronous — block here until the collection loop
+        // finishes naturally (frame target met or period elapsed).
+        while (ds->Running())
         {
-            ds->StopDatasetManager(DATASET_KEY_CMD); // remove it (will create a new one)
+            std::this_thread::sleep_for(std::chrono::milliseconds(100));
         }
+
+        // Close Dataset Manager (joins the collection thread internally)
+        ds->StopDatasetManager(DATASET_KEY_CMD);
     }
-
-    // Create a new Dataset
-    SPDLOG_INFO("Starting dataset collection (type {}) for {} frames at a period of {} seconds.", static_cast<uint8_t>(capture_mode), target_frame_nb, max_period);
-
-    ds = DatasetManager::Create(max_period, target_frame_nb, capture_mode, capture_start_time,
-                                imu_collection_mode, image_capture_rate, imu_sample_rate_hz,
-                                target_processing_stage, DATASET_KEY_CMD, camera_manager, imu_manager, inference_manager);
-    ds->StartCollection();
-
-    // StartCollection is asynchronous — block here until the collection loop
-    // finishes naturally (frame target met or period elapsed).
-    while (ds->Running())
+    catch (...)
     {
-        std::this_thread::sleep_for(std::chrono::milliseconds(100));
+        stop_threads();
+        throw;
     }
-
-    // Close Dataset Manager (joins the collection thread internally)
-    ds->StopDatasetManager(DATASET_KEY_CMD);
 
     stop_threads();
 

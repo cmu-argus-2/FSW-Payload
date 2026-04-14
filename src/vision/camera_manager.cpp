@@ -52,23 +52,29 @@ uint8_t CameraManager::SaveLatestFrames(CAPTURE_MODE mode)
     const bool needs_inference = (mode == CAPTURE_MODE::PERIODIC_ROI ||
                                   mode == CAPTURE_MODE::PERIODIC_LDMK);
 
-    std::vector<std::shared_ptr<Frame>> earth_frames;
-
-    // Collect frames, run prefiltering and earth check when required
+    // grab all active camera buffers in a tight loop
+    std::vector<std::shared_ptr<Frame>> grabbed;
+    grabbed.reserve(NUM_CAMERAS);
     for (std::size_t i = 0; i < NUM_CAMERAS; ++i)
     {
-        if (cameras[i].GetStatus() != CAM_STATUS::ACTIVE || !cameras[i].IsNewFrameAvailable())
-            continue;
+        if (cameras[i].GetStatus() == CAM_STATUS::ACTIVE && cameras[i].IsNewFrameAvailable())
+        {
+            grabbed.push_back(std::make_shared<Frame>(cameras[i].GetBufferFrame()));
+            cameras[i].SetOffNewFrameFlag();
+        }
+    }
 
-        auto frame_ptr = std::make_shared<Frame>(cameras[i].GetBufferFrame());
-        cameras[i].SetOffNewFrameFlag();
+    // prefilter, run inference, and persist
+    std::vector<std::shared_ptr<Frame>> earth_frames;
 
+    for (auto& frame_ptr : grabbed)
+    {
         if (needs_prefilter && frame_ptr->GetProcessingStage() == ProcessingStage::NotPrefiltered)
             frame_ptr->RunPrefiltering();
 
         if (needs_prefilter && frame_ptr->GetImageState() < ImageState::Earth)
         {
-            SPDLOG_INFO("CAM{}: Frame skipped (not Earth)", cameras[i].GetID());
+            SPDLOG_INFO("CAM{}: Frame skipped (not Earth)", frame_ptr->GetCamID());
             continue;
         }
 

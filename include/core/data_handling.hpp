@@ -80,13 +80,13 @@ namespace DH // Data Handling
     // Store a raw image and frame class information to disk
     std::string StoreFrameToDisk(Frame& frame,
                                   std::string_view target_folder = IMAGES_FOLDER,
-                                  ImageFormat fmt = ImageFormat::PNG,
-                                  int jpg_quality = 95);
+                                  ImageFormat fmt = ImageFormat::JPG,
+                                  int jpg_quality = 100);
     // raw_timestamp_camid.{png|jpg}
     std::string StoreRawImgToDisk(std::uint64_t timestamp, int cam_id, const cv::Mat& img,
                                    std::string_view target_folder = IMAGES_FOLDER,
-                                   ImageFormat fmt = ImageFormat::PNG,
-                                   int jpg_quality = 95);
+                                   ImageFormat fmt = ImageFormat::JPG,
+                                   int jpg_quality = 100);
     // frame_timestamp_camid.json  — auto-discovers the corresponding raw image file
     void StoreFrameMetadataToDisk(Frame& frame, std::string_view target_folder = IMAGES_FOLDER);
 

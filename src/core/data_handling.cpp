@@ -219,7 +219,7 @@ void StoreFrameMetadataToDisk(Frame& frame, std::string_view target_folder)
     nlohmann::ordered_json j = frame.toOrderedJson();
 
     // Inject raw_image block: probe for the stored image file (PNG or JPG)
-    for (ImageFormat fmt : {ImageFormat::PNG, ImageFormat::JPG})
+    for (ImageFormat fmt : {ImageFormat::JPG, ImageFormat::PNG})
     {
         std::ostringstream img_oss;
         img_oss << folder << "raw" << DELIMITER
@@ -544,8 +544,8 @@ bool ReadImageFromDisk(std::uint64_t timestamp, int cam_id, Frame& frame_out, st
     if (folder.back() != '/')
         folder += '/';
 
-    // Try both formats in the order they were written (PNG first, then JPG)
-    for (ImageFormat fmt : {ImageFormat::PNG, ImageFormat::JPG})
+    // Try both formats
+    for (ImageFormat fmt : {ImageFormat::JPG, ImageFormat::PNG})
     {
         std::ostringstream oss;
         oss << folder << "raw" << DELIMITER << timestamp << DELIMITER << cam_id

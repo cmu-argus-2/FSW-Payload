@@ -33,7 +33,7 @@ Payload::Payload(std::unique_ptr<Configuration> _config, std::unique_ptr<Communi
 _running_instance(false),
 config(std::move(_config)),
 communication(std::move(_comms_interface)),
-camera_manager(config->GetCameraConfigs(), inference_manager),
+camera_manager(config->GetCameraConfigs(), config->GetCameraISPConfig(), inference_manager),
 imu_manager(config->GetIMUConfig()),
 state(PayloadState::STARTUP),
 thread_pool(std::make_unique<ThreadPool>(5))

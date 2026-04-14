@@ -450,7 +450,7 @@ struct DatasetManagerTest : ::testing::Test
 
     InferenceManager                      im;
     std::array<CameraConfig, NUM_CAMERAS> cam_configs { makeDummyCamConfigs() };
-    CameraManager                         cam_mgr { cam_configs, im };
+    CameraManager                         cam_mgr { cam_configs, CameraISPConfig{}, im };
     IMUManager                            imu_mgr { IMUConfig{0x00, 0x68, "/dev/null"} };
     std::vector<std::string>              test_folders;
 

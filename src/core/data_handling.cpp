@@ -180,7 +180,8 @@ bool readDatasetFromDisk(const std::string& dataset_file_path, Dataset& dataset_
     return true;
 }
 
-std::string StoreFrameToDisk(Frame& frame, std::string_view target_folder)
+std::string StoreFrameToDisk(Frame& frame, std::string_view target_folder,
+                              ImageFormat fmt, int jpg_quality)
 {
     std::filesystem::path folder_path(target_folder);
     if (!std::filesystem::is_directory(folder_path))
@@ -193,7 +194,8 @@ std::string StoreFrameToDisk(Frame& frame, std::string_view target_folder)
     if (folder.back() != '/')
         folder += '/';
 
-    std::string img_path = StoreRawImgToDisk(frame.GetTimestamp(), frame.GetCamID(), frame.GetImg(), folder);
+    std::string img_path = StoreRawImgToDisk(frame.GetTimestamp(), frame.GetCamID(),
+                                              frame.GetImg(), folder, fmt, jpg_quality);
     StoreFrameMetadataToDisk(frame, folder);
     return img_path;
 }
@@ -216,6 +218,29 @@ void StoreFrameMetadataToDisk(Frame& frame, std::string_view target_folder)
 
     nlohmann::ordered_json j = frame.toOrderedJson();
 
+    // Inject raw_image block: probe for the stored image file (PNG or JPG)
+    for (ImageFormat fmt : {ImageFormat::PNG, ImageFormat::JPG})
+    {
+        std::ostringstream img_oss;
+        img_oss << folder << "raw" << DELIMITER
+                << frame.GetTimestamp() << DELIMITER
+                << frame.GetCamID() << ImageFormatExtension(fmt);
+        std::string raw_path = img_oss.str();
+
+        if (std::filesystem::exists(raw_path))
+        {
+            const cv::Size img_size = frame.GetImgSize();
+            nlohmann::ordered_json raw_image_j;
+            raw_image_j["path"]       = raw_path;
+            raw_image_j["format"]     = ImageFormatToString(fmt);
+            raw_image_j["width"]      = img_size.width;
+            raw_image_j["height"]     = img_size.height;
+            raw_image_j["size_bytes"] = GetFileSize(raw_path);
+            j["raw_image"] = raw_image_j;
+            break;
+        }
+    }
+
     std::ofstream ofs(file_path, std::ios::out | std::ios::trunc);
     if (!ofs.is_open())
     {
@@ -229,7 +254,9 @@ void StoreFrameMetadataToDisk(Frame& frame, std::string_view target_folder)
     SPDLOG_DEBUG("Metadata file size: {} bytes", GetFileSize(file_path));
 }
 
-std::string StoreRawImgToDisk(std::uint64_t timestamp, int cam_id, const cv::Mat& img, std::string_view target_folder)
+std::string StoreRawImgToDisk(std::uint64_t timestamp, int cam_id, const cv::Mat& img,
+                               std::string_view target_folder,
+                               ImageFormat fmt, int jpg_quality)
 {
     std::filesystem::path folder_path(target_folder);
     if (!std::filesystem::is_directory(folder_path))
@@ -242,10 +269,16 @@ std::string StoreRawImgToDisk(std::uint64_t timestamp, int cam_id, const cv::Mat
         folder += '/';
 
     std::ostringstream oss;
-    oss << folder << "raw" << DELIMITER << timestamp << DELIMITER << cam_id << ".png";
+    oss << folder << "raw" << DELIMITER << timestamp << DELIMITER << cam_id
+        << ImageFormatExtension(fmt);
     std::string file_path = oss.str();
-    cv::imwrite(file_path, img);
-    SPDLOG_INFO("Saved img to disk: {}", file_path);
+
+    std::vector<int> params;
+    if (fmt == ImageFormat::JPG)
+        params = {cv::IMWRITE_JPEG_QUALITY, jpg_quality};
+
+    cv::imwrite(file_path, img, params);
+    SPDLOG_INFO("Saved img to disk: {} ({})", file_path, ImageFormatToString(fmt));
     SPDLOG_INFO("File size: {} bytes", GetFileSize(file_path));
     SPDLOG_DEBUG("Total size of folder {}: {} bytes", folder, GetDirectorySize(folder));
     SPDLOG_DEBUG("Number of files in folder {}: {}", folder, CountFilesInDirectory(folder));
@@ -511,9 +544,18 @@ bool ReadImageFromDisk(std::uint64_t timestamp, int cam_id, Frame& frame_out, st
     if (folder.back() != '/')
         folder += '/';
 
-    std::ostringstream oss;
-    oss << folder << "raw" << DELIMITER << timestamp << DELIMITER << cam_id << ".png";
-    return ReadImageFromDisk(oss.str(), frame_out, cam_id, timestamp);
+    // Try both formats in the order they were written (PNG first, then JPG)
+    for (ImageFormat fmt : {ImageFormat::PNG, ImageFormat::JPG})
+    {
+        std::ostringstream oss;
+        oss << folder << "raw" << DELIMITER << timestamp << DELIMITER << cam_id
+            << ImageFormatExtension(fmt);
+        if (std::filesystem::exists(oss.str()))
+            return ReadImageFromDisk(oss.str(), frame_out, cam_id, timestamp);
+    }
+    SPDLOG_ERROR("ReadImageFromDisk: no raw image found for timestamp={} cam_id={} in {}",
+                 timestamp, cam_id, target_folder);
+    return false;
 }
 
 Json LoadFrameMetadataFromDisk(std::uint64_t timestamp, int cam_id, std::string_view target_folder)

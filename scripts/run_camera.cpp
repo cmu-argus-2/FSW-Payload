@@ -1,6 +1,7 @@
 #include <memory>
 #include "spdlog/spdlog.h"
 #include "vision/camera_manager.hpp"
+#include "inference/inference_manager.hpp"
 #include "configuration.hpp"
 #include "core/data_handling.hpp"
 
@@ -13,7 +14,8 @@ int main(int argc, char** argv)
     
 
     const auto& cam_configs = config->GetCameraConfigs();
-    CameraManager cam_manager(cam_configs);
+    InferenceManager inference_manager;
+    CameraManager cam_manager(cam_configs, inference_manager);
 
     spdlog::info("Enabling cameras...");
     std::array<bool, NUM_CAMERAS> activated;

@@ -4,6 +4,8 @@
 #include <string>
 #include <vector>
 #include <opencv2/opencv.hpp>
+#include <nlohmann/json.hpp>
+// using namespace cv;
 
 struct PrefilterResult {
     bool passed;
@@ -31,6 +33,9 @@ struct PrefilterResult {
     }
 };
 
-PrefilterResult prefilter_image(const cv::Mat& img, int cloudiness_threshold = 1000, int white_threshold = 2000, int color_threshold = 0, int contrast_threshold = 0);
+PrefilterResult prefilter_image(const cv::Mat& img, int cloudiness_threshold = 50, int white_threshold = 100, int color_threshold = 30, int contrast_threshold = 20);
+
+nlohmann::ordered_json PrefilterResultToJson(const PrefilterResult& res);
+PrefilterResult PrefilterResultFromJson(const nlohmann::json& j);
 
 #endif // PREFILTERING_H

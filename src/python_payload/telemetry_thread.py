@@ -21,7 +21,7 @@ class TelemetryThread(threading.Thread):
         self,
         stop_event: threading.Event,
         interval_s: float = 1.0,
-        output_path: str = "telemetry_logs",
+        output_path: str = "data/telemetry",
         compression_level: int = 3,
     ):
         super().__init__(name="TelemetryThread", daemon=True)

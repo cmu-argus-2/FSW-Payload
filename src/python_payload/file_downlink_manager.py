@@ -68,7 +68,10 @@ class FileDownlinkManager:
         return all_ok
 
     def send_file(self, file_path: str, tid: int = 0) -> FileDownlinkResult:
-        """Send a single file reliably, handling retries and batch confirmations."""
+        """
+        Send a single file reliably, handling retries and batch confirmations.
+        tid will always be assumed as 0, only a single transaction will be running at a time
+        """
         if not os.path.exists(file_path):
             return FileDownlinkResult(file_path=file_path, success=False, reason="file_not_found")
 

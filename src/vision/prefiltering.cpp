@@ -155,89 +155,39 @@ PrefilterResult prefilter_image(
     return result;
 }
 
+nlohmann::ordered_json PrefilterResultToJson(const PrefilterResult& res)
+{
+    return nlohmann::ordered_json{
+        {"passed",         res.passed},
+        {"cloudiness",     res.cloudiness},
+        {"color_std",      res.color_std},
+        {"contrast_std",   res.contrast_std},
+        {"avg_color_rgb",  nlohmann::ordered_json::array({res.avg_color_rgb[0], res.avg_color_rgb[1], res.avg_color_rgb[2]})},
+        {"avg_hue",        res.avg_hue},
+        {"avg_saturation", res.avg_saturation},
+        {"avg_value",      res.avg_value},
+        {"is_significant", res.is_significant},
+        {"dominant_type",  res.dominant_type},
+        {"error",          res.error}
+    };
+}
 
-
-// int main(int argc, char* argv[]) {
-//     // Test directory
-//     std::string home_dir = std::getenv("HOME");
-//     fs::path test_dir = fs::path(home_dir) / "Desktop" / "prefilter_test";
-    
-//     if (!fs::exists(test_dir)) {
-//         std::cerr << "Error: Directory " << test_dir << " does not exist" << std::endl;
-//         return 1;
-//     }
-    
-//     // Get all image files
-//     std::vector<std::string> image_extensions = {".jpg", ".jpeg", ".png", ".bmp", ".tif", ".tiff"};
-//     std::vector<fs::path> image_files;
-    
-//     for (const auto& entry : fs::directory_iterator(test_dir)) {
-//         if (entry.is_regular_file()) {
-//             std::string ext = entry.path().extension().string();
-//             std::transform(ext.begin(), ext.end(), ext.begin(), ::tolower);
-//             if (std::find(image_extensions.begin(), image_extensions.end(), ext) != image_extensions.end()) {
-//                 image_files.push_back(entry.path());
-//             }
-//         }
-//     }
-    
-//     if (image_files.empty()) {
-//         std::cout << "No image files found in " << test_dir << std::endl;
-//         return 1;
-//     }
-    
-//     std::sort(image_files.begin(), image_files.end());
-    
-//     std::cout << "\nTesting " << image_files.size() << " images from " << test_dir << "\n" << std::endl;
-//     std::cout << std::string(70, '=') << std::endl;
-    
-//     int passed_count = 0;
-//     int rejected_count = 0;
-    
-//     // Default thresholds for testing
-//     int cloudiness_threshold = 20;
-//     int white_threshold = 200;
-//     int color_threshold = 15;
-//     int contrast_threshold = 20;
-    
-//     for (const auto& img_file : image_files) {
-//         try {
-//             cv::Mat img = cv::imread(img_file.string());
-//             if (img.empty()) {
-//                 std::cout << "\n" << img_file.filename().string() << std::endl;
-//                 std::cout << "  ERROR: Failed to load image" << std::endl;
-//                 rejected_count++;
-//                 continue;
-//             }
-            
-//             PrefilterResult result = prefilter_image(img, cloudiness_threshold, white_threshold, color_threshold, contrast_threshold);
-            
-//             std::string status = result.passed ? "PASSED ✓" : "REJECTED ✗";
-//             if (result.passed) {
-//                 passed_count++;
-//             } else {
-//                 rejected_count++;
-//             }
-            
-//             std::cout << "\n" << img_file.filename().string() << std::endl;
-//             std::cout << "  Status: " << status << std::endl;
-//             std::cout << "  Type: " << result.dominant_type << std::endl;
-//             std::cout << "  Significant: " << (result.is_significant ? "yes" : "no") << std::endl;
-//             std::cout << "  Cloudiness: " << result.cloudiness 
-//                       << " | Brightness: " << result.avg_value 
-//                       << " | Color Std: " << result.color_std 
-//                       << " | Contrast Std: " << result.contrast_std << std::endl;
-            
-//         } catch (const std::exception& e) {
-//             std::cout << "\n" << img_file.filename().string() << std::endl;
-//             std::cout << "  ERROR: " << e.what() << std::endl;
-//             rejected_count++;
-//         }
-//     }
-    
-//     std::cout << "\n" << std::string(70, '=') << std::endl;
-//     std::cout << "SUMMARY: " << passed_count << " passed, " << rejected_count << " rejected" << std::endl;
-//     std::cout << std::string(70, '=') << std::endl;
-    
-//     return 0;
-// }
+PrefilterResult PrefilterResultFromJson(const nlohmann::json& j)
+{
+    PrefilterResult res{};
+    res.passed         = j.at("passed").get<bool>();
+    res.cloudiness     = j.at("cloudiness").get<int>();
+    res.color_std      = j.at("color_std").get<float>();
+    res.contrast_std   = j.at("contrast_std").get<float>();
+    const auto& rgb    = j.at("avg_color_rgb");
+    res.avg_color_rgb[0] = rgb[0].get<float>();
+    res.avg_color_rgb[1] = rgb[1].get<float>();
+    res.avg_color_rgb[2] = rgb[2].get<float>();
+    res.avg_hue        = j.at("avg_hue").get<float>();
+    res.avg_saturation = j.at("avg_saturation").get<float>();
+    res.avg_value      = j.at("avg_value").get<float>();
+    res.is_significant = j.at("is_significant").get<bool>();
+    res.dominant_type  = j.at("dominant_type").get<std::string>();
+    res.error          = j.at("error").get<std::string>();
+    return res;
+}

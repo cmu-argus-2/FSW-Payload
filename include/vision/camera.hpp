@@ -18,7 +18,7 @@
 // Defined here so Camera can store a copy; camera_manager.hpp re-exports it via camera.hpp.
 struct CameraISPConfig
 {
-    int   wbmode               = 0;     // white balance mode (0 = auto)
+    int   wbmode               = 0;     // white balance mode (0=off, 1=auto, 2=incandescent, 3=fluorescent, 4=warm-fluorescent, 5=daylight, 6=cloudy-daylight, 7=twilight, 8=shade, 9=manual)
     bool  aelock               = false; // auto-exposure lock
     bool  awblock              = false; // auto-white-balance lock
     int   ee_mode              = 1;     // edge enhancement mode (1 = EdgeEnhance_Fast)

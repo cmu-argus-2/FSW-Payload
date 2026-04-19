@@ -348,11 +348,17 @@ bool GetHighestValueRawFilePath(std::filesystem::directory_entry& highest_value_
 
                     best_frame = cur_frame;
 
-                    auto img_path = entry.path();
-                    img_path.replace_extension(".png"); // get the corresponding image path from the JSON file
-
-                    highest_value_file = std::filesystem::directory_entry(img_path);
-                    found = true;
+                    for (ImageFormat fmt : {ImageFormat::JPG, ImageFormat::PNG})
+                    {
+                        auto img_path = entry.path();
+                        img_path.replace_extension(ImageFormatExtension(fmt));
+                        if (std::filesystem::exists(img_path))
+                        {
+                            highest_value_file = std::filesystem::directory_entry(img_path);
+                            found = true;
+                            break;
+                        }
+                    }
 
                 }
             }

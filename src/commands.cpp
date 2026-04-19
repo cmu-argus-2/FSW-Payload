@@ -414,8 +414,24 @@ void request_image([[maybe_unused]] std::vector<uint8_t> &data)
         return;
     }
 
-    // Reconstruct the original image path from the frame data
-    std::string img_path = std::string(IMAGES_FOLDER) + "raw_" + std::to_string(frame.GetTimestamp()) + "_" + std::to_string(frame.GetCamID()) + ".png";
+    // Reconstruct the original image path from the frame data, checking both JPG and PNG
+    std::string img_path;
+    for (ImageFormat fmt : {ImageFormat::JPG, ImageFormat::PNG})
+    {
+        std::string candidate = std::string(IMAGES_FOLDER) + "raw_" + std::to_string(frame.GetTimestamp()) + "_" + std::to_string(frame.GetCamID()) + ImageFormatExtension(fmt);
+        if (std::filesystem::exists(candidate))
+        {
+            img_path = candidate;
+            break;
+        }
+    }
+    if (img_path.empty())
+    {
+        SPDLOG_ERROR("Failed to find image file for frame ({}, {})", frame.GetCamID(), frame.GetTimestamp());
+        std::shared_ptr<Message> msg = CreateErrorAckMessage(CommandID::REQUEST_IMAGE, to_uint8(EC::FILE_NOT_AVAILABLE));
+        sys::payload().TransmitMessage(msg);
+        return;
+    }
     std::string abs_img_path = std::filesystem::absolute(img_path).string();
     SPDLOG_INFO("Using image: {}", abs_img_path);
 

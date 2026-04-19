@@ -27,7 +27,7 @@ resolution_width = 4608
 enabled = true
 
 # Shared ISP parameters applied to all cameras (nvarguscamerasrc properties).
-# Omit a field to keep its default value.
+# Omit a field to use the default declared in CameraISPConfig (camera.hpp).
 [camera-isp]
 wbmode               = 0      # 0=off, 1=auto, 2=incandescent, 3=fluorescent, 4=warm-fluorescent, 5=daylight, 6=cloudy-daylight, 7=twilight, 8=shade, 9=manual
 aelock               = false  # lock auto-exposure

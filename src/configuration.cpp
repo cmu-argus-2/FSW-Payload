@@ -71,20 +71,21 @@ void Configuration::ParseCameraISPConfig()
         return;
     }
 
-    camera_isp_config.wbmode               = static_cast<int>(get_or_warn<int64_t>(*tbl, "wbmode", 0, "wbmode"));
-    camera_isp_config.aelock               = get_or_warn<bool>(*tbl, "aelock", false, "aelock");
-    camera_isp_config.awblock              = get_or_warn<bool>(*tbl, "awblock", false, "awblock");
-    camera_isp_config.ee_mode              = static_cast<int>(get_or_warn<int64_t>(*tbl, "ee_mode", 1, "ee_mode"));
-    camera_isp_config.ee_strength          = static_cast<float>(get_or_warn<double>(*tbl, "ee_strength", -1.0, "ee_strength"));
-    camera_isp_config.aeantibanding        = static_cast<int>(get_or_warn<int64_t>(*tbl, "aeantibanding", 1, "aeantibanding"));
-    camera_isp_config.exposurecompensation = static_cast<float>(get_or_warn<double>(*tbl, "exposurecompensation", 0.0, "exposurecompensation"));
-    camera_isp_config.tnr_mode             = static_cast<int>(get_or_warn<int64_t>(*tbl, "tnr_mode", 1, "tnr_mode"));
-    camera_isp_config.tnr_strength         = static_cast<float>(get_or_warn<double>(*tbl, "tnr_strength", -1.0, "tnr_strength"));
-    camera_isp_config.saturation           = static_cast<float>(get_or_warn<double>(*tbl, "saturation", 1.0, "saturation"));
-    camera_isp_config.fps                  = static_cast<int>(get_or_warn<int64_t>(*tbl, "fps", DEFAULT_CAMERA_FPS, "fps"));
-    camera_isp_config.max_buffers          = static_cast<int>(get_or_warn<int64_t>(*tbl, "max_buffers", 2, "max_buffers"));
+    // Only assign fields that are explicitly present in the TOML.
+    // Absent fields keep the struct defaults declared in CameraISPConfig.
+    if (auto v = tbl->get_as<int64_t>("wbmode"))               camera_isp_config.wbmode               = static_cast<int>((*v).get());
+    if (auto v = tbl->get_as<bool>("aelock"))                   camera_isp_config.aelock               = (*v).get();
+    if (auto v = tbl->get_as<bool>("awblock"))                  camera_isp_config.awblock              = (*v).get();
+    if (auto v = tbl->get_as<int64_t>("ee_mode"))               camera_isp_config.ee_mode              = static_cast<int>((*v).get());
+    if (auto v = tbl->get_as<double>("ee_strength"))            camera_isp_config.ee_strength          = static_cast<float>((*v).get());
+    if (auto v = tbl->get_as<int64_t>("aeantibanding"))         camera_isp_config.aeantibanding        = static_cast<int>((*v).get());
+    if (auto v = tbl->get_as<double>("exposurecompensation"))   camera_isp_config.exposurecompensation = static_cast<float>((*v).get());
+    if (auto v = tbl->get_as<int64_t>("tnr_mode"))              camera_isp_config.tnr_mode             = static_cast<int>((*v).get());
+    if (auto v = tbl->get_as<double>("tnr_strength"))           camera_isp_config.tnr_strength         = static_cast<float>((*v).get());
+    if (auto v = tbl->get_as<double>("saturation"))             camera_isp_config.saturation           = static_cast<float>((*v).get());
+    if (auto v = tbl->get_as<int64_t>("fps"))                   camera_isp_config.fps                  = static_cast<int>((*v).get());
+    if (auto v = tbl->get_as<int64_t>("max_buffers"))           camera_isp_config.max_buffers          = static_cast<int>((*v).get());
 
-    // Optional range: [min, max] TOML arrays
     if (auto arr = tbl->get_as<toml::array>("exposuretimerange"); arr && arr->size() == 2) {
         auto lo = arr->get_as<int64_t>(0);
         auto hi = arr->get_as<int64_t>(1);

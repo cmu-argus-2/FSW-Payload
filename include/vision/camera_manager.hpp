@@ -96,9 +96,9 @@ public:
     std::string GetStorageFolder();
     ProcessingStage GetTargetProcessingStage() const;
 
-    // Returns the number of cameras that were activated
-    int EnableCameras(std::array<bool, NUM_CAMERAS>& id_activated_cams);
-    int DisableCameras(std::array<bool, NUM_CAMERAS>& id_disabled_cams);
+    // Returns the number of cameras that were activated/disabled
+    int EnableCameras();
+    int DisableCameras();
 
     bool EnableCamera(int cam_id);
     bool DisableCamera(int cam_id);
@@ -141,6 +141,7 @@ private:
     std::array<CAM_STATUS, NUM_CAMERAS> cam_status;
 
 
+    int CountConfiguredCameras() const; // cameras with enabled=true in config
     void _PerformCameraHealthCheck(); // background watchdog for the cameras
     void _UpdateCamStatus();
     void _AutoDisableIfNeeded();

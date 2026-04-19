@@ -29,8 +29,7 @@ int main(int argc, char** argv)
     CameraManager cam_manager(cam_configs, isp_config, inference_manager);
 
     spdlog::info("Enabling cameras...");
-    std::array<bool, NUM_CAMERAS> activated;
-    int count = cam_manager.EnableCameras(activated);
+    int count = cam_manager.EnableCameras();
     spdlog::info("Cameras enabled: {}", count);
 
     spdlog::info("Waiting for cameras to stabilize...");
@@ -55,8 +54,7 @@ int main(int argc, char** argv)
 
     // Disable cameras before inference to free memory
     spdlog::info("Disabling cameras before inference...");
-    std::array<bool, NUM_CAMERAS> disabled;
-    cam_manager.DisableCameras(disabled);
+    cam_manager.DisableCameras();
 
     // Configure inference manager
     inference_manager.SetRCNetEnginePath(rc_trt_file_path);

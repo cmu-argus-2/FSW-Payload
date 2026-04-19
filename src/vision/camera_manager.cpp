@@ -54,7 +54,7 @@ uint8_t CameraManager::SaveLatestFrames(CAPTURE_MODE mode)
 
     // grab all active camera buffers in a tight loop
     std::vector<std::shared_ptr<Frame>> grabbed;
-    grabbed.reserve(NUM_CAMERAS);
+    grabbed.reserve(CountActiveCameras());
     for (std::size_t i = 0; i < NUM_CAMERAS; ++i)
     {
         if (cameras[i].GetStatus() == CAM_STATUS::ACTIVE && cameras[i].IsNewFrameAvailable())
@@ -94,8 +94,7 @@ uint8_t CameraManager::SaveLatestFrames(CAPTURE_MODE mode)
     // Inference pipeline (PERIODIC_ROI / PERIODIC_LDMK)
     if (needs_inference && !earth_frames.empty())
     {
-        std::array<bool, NUM_CAMERAS> off_cameras;
-        DisableCameras(off_cameras);
+        DisableCameras();
         SPDLOG_INFO("Cameras disabled before inference.");
 
         for (auto& frame_ptr : earth_frames)
@@ -141,8 +140,7 @@ uint8_t CameraManager::SaveLatestFrames(CAPTURE_MODE mode)
             }
         }
 
-        std::array<bool, NUM_CAMERAS> on_cameras;
-        EnableCameras(on_cameras);
+        EnableCameras();
         SPDLOG_INFO("Cameras re-enabled after inference.");
     }
 
@@ -440,14 +438,13 @@ ProcessingStage CameraManager::GetTargetProcessingStage() const
 bool CameraManager::PrepareForCapture()
 {
     const int active_before = CountActiveCameras();
-    if (active_before == NUM_CAMERAS)
+    if (active_before == CountConfiguredCameras())
     {
         auto_disable_after_capture.store(false);
         return true;
     }
 
-    std::array<bool, NUM_CAMERAS> on_cameras;
-    int nb_enabled = EnableCameras(on_cameras);
+    int nb_enabled = EnableCameras();
     if (CountActiveCameras() == 0)
     {
         SPDLOG_ERROR("Failed to enable any cameras for capture.");
@@ -467,8 +464,7 @@ void CameraManager::_AutoDisableIfNeeded()
         return;
     }
 
-    std::array<bool, NUM_CAMERAS> off_cameras;
-    int nb_disabled = DisableCameras(off_cameras);
+    int nb_disabled = DisableCameras();
     SPDLOG_INFO("Auto-disabled {} camera(s) after capture completion.", nb_disabled);
 }
 
@@ -499,9 +495,8 @@ bool CameraManager::DisableCamera(int cam_id)
 }
 
 
-int CameraManager::EnableCameras(std::array<bool, NUM_CAMERAS>& id_activated_cams)
+int CameraManager::EnableCameras()
 {
-    id_activated_cams.fill(false); // Initialize to false
     int count = 0;
 
     for (size_t i = 0; i < NUM_CAMERAS; ++i)
@@ -513,33 +508,38 @@ int CameraManager::EnableCameras(std::array<bool, NUM_CAMERAS>& id_activated_cam
         cameras[i].Enable();
 
         if (cameras[i].GetStatus() == CAM_STATUS::ACTIVE)
-        {
-            id_activated_cams[i] = true;
             count++;
-        }
     }
     _UpdateCamStatus();
     return count;
 }
 
 
-int CameraManager::DisableCameras(std::array<bool, NUM_CAMERAS>& id_disabled_cams)
+int CameraManager::DisableCameras()
 {
-    id_disabled_cams.fill(false); // Initialize to false
     int count = 0;
 
-    for (size_t i = 0; i < NUM_CAMERAS; ++i) 
+    for (size_t i = 0; i < NUM_CAMERAS; ++i)
     {
+        if (!camera_configs[i].enabled)
+            continue;
+
         cameras[i].Disable();
 
         if (cameras[i].GetStatus() == CAM_STATUS::INACTIVE)
-        {
-            id_disabled_cams[i] = true;
             count++;
-        }
     }
 
     _UpdateCamStatus();
+    return count;
+}
+
+
+int CameraManager::CountConfiguredCameras() const
+{
+    int count = 0;
+    for (const auto& cfg : camera_configs)
+        if (cfg.enabled) count++;
     return count;
 }
 

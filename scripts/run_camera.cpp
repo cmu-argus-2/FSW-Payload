@@ -19,8 +19,7 @@ int main(int argc, char** argv)
     CameraManager cam_manager(cam_configs, isp_config, inference_manager);
 
     spdlog::info("Enabling cameras...");
-    std::array<bool, NUM_CAMERAS> activated;
-    int count = cam_manager.EnableCameras(activated);
+    int count = cam_manager.EnableCameras();
     spdlog::info("Cameras enabled: {}", count);
 
     spdlog::info("Waiting for cameras to stabilize...");
@@ -37,8 +36,7 @@ int main(int argc, char** argv)
     spdlog::info("Saved {} frame(s).", saved);
 
     spdlog::info("Disabling cameras...");
-    std::array<bool, NUM_CAMERAS> disabled;
-    int disabled_count = cam_manager.DisableCameras(disabled);
+    int disabled_count = cam_manager.DisableCameras();
     spdlog::info("Cameras disabled: {}", disabled_count);
 
     return 0;

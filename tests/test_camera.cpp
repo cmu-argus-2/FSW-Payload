@@ -4,6 +4,12 @@
 #include "configuration.hpp"
 #include "vision/camera.hpp"
 
+#define private public
+#include "vision/camera_manager.hpp"
+#undef private
+
+#include "inference/inference_manager.hpp"
+
 // ── Helpers ───────────────────────────────────────────────────────────────────
 
 // Minimum required sections so LoadConfiguration doesn't throw.
@@ -258,4 +264,134 @@ TEST(CameraISPConfigTest, OptionalRangesAbsentWhenNotInTOML)
     EXPECT_FALSE(isp.exposuretimerange.has_value());
     EXPECT_FALSE(isp.gainrange.has_value());
     EXPECT_FALSE(isp.ispdigitalgainrange.has_value());
+}
+
+// ── CameraManager: CountConfiguredCameras / enabled-awareness ────────────────
+
+static std::array<CameraConfig, NUM_CAMERAS> make_cam_configs(std::initializer_list<bool> enabled_flags)
+{
+    std::array<CameraConfig, NUM_CAMERAS> configs;
+    size_t i = 0;
+    for (bool en : enabled_flags)
+    {
+        configs[i] = {static_cast<int64_t>(i), "/dev/video" + std::to_string(i), 640, 480, en};
+        ++i;
+    }
+    for (; i < NUM_CAMERAS; ++i)
+        configs[i] = {static_cast<int64_t>(i), "/dev/video" + std::to_string(i), 640, 480, false};
+    return configs;
+}
+
+// ── CountConfiguredCameras ────────────────────────────────────────────────────
+
+TEST(CameraManagerTest, CountConfiguredCameras_AllEnabled)
+{
+    InferenceManager im;
+    CameraManager cm(make_cam_configs({true, true, true, true}), CameraISPConfig{}, im);
+    EXPECT_EQ(cm.CountConfiguredCameras(), 4);
+}
+
+TEST(CameraManagerTest, CountConfiguredCameras_NoneEnabled)
+{
+    InferenceManager im;
+    CameraManager cm(make_cam_configs({false, false, false, false}), CameraISPConfig{}, im);
+    EXPECT_EQ(cm.CountConfiguredCameras(), 0);
+}
+
+TEST(CameraManagerTest, CountConfiguredCameras_PartiallyEnabled)
+{
+    InferenceManager im;
+    CameraManager cm(make_cam_configs({true, false, true, false}), CameraISPConfig{}, im);
+    EXPECT_EQ(cm.CountConfiguredCameras(), 2);
+}
+
+TEST(CameraManagerTest, CountConfiguredCameras_OneEnabled)
+{
+    InferenceManager im;
+    CameraManager cm(make_cam_configs({false, false, false, true}), CameraISPConfig{}, im);
+    EXPECT_EQ(cm.CountConfiguredCameras(), 1);
+}
+
+// ── CountActiveCameras initial state ─────────────────────────────────────────
+
+TEST(CameraManagerTest, CountActiveCameras_ZeroOnConstruction)
+{
+    InferenceManager im;
+    CameraManager cm(make_cam_configs({true, true, true, true}), CameraISPConfig{}, im);
+    EXPECT_EQ(cm.CountActiveCameras(), 0);
+}
+
+// ── EnableCameras: config-disabled cameras are never attempted ────────────────
+
+TEST(CameraManagerTest, EnableCameras_NoneEnabled_ReturnsZeroWithoutAttempt)
+{
+    InferenceManager im;
+    CameraManager cm(make_cam_configs({false, false, false, false}), CameraISPConfig{}, im);
+    EXPECT_NO_THROW({
+        int n = cm.EnableCameras();
+        EXPECT_EQ(n, 0);
+    });
+    EXPECT_EQ(cm.CountActiveCameras(), 0);
+}
+
+TEST(CameraManagerTest, EnableCameras_NoHardware_ReturnsZeroActive)
+{
+    InferenceManager im;
+    CameraManager cm(make_cam_configs({true, true, true, true}), CameraISPConfig{}, im);
+    EXPECT_NO_THROW({
+        int n = cm.EnableCameras();
+        EXPECT_EQ(n, 0);
+    });
+    EXPECT_EQ(cm.CountActiveCameras(), 0);
+}
+
+// ── DisableCameras: config-disabled cameras are skipped ──────────────────────
+
+TEST(CameraManagerTest, DisableCameras_NoneEnabled_ReturnsZero)
+{
+    InferenceManager im;
+    CameraManager cm(make_cam_configs({false, false, false, false}), CameraISPConfig{}, im);
+    int n = cm.DisableCameras();
+    EXPECT_EQ(n, 0);
+}
+
+TEST(CameraManagerTest, DisableCameras_OnlyActsOnConfigEnabledCameras)
+{
+    InferenceManager im;
+    CameraManager cm(make_cam_configs({true, false, true, false}), CameraISPConfig{}, im);
+    int n = cm.DisableCameras();
+    EXPECT_EQ(n, 2);
+}
+
+TEST(CameraManagerTest, DisableCameras_AllConfigEnabled_ProcessesAll)
+{
+    InferenceManager im;
+    CameraManager cm(make_cam_configs({true, true, true, true}), CameraISPConfig{}, im);
+    int n = cm.DisableCameras();
+    EXPECT_EQ(n, 4);
+}
+
+// ── PrepareForCapture: uses CountConfiguredCameras, not NUM_CAMERAS ───────────
+
+TEST(CameraManagerTest, PrepareForCapture_ReturnsTrueWhenNoCamerasConfigured)
+{
+    // active(0) == configured(0) → already "fully ready", no EnableCameras call.
+    InferenceManager im;
+    CameraManager cm(make_cam_configs({false, false, false, false}), CameraISPConfig{}, im);
+    EXPECT_TRUE(cm.PrepareForCapture());
+    EXPECT_EQ(cm.CountActiveCameras(), 0);
+}
+
+TEST(CameraManagerTest, PrepareForCapture_ReturnsFalseWhenHardwareAbsent)
+{
+    InferenceManager im;
+    CameraManager cm(make_cam_configs({true, true, true, true}), CameraISPConfig{}, im);
+    EXPECT_FALSE(cm.PrepareForCapture());
+}
+
+TEST(CameraManagerTest, PrepareForCapture_PartialConfig_ReturnsFalseWhenHardwareAbsent)
+{
+    InferenceManager im;
+    CameraManager cm(make_cam_configs({true, false, true, false}), CameraISPConfig{}, im);
+    EXPECT_FALSE(cm.PrepareForCapture());
 }

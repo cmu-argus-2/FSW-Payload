@@ -66,8 +66,7 @@ int main(int argc, char** argv)
 
     std::thread imu_thread = std::thread(&IMUManager::RunLoop, &imu_manager);
 
-    std::array<bool, NUM_CAMERAS> temp;
-    [[maybe_unused]] int nb_enabled_cams = camera_manager.EnableCameras(temp);
+    [[maybe_unused]] int nb_enabled_cams = camera_manager.EnableCameras();
     std::thread camera_thread = std::thread(&CameraManager::RunLoop, &camera_manager);
 
     // how to make the above accessible to the dataset manager through the sys namespace?

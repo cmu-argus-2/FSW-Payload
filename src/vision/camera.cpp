@@ -24,6 +24,13 @@ _new_frame_flag(false)
 
 
 
+Camera::~Camera()
+{
+    StopCaptureLoop();
+    if (cap.isOpened())
+        cap.release();
+}
+
 bool Camera::Enable()
 {
     

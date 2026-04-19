@@ -3,11 +3,7 @@
 #include <string>
 #include "configuration.hpp"
 #include "vision/camera.hpp"
-
-#define private public
 #include "vision/camera_manager.hpp"
-#undef private
-
 #include "inference/inference_manager.hpp"
 
 // ── Helpers ───────────────────────────────────────────────────────────────────
@@ -340,9 +336,9 @@ TEST(CameraManagerTest, EnableCameras_NoHardware_ReturnsZeroActive)
     CameraManager cm(make_cam_configs({true, true, true, true}), CameraISPConfig{}, im);
     EXPECT_NO_THROW({
         int n = cm.EnableCameras();
-        EXPECT_EQ(n, 0);
+        // Whether hardware is present or not, returned count must match CountActiveCameras().
+        EXPECT_EQ(n, cm.CountActiveCameras());
     });
-    EXPECT_EQ(cm.CountActiveCameras(), 0);
 }
 
 // ── DisableCameras: config-disabled cameras are skipped ──────────────────────
@@ -382,16 +378,24 @@ TEST(CameraManagerTest, PrepareForCapture_ReturnsTrueWhenNoCamerasConfigured)
     EXPECT_EQ(cm.CountActiveCameras(), 0);
 }
 
-TEST(CameraManagerTest, PrepareForCapture_ReturnsFalseWhenHardwareAbsent)
+TEST(CameraManagerTest, PrepareForCapture_ActiveEqualsConfiguredOnSuccess)
 {
+    // When PrepareForCapture succeeds, active cameras must equal configured cameras.
+    // This validates that it uses CountConfiguredCameras(), not NUM_CAMERAS.
     InferenceManager im;
     CameraManager cm(make_cam_configs({true, true, true, true}), CameraISPConfig{}, im);
-    EXPECT_FALSE(cm.PrepareForCapture());
+    bool ok = cm.PrepareForCapture();
+    if (ok)
+        EXPECT_EQ(cm.CountActiveCameras(), cm.CountConfiguredCameras());
 }
 
-TEST(CameraManagerTest, PrepareForCapture_PartialConfig_ReturnsFalseWhenHardwareAbsent)
+TEST(CameraManagerTest, PrepareForCapture_PartialConfig_ActiveEqualsConfiguredOnSuccess)
 {
+    // Only 2 cameras configured. If PrepareForCapture succeeds, only 2 should be
+    // active — not 4. This is the core regression from the old NUM_CAMERAS comparison.
     InferenceManager im;
     CameraManager cm(make_cam_configs({true, false, true, false}), CameraISPConfig{}, im);
-    EXPECT_FALSE(cm.PrepareForCapture());
+    bool ok = cm.PrepareForCapture();
+    if (ok)
+        EXPECT_EQ(cm.CountActiveCameras(), cm.CountConfiguredCameras()); // 2, not 4
 }

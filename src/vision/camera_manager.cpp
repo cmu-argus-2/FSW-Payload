@@ -20,6 +20,11 @@ cameras{{Camera(camera_configs[0].id, camera_configs[0].path, isp_config),
     SPDLOG_INFO("Camera Manager initialized");
 }
 
+CameraManager::~CameraManager()
+{
+    StopLoops();
+}
+
 void CameraManager::_UpdateCamStatus()
 {
     // Initialize cam_status based on the status of each camera

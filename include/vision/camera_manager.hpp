@@ -60,6 +60,7 @@ public:
     CameraManager(const std::array<CameraConfig, NUM_CAMERAS>& camera_configs,
                   const CameraISPConfig& isp_config,
                   InferenceManager& inference_manager);
+    ~CameraManager();
 
     void RunLoop();
     void StopLoops();
@@ -105,6 +106,7 @@ public:
 
     CAPTURE_MODE GetCaptureMode() const;
     int CountActiveCameras() const;
+    int CountConfiguredCameras() const; // cameras with enabled=true in config
     void FillCameraStatus(uint8_t* status);
 
     bool PrepareForCapture();
@@ -141,7 +143,6 @@ private:
     std::array<CAM_STATUS, NUM_CAMERAS> cam_status;
 
 
-    int CountConfiguredCameras() const; // cameras with enabled=true in config
     void _PerformCameraHealthCheck(); // background watchdog for the cameras
     void _UpdateCamStatus();
     void _AutoDisableIfNeeded();

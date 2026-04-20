@@ -95,8 +95,8 @@ int main(int argc, char** argv)
         spdlog::info("Frame metadata JSON saved.");
 
         // Build JSON path (same naming convention as StoreFrameMetadataToDisk)
-        std::string json_path = std::string(IMAGES_FOLDER) + "raw_" + 
-                                std::to_string(frame_ptr->GetTimestamp()) + "_" + 
+        std::string json_path = std::string(IMAGES_FOLDER) + "frame_" +
+                                std::to_string(frame_ptr->GetTimestamp()) + "_" +
                                 std::to_string(frame_ptr->GetCamID()) + ".json";
 
         // Packetize JSON to binary in comms folder

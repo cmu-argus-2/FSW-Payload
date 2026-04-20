@@ -131,8 +131,15 @@ endif()
 option(BUILD_TESTS "Build tests" ON)
 
 if(BUILD_TESTS)
-    enable_testing()    
-    find_package(GTest REQUIRED)
+    enable_testing()
+    include(FetchContent)
+    FetchContent_Declare(
+        googletest
+        SOURCE_DIR ${CMAKE_SOURCE_DIR}/deps/googletest
+    )
+    set(INSTALL_GTEST OFF CACHE BOOL "" FORCE)
+    set(BUILD_GMOCK   OFF CACHE BOOL "" FORCE)
+    FetchContent_MakeAvailable(googletest)
     add_subdirectory(tests)
 endif()
 

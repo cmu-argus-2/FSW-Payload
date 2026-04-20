@@ -236,8 +236,10 @@ data/
 bin/
 logs/
 
-# ignore install folder
-deps/
-!deps/Spice
+# ignore build artifacts inside dep submodules (source trees are tracked as submodules)
+deps/spdlog/build/
+deps/HighFive-src/build/
+deps/ceres-solver/build/
+deps/googletest/build/
 
 workspace/

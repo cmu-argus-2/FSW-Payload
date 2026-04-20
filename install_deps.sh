@@ -41,61 +41,42 @@ sudo apt install -y \
 # Uncomment this line if you get ccache related issues
 # sudo apt-get install --reinstall -y ccache
 
-# Create deps folder
-mkdir -p deps && cd deps
+# Initialise all submodules (source deps + Spice + models)
+git submodule update --init --recursive
 
-# Install GTest from source
-rm -rf googletest # Remove existing GTest folder
-git clone https://github.com/google/googletest.git
-cd googletest
+# Install spdlog from source (pinned via submodule)
+cd deps/spdlog
 mkdir -p build && cd build
 cmake ..
 make -j
 sudo make install
-cd ../..
+cd ../../..
 
-# Install spdlog from source
-rm -rf spdlog # Remove existing spdlog folder
-git clone --branch v1.12.0 https://github.com/gabime/spdlog.git
-cd spdlog
-mkdir -p build && cd build
-cmake ..
-make -j
-sudo make install
-cd ../..
-
-# Install HighFive from source
-rm -rf HighFive-src # Remove existing HighFive folder
-git clone --recursive https://github.com/BlueBrain/HighFive.git HighFive-src
+# Install HighFive from source (pinned via submodule; HighFive has its own submodules)
 cmake -DHIGHFIVE_EXAMPLES=Off \
       -DHIGHFIVE_USE_BOOST=Off \
       -DHIGHFIVE_UNIT_TESTS=Off \
       -DCMAKE_INSTALL_PREFIX=${HIGHFIVE_INSTALL_PREFIX} \
-      -B HighFive-src/build \
-      HighFive-src
+      -B deps/HighFive-src/build \
+      deps/HighFive-src
+cmake --build deps/HighFive-src/build
+sudo cmake --install deps/HighFive-src/build
 
-cmake --build HighFive-src/build
-sudo cmake --install HighFive-src/build
-
-# Install Ceres Solver from source
-# Takes a lot of time to build, best not to rebuild if already installed
-if [ ! -d "ceres-solver/.git" ]; then
-    echo "Ceres not found. Cloning..."
-    git clone https://github.com/ceres-solver/ceres-solver.git "ceres-solver"
+# Install Ceres Solver from source (pinned via submodule)
+# Takes a long time to build; skip if already installed at the right version.
+if pkg-config --exact-version=2.2.0 ceres 2>/dev/null; then
+    echo "Ceres 2.2.0 already installed — skipping build."
 else
-    echo "Ceres already cloned — skipping."
+    cd deps/ceres-solver
+    mkdir -p build && cd build
+    cmake ..
+    make -j3
+    sudo make install
+    cd ../../..
 fi
-cd ceres-solver
-git checkout --detach 2.2.0
-mkdir -p build
-cd build
-cmake ..
-make -j3
-# make test
-sudo make install
-cd ../..
 
-cd ..
+# googletest is integrated via CMake FetchContent (deps/googletest submodule).
+# No separate build/install step needed.
 
 # Detect CUDA path
 CUDA_PATH=$(dirname $(dirname $(which nvcc)))
@@ -119,5 +100,3 @@ curl -O -C - --silent https://ssd.jpl.nasa.gov/ftp/eph/planets/bsp/de440.bsp --o
 curl -O -C - --silent https://naif.jpl.nasa.gov/pub/naif/generic_kernels/pck/earth_latest_high_prec.bpc --output-dir data/kernels
 curl -O -C - --silent https://naif.jpl.nasa.gov/pub/naif/generic_kernels/pck/pck00011.tpc --output-dir data/kernels
 curl -O -C - --silent https://naif.jpl.nasa.gov/pub/naif/generic_kernels/lsk/naif0012.tls --output-dir data/kernels
-
-git submodule update --init --recursive

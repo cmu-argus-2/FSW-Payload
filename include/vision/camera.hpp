@@ -56,7 +56,7 @@ class Camera
 
 
 public:
-    Camera(int id, std::string path, const CameraISPConfig& isp);
+    Camera(int id, std::string path, int width, int height, const CameraISPConfig& isp);
     ~Camera();
 
     // Attempt to enable the camera. Returns true if successful

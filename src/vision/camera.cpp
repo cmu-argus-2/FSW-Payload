@@ -3,21 +3,20 @@
 #include <sstream>
 #include "spdlog/spdlog.h"
 #include "vision/camera.hpp"
-#include "vision/camera_manager.hpp"
 #include "core/timing.hpp"
 
-Camera::Camera(int cam_id, std::string path, const CameraISPConfig& isp)
+Camera::Camera(int cam_id, std::string path, int width, int height, const CameraISPConfig& isp)
 :
-width(DEFAULT_FRAME_WIDTH),
-height(DEFAULT_FRAME_HEIGHT),
+width(width > 0 ? width : DEFAULT_FRAME_WIDTH),
+height(height > 0 ? height : DEFAULT_FRAME_HEIGHT),
 isp_config(isp),
 cam_status(CAM_STATUS::INACTIVE),
 last_error(CAM_ERROR::NO_ERROR),
 consecutive_error_count(0),
 cam_id(cam_id),
 cam_path(path),
-local_buffer_img(cv::Mat(height, width, CV_8UC3)),
-buffer_frame(cam_id, cv::Mat(height, width, CV_8UC3), 0),
+local_buffer_img(cv::Mat(this->height, this->width, CV_8UC3)),
+buffer_frame(cam_id, cv::Mat(this->height, this->width, CV_8UC3), 0),
 _new_frame_flag(false)
 {
 }
@@ -329,7 +328,7 @@ void Camera::RunCaptureLoop()
         t1 = std::chrono::high_resolution_clock::now();
         CaptureFrame();
         t2 = std::chrono::high_resolution_clock::now();
-        SPDLOG_DEBUG("Capture time: {} ms", std::chrono::duration_cast<std::chrono::milliseconds>(t2 - t1).count(););
+        SPDLOG_DEBUG("Capture time: {} ms", std::chrono::duration_cast<std::chrono::milliseconds>(t2 - t1).count());
     }
 }
 

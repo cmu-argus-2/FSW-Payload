@@ -1,7 +1,9 @@
 #include <gtest/gtest.h>
 #include <fstream>
 #include <string>
-#include <chrono>
+#include <filesystem>
+#include <atomic>
+#include <unistd.h>
 #include "configuration.hpp"
 #include "vision/camera.hpp"
 #include "vision/camera_manager.hpp"
@@ -45,29 +47,35 @@ i2c_addr = 104
 i2c_path = '/dev/i2c-7'
 )";
 
-static std::string write_temp_toml(const std::string& isp_section)
+// RAII helper: writes content to a unique temp file and deletes it on destruction.
+class TempTomlFile
 {
-    std::string path = "/tmp/test_camera_isp_"
-                     + std::to_string(::testing::UnitTest::GetInstance()->random_seed())
-                     + "_"
-                     + std::to_string(std::chrono::steady_clock::now().time_since_epoch().count())
-                     + ".toml";
-    std::ofstream f(path);
-    f << REQUIRED_SECTIONS << "\n" << isp_section;
-    return path;
-}
+public:
+    explicit TempTomlFile(const std::string& content)
+    {
+        static std::atomic<int> counter{0};
+        namespace fs = std::filesystem;
+        path_ = (fs::temp_directory_path() /
+                 ("test_camera_" + std::to_string(::getpid()) + "_" +
+                  std::to_string(counter++) + ".toml")).string();
+        std::ofstream f(path_);
+        ASSERT_TRUE(f.is_open()) << "Failed to open temp file: " << path_;
+        f << content;
+    }
 
-static std::string write_raw_temp_toml(const std::string& toml_contents)
-{
-    std::string path = "/tmp/test_camera_cfg_"
-                     + std::to_string(::testing::UnitTest::GetInstance()->random_seed())
-                     + "_"
-                     + std::to_string(std::chrono::steady_clock::now().time_since_epoch().count())
-                     + ".toml";
-    std::ofstream f(path);
-    f << toml_contents;
-    return path;
-}
+    ~TempTomlFile() { std::filesystem::remove(path_); }
+
+    const std::string& path() const { return path_; }
+
+    // Prepends REQUIRED_SECTIONS before isp_section (mirrors old write_temp_toml).
+    static TempTomlFile with_isp(const std::string& isp_section)
+    {
+        return TempTomlFile(std::string(REQUIRED_SECTIONS) + "\n" + isp_section);
+    }
+
+private:
+    std::string path_;
+};
 
 // ── CameraISPConfig struct defaults ──────────────────────────────────────────
 
@@ -95,9 +103,9 @@ TEST(CameraISPConfigTest, StructDefaults)
 
 TEST(CameraISPConfigTest, NoISPSectionUsesStructDefaults)
 {
-    std::string path = write_temp_toml(""); // no [camera-isp] block
+    TempTomlFile tmp = TempTomlFile::with_isp(""); // no [camera-isp] block
     Configuration cfg;
-    cfg.LoadConfiguration(path);
+    cfg.LoadConfiguration(tmp.path());
     const CameraISPConfig& isp = cfg.GetCameraISPConfig();
 
     EXPECT_EQ(isp.wbmode, 0);
@@ -121,7 +129,7 @@ TEST(CameraISPConfigTest, NoISPSectionUsesStructDefaults)
 
 TEST(CameraISPConfigTest, AllFieldsOverridden)
 {
-    std::string path = write_temp_toml(R"(
+    TempTomlFile tmp = TempTomlFile::with_isp(R"(
 [camera-isp]
 wbmode               = 5
 aelock               = true
@@ -141,7 +149,7 @@ ispdigitalgainrange  = [1.0, 8.0]
 )");
 
     Configuration cfg;
-    cfg.LoadConfiguration(path);
+    cfg.LoadConfiguration(tmp.path());
     const CameraISPConfig& isp = cfg.GetCameraISPConfig();
 
     EXPECT_EQ(isp.wbmode, 5);
@@ -174,7 +182,7 @@ ispdigitalgainrange  = [1.0, 8.0]
 
 TEST(CameraISPConfigTest, PartialISPSectionKeepsUnsetDefaults)
 {
-    std::string path = write_temp_toml(R"(
+    TempTomlFile tmp = TempTomlFile::with_isp(R"(
 [camera-isp]
 wbmode  = 1
 aelock  = true
@@ -182,7 +190,7 @@ saturation = 0.5
 )");
 
     Configuration cfg;
-    cfg.LoadConfiguration(path);
+    cfg.LoadConfiguration(tmp.path());
     const CameraISPConfig& isp = cfg.GetCameraISPConfig();
 
     // Fields that were set
@@ -209,14 +217,14 @@ saturation = 0.5
 
 TEST(CameraISPConfigTest, StrengthSentinelNegativeOnePreserved)
 {
-    std::string path = write_temp_toml(R"(
+    TempTomlFile tmp = TempTomlFile::with_isp(R"(
 [camera-isp]
 ee_strength  = -1.0
 tnr_strength = -1.0
 )");
 
     Configuration cfg;
-    cfg.LoadConfiguration(path);
+    cfg.LoadConfiguration(tmp.path());
     const CameraISPConfig& isp = cfg.GetCameraISPConfig();
 
     EXPECT_FLOAT_EQ(isp.ee_strength,  -1.0f);
@@ -225,14 +233,14 @@ tnr_strength = -1.0
 
 TEST(CameraISPConfigTest, StrengthPositiveValueOverridesSentinel)
 {
-    std::string path = write_temp_toml(R"(
+    TempTomlFile tmp = TempTomlFile::with_isp(R"(
 [camera-isp]
 ee_strength  = 0.3
 tnr_strength = 0.7
 )");
 
     Configuration cfg;
-    cfg.LoadConfiguration(path);
+    cfg.LoadConfiguration(tmp.path());
     const CameraISPConfig& isp = cfg.GetCameraISPConfig();
 
     EXPECT_FLOAT_EQ(isp.ee_strength,  0.3f);
@@ -243,25 +251,25 @@ tnr_strength = 0.7
 
 TEST(CameraISPConfigTest, WbmodeOff)
 {
-    std::string path = write_temp_toml("[camera-isp]\nwbmode = 0\n");
+    TempTomlFile tmp = TempTomlFile::with_isp("[camera-isp]\nwbmode = 0\n");
     Configuration cfg;
-    cfg.LoadConfiguration(path);
+    cfg.LoadConfiguration(tmp.path());
     EXPECT_EQ(cfg.GetCameraISPConfig().wbmode, 0);
 }
 
 TEST(CameraISPConfigTest, WbmodeAuto)
 {
-    std::string path = write_temp_toml("[camera-isp]\nwbmode = 1\n");
+    TempTomlFile tmp = TempTomlFile::with_isp("[camera-isp]\nwbmode = 1\n");
     Configuration cfg;
-    cfg.LoadConfiguration(path);
+    cfg.LoadConfiguration(tmp.path());
     EXPECT_EQ(cfg.GetCameraISPConfig().wbmode, 1);
 }
 
 TEST(CameraISPConfigTest, WbmodeManual)
 {
-    std::string path = write_temp_toml("[camera-isp]\nwbmode = 9\n");
+    TempTomlFile tmp = TempTomlFile::with_isp("[camera-isp]\nwbmode = 9\n");
     Configuration cfg;
-    cfg.LoadConfiguration(path);
+    cfg.LoadConfiguration(tmp.path());
     EXPECT_EQ(cfg.GetCameraISPConfig().wbmode, 9);
 }
 
@@ -269,9 +277,9 @@ TEST(CameraISPConfigTest, WbmodeManual)
 
 TEST(CameraISPConfigTest, OptionalRangesAbsentWhenNotInTOML)
 {
-    std::string path = write_temp_toml("[camera-isp]\nwbmode = 0\n");
+    TempTomlFile tmp = TempTomlFile::with_isp("[camera-isp]\nwbmode = 0\n");
     Configuration cfg;
-    cfg.LoadConfiguration(path);
+    cfg.LoadConfiguration(tmp.path());
     const CameraISPConfig& isp = cfg.GetCameraISPConfig();
 
     EXPECT_FALSE(isp.exposuretimerange.has_value());
@@ -281,26 +289,26 @@ TEST(CameraISPConfigTest, OptionalRangesAbsentWhenNotInTOML)
 
 TEST(CameraISPConfigTest, ReloadWithoutISPSectionResetsDefaults)
 {
-    std::string with_isp = write_temp_toml(R"(
+    TempTomlFile with_isp = TempTomlFile::with_isp(R"(
 [camera-isp]
 wbmode = 5
 fps = 20
 )");
-    std::string without_isp = write_temp_toml("");
+    TempTomlFile without_isp = TempTomlFile::with_isp("");
 
     Configuration cfg;
-    cfg.LoadConfiguration(with_isp);
+    cfg.LoadConfiguration(with_isp.path());
     ASSERT_EQ(cfg.GetCameraISPConfig().wbmode, 5);
     ASSERT_EQ(cfg.GetCameraISPConfig().fps, 20);
 
-    cfg.LoadConfiguration(without_isp);
+    cfg.LoadConfiguration(without_isp.path());
     EXPECT_EQ(cfg.GetCameraISPConfig().wbmode, 0);
     EXPECT_EQ(cfg.GetCameraISPConfig().fps, DEFAULT_CAMERA_FPS);
 }
 
 TEST(ConfigurationErrorHandlingTest, MissingCameraDeviceSectionThrows)
 {
-    std::string path = write_raw_temp_toml(R"(
+    TempTomlFile tmp(R"(
 [imu-device]
 chipid = 216
 i2c_addr = 104
@@ -308,12 +316,12 @@ i2c_path = '/dev/i2c-7'
 )");
 
     Configuration cfg;
-    EXPECT_THROW(cfg.LoadConfiguration(path), std::runtime_error);
+    EXPECT_THROW(cfg.LoadConfiguration(tmp.path()), std::runtime_error);
 }
 
 TEST(ConfigurationErrorHandlingTest, MissingIMUSectionThrows)
 {
-    std::string path = write_raw_temp_toml(R"(
+    TempTomlFile tmp(R"(
 [camera-device.cam1]
 id = 0
 path = '/dev/video0'
@@ -344,12 +352,12 @@ enabled = true
 )");
 
     Configuration cfg;
-    EXPECT_THROW(cfg.LoadConfiguration(path), std::runtime_error);
+    EXPECT_THROW(cfg.LoadConfiguration(tmp.path()), std::runtime_error);
 }
 
 TEST(ConfigurationCameraDeviceTest, CameraConfigsIndexedByIdNotTableOrder)
 {
-    std::string path = write_raw_temp_toml(R"(
+    TempTomlFile tmp(R"(
 [camera-device.cam4]
 id = 3
 path = '/dev/video3'
@@ -385,7 +393,7 @@ i2c_path = '/dev/i2c-7'
 )");
 
     Configuration cfg;
-    cfg.LoadConfiguration(path);
+    cfg.LoadConfiguration(tmp.path());
     const auto& cams = cfg.GetCameraConfigs();
 
     EXPECT_EQ(cams[0].id, 0);
@@ -412,7 +420,7 @@ i2c_path = '/dev/i2c-7'
 
 TEST(ConfigurationCameraDeviceTest, DuplicateCameraIdsThrow)
 {
-    std::string path = write_raw_temp_toml(R"(
+    TempTomlFile tmp(R"(
 [camera-device.cam1]
 id = 0
 path = '/dev/video0'
@@ -448,12 +456,12 @@ i2c_path = '/dev/i2c-7'
 )");
 
     Configuration cfg;
-    EXPECT_THROW(cfg.LoadConfiguration(path), std::runtime_error);
+    EXPECT_THROW(cfg.LoadConfiguration(tmp.path()), std::runtime_error);
 }
 
 TEST(ConfigurationCameraDeviceTest, OutOfRangeCameraIdThrows)
 {
-    std::string path = write_raw_temp_toml(R"(
+    TempTomlFile tmp(R"(
 [camera-device.cam1]
 id = 4
 path = '/dev/video0'
@@ -489,7 +497,7 @@ i2c_path = '/dev/i2c-7'
 )");
 
     Configuration cfg;
-    EXPECT_THROW(cfg.LoadConfiguration(path), std::runtime_error);
+    EXPECT_THROW(cfg.LoadConfiguration(tmp.path()), std::runtime_error);
 }
 
 // ── CameraManager: CountConfiguredCameras / enabled-awareness ────────────────

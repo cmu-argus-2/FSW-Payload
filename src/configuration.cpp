@@ -15,6 +15,7 @@ void Configuration::LoadConfiguration(std::string config_path)
     this->config = toml::parse_file(config_path);
     this->camera_devices_config = config["camera-device"].as_table();
     this->imu_config_table = config["imu-device"].as_table();
+    this->camera_isp_config = CameraISPConfig{};
 
     // Parse camera configurations after loading the config
     ParseCameraDevicesConfig();
@@ -29,15 +30,25 @@ void Configuration::LoadConfiguration(std::string config_path)
 
 void Configuration::ParseCameraDevicesConfig()
 {
+    if (!camera_devices_config) {
+        SPDLOG_CRITICAL("Camera configuration section missing in config file.");
+        throw std::runtime_error("Camera configuration section missing in config file.");
+    }
+
     // Check if the number of camera devices is exactly 4
     if (camera_devices_config->size() != 4) {
-        throw std::runtime_error("Invalid number of camera devices. Expected 4.");
         SPDLOG_CRITICAL("Invalid number of camera devices. Expected 4.");
+        throw std::runtime_error("Invalid number of camera devices. Expected 4.");
     }
-    
-    
+
+    for (auto& cfg : camera_configs)
+    {
+        cfg = CameraConfig{};
+    }
+
+    std::array<bool, NUM_CAMERAS> seen{};
+
     // Iterate over each camera entry in camera-devices
-    std::size_t idx = 0;
     for (const auto& [key, value] : *camera_devices_config) 
     {
         auto cam_table = value.as_table();
@@ -57,14 +68,30 @@ void Configuration::ParseCameraDevicesConfig()
                 cam_config.path = "";
             }
 
+            if (cam_config.id < 0 || cam_config.id >= NUM_CAMERAS)
+            {
+                SPDLOG_CRITICAL("Camera '{}' has invalid id {}. Expected range [0, {}].",
+                                key.str(), cam_config.id, NUM_CAMERAS - 1);
+                throw std::runtime_error("Camera configuration has invalid id.");
+            }
+
+            const std::size_t idx = static_cast<std::size_t>(cam_config.id);
+            if (seen[idx])
+            {
+                SPDLOG_CRITICAL("Duplicate camera id {} in camera configuration.", cam_config.id);
+                throw std::runtime_error("Duplicate camera id in configuration.");
+            }
+
             camera_configs[idx] = cam_config;
-            ++idx;
+            seen[idx] = true;
         }
     }
 }
 
 void Configuration::ParseCameraISPConfig()
 {
+    camera_isp_config = CameraISPConfig{};
+
     auto* tbl = config["camera-isp"].as_table();
     if (!tbl) {
         SPDLOG_INFO("No [camera-isp] section found in config — using all defaults.");
@@ -109,8 +136,8 @@ void Configuration::ParseCameraISPConfig()
 void Configuration::ParseIMUConfig()
 {
     if (!imu_config_table) {
-        throw std::runtime_error("IMU configuration section missing in config file.");
         SPDLOG_CRITICAL("IMU configuration section missing in config file.");
+        throw std::runtime_error("IMU configuration section missing in config file.");
     }
 
     auto chipid = imu_config_table->get_as<int64_t>("chipid");

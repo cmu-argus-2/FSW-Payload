@@ -59,7 +59,7 @@ public:
                  ("test_camera_" + std::to_string(::getpid()) + "_" +
                   std::to_string(counter++) + ".toml")).string();
         std::ofstream f(path_);
-        ASSERT_TRUE(f.is_open()) << "Failed to open temp file: " << path_;
+        EXPECT_TRUE(f.is_open()) << "Failed to open temp file: " << path_;
         f << content;
     }
 

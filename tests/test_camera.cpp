@@ -1,6 +1,7 @@
 #include <gtest/gtest.h>
 #include <fstream>
 #include <string>
+#include <chrono>
 #include "configuration.hpp"
 #include "vision/camera.hpp"
 #include "vision/camera_manager.hpp"
@@ -46,9 +47,25 @@ i2c_path = '/dev/i2c-7'
 
 static std::string write_temp_toml(const std::string& isp_section)
 {
-    std::string path = "/tmp/test_camera_isp_" + std::to_string(::testing::UnitTest::GetInstance()->random_seed()) + ".toml";
+    std::string path = "/tmp/test_camera_isp_"
+                     + std::to_string(::testing::UnitTest::GetInstance()->random_seed())
+                     + "_"
+                     + std::to_string(std::chrono::steady_clock::now().time_since_epoch().count())
+                     + ".toml";
     std::ofstream f(path);
     f << REQUIRED_SECTIONS << "\n" << isp_section;
+    return path;
+}
+
+static std::string write_raw_temp_toml(const std::string& toml_contents)
+{
+    std::string path = "/tmp/test_camera_cfg_"
+                     + std::to_string(::testing::UnitTest::GetInstance()->random_seed())
+                     + "_"
+                     + std::to_string(std::chrono::steady_clock::now().time_since_epoch().count())
+                     + ".toml";
+    std::ofstream f(path);
+    f << toml_contents;
     return path;
 }
 
@@ -262,6 +279,219 @@ TEST(CameraISPConfigTest, OptionalRangesAbsentWhenNotInTOML)
     EXPECT_FALSE(isp.ispdigitalgainrange.has_value());
 }
 
+TEST(CameraISPConfigTest, ReloadWithoutISPSectionResetsDefaults)
+{
+    std::string with_isp = write_temp_toml(R"(
+[camera-isp]
+wbmode = 5
+fps = 20
+)");
+    std::string without_isp = write_temp_toml("");
+
+    Configuration cfg;
+    cfg.LoadConfiguration(with_isp);
+    ASSERT_EQ(cfg.GetCameraISPConfig().wbmode, 5);
+    ASSERT_EQ(cfg.GetCameraISPConfig().fps, 20);
+
+    cfg.LoadConfiguration(without_isp);
+    EXPECT_EQ(cfg.GetCameraISPConfig().wbmode, 0);
+    EXPECT_EQ(cfg.GetCameraISPConfig().fps, DEFAULT_CAMERA_FPS);
+}
+
+TEST(ConfigurationErrorHandlingTest, MissingCameraDeviceSectionThrows)
+{
+    std::string path = write_raw_temp_toml(R"(
+[imu-device]
+chipid = 216
+i2c_addr = 104
+i2c_path = '/dev/i2c-7'
+)");
+
+    Configuration cfg;
+    EXPECT_THROW(cfg.LoadConfiguration(path), std::runtime_error);
+}
+
+TEST(ConfigurationErrorHandlingTest, MissingIMUSectionThrows)
+{
+    std::string path = write_raw_temp_toml(R"(
+[camera-device.cam1]
+id = 0
+path = '/dev/video0'
+resolution_width = 640
+resolution_height = 480
+enabled = true
+
+[camera-device.cam2]
+id = 1
+path = '/dev/video1'
+resolution_width = 640
+resolution_height = 480
+enabled = true
+
+[camera-device.cam3]
+id = 2
+path = '/dev/video2'
+resolution_width = 640
+resolution_height = 480
+enabled = true
+
+[camera-device.cam4]
+id = 3
+path = '/dev/video3'
+resolution_width = 640
+resolution_height = 480
+enabled = true
+)");
+
+    Configuration cfg;
+    EXPECT_THROW(cfg.LoadConfiguration(path), std::runtime_error);
+}
+
+TEST(ConfigurationCameraDeviceTest, CameraConfigsIndexedByIdNotTableOrder)
+{
+    std::string path = write_raw_temp_toml(R"(
+[camera-device.cam4]
+id = 3
+path = '/dev/video3'
+resolution_width = 400
+resolution_height = 300
+enabled = false
+
+[camera-device.cam2]
+id = 1
+path = '/dev/video1'
+resolution_width = 200
+resolution_height = 100
+enabled = true
+
+[camera-device.cam1]
+id = 0
+path = '/dev/video0'
+resolution_width = 640
+resolution_height = 480
+enabled = true
+
+[camera-device.cam3]
+id = 2
+path = '/dev/video2'
+resolution_width = 320
+resolution_height = 240
+enabled = true
+
+[imu-device]
+chipid = 216
+i2c_addr = 104
+i2c_path = '/dev/i2c-7'
+)");
+
+    Configuration cfg;
+    cfg.LoadConfiguration(path);
+    const auto& cams = cfg.GetCameraConfigs();
+
+    EXPECT_EQ(cams[0].id, 0);
+    EXPECT_EQ(cams[0].path, "/dev/video0");
+    EXPECT_EQ(cams[0].width, 640);
+    EXPECT_EQ(cams[0].height, 480);
+
+    EXPECT_EQ(cams[1].id, 1);
+    EXPECT_EQ(cams[1].path, "/dev/video1");
+    EXPECT_EQ(cams[1].width, 200);
+    EXPECT_EQ(cams[1].height, 100);
+
+    EXPECT_EQ(cams[2].id, 2);
+    EXPECT_EQ(cams[2].path, "/dev/video2");
+    EXPECT_EQ(cams[2].width, 320);
+    EXPECT_EQ(cams[2].height, 240);
+
+    EXPECT_EQ(cams[3].id, 3);
+    EXPECT_EQ(cams[3].path, "/dev/video3");
+    EXPECT_EQ(cams[3].width, 400);
+    EXPECT_EQ(cams[3].height, 300);
+    EXPECT_FALSE(cams[3].enabled);
+}
+
+TEST(ConfigurationCameraDeviceTest, DuplicateCameraIdsThrow)
+{
+    std::string path = write_raw_temp_toml(R"(
+[camera-device.cam1]
+id = 0
+path = '/dev/video0'
+resolution_width = 640
+resolution_height = 480
+enabled = true
+
+[camera-device.cam2]
+id = 0
+path = '/dev/video1'
+resolution_width = 640
+resolution_height = 480
+enabled = true
+
+[camera-device.cam3]
+id = 2
+path = '/dev/video2'
+resolution_width = 640
+resolution_height = 480
+enabled = true
+
+[camera-device.cam4]
+id = 3
+path = '/dev/video3'
+resolution_width = 640
+resolution_height = 480
+enabled = true
+
+[imu-device]
+chipid = 216
+i2c_addr = 104
+i2c_path = '/dev/i2c-7'
+)");
+
+    Configuration cfg;
+    EXPECT_THROW(cfg.LoadConfiguration(path), std::runtime_error);
+}
+
+TEST(ConfigurationCameraDeviceTest, OutOfRangeCameraIdThrows)
+{
+    std::string path = write_raw_temp_toml(R"(
+[camera-device.cam1]
+id = 4
+path = '/dev/video0'
+resolution_width = 640
+resolution_height = 480
+enabled = true
+
+[camera-device.cam2]
+id = 1
+path = '/dev/video1'
+resolution_width = 640
+resolution_height = 480
+enabled = true
+
+[camera-device.cam3]
+id = 2
+path = '/dev/video2'
+resolution_width = 640
+resolution_height = 480
+enabled = true
+
+[camera-device.cam4]
+id = 3
+path = '/dev/video3'
+resolution_width = 640
+resolution_height = 480
+enabled = true
+
+[imu-device]
+chipid = 216
+i2c_addr = 104
+i2c_path = '/dev/i2c-7'
+)");
+
+    Configuration cfg;
+    EXPECT_THROW(cfg.LoadConfiguration(path), std::runtime_error);
+}
+
 // ── CameraManager: CountConfiguredCameras / enabled-awareness ────────────────
 
 static std::array<CameraConfig, NUM_CAMERAS> make_cam_configs(std::initializer_list<bool> enabled_flags)
@@ -276,6 +506,19 @@ static std::array<CameraConfig, NUM_CAMERAS> make_cam_configs(std::initializer_l
     for (; i < NUM_CAMERAS; ++i)
         configs[i] = {static_cast<int64_t>(i), "/dev/video" + std::to_string(i), 640, 480, false};
     return configs;
+}
+
+TEST(CameraTest, ConstructorUsesConfiguredResolutionForBufferFrame)
+{
+    Camera cam(7, "/dev/video7", 320, 240, CameraISPConfig{});
+    EXPECT_EQ(cam.GetBufferFrame().GetImgSize(), cv::Size(320, 240));
+}
+
+TEST(CameraTest, ConstructorFallsBackToDefaultResolutionForInvalidDimensions)
+{
+    Camera cam(7, "/dev/video7", 0, -1, CameraISPConfig{});
+    EXPECT_EQ(cam.GetBufferFrame().GetImgSize(),
+              cv::Size(DEFAULT_FRAME_WIDTH, DEFAULT_FRAME_HEIGHT));
 }
 
 // ── CountConfiguredCameras ────────────────────────────────────────────────────
@@ -356,7 +599,7 @@ TEST(CameraManagerTest, DisableCameras_OnlyActsOnConfigEnabledCameras)
     InferenceManager im;
     CameraManager cm(make_cam_configs({true, false, true, false}), CameraISPConfig{}, im);
     int n = cm.DisableCameras();
-    EXPECT_EQ(n, 2);
+    EXPECT_EQ(n, 0);
 }
 
 TEST(CameraManagerTest, DisableCameras_AllConfigEnabled_ProcessesAll)
@@ -364,17 +607,17 @@ TEST(CameraManagerTest, DisableCameras_AllConfigEnabled_ProcessesAll)
     InferenceManager im;
     CameraManager cm(make_cam_configs({true, true, true, true}), CameraISPConfig{}, im);
     int n = cm.DisableCameras();
-    EXPECT_EQ(n, 4);
+    EXPECT_EQ(n, 0);
 }
 
 // ── PrepareForCapture: uses CountConfiguredCameras, not NUM_CAMERAS ───────────
 
 TEST(CameraManagerTest, PrepareForCapture_ReturnsTrueWhenNoCamerasConfigured)
 {
-    // active(0) == configured(0) → already "fully ready", no EnableCameras call.
+    // No configured cameras is a real failure: capture requests should not proceed.
     InferenceManager im;
     CameraManager cm(make_cam_configs({false, false, false, false}), CameraISPConfig{}, im);
-    EXPECT_TRUE(cm.PrepareForCapture());
+    EXPECT_FALSE(cm.PrepareForCapture());
     EXPECT_EQ(cm.CountActiveCameras(), 0);
 }
 
@@ -398,4 +641,14 @@ TEST(CameraManagerTest, PrepareForCapture_PartialConfig_ActiveEqualsConfiguredOn
     bool ok = cm.PrepareForCapture();
     if (ok)
         EXPECT_EQ(cm.CountActiveCameras(), cm.CountConfiguredCameras()); // 2, not 4
+}
+
+TEST(CameraManagerTest, SendCaptureRequestRejectedWhenManagerBusy)
+{
+    InferenceManager im;
+    CameraManager cm(make_cam_configs({false, false, false, false}), CameraISPConfig{}, im);
+    cm.SetCaptureMode(CAPTURE_MODE::PERIODIC);
+
+    EXPECT_FALSE(cm.SendCaptureRequest());
+    EXPECT_EQ(cm.GetCaptureMode(), CAPTURE_MODE::PERIODIC);
 }

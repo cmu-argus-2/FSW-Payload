@@ -768,19 +768,12 @@ cv::Rect LDNet::scaleBoxBackLetterbox(
 }
 
 
-EC LDNet::PostprocessOutput(cv::Mat outs, std::shared_ptr<Frame> frame)
+EC LDNet::PostprocessOutput(cv::Mat outs, std::vector<Landmark>& out_landmarks, cv::Size img_size)
 {
     std::vector<int> keep_classIds;
     std::vector<float> keep_confidences;
     std::vector<Rect2d> keep_boxes;
     std::vector<Rect> boxes;
-
-    if (!frame)
-    {
-        spdlog::error("LDNet::PostprocessOutput received null frame.");
-        LogError(EC::NN_POINTER_NULL);
-        return EC::NN_POINTER_NULL;
-    }
 
     // Non-max suppression
     yoloPostProcessing(outs, keep_classIds, keep_confidences, keep_boxes);
@@ -792,8 +785,8 @@ EC LDNet::PostprocessOutput(cv::Mat outs, std::shared_ptr<Frame> frame)
     }
 
     for (auto& b : boxes) {
-        b = scaleBoxBackLetterbox(b, frame->GetImgSize(), 
-                                    cv::Size(GetInputWidth(), GetInputHeight()));
+        b = scaleBoxBackLetterbox(b, img_size,
+                                  cv::Size(GetInputWidth(), GetInputHeight()));
     }
 
     // Populate landmarks
@@ -814,7 +807,7 @@ EC LDNet::PostprocessOutput(cv::Mat outs, std::shared_ptr<Frame> frame)
         Landmark landmark(x_center, y_center, class_id, GetRegionID(),
                             height, width, keep_confidences[i]);
         // Landmark landmark(keep_boxes[i], keep_classIds[i], keep_confidences[i]);
-        frame->AddLandmark(landmark);
+        out_landmarks.push_back(landmark);
     }
 
     return EC::OK;

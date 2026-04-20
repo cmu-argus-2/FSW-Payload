@@ -454,8 +454,7 @@ EC InferenceManager::ExecRCInference()
     if (num_rc_inferences_on_current_frame_ > 0)
     {
         spdlog::warn("InferenceManager: RC inference already done on this frame. Overwriting.");
-        current_frame_->ClearRegions();
-        current_frame_->ClearLandmarks();
+        current_frame_->ClearInferenceResults();
         num_ld_inferences_on_current_frame_ = 0;
     }
 
@@ -476,6 +475,9 @@ EC InferenceManager::ExecRCInference()
         return status;
     }
 
+    InferenceResults rc_results;
+    rc_results.rc_version = rc_version_;
+
     static constexpr float RC_THRESHOLD = 0.5f;
     for (uint8_t i = 0; i < rc_num_classes; i++)
     {
@@ -483,12 +485,12 @@ EC InferenceManager::ExecRCInference()
         {
             spdlog::info("InferenceManager: RC class {} score {:.3f}",
                          GetRegionString(static_cast<RegionID>(i)), host_output[i]);
-            current_frame_->AddRegion(static_cast<RegionID>(i), host_output[i]);
+            rc_results.regions.emplace_back(static_cast<RegionID>(i), host_output[i]);
         }
     }
 
+    current_frame_->SetInferenceResults(std::move(rc_results));
     current_frame_->SetProcessingStage(ProcessingStage::RCNeted);
-    current_frame_->SetRCNetVersion(rc_version_);
     num_rc_inferences_on_current_frame_++;
 
     if (!preload_rc_engine_) FreeRCNet();
@@ -506,10 +508,7 @@ EC InferenceManager::ExecLDInference()
     }
 
     if (num_ld_inferences_on_current_frame_ > 0)
-    {
         spdlog::warn("InferenceManager: LD inference already done on this frame. Overwriting.");
-        current_frame_->ClearLandmarks();
-    }
 
     if (current_frame_->GetRegionIDs().empty())
     {
@@ -521,7 +520,9 @@ EC InferenceManager::ExecLDInference()
                  current_frame_->GetRegionIDs().size());
 
     cv::Mat img = current_frame_->GetImg();
+    cv::Size img_size = current_frame_->GetImgSize();
 
+    std::vector<Landmark> all_landmarks;
     std::vector<EC> ld_load_statuses;
     std::vector<EC> ld_net_statuses;
 
@@ -612,7 +613,7 @@ EC InferenceManager::ExecLDInference()
             cv::Mat output_matrix(3, sizes, CV_32F, raw_out);
 
             t0 = std::chrono::high_resolution_clock::now();
-            EC postprocess_status = ld_nets_[region_id]->PostprocessOutput(output_matrix, current_frame_);
+            EC postprocess_status = ld_nets_[region_id]->PostprocessOutput(output_matrix, all_landmarks, img_size);
             ld_nets_[region_id]->ReleaseScratchBuffers();
             t1 = std::chrono::high_resolution_clock::now();
             spdlog::info("InferenceManager: LD post-process took {} ms",
@@ -648,7 +649,7 @@ EC InferenceManager::ExecLDInference()
             spdlog::info("InferenceManager: LDNet ONNX inference OK, output size: {}", output_size);
 
             t0 = std::chrono::high_resolution_clock::now();
-            EC postprocess_status = ld_nets_[region_id]->PostprocessOutput(outs[0], current_frame_);
+            EC postprocess_status = ld_nets_[region_id]->PostprocessOutput(outs[0], all_landmarks, img_size);
             t1 = std::chrono::high_resolution_clock::now();
             spdlog::info("InferenceManager: LD post-process took {} ms",
                          std::chrono::duration_cast<std::chrono::milliseconds>(t1 - t0).count());
@@ -683,8 +684,15 @@ EC InferenceManager::ExecLDInference()
         return ld_net_statuses.front();
     }
 
+    const auto& existing = current_frame_->GetInferenceResults();
+    InferenceResults ld_results;
+    ld_results.rc_version   = existing.has_value() ? existing->rc_version : -1;
+    ld_results.ld_version   = ld_version_;
+    ld_results.ldnet_config = ldnet_config_;
+    ld_results.regions      = existing.has_value() ? existing->regions : std::vector<Region>{};
+    ld_results.landmarks    = std::move(all_landmarks);
+    current_frame_->SetInferenceResults(std::move(ld_results));
     current_frame_->SetProcessingStage(ProcessingStage::LDNeted);
-    current_frame_->SetLDNetVersion(ld_version_);
     num_ld_inferences_on_current_frame_++;
 
     return EC::OK;

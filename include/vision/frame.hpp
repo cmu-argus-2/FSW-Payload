@@ -15,6 +15,7 @@
 #include <vision/ld.hpp>
 #include <vision/prefiltering.hpp>
 #include <nlohmann/json.hpp>
+#include "inference/inference_results.hpp"
 using Json = nlohmann::json;
 
 
@@ -102,27 +103,22 @@ public:
     const ProcessingStage GetProcessingStage() const;
     void SetProcessingStage(ProcessingStage stage);
     const float GetRank() const;
-    int GetRCNetVersion() const { return _rcnet_version; }
-    int GetLDNetVersion() const { return _ldnet_version; }
-    void SetRCNetVersion(int v) { if (v > 0) _rcnet_version = v; }
-    void SetLDNetVersion(int v) { if (v > 0) _ldnet_version = v; }
     Json toJson() const;
     nlohmann::ordered_json toOrderedJson() const;
     void fromJson(const Json& j);
 
+    // Inference results — set atomically by InferenceManager
+    const std::optional<InferenceResults>& GetInferenceResults() const;
+    void SetInferenceResults(InferenceResults results);
+    void ClearInferenceResults();
+
+    // Convenience accessors — forward into InferenceResults; return empty if absent
     const std::vector<Region>& GetRegions() const;
     const std::vector<RegionID> GetRegionIDs() const;
     const std::vector<float> GetRegionConfidences() const;
     const std::vector<Landmark>& GetLandmarks() const;
     const std::optional<PrefilterResult>& GetPrefilterResult() const;
 
-    void AddRegion(const Region& region);
-    void AddRegion(RegionID region_id, float confidence);
-    void ClearRegion(RegionID region_id);
-    void ClearRegions();
-    void AddLandmark(const Landmark& landmark);
-    void AddLandmark(float x, float y, uint16_t class_id, RegionID region_id, float height_, float width_, float confidence_);
-    void ClearLandmarks();
     void RunPrefiltering();
 
     bool HasRegion()   const { return _annotation_state >= ImageState::HasRegion; }
@@ -141,10 +137,7 @@ private:
     ImageState _annotation_state;
     float _rank; // score to rank images with the same annotation_state (higher = better)
     ProcessingStage _processing_stage;
-    int _rcnet_version = -1;  // -1 = not run
-    int _ldnet_version = -1;  // -1 = not run
-    std::vector<Region> _regions;  // Container for regions
-    std::vector<Landmark> _landmarks;  // Container for landmarks
+    std::optional<InferenceResults> _inference_results;
     std::optional<PrefilterResult> _prefilter_result;
 
     // mutex is not copyable

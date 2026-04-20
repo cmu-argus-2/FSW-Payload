@@ -639,50 +639,81 @@ TEST_F(OrchestratorTest, LoadLDNetEngines_LowMemory_StopsBeforeFirstLoad)
 }
 
 // ============================================================
-// Frame version setters
+// Frame InferenceResults API
 // ============================================================
 
-TEST(FrameVersionTest, DefaultVersions_AreSentinel)
+TEST(FrameInferenceResultsTest, Default_NoResults)
 {
     Frame f;
-    EXPECT_EQ(f.GetRCNetVersion(), -1);
-    EXPECT_EQ(f.GetLDNetVersion(), -1);
+    EXPECT_FALSE(f.GetInferenceResults().has_value());
+    EXPECT_TRUE(f.GetRegions().empty());
+    EXPECT_TRUE(f.GetLandmarks().empty());
+    EXPECT_TRUE(f.GetRegionIDs().empty());
 }
 
-TEST(FrameVersionTest, SetRCNetVersion_ValidVersion_Updates)
+TEST(FrameInferenceResultsTest, SetResults_StoredCorrectly)
 {
     Frame f;
-    f.SetRCNetVersion(3);
-    EXPECT_EQ(f.GetRCNetVersion(), 3);
+    InferenceResults r;
+    r.rc_version = 2;
+    r.ld_version = 3;
+    r.regions.emplace_back(RegionID::R_10S, 0.9f);
+    f.SetInferenceResults(r);
+
+    ASSERT_TRUE(f.GetInferenceResults().has_value());
+    EXPECT_EQ(f.GetInferenceResults()->rc_version, 2);
+    EXPECT_EQ(f.GetInferenceResults()->ld_version, 3);
+    ASSERT_EQ(f.GetRegions().size(), 1u);
+    EXPECT_EQ(f.GetRegionIDs().front(), RegionID::R_10S);
+    EXPECT_NEAR(f.GetRegionConfidences().front(), 0.9f, 1e-5f);
 }
 
-TEST(FrameVersionTest, SetLDNetVersion_ValidVersion_Updates)
+TEST(FrameInferenceResultsTest, SetResults_WithLandmarks)
 {
     Frame f;
-    f.SetLDNetVersion(2);
-    EXPECT_EQ(f.GetLDNetVersion(), 2);
+    InferenceResults r;
+    r.rc_version = 2;
+    r.ld_version = 2;
+    r.regions.emplace_back(RegionID::R_17R, 0.85f);
+    r.landmarks.emplace_back(100.0f, 200.0f, uint16_t{1}, RegionID::R_17R, 50.0f, 30.0f, 0.95f);
+    f.SetInferenceResults(r);
+
+    ASSERT_TRUE(f.GetInferenceResults().has_value());
+    EXPECT_EQ(f.GetLandmarks().size(), 1u);
+    EXPECT_NEAR(f.GetLandmarks().front().confidence, 0.95f, 1e-5f);
 }
 
-TEST(FrameVersionTest, SetRCNetVersion_ZeroVersion_IgnoredSentinelPreserved)
+TEST(FrameInferenceResultsTest, ClearResults_RemovesData)
 {
     Frame f;
-    f.SetRCNetVersion(0);
-    EXPECT_EQ(f.GetRCNetVersion(), -1);
+    InferenceResults r;
+    r.rc_version = 1;
+    r.regions.emplace_back(RegionID::R_17R, 0.8f);
+    f.SetInferenceResults(r);
+
+    f.ClearInferenceResults();
+
+    EXPECT_FALSE(f.GetInferenceResults().has_value());
+    EXPECT_TRUE(f.GetRegions().empty());
+    EXPECT_TRUE(f.GetLandmarks().empty());
 }
 
-TEST(FrameVersionTest, SetLDNetVersion_NegativeVersion_IgnoredSentinelPreserved)
+TEST(FrameInferenceResultsTest, SetResults_OverwritesPrevious)
 {
     Frame f;
-    f.SetLDNetVersion(-3);
-    EXPECT_EQ(f.GetLDNetVersion(), -1);
-}
+    InferenceResults r1;
+    r1.rc_version = 1;
+    r1.regions.emplace_back(RegionID::R_10S, 0.7f);
+    f.SetInferenceResults(r1);
 
-TEST(FrameVersionTest, SetRCNetVersion_InvalidAfterValid_DoesNotOverwrite)
-{
-    Frame f;
-    f.SetRCNetVersion(2);
-    f.SetRCNetVersion(0);
-    EXPECT_EQ(f.GetRCNetVersion(), 2);
+    InferenceResults r2;
+    r2.rc_version = 2;
+    r2.regions.emplace_back(RegionID::R_17T, 0.9f);
+    f.SetInferenceResults(r2);
+
+    ASSERT_TRUE(f.GetInferenceResults().has_value());
+    EXPECT_EQ(f.GetInferenceResults()->rc_version, 2);
+    EXPECT_EQ(f.GetRegionIDs().front(), RegionID::R_17T);
 }
 
 // ============================================================

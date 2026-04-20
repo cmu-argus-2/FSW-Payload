@@ -2,6 +2,7 @@ if(CUDA_ENABLED)
     add_library(inference
         runtimes.cpp
         inference_manager.cpp
+        inference_results.cpp
     )
     target_compile_definitions(inference PUBLIC CUDA_ENABLED)
     target_link_libraries(inference
@@ -11,12 +12,16 @@ if(CUDA_ENABLED)
             ${NVINFER_LIBRARY}
             ${NVINFER_PLUGIN_LIBRARY}
             ${CUDART_LIBRARY}
+            nlohmann_json::nlohmann_json
     )
 else()
     add_library(inference
         inference_manager.cpp
+        inference_results.cpp
     )
     target_link_libraries(inference
-        PRIVATE core
+        PRIVATE
+            core
+            nlohmann_json::nlohmann_json
     )
 endif()

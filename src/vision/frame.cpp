@@ -196,29 +196,32 @@ nlohmann::ordered_json Frame::toOrderedJson() const // Order the Json keys
         j["annotation_state"] = static_cast<int>(_annotation_state);
         j["processing_stage"] = static_cast<int>(_processing_stage);
         j["rank"] = _rank;
-        j["detected_regions_count"] = _regions.size();
-        j["detected_landmarks_count"] = _landmarks.size();
         // Prefiltering results (omitted if not yet run)
         if (_prefilter_result.has_value()) {
             j["prefilter"] = PrefilterResultToJson(*_prefilter_result);
         }
         // 2. Inference results
+        nlohmann::ordered_json inf;
+        inf["rcnet_version"] = _rcnet_version;
+        inf["ldnet_version"] = _ldnet_version;
+        inf["detected_regions_count"] = _regions.size();
+        inf["detected_landmarks_count"] = _landmarks.size();
         // 2.1. List of regions
-        j["regions"] = nlohmann::ordered_json::array();
+        inf["regions"] = nlohmann::ordered_json::array();
         for (size_t i = 0; i < _regions.size(); ++i)
-        {            
+        {
             const auto& region = _regions[i];
             nlohmann::ordered_json region_json;
             region_json["region_" + std::to_string(i)] = {
                 {"id", region.id},
                 {"confidence", region.confidence}
             };
-            j["regions"].push_back(region_json);
+            inf["regions"].push_back(region_json);
         }
         // 2.2. List of landmarks
-        j["landmarks"] = nlohmann::ordered_json::array();
+        inf["landmarks"] = nlohmann::ordered_json::array();
         for (size_t i = 0; i < _landmarks.size(); ++i)
-        {            
+        {
             const auto& landmark = _landmarks[i];
             nlohmann::ordered_json landmark_json;
             landmark_json["landmark_" + std::to_string(i)] = {
@@ -230,8 +233,9 @@ nlohmann::ordered_json Frame::toOrderedJson() const // Order the Json keys
                 {"class_id", landmark.class_id},
                 {"region_id", landmark.region_id}
             };
-            j["landmarks"].push_back(landmark_json);
+            inf["landmarks"].push_back(landmark_json);
         }
+        j["inference_results"] = std::move(inf);
         
     } catch (const std::exception& e) {
         SPDLOG_ERROR("Failed to convert Frame to JSON: {}", e.what());
@@ -248,20 +252,24 @@ void Frame::fromJson(const Json& j) // Write values to JSON
         _annotation_state = static_cast<ImageState>(j.at("annotation_state").get<int>());
         _processing_stage = static_cast<ProcessingStage>(j.at("processing_stage").get<int>());
         _rank = j.at("rank").get<float>();
-        int detected_regions_count = j.at("detected_regions_count").get<int>();
-        int detected_landmarks_count = j.at("detected_landmarks_count").get<int>();
         // Prefiltering results
         _prefilter_result.reset();
         if (j.contains("prefilter") && j.at("prefilter").is_object())
         {
             _prefilter_result = PrefilterResultFromJson(j.at("prefilter"));
         }
-        // 2. Inference results
+        // 2. Inference results — new format nests under "inference_results";
+        //    fall back to flat top-level keys for frames written before this change.
+        const Json& inf = (j.contains("inference_results") && j.at("inference_results").is_object())
+                          ? j.at("inference_results")
+                          : j;
+        _rcnet_version = inf.value("rcnet_version", -1);
+        _ldnet_version = inf.value("ldnet_version", -1);
         // 2.1. List of regions
         _regions.clear();
-        if (j.contains("regions") && j.at("regions").is_array())
+        if (inf.contains("regions") && inf.at("regions").is_array())
         {
-            for (const auto& region_item : j.at("regions"))
+            for (const auto& region_item : inf.at("regions"))
             {
                 for (const auto& [key, value] : region_item.items())
                 {
@@ -273,9 +281,9 @@ void Frame::fromJson(const Json& j) // Write values to JSON
         }
         // 2.2. List of landmarks
         _landmarks.clear();
-        if (j.contains("landmarks") && j.at("landmarks").is_array())
+        if (inf.contains("landmarks") && inf.at("landmarks").is_array())
         {
-            for (const auto& landmark_item : j.at("landmarks"))
+            for (const auto& landmark_item : inf.at("landmarks"))
             {
                 for (const auto& [key, value] : landmark_item.items())
                 {

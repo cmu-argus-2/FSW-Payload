@@ -51,6 +51,7 @@ protected:
 struct LDNetConfigCase {
     NET_QUANTIZATION quant;
     int width;
+    int height;
     bool embedded_nms;
     bool use_trt;
     std::string_view expected;
@@ -61,16 +62,19 @@ class LDNetConfigTest : public ::testing::TestWithParam<LDNetConfigCase> {};
 TEST_P(LDNetConfigTest, GetFileNameAppendix)
 {
     auto& p = GetParam();
-    LDNetConfig cfg{p.quant, p.width, p.width, p.embedded_nms, p.use_trt};
+    LDNetConfig cfg{p.quant, p.width, p.height, p.embedded_nms, p.use_trt};
     EXPECT_EQ(cfg.GetFileNameAppendix(), p.expected);
 }
 
 INSTANTIATE_TEST_SUITE_P(NNetConfiguration, LDNetConfigTest, ::testing::Values(
-    LDNetConfigCase{NET_QUANTIZATION::FP16, 4608, false, true,  "_weights_fp16_sz_4608.trt"},
-    LDNetConfigCase{NET_QUANTIZATION::FP32, 4608, false, false, "_weights_fp32_sz_4608.onnx"},
-    LDNetConfigCase{NET_QUANTIZATION::INT8, 4608, true,  true,  "_weights_int8_sz_4608_nms.trt"},
-    LDNetConfigCase{NET_QUANTIZATION::FP16, 4608, true,  false, "_weights_fp16_sz_4608_nms.onnx"},
-    LDNetConfigCase{NET_QUANTIZATION::FP32, 1024, false, false, "_weights_fp32_sz_1024.onnx"}
+    // Square inputs (single-number size token)
+    LDNetConfigCase{NET_QUANTIZATION::FP16, 4608, 4608, false, true,  "_weights_fp16_sz_4608.trt"},
+    LDNetConfigCase{NET_QUANTIZATION::FP32, 4608, 4608, false, false, "_weights_fp32_sz_4608.onnx"},
+    LDNetConfigCase{NET_QUANTIZATION::INT8, 4608, 4608, true,  true,  "_weights_int8_sz_4608_nms.trt"},
+    LDNetConfigCase{NET_QUANTIZATION::FP16, 4608, 4608, true,  false, "_weights_fp16_sz_4608_nms.onnx"},
+    LDNetConfigCase{NET_QUANTIZATION::FP32, 1024, 1024, false, false, "_weights_fp32_sz_1024.onnx"},
+    // Non-square input (HxW size token)
+    LDNetConfigCase{NET_QUANTIZATION::FP16, 4608, 2592, false, true,  "_weights_fp16_sz_2592x4608.trt"}
 ));
 
 // ============================================================
@@ -132,23 +136,175 @@ TEST_F(OrchestratorTest, SetPreloadLDEngines_UpdatesFlag)
 
 TEST_F(OrchestratorTest, SetRCNetEnginePath_InvalidPath_Rejected)
 {
-    std::string original = im.rc_engine_path_;
+    std::string original_path    = im.rc_engine_path_;
+    int         original_version = im.rc_version_;
     EXPECT_EQ(im.SetRCNetEnginePath("/bad/path/engine.trt"), EC::FILE_DOES_NOT_EXIST);
-    EXPECT_EQ(im.rc_engine_path_, original);
+    EXPECT_EQ(im.rc_engine_path_, original_path);
+    EXPECT_EQ(im.rc_version_,     original_version);
 }
 
 TEST_F(OrchestratorTest, SetRCNetEnginePath_EmptyPath_Rejected)
 {
-    std::string original = im.rc_engine_path_;
+    std::string original_path    = im.rc_engine_path_;
+    int         original_version = im.rc_version_;
     EXPECT_EQ(im.SetRCNetEnginePath(""), EC::FILE_DOES_NOT_EXIST);
-    EXPECT_EQ(im.rc_engine_path_, original);
+    EXPECT_EQ(im.rc_engine_path_, original_path);
+    EXPECT_EQ(im.rc_version_,     original_version);
 }
 
 TEST_F(OrchestratorTest, SetLDNetEngineFolderPath_InvalidPath_Rejected)
 {
-    std::string original = im.ld_engine_folder_path_;
+    std::string original_path    = im.ld_engine_folder_path_;
+    int         original_version = im.ld_version_;
     EXPECT_EQ(im.SetLDNetEngineFolderPath("/bad/folder"), EC::FILE_DOES_NOT_EXIST);
-    EXPECT_EQ(im.ld_engine_folder_path_, original);
+    EXPECT_EQ(im.ld_engine_folder_path_, original_path);
+    EXPECT_EQ(im.ld_version_,            original_version);
+}
+
+
+// --- SetRCNetEnginePath / SetLDNetEngineFolderPath: version parsing on success ---
+
+// When the path follows the standard convention the version int is parsed from it.
+TEST_F(OrchestratorTest, SetRCNetEnginePath_StandardPath_ParsesVersion)
+{
+    const std::string v3_path = Inference::RCEnginePath(3);
+    if (!std::filesystem::exists(v3_path))
+        GTEST_SKIP() << "RC V3 engine not present: " << v3_path;
+    EXPECT_EQ(im.SetRCNetEnginePath(v3_path), EC::OK);
+    EXPECT_EQ(im.rc_version_, 3);
+}
+
+TEST_F(OrchestratorTest, SetLDNetEngineFolderPath_StandardPath_ParsesVersion)
+{
+    const std::string v3_path = Inference::LDFolderPath(3);
+    if (!std::filesystem::exists(v3_path))
+        GTEST_SKIP() << "LD V3 folder not present: " << v3_path;
+    EXPECT_EQ(im.SetLDNetEngineFolderPath(v3_path), EC::OK);
+    EXPECT_EQ(im.ld_version_, 3);
+}
+
+// When a valid but non-standard path is set, the version is reset to the sentinel -1.
+TEST_F(OrchestratorTest, SetRCNetEnginePath_NonStandardPath_SetsVersionSentinel)
+{
+    // Create a temporary file so the filesystem check passes.
+    const std::string tmp = "/tmp/custom_rc_engine.trt";
+    std::ofstream(tmp).close();
+
+    ASSERT_EQ(im.SetRCNetEnginePath(tmp), EC::OK);
+    EXPECT_EQ(im.rc_version_, -1);
+
+    std::filesystem::remove(tmp);
+}
+
+TEST_F(OrchestratorTest, SetLDNetEngineFolderPath_NonStandardPath_SetsVersionSentinel)
+{
+    const std::string tmp = "/tmp/custom_ld_folder";
+    std::filesystem::create_directory(tmp);
+
+    ASSERT_EQ(im.SetLDNetEngineFolderPath(tmp), EC::OK);
+    EXPECT_EQ(im.ld_version_, -1);
+
+    std::filesystem::remove(tmp);
+}
+
+TEST_F(OrchestratorTest, DefaultRCPath_IsVersion2)
+{
+    EXPECT_EQ(im.rc_engine_path_, Inference::RCEnginePath(2));
+}
+
+TEST_F(OrchestratorTest, DefaultLDPath_IsVersion2)
+{
+    EXPECT_EQ(im.ld_engine_folder_path_, Inference::LDFolderPath(2));
+}
+
+TEST_F(OrchestratorTest, DefaultRCVersion_Is2)
+{
+    EXPECT_EQ(im.rc_version_, 2);
+}
+
+TEST_F(OrchestratorTest, DefaultLDVersion_Is2)
+{
+    EXPECT_EQ(im.ld_version_, 2);
+}
+
+// --- Zero / negative versions must be rejected before any filesystem access ---
+
+TEST_F(OrchestratorTest, SetRCNetVersion_ZeroVersion_Rejected)
+{
+    std::string original_path = im.rc_engine_path_;
+    int original_version      = im.rc_version_;
+    EXPECT_EQ(im.SetRCNetVersion(0), EC::NN_INVALID_VERSION);
+    EXPECT_EQ(im.rc_engine_path_, original_path);
+    EXPECT_EQ(im.rc_version_,     original_version);
+}
+
+TEST_F(OrchestratorTest, SetRCNetVersion_NegativeVersion_Rejected)
+{
+    std::string original_path = im.rc_engine_path_;
+    int original_version      = im.rc_version_;
+    EXPECT_EQ(im.SetRCNetVersion(-5), EC::NN_INVALID_VERSION);
+    EXPECT_EQ(im.rc_engine_path_, original_path);
+    EXPECT_EQ(im.rc_version_,     original_version);
+}
+
+TEST_F(OrchestratorTest, SetLDNetVersion_ZeroVersion_Rejected)
+{
+    std::string original_path = im.ld_engine_folder_path_;
+    int original_version      = im.ld_version_;
+    EXPECT_EQ(im.SetLDNetVersion(0), EC::NN_INVALID_VERSION);
+    EXPECT_EQ(im.ld_engine_folder_path_, original_path);
+    EXPECT_EQ(im.ld_version_,           original_version);
+}
+
+TEST_F(OrchestratorTest, SetLDNetVersion_NegativeVersion_Rejected)
+{
+    std::string original_path = im.ld_engine_folder_path_;
+    int original_version      = im.ld_version_;
+    EXPECT_EQ(im.SetLDNetVersion(-1), EC::NN_INVALID_VERSION);
+    EXPECT_EQ(im.ld_engine_folder_path_, original_path);
+    EXPECT_EQ(im.ld_version_,           original_version);
+}
+
+// --- Non-existent version: path must not change AND version int must not change ---
+
+TEST_F(OrchestratorTest, SetRCNetVersion_InvalidVersion_Rejected)
+{
+    std::string original_path = im.rc_engine_path_;
+    int original_version      = im.rc_version_;
+    EXPECT_EQ(im.SetRCNetVersion(99), EC::FILE_DOES_NOT_EXIST);
+    EXPECT_EQ(im.rc_engine_path_, original_path);
+    EXPECT_EQ(im.rc_version_,     original_version);
+}
+
+TEST_F(OrchestratorTest, SetLDNetVersion_InvalidVersion_Rejected)
+{
+    std::string original_path = im.ld_engine_folder_path_;
+    int original_version      = im.ld_version_;
+    EXPECT_EQ(im.SetLDNetVersion(99), EC::FILE_DOES_NOT_EXIST);
+    EXPECT_EQ(im.ld_engine_folder_path_, original_path);
+    EXPECT_EQ(im.ld_version_,           original_version);
+}
+
+// --- Valid version: both path and version int must update (skipped if files absent) ---
+
+TEST_F(OrchestratorTest, SetRCNetVersion_ValidVersion_UpdatesPath)
+{
+    const std::string v2_path = std::string(MODELS_DIR) + "/trained-rc/V2/rc_model_weights.trt";
+    if (!std::filesystem::exists(v2_path))
+        GTEST_SKIP() << "RC V2 not yet using standard naming: " << v2_path;
+    EXPECT_EQ(im.SetRCNetVersion(2), EC::OK);
+    EXPECT_EQ(im.rc_engine_path_, Inference::RCEnginePath(2));
+    EXPECT_EQ(im.rc_version_, 2);
+}
+
+TEST_F(OrchestratorTest, SetLDNetVersion_ValidVersion_UpdatesPath)
+{
+    const std::string v2_path = std::string(MODELS_DIR) + "/trained-ld/V2";
+    if (!std::filesystem::exists(v2_path))
+        GTEST_SKIP() << "LD V2 folder not found: " << v2_path;
+    EXPECT_EQ(im.SetLDNetVersion(2), EC::OK);
+    EXPECT_EQ(im.ld_engine_folder_path_, Inference::LDFolderPath(2));
+    EXPECT_EQ(im.ld_version_, 2);
 }
 
 // ============================================================
@@ -157,10 +313,11 @@ TEST_F(OrchestratorTest, SetLDNetEngineFolderPath_InvalidPath_Rejected)
 
 TEST_F(OrchestratorTest, SetLDNetConfig_AllFieldsUpdated)
 {
-    im.SetLDNetConfig(NET_QUANTIZATION::INT8, 1024, 768, true, false);
+    // ONNX models use square inputs, so width == height → single-number size token.
+    im.SetLDNetConfig(NET_QUANTIZATION::INT8, 1024, 1024, true, false);
     EXPECT_EQ(im.ldnet_config_.weight_quant, NET_QUANTIZATION::INT8);
     EXPECT_EQ(im.ldnet_config_.input_width,  1024);
-    EXPECT_EQ(im.ldnet_config_.input_height, 768);
+    EXPECT_EQ(im.ldnet_config_.input_height, 1024);
     EXPECT_TRUE(im.ldnet_config_.embedded_nms);
     EXPECT_FALSE(im.ldnet_config_.use_trt);
     // Cross-check via appendix so the struct is actually being used correctly
@@ -482,6 +639,53 @@ TEST_F(OrchestratorTest, LoadLDNetEngines_LowMemory_StopsBeforeFirstLoad)
 }
 
 // ============================================================
+// Frame version setters
+// ============================================================
+
+TEST(FrameVersionTest, DefaultVersions_AreSentinel)
+{
+    Frame f;
+    EXPECT_EQ(f.GetRCNetVersion(), -1);
+    EXPECT_EQ(f.GetLDNetVersion(), -1);
+}
+
+TEST(FrameVersionTest, SetRCNetVersion_ValidVersion_Updates)
+{
+    Frame f;
+    f.SetRCNetVersion(3);
+    EXPECT_EQ(f.GetRCNetVersion(), 3);
+}
+
+TEST(FrameVersionTest, SetLDNetVersion_ValidVersion_Updates)
+{
+    Frame f;
+    f.SetLDNetVersion(2);
+    EXPECT_EQ(f.GetLDNetVersion(), 2);
+}
+
+TEST(FrameVersionTest, SetRCNetVersion_ZeroVersion_IgnoredSentinelPreserved)
+{
+    Frame f;
+    f.SetRCNetVersion(0);
+    EXPECT_EQ(f.GetRCNetVersion(), -1);
+}
+
+TEST(FrameVersionTest, SetLDNetVersion_NegativeVersion_IgnoredSentinelPreserved)
+{
+    Frame f;
+    f.SetLDNetVersion(-3);
+    EXPECT_EQ(f.GetLDNetVersion(), -1);
+}
+
+TEST(FrameVersionTest, SetRCNetVersion_InvalidAfterValid_DoesNotOverwrite)
+{
+    Frame f;
+    f.SetRCNetVersion(2);
+    f.SetRCNetVersion(0);
+    EXPECT_EQ(f.GetRCNetVersion(), 2);
+}
+
+// ============================================================
 // Integration tests — Full inference on real sample images
 //
 //
@@ -652,7 +856,7 @@ static void WriteInferenceReport(const std::map<std::string, RegionTestResult>& 
 static std::vector<SampleImageCase> CollectSampleCases()
 {
     std::vector<SampleImageCase> result;
-    const fs::path sample_dir = fs::path(MODELS_DIR) / "V1" / "sample_images";
+    const fs::path sample_dir = fs::path(MODELS_DIR) / "sample_images";
     if (!fs::exists(sample_dir)) return result;
 
     for (RegionID rid : GetAllRegionIDs())
@@ -698,13 +902,23 @@ protected:
     {
         const std::string models = MODELS_DIR;
         orc_ = new InferenceManager();
-        if (orc_->SetRCNetEnginePath(models + "/V1/trained-rc/effnet_0997acc.trt") != EC::OK)
+
+        // Find the RC V2 TRT engine regardless of filename (standard name is
+        // rc_model_weights.trt; legacy builds may still use effnet_0997acc.trt).
+        fs::path rc_engine;
+        const fs::path rc_dir = fs::path(models) / "trained-rc" / "V2";
+        if (fs::exists(rc_dir)) {
+            for (const auto& e : fs::directory_iterator(rc_dir)) {
+                if (e.path().extension() == ".trt") { rc_engine = e.path(); break; }
+            }
+        }
+        if (rc_engine.empty() || orc_->SetRCNetEnginePath(rc_engine.string()) != EC::OK)
         {
             delete orc_;
             orc_ = nullptr;
             return;
         }
-        orc_->SetLDNetEngineFolderPath(models + "/V1/trained-ld");
+        orc_->SetLDNetEngineFolderPath(models + "/trained-ld/V2");
     }
 
     static void TearDownTestSuite()
@@ -731,9 +945,9 @@ TEST_P(InferenceIntegrationTest, FullInference_DetectsRegionAndTruePositiveLandm
     }
 
     // Guard: TRT FP16 engine exists for this region
-    const std::string engine_path = std::string(MODELS_DIR) + "/V1/trained-ld/"
+    const std::string engine_path = std::string(MODELS_DIR) + "/trained-ld/V2/"
                                   + p.region_str + "/" + p.region_str
-                                  + "_weights_fp16_sz_4608.trt";
+                                  + "_weights_fp16_sz_2592x4608.trt";
     if (!fs::exists(engine_path)) {
         result.status = RegionTestResult::Status::SKIP;
         result.skip_reason = "TRT engine not found: " + engine_path;

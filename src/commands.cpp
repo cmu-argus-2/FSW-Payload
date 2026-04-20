@@ -133,20 +133,10 @@ void request_telemetry([[maybe_unused]] std::vector<uint8_t> &data)
 void enable_cameras([[maybe_unused]] std::vector<uint8_t> &data)
 {
     SPDLOG_INFO("Trying to enable all cameras...");
-    std::array<bool, NUM_CAMERAS> on_cameras;
 
-    int nb_activated_cams = sys::cameraManager().EnableCameras(on_cameras);
-    bool at_least_one_was_enabled = false;
-    for (size_t i = 0; i < NUM_CAMERAS; ++i)
-    {
-        if (on_cameras[i])
-        {
-            SPDLOG_INFO("Camera {} is enabled.", i);
-            at_least_one_was_enabled = true;
-        }
-    }
+    int nb_activated_cams = sys::cameraManager().EnableCameras();
 
-    if (!at_least_one_was_enabled)
+    if (nb_activated_cams == 0)
     {
         SPDLOG_ERROR("No cameras were enabled.");
         // TODO: Get latest error from camera subsystem instead
@@ -155,11 +145,16 @@ void enable_cameras([[maybe_unused]] std::vector<uint8_t> &data)
         return;
     }
 
+    std::array<uint8_t, NUM_CAMERAS> cam_status{};
+    sys::cameraManager().FillCameraStatus(cam_status.data());
+
     std::vector<uint8_t> transmit_data;
     transmit_data.push_back(static_cast<uint8_t>(nb_activated_cams));
     for (size_t i = 0; i < NUM_CAMERAS; ++i)
     {
-        transmit_data.push_back(static_cast<uint8_t>(on_cameras[i]));
+        const bool active = (cam_status[i] == static_cast<uint8_t>(CAM_STATUS::ACTIVE));
+        SPDLOG_INFO("Camera {}: {}", i, active ? "enabled" : "inactive");
+        transmit_data.push_back(static_cast<uint8_t>(active));
     }
 
     std::shared_ptr<Message> msg = CreateMessage(CommandID::ENABLE_CAMERAS, transmit_data);
@@ -171,20 +166,10 @@ void enable_cameras([[maybe_unused]] std::vector<uint8_t> &data)
 void disable_cameras([[maybe_unused]] std::vector<uint8_t> &data)
 {
     SPDLOG_INFO("Trying to disable all cameras...");
-    std::array<bool, NUM_CAMERAS> off_cameras;
 
-    int nb_disabled_cams = sys::cameraManager().DisableCameras(off_cameras);
-    bool at_least_one_was_disabled = false;
-    for (size_t i = 0; i < NUM_CAMERAS; ++i)
-    {
-        if (off_cameras[i])
-        {
-            SPDLOG_INFO("Camera {} is disabled.", i);
-            at_least_one_was_disabled = true;
-        }
-    }
+    int nb_disabled_cams = sys::cameraManager().DisableCameras();
 
-    if (!at_least_one_was_disabled)
+    if (nb_disabled_cams == 0)
     {
         SPDLOG_ERROR("No cameras were disabled.");
         // Get latest error from camera subsystem instead
@@ -193,11 +178,16 @@ void disable_cameras([[maybe_unused]] std::vector<uint8_t> &data)
         return;
     }
 
+    std::array<uint8_t, NUM_CAMERAS> cam_status{};
+    sys::cameraManager().FillCameraStatus(cam_status.data());
+
     std::vector<uint8_t> transmit_data;
     transmit_data.push_back(static_cast<uint8_t>(nb_disabled_cams));
     for (size_t i = 0; i < NUM_CAMERAS; ++i)
     {
-        transmit_data.push_back(static_cast<uint8_t>(off_cameras[i]));
+        const bool inactive = (cam_status[i] == static_cast<uint8_t>(CAM_STATUS::INACTIVE));
+        SPDLOG_INFO("Camera {}: {}", i, inactive ? "disabled" : "still active");
+        transmit_data.push_back(static_cast<uint8_t>(inactive));
     }
 
     std::shared_ptr<Message> msg = CreateMessage(CommandID::DISABLE_CAMERAS, transmit_data);
@@ -412,8 +402,24 @@ void request_image([[maybe_unused]] std::vector<uint8_t> &data)
         return;
     }
 
-    // Reconstruct the original image path from the frame data
-    std::string img_path = std::string(IMAGES_FOLDER) + "raw_" + std::to_string(frame.GetTimestamp()) + "_" + std::to_string(frame.GetCamID()) + ".png";
+    // Reconstruct the original image path from the frame data, checking both JPG and PNG
+    std::string img_path;
+    for (ImageFormat fmt : {ImageFormat::JPG, ImageFormat::PNG})
+    {
+        std::string candidate = std::string(IMAGES_FOLDER) + "raw_" + std::to_string(frame.GetTimestamp()) + "_" + std::to_string(frame.GetCamID()) + ImageFormatExtension(fmt);
+        if (std::filesystem::exists(candidate))
+        {
+            img_path = candidate;
+            break;
+        }
+    }
+    if (img_path.empty())
+    {
+        SPDLOG_ERROR("Failed to find image file for frame ({}, {})", frame.GetCamID(), frame.GetTimestamp());
+        std::shared_ptr<Message> msg = CreateErrorAckMessage(CommandID::REQUEST_IMAGE, to_uint8(EC::FILE_NOT_AVAILABLE));
+        sys::payload().TransmitMessage(msg);
+        return;
+    }
     std::string abs_img_path = std::filesystem::absolute(img_path).string();
     SPDLOG_INFO("Using image: {}", abs_img_path);
 

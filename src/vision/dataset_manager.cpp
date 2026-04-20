@@ -237,12 +237,8 @@ void DatasetManager::ProcessFrames(
         uint8_t cam_id = std::get<0>(frame_id);
         uint64_t timestamp = std::get<1>(frame_id);
 
-        std::string img_path = current_dataset.GetFolderPath()
-                             + "raw_" + std::to_string(timestamp)
-                             + "_" + std::to_string(cam_id) + ".png";
-
         Frame frame;
-        if (!DH::ReadImageFromDisk(img_path, frame, cam_id, timestamp))
+        if (!DH::ReadImageFromDisk(timestamp, cam_id, frame, current_dataset.GetFolderPath()))
         {
             SPDLOG_ERROR("Failed to load frame ({}, {}) for processing", cam_id, timestamp);
             processed_frame_ids.push_back(frame_id); // don't retry unloadable frames

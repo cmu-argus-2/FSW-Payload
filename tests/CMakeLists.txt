@@ -5,9 +5,11 @@ set(PAYLOAD_TEST_SOURCES
     navigation/test_quaternion.cpp
     navigation/test_frame_conversions.cpp
     test_tilepack_dh.cpp
+    test_data_handling.cpp
     test_imu.cpp
     test_dataset.cpp
     test_commands.cpp
+    test_camera.cpp
 )
 
 if(CUDA_ENABLED)
@@ -31,4 +33,3 @@ if(CUDA_ENABLED)
 endif()
 
 add_test(NAME PAYLOAD_TESTS COMMAND PAYLOAD_TESTS)
-

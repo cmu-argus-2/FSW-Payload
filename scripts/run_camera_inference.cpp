@@ -24,12 +24,12 @@ int main(int argc, char** argv)
     auto config = std::make_unique<Configuration>();
     config->LoadConfiguration("config/config.toml");
     const auto& cam_configs = config->GetCameraConfigs();
+    const auto& isp_config  = config->GetCameraISPConfig();
     InferenceManager inference_manager;
-    CameraManager cam_manager(cam_configs, inference_manager);
+    CameraManager cam_manager(cam_configs, isp_config, inference_manager);
 
     spdlog::info("Enabling cameras...");
-    std::array<bool, NUM_CAMERAS> activated;
-    int count = cam_manager.EnableCameras(activated);
+    int count = cam_manager.EnableCameras();
     spdlog::info("Cameras enabled: {}", count);
 
     spdlog::info("Waiting for cameras to stabilize...");
@@ -54,8 +54,7 @@ int main(int argc, char** argv)
 
     // Disable cameras before inference to free memory
     spdlog::info("Disabling cameras before inference...");
-    std::array<bool, NUM_CAMERAS> disabled;
-    cam_manager.DisableCameras(disabled);
+    cam_manager.DisableCameras();
 
     // Configure inference manager
     inference_manager.SetRCNetEnginePath(rc_trt_file_path);

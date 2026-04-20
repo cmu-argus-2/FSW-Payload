@@ -11,10 +11,16 @@ isp_config(isp_config),
 capture_mode(CAPTURE_MODE::IDLE),
 storage_folder(IMAGES_FOLDER),
 camera_configs(camera_configs),
-cameras{{Camera(camera_configs[0].id, camera_configs[0].path, isp_config),
-    Camera(camera_configs[1].id, camera_configs[1].path, isp_config),
-    Camera(camera_configs[2].id, camera_configs[2].path, isp_config),
-    Camera(camera_configs[3].id, camera_configs[3].path, isp_config)}}
+cameras{{
+    Camera(camera_configs[0].id, camera_configs[0].path,
+           static_cast<int>(camera_configs[0].width), static_cast<int>(camera_configs[0].height), isp_config),
+    Camera(camera_configs[1].id, camera_configs[1].path,
+           static_cast<int>(camera_configs[1].width), static_cast<int>(camera_configs[1].height), isp_config),
+    Camera(camera_configs[2].id, camera_configs[2].path,
+           static_cast<int>(camera_configs[2].width), static_cast<int>(camera_configs[2].height), isp_config),
+    Camera(camera_configs[3].id, camera_configs[3].path,
+           static_cast<int>(camera_configs[3].width), static_cast<int>(camera_configs[3].height), isp_config)
+}}
 {
     _UpdateCamStatus();
     SPDLOG_INFO("Camera Manager initialized");
@@ -86,9 +92,11 @@ uint8_t CameraManager::SaveLatestFrames(CAPTURE_MODE mode)
         if (!needs_inference)
         {
             // CAPTURE_SINGLE, PERIODIC, PERIODIC_EARTH
-            DH::StoreFrameToDisk(*frame_ptr, GetStorageFolder());
-            new_ids.emplace_back(frame_ptr->GetCamID(), frame_ptr->GetTimestamp());
-            saved_count++;
+            if (!DH::StoreFrameToDisk(*frame_ptr, GetStorageFolder()).empty())
+            {
+                new_ids.emplace_back(frame_ptr->GetCamID(), frame_ptr->GetTimestamp());
+                saved_count++;
+            }
         }
         else
         {
@@ -119,9 +127,11 @@ uint8_t CameraManager::SaveLatestFrames(CAPTURE_MODE mode)
 
             if (mode == CAPTURE_MODE::PERIODIC_ROI)
             {
-                DH::StoreFrameToDisk(*frame_ptr, GetStorageFolder());
-                new_ids.emplace_back(frame_ptr->GetCamID(), frame_ptr->GetTimestamp());
-                saved_count++;
+                if (!DH::StoreFrameToDisk(*frame_ptr, GetStorageFolder()).empty())
+                {
+                    new_ids.emplace_back(frame_ptr->GetCamID(), frame_ptr->GetTimestamp());
+                    saved_count++;
+                }
                 continue;
             }
 
@@ -135,9 +145,11 @@ uint8_t CameraManager::SaveLatestFrames(CAPTURE_MODE mode)
 
             if (frame_ptr->HasLandmark())
             {
-                DH::StoreFrameToDisk(*frame_ptr, GetStorageFolder());
-                new_ids.emplace_back(frame_ptr->GetCamID(), frame_ptr->GetTimestamp());
-                saved_count++;
+                if (!DH::StoreFrameToDisk(*frame_ptr, GetStorageFolder()).empty())
+                {
+                    new_ids.emplace_back(frame_ptr->GetCamID(), frame_ptr->GetTimestamp());
+                    saved_count++;
+                }
             }
             else
             {
@@ -208,6 +220,7 @@ void CameraManager::RunLoop()
             {
                 int n = SaveLatestFrames(mode);
                 SPDLOG_INFO("Single capture completed: {} frame(s)", n);
+                _AutoDisableIfNeeded();
                 // TODO: ACK command
                 SetCaptureMode(CAPTURE_MODE::IDLE);
                 break;
@@ -383,6 +396,14 @@ void CameraManager::SetCaptureMode(CAPTURE_MODE mode)
 /**/
 bool CameraManager::SendCaptureRequest()
 {
+    const CAPTURE_MODE current_mode = GetCaptureMode();
+    if (current_mode != CAPTURE_MODE::IDLE)
+    {
+        SPDLOG_WARN("Rejecting single capture request while capture mode is {}",
+                    static_cast<uint8_t>(current_mode));
+        return false;
+    }
+
     if (!PrepareForCapture())
     {
         return false;
@@ -442,23 +463,43 @@ ProcessingStage CameraManager::GetTargetProcessingStage() const
 
 bool CameraManager::PrepareForCapture()
 {
+    const int configured_count = CountConfiguredCameras();
+    if (configured_count == 0)
+    {
+        SPDLOG_ERROR("No cameras are enabled in configuration; cannot prepare for capture.");
+        auto_disable_after_capture.store(false);
+        return false;
+    }
+
     const int active_before = CountActiveCameras();
-    if (active_before == CountConfiguredCameras())
+    if (active_before == configured_count)
     {
         auto_disable_after_capture.store(false);
         return true;
     }
 
-    int nb_enabled = EnableCameras();
-    if (CountActiveCameras() == 0)
+    EnableCameras();
+    const int active_after = CountActiveCameras();
+    if (active_after == 0)
     {
         SPDLOG_ERROR("Failed to enable any cameras for capture.");
         auto_disable_after_capture.store(false);
         return false;
     }
 
+    if (active_after != configured_count)
+    {
+        SPDLOG_ERROR("Only {}/{} configured camera(s) are active; aborting capture.",
+                     active_after, configured_count);
+        if (active_before == 0)
+            DisableCameras();
+        auto_disable_after_capture.store(false);
+        return false;
+    }
+
     auto_disable_after_capture.store(active_before == 0);
-    SPDLOG_INFO("Prepared {} additional camera(s) for capture.", nb_enabled);
+    const int newly_enabled = active_after > active_before ? (active_after - active_before) : 0;
+    SPDLOG_INFO("Prepared {} additional camera(s) for capture.", newly_enabled);
     return true;
 }
 
@@ -480,7 +521,9 @@ bool CameraManager::EnableCamera(int cam_id)
     {
         if (camera.GetID() == cam_id)
         {
-            return camera.Enable();
+            const bool enabled = camera.Enable();
+            _UpdateCamStatus();
+            return enabled;
         }
     }
     return false;
@@ -493,7 +536,9 @@ bool CameraManager::DisableCamera(int cam_id)
     {
         if (camera.GetID() == cam_id)
         {
-            return camera.Disable();
+            const bool disabled = camera.Disable();
+            _UpdateCamStatus();
+            return disabled;
         }
     }
     return false;
@@ -510,9 +555,11 @@ int CameraManager::EnableCameras()
             SPDLOG_INFO("CAM{}: disabled in config, skipping", camera_configs[i].id);
             continue;
         }
+
+        const bool was_active = (cameras[i].GetStatus() == CAM_STATUS::ACTIVE);
         cameras[i].Enable();
 
-        if (cameras[i].GetStatus() == CAM_STATUS::ACTIVE)
+        if (!was_active && cameras[i].GetStatus() == CAM_STATUS::ACTIVE)
             count++;
     }
     _UpdateCamStatus();
@@ -529,9 +576,10 @@ int CameraManager::DisableCameras()
         if (!camera_configs[i].enabled)
             continue;
 
+        const bool was_active = (cameras[i].GetStatus() == CAM_STATUS::ACTIVE);
         cameras[i].Disable();
 
-        if (cameras[i].GetStatus() == CAM_STATUS::INACTIVE)
+        if (was_active && cameras[i].GetStatus() == CAM_STATUS::INACTIVE)
             count++;
     }
 

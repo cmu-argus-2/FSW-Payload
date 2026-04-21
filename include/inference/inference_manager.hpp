@@ -46,6 +46,11 @@ public:
     void SetPreloadRCEngine(bool preload) { preload_rc_engine_ = preload; }
     void SetPreloadLDEngines(bool preload) { preload_ld_engines_ = preload; }
 
+    // Current configuration — used by reprocessing logic to compare against stored results
+    int GetRCVersion()              const { return rc_version_; }
+    int GetLDVersion()              const { return ld_version_; }
+    const LDNetConfig& GetLDNetConfig() const { return ldnet_config_; }
+
 private:
     std::mutex mtx_;
 

@@ -71,6 +71,14 @@ target_link_libraries(RUN_PREFILTER
     ${OpenCV_LIBS}
 )
 
+##### REPROCESSING
+
+add_executable(reprocess_dataset reprocess_dataset.cpp)
+target_link_libraries(reprocess_dataset PRIVATE PAYLOAD_LIB)
+
+add_executable(reprocess_image reprocess_image.cpp)
+target_link_libraries(reprocess_image PRIVATE PAYLOAD_LIB)
+
 ##### IMU
 
 add_executable(imu_run run_imu.cpp)

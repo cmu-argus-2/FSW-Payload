@@ -42,6 +42,15 @@ struct LDNetConfig {
     bool embedded_nms;
     bool use_trt;
 
+    bool operator==(const LDNetConfig& other) const {
+        return weight_quant  == other.weight_quant  &&
+               input_width   == other.input_width   &&
+               input_height  == other.input_height  &&
+               embedded_nms  == other.embedded_nms  &&
+               use_trt       == other.use_trt;
+    }
+    bool operator!=(const LDNetConfig& other) const { return !(*this == other); }
+
     std::string GetFileNameAppendix() {
         std::string fp16_string = GetQuantString(weight_quant);
         std::string nms_string = embedded_nms ? "_nms" : "";

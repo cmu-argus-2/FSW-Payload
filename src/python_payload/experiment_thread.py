@@ -271,7 +271,7 @@ class ExperimentThread(threading.Thread):
 
     def _downscale_images(
         self,
-        downscale_factor: float = 2.0,
+        downscale_factor: float = 10.0,
         experiment_dir: Path | None = None,
         file_manifest: dict | None = None,
     ) -> list[str]:
@@ -284,10 +284,10 @@ class ExperimentThread(threading.Thread):
         
         if downscale_factor <= 0:
             log.warning(
-                "Invalid downscale_factor=%s. Falling back to 2.0",
+                "Invalid downscale_factor=%s. Falling back to 10.0",
                 downscale_factor,
             )
-            downscale_factor = 2.0
+            downscale_factor = 10.0
 
         downscaled_paths: list[str] = []
         for image_path in file_manifest.get("raw", []):

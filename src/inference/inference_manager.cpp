@@ -48,9 +48,9 @@ int ParseLDVersion(const std::string& path)
 #include <algorithm>
 #include <filesystem>
 #include <opencv2/opencv.hpp>
-#include <opencv2/core/cuda.hpp>
-#include <opencv2/cudaarithm.hpp>
-#include <opencv2/cudaimgproc.hpp>
+// #include <opencv2/core/cuda.hpp>
+// #include <opencv2/cudaarithm.hpp>
+// #include <opencv2/cudaimgproc.hpp>
 
 using namespace cv;
 using namespace cv::dnn;

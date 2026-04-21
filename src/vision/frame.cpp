@@ -3,7 +3,6 @@
 #include <opencv2/opencv.hpp>
 #include <nlohmann/json.hpp>
 #include <algorithm>
-#include <numeric>
 using Json = nlohmann::json;
 
 

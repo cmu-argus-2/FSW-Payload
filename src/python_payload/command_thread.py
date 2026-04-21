@@ -221,7 +221,7 @@ class CommandThread(threading.Thread):
     
     
     _handlers = {
-        "PING": _handle_ping,
+        "PING_EXP": _handle_ping,
         "EXPERIMENT": _handle_experiment,
         "REQUEST_TM_PAYLOAD": _handle_request_tm_payload,
         "CONFIRM_LAST_BATCH": _handle_update_last_batch,

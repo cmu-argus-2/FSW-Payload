@@ -14,7 +14,7 @@
 #define DATASET_KEY_CMD "CMD"
 
 
-int main(int argc, char** argv)
+int run(int argc, char** argv)
 {
     std::string config_file_path = "config/config.toml";
     std::string ds_config_folder_path = "config";
@@ -23,8 +23,8 @@ int main(int argc, char** argv)
     try {
         config->LoadConfiguration(config_file_path);
     } catch (const toml::parse_error& err) {
-        std::cerr << "Parsing configuration file failed: " << err << "\n";
-        return 1;
+        spdlog::error("Parsing configuration file failed: {}", err.description());
+        return to_uint8(EC::PLACEHOLDER);
     }
     SPDLOG_INFO("Configuration file {} loaded.", config_file_path);
 
@@ -49,8 +49,15 @@ int main(int argc, char** argv)
         target_processing_stage = static_cast<ProcessingStage>(ds_cfg["target_processing_stage"].value_or(uint64_t(target_processing_stage)));
     } catch (const toml::parse_error& err) {
         spdlog::error("Failed to parse dataset config {}: {}", ds_config_path, err.description());
-        return 1;
+        return to_uint8(EC::PLACEHOLDER);
     }
+
+    if (max_period == 0.0 || target_frame_nb == 0)
+    {
+        spdlog::error("Invalid parameters for dataset collection command");
+        return to_uint8(EC::INVALID_COMMAND_ARGUMENTS);
+    }
+
     // capture_start_time = 0 in config means "start immediately"
     int64_t capture_start_time = timing::GetCurrentTimeMs();
 
@@ -69,60 +76,78 @@ int main(int argc, char** argv)
     [[maybe_unused]] int nb_enabled_cams = camera_manager.EnableCameras(temp);
     std::thread camera_thread = std::thread(&CameraManager::RunLoop, &camera_manager);
 
-    // how to make the above accessible to the dataset manager through the sys namespace?
+    // Helper to stop threads before any early return below this point.
+    auto stop_threads = [&]() {
+        imu_manager.StopLoop();
+        if (imu_thread.joinable()) imu_thread.join();
+        camera_manager.StopLoops();
+        if (camera_thread.joinable()) camera_thread.join();
+    };
 
-    if (max_period == 0.0 || target_frame_nb == 0)
+    try
     {
-        spdlog::error("Invalid parameters for dataset collection command");
-        return 0;
-    }
+        auto ds = DatasetManager::GetActiveDatasetManager(DATASET_KEY_CMD);
 
-    auto ds = DatasetManager::GetActiveDatasetManager(DATASET_KEY_CMD);
-
-    if (ds) // if already exists
-    {
-        // need to ensure it's actually running
-        if (ds->Running())
+        if (ds) // if already exists
         {
-            // if running: TODO: return ERROR ACK saying that a dataset is already running
-            // If completed, stop it then too
-            SPDLOG_ERROR("Dataset already running under key {}, ignoring command", DATASET_KEY_CMD);
-            imu_manager.StopLoop();
-            if (imu_thread.joinable()) imu_thread.join();
-            camera_manager.StopLoops();
-            if (camera_thread.joinable()) camera_thread.join();
-            return 1;
+            // need to ensure it's actually running
+            if (ds->Running())
+            {
+                // if running: TODO: return ERROR ACK saying that a dataset is already running
+                // If completed, stop it then too
+                SPDLOG_ERROR("Dataset already running under key {}, ignoring command", DATASET_KEY_CMD);
+                stop_threads();
+                return to_uint8(EC::PLACEHOLDER);
+            }
+            else
+            {
+                ds->StopDatasetManager(DATASET_KEY_CMD); // remove it (will create a new one)
+            }
         }
-        else
+
+        // Create a new Dataset
+        SPDLOG_INFO("Starting dataset collection (type {}) for {} frames at a period of {} seconds.", static_cast<uint8_t>(capture_mode), target_frame_nb, max_period);
+
+        ds = DatasetManager::Create(max_period, target_frame_nb, capture_mode, capture_start_time,
+                                    imu_collection_mode, image_capture_rate, imu_sample_rate_hz,
+                                    target_processing_stage, DATASET_KEY_CMD, camera_manager, imu_manager, inference_manager);
+        ds->StartCollection();
+
+        // StartCollection is asynchronous — block here until the collection loop
+        // finishes naturally (frame target met or period elapsed).
+        while (ds->Running())
         {
-            ds->StopDatasetManager(DATASET_KEY_CMD); // remove it (will create a new one)
+            std::this_thread::sleep_for(std::chrono::milliseconds(100));
         }
+
+        // Close Dataset Manager (joins the collection thread internally)
+        ds->StopDatasetManager(DATASET_KEY_CMD);
     }
-
-    // Create a new Dataset
-    SPDLOG_INFO("Starting dataset collection (type {}) for {} frames at a period of {} seconds.", static_cast<uint8_t>(capture_mode), target_frame_nb, max_period);
-
-    ds = DatasetManager::Create(max_period, target_frame_nb, capture_mode, capture_start_time,
-                                imu_collection_mode, image_capture_rate, imu_sample_rate_hz,
-                                target_processing_stage, DATASET_KEY_CMD, camera_manager, imu_manager, inference_manager);
-    ds->StartCollection();
-
-    // StartCollection is asynchronous — block here until the collection loop
-    // finishes naturally (frame target met or period elapsed).
-    while (ds->Running())
+    catch (...)
     {
-        std::this_thread::sleep_for(std::chrono::milliseconds(100));
+        stop_threads();
+        throw;
     }
 
-    // Close Dataset Manager (joins the collection thread internally)
-    ds->StopDatasetManager(DATASET_KEY_CMD);
-
-    // close threads
-    imu_manager.StopLoop();
-    if (imu_thread.joinable()) imu_thread.join();
-
-    camera_manager.StopLoops();
-    if (camera_thread.joinable()) camera_thread.join();
+    stop_threads();
 
     return 0;
+}
+
+int main(int argc, char** argv)
+{
+    try
+    {
+        return run(argc, argv);
+    }
+    catch (const std::exception& e)
+    {
+        spdlog::critical("Unhandled exception: {}", e.what());
+        return to_uint8(EC::PLACEHOLDER);
+    }
+    catch (...)
+    {
+        spdlog::critical("Unhandled unknown exception");
+        return to_uint8(EC::PLACEHOLDER);
+    }
 }

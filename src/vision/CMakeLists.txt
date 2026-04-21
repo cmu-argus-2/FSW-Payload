@@ -2,6 +2,7 @@
 
 add_library(vision
     frame.cpp
+    inference_results.cpp
     camera.cpp
     camera_manager.cpp
     dataset.cpp

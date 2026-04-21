@@ -1,6 +1,44 @@
 #include "inference/inference_manager.hpp"
 #include "spdlog/spdlog.h"
 
+namespace {
+
+// Returns the version integer from a standard RCEnginePath(.../V{N}/rc_model_weights.trt),
+// or -1 if the path doesn't match the convention.
+int ParseRCVersion(const std::string& path)
+{
+    static constexpr std::string_view suffix = "/rc_model_weights.trt";
+    if (path.size() <= suffix.size()) return -1;
+    if (path.compare(path.size() - suffix.size(), suffix.size(), suffix) != 0) return -1;
+    const std::string dir = path.substr(0, path.size() - suffix.size());
+    const auto slash = dir.rfind('/');
+    const std::string vpart = (slash == std::string::npos) ? dir : dir.substr(slash + 1);
+    if (vpart.size() < 2 || vpart[0] != 'V') return -1;
+    int v = 0;
+    for (char c : vpart.substr(1)) {
+        if (c < '0' || c > '9') return -1;
+        v = v * 10 + (c - '0');
+    }
+    return v > 0 ? v : -1;
+}
+
+// Returns the version integer from a standard LDFolderPath(.../V{N}),
+// or -1 if the path doesn't match the convention.
+int ParseLDVersion(const std::string& path)
+{
+    const auto slash = path.rfind('/');
+    const std::string vpart = (slash == std::string::npos) ? path : path.substr(slash + 1);
+    if (vpart.size() < 2 || vpart[0] != 'V') return -1;
+    int v = 0;
+    for (char c : vpart.substr(1)) {
+        if (c < '0' || c > '9') return -1;
+        v = v * 10 + (c - '0');
+    }
+    return v > 0 ? v : -1;
+}
+
+} // namespace
+
 #ifdef CUDA_ENABLED
 
 #include "inference/runtimes.hpp"
@@ -43,6 +81,7 @@ EC InferenceManager::SetRCNetEnginePath(const std::string& path)
         return EC::FILE_DOES_NOT_EXIST;
     }
     rc_engine_path_ = path;
+    rc_version_ = ParseRCVersion(path); // -1 if path doesn't follow standard convention
     return EC::OK;
 }
 
@@ -54,7 +93,26 @@ EC InferenceManager::SetLDNetEngineFolderPath(const std::string& path)
         return EC::FILE_DOES_NOT_EXIST;
     }
     ld_engine_folder_path_ = path;
+    ld_version_ = ParseLDVersion(path); // -1 if path doesn't follow standard convention
     return EC::OK;
+}
+
+EC InferenceManager::SetRCNetVersion(int version)
+{
+    if (version <= 0) {
+        SPDLOG_ERROR("InferenceManager: RC version must be > 0, got {}", version);
+        return EC::NN_INVALID_VERSION;
+    }
+    return SetRCNetEnginePath(Inference::RCEnginePath(version));
+}
+
+EC InferenceManager::SetLDNetVersion(int version)
+{
+    if (version <= 0) {
+        SPDLOG_ERROR("InferenceManager: LD version must be > 0, got {}", version);
+        return EC::NN_INVALID_VERSION;
+    }
+    return SetLDNetEngineFolderPath(Inference::LDFolderPath(version));
 }
 
 void InferenceManager::SetLDNetConfig(NET_QUANTIZATION weight_quant, int input_width,
@@ -396,8 +454,7 @@ EC InferenceManager::ExecRCInference()
     if (num_rc_inferences_on_current_frame_ > 0)
     {
         spdlog::warn("InferenceManager: RC inference already done on this frame. Overwriting.");
-        current_frame_->ClearRegions();
-        current_frame_->ClearLandmarks();
+        current_frame_->ClearInferenceResults();
         num_ld_inferences_on_current_frame_ = 0;
     }
 
@@ -418,6 +475,9 @@ EC InferenceManager::ExecRCInference()
         return status;
     }
 
+    InferenceResults rc_results;
+    rc_results.rc_version = rc_version_;
+
     static constexpr float RC_THRESHOLD = 0.5f;
     for (uint8_t i = 0; i < rc_num_classes; i++)
     {
@@ -425,10 +485,11 @@ EC InferenceManager::ExecRCInference()
         {
             spdlog::info("InferenceManager: RC class {} score {:.3f}",
                          GetRegionString(static_cast<RegionID>(i)), host_output[i]);
-            current_frame_->AddRegion(static_cast<RegionID>(i), host_output[i]);
+            rc_results.regions.emplace_back(static_cast<RegionID>(i), host_output[i]);
         }
     }
 
+    current_frame_->SetInferenceResults(std::move(rc_results));
     current_frame_->SetProcessingStage(ProcessingStage::RCNeted);
     num_rc_inferences_on_current_frame_++;
 
@@ -447,10 +508,7 @@ EC InferenceManager::ExecLDInference()
     }
 
     if (num_ld_inferences_on_current_frame_ > 0)
-    {
         spdlog::warn("InferenceManager: LD inference already done on this frame. Overwriting.");
-        current_frame_->ClearLandmarks();
-    }
 
     if (current_frame_->GetRegionIDs().empty())
     {
@@ -462,7 +520,9 @@ EC InferenceManager::ExecLDInference()
                  current_frame_->GetRegionIDs().size());
 
     cv::Mat img = current_frame_->GetImg();
+    cv::Size img_size = current_frame_->GetImgSize();
 
+    std::vector<Landmark> all_landmarks;
     std::vector<EC> ld_load_statuses;
     std::vector<EC> ld_net_statuses;
 
@@ -553,7 +613,7 @@ EC InferenceManager::ExecLDInference()
             cv::Mat output_matrix(3, sizes, CV_32F, raw_out);
 
             t0 = std::chrono::high_resolution_clock::now();
-            EC postprocess_status = ld_nets_[region_id]->PostprocessOutput(output_matrix, current_frame_);
+            EC postprocess_status = ld_nets_[region_id]->PostprocessOutput(output_matrix, all_landmarks, img_size);
             ld_nets_[region_id]->ReleaseScratchBuffers();
             t1 = std::chrono::high_resolution_clock::now();
             spdlog::info("InferenceManager: LD post-process took {} ms",
@@ -589,7 +649,7 @@ EC InferenceManager::ExecLDInference()
             spdlog::info("InferenceManager: LDNet ONNX inference OK, output size: {}", output_size);
 
             t0 = std::chrono::high_resolution_clock::now();
-            EC postprocess_status = ld_nets_[region_id]->PostprocessOutput(outs[0], current_frame_);
+            EC postprocess_status = ld_nets_[region_id]->PostprocessOutput(outs[0], all_landmarks, img_size);
             t1 = std::chrono::high_resolution_clock::now();
             spdlog::info("InferenceManager: LD post-process took {} ms",
                          std::chrono::duration_cast<std::chrono::milliseconds>(t1 - t0).count());
@@ -624,6 +684,14 @@ EC InferenceManager::ExecLDInference()
         return ld_net_statuses.front();
     }
 
+    const auto& existing = current_frame_->GetInferenceResults();
+    InferenceResults ld_results;
+    ld_results.rc_version   = existing.has_value() ? existing->rc_version : -1;
+    ld_results.ld_version   = ld_version_;
+    ld_results.ldnet_config = ldnet_config_;
+    ld_results.regions      = existing.has_value() ? existing->regions : std::vector<Region>{};
+    ld_results.landmarks    = std::move(all_landmarks);
+    current_frame_->SetInferenceResults(std::move(ld_results));
     current_frame_->SetProcessingStage(ProcessingStage::LDNeted);
     num_ld_inferences_on_current_frame_++;
 
@@ -661,13 +729,31 @@ InferenceManager::~InferenceManager() = default;
 EC InferenceManager::SetRCNetEnginePath(const std::string& path)
 {
     rc_engine_path_ = path; // No filesystem check without CUDA
+    rc_version_ = ParseRCVersion(path);
     return EC::OK;
 }
 
 EC InferenceManager::SetLDNetEngineFolderPath(const std::string& path)
 {
     ld_engine_folder_path_ = path; // No filesystem check without CUDA
+    ld_version_ = ParseLDVersion(path);
     return EC::OK;
+}
+
+EC InferenceManager::SetRCNetVersion(int version)
+{
+    if (version <= 0) {
+        return EC::NN_INVALID_VERSION;
+    }
+    return SetRCNetEnginePath(Inference::RCEnginePath(version));
+}
+
+EC InferenceManager::SetLDNetVersion(int version)
+{
+    if (version <= 0) {
+        return EC::NN_INVALID_VERSION;
+    }
+    return SetLDNetEngineFolderPath(Inference::LDFolderPath(version));
 }
 
 void InferenceManager::SetLDNetConfig(NET_QUANTIZATION weight_quant, int input_width,

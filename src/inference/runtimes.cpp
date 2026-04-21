@@ -258,15 +258,15 @@ EC LDNet::ReleaseScratchBuffers()
 EC LDNet::Free()
 {
     if (is_trt) {
-        ReleaseScratchBuffers();
         if (context_) context_.reset();
         if (engine_)  engine_.reset();
         if (runtime_) runtime_.reset();
         if (stream_) { cudaStreamDestroy(stream_); stream_ = nullptr; }
+        ReleaseScratchBuffers();
     } else {
         net_.reset();
     }
-    
+
     SetInitialized(false);
     return EC::OK;
 }
@@ -317,8 +317,9 @@ EC LDNet::parseModelName(const std::string& name, LDNetConfig& ldnet_config)
         ldnet_config.embedded_nms = false;
     }
 
-    // Parse remaining pattern: 17R_weights_fp16_sz_4608
-    std::regex pattern(R"(([^_]+)_weights_([^_]+)_sz_(\d+))");
+    // Parse remaining pattern: 17R_weights_fp16_sz_4608  (square)
+    //                      or: 17R_weights_fp16_sz_2592x4608  (non-square, HxW)
+    std::regex pattern(R"(([^_]+)_weights_([^_]+)_sz_(\d+)(?:x(\d+))?)");
     std::smatch match;
 
     if (!std::regex_match(base_name, match, pattern))
@@ -329,7 +330,8 @@ EC LDNet::parseModelName(const std::string& name, LDNetConfig& ldnet_config)
 
     // match[1] = model region
     // match[2] = precision
-    // match[3] = input size
+    // match[3] = height (non-square) or size (square)
+    // match[4] = width  (non-square only)
 
     if (match[2] == "fp16")
     {
@@ -349,14 +351,14 @@ EC LDNet::parseModelName(const std::string& name, LDNetConfig& ldnet_config)
         return EC::NN_FAILED_TO_LOAD_ENGINE;
     }
 
-    ldnet_config.input_width = std::stoi(match[3]);
-
-    if (ldnet_config.use_trt)
+    if (match[4].matched)   // HxW → non-square input
     {
-        ldnet_config.input_height = 2592;
+        ldnet_config.input_height = std::stoi(match[3]);
+        ldnet_config.input_width  = std::stoi(match[4]);
     }
-    else
+    else                    // single number → square input
     {
+        ldnet_config.input_width  = std::stoi(match[3]);
         ldnet_config.input_height = ldnet_config.input_width;
     }
 
@@ -766,19 +768,12 @@ cv::Rect LDNet::scaleBoxBackLetterbox(
 }
 
 
-EC LDNet::PostprocessOutput(cv::Mat outs, std::shared_ptr<Frame> frame)
+EC LDNet::PostprocessOutput(cv::Mat outs, std::vector<Landmark>& out_landmarks, cv::Size img_size)
 {
     std::vector<int> keep_classIds;
     std::vector<float> keep_confidences;
     std::vector<Rect2d> keep_boxes;
     std::vector<Rect> boxes;
-
-    if (!frame)
-    {
-        spdlog::error("LDNet::PostprocessOutput received null frame.");
-        LogError(EC::NN_POINTER_NULL);
-        return EC::NN_POINTER_NULL;
-    }
 
     // Non-max suppression
     yoloPostProcessing(outs, keep_classIds, keep_confidences, keep_boxes);
@@ -790,8 +785,8 @@ EC LDNet::PostprocessOutput(cv::Mat outs, std::shared_ptr<Frame> frame)
     }
 
     for (auto& b : boxes) {
-        b = scaleBoxBackLetterbox(b, frame->GetImgSize(), 
-                                    cv::Size(GetInputWidth(), GetInputHeight()));
+        b = scaleBoxBackLetterbox(b, img_size,
+                                  cv::Size(GetInputWidth(), GetInputHeight()));
     }
 
     // Populate landmarks
@@ -812,7 +807,7 @@ EC LDNet::PostprocessOutput(cv::Mat outs, std::shared_ptr<Frame> frame)
         Landmark landmark(x_center, y_center, class_id, GetRegionID(),
                             height, width, keep_confidences[i]);
         // Landmark landmark(keep_boxes[i], keep_classIds[i], keep_confidences[i]);
-        frame->AddLandmark(landmark);
+        out_landmarks.push_back(landmark);
     }
 
     return EC::OK;

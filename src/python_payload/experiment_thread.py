@@ -10,7 +10,7 @@ from camera_driver import JetsonCamera
 from thread_shared import PayloadState, experiment_queue, log, state_manager, tx_queue
 from file_downlink_manager import FileDownlinkManager
 
-from external_bin_calls import run_inference
+from external_bin_calls import is_dataset_running, run_inference, start_dataset, get_dataset_folder
 
 from splat.splat.telemetry_codec import Command, pack
 
@@ -42,48 +42,62 @@ class ExperimentThread(threading.Thread):
             self._run_experiment(request)
 
     def _run_experiment(self, request: dict):
-        ts = int(request.get("ts", 0))
-        camera_bit_flag = int(request.get("camera_bit_flag", 0))
-        level_processing = int(request.get("level_processing", 0))
-        width = int(request.get("width", 4608))
-        height = int(request.get("height", 2592))
-        downscale_factor = float(request.get("downscale_factor", 2.0))
-        camera_defaults_selector = int(
-            request.get("camera_defaults_selector", self.USE_PROGRAM_CAMERA_DEFAULTS)
-        )
-        camera_params = self._build_camera_params_from_request(
-            request,
-            camera_defaults_selector,
-        )
+        # get parameters like in run_inference
+        camera_bit_flag = request.get("camera_bit_flag", 0)
+        level_processing = request.get("level_processing", 0)
+        width = request.get("width", 4608)
+        height = request.get("height", 2592)
+        downscale_factor = request.get("downscale_factor", 2.0)
+        camera_defaults_selector = request.get("camera_defaults_selector", self.USE_PROGRAM_CAMERA_DEFAULTS)
+        
+        
+        camera_params = None
+        if camera_defaults_selector != self.USE_PROGRAM_CAMERA_DEFAULTS:
+            camera_params = self._build_camera_params_from_request(request, camera_defaults_selector)
+        
+        max_period = float(request.get("max_period", 10.0))
+        target_frame_nb = int(request.get("target_frame_nb", 4))
+        capture_mode = str(request.get("capture_mode", "PERIODIC"))
+        image_capture_rate = int(request.get("image_capture_rate", 1))
+        imu_sample_rate_hz = float(request.get("imu_sample_rate_hz", 1.0))
+        proc_stage = ExperimentThread._level_processing_to_proc_stage(level_processing)
 
-        log.info(
-            (
-                "Starting experiment ts=%s camera_mask=%s level=%s width=%s height=%s "
-                "downscale_factor=%s camera_defaults_selector=%s"
-            ),
-            ts,
-            camera_bit_flag,
-            level_processing,
-            width,
-            height,
-            downscale_factor,
-            camera_defaults_selector,
-        )
+        args = [
+            "-m", str(max_period),
+            "-n", str(target_frame_nb),
+            "-M", capture_mode,
+            "-r", str(image_capture_rate),
+            "-s", str(imu_sample_rate_hz),
+            "-p", str(proc_stage),
+        ]
 
-        try:
-            self.experiment(
-                camera_bit_flag,
-                level_processing=level_processing,
-                width=width,
-                height=height,
-                downscale_factor=downscale_factor,
-                camera_params=camera_params,
-            )
-            log.info("Experiment completed")
-        except Exception as exc:
-            log.error("Experiment failed: %s", exc)
+        # call start_dataset and get dataset folder
+        ok, dataset_folder = start_dataset(args)
+        if not ok:
+            log.error("Dataset already running, experiment rejected")
             state_manager.set(PayloadState.FAIL)
+            return
 
+        state_manager.set(PayloadState.CAPTURING)
+
+        file_manifest = self._init_file_manifest()
+
+        if level_processing & self.PROCESS_DOWNSCALE_BIT:
+            state_manager.set(PayloadState.DOWNSCALING)
+            self._watch_and_downscale(dataset_folder, downscale_factor, file_manifest)
+        else:
+            while is_dataset_running():
+                time.sleep(0.5)
+
+        log.info("Dataset collection finished.")
+
+        final_file_list = self._files_for_downlink(file_manifest)
+        if not final_file_list:
+            final_file_list = file_manifest["raw"]
+
+        state_manager.set(PayloadState.DOWNLOAD)
+        self.send_results(final_file_list)
+        
     def experiment(
         self,
         camera_bit_flag: int,
@@ -459,3 +473,72 @@ class ExperimentThread(threading.Thread):
             return None
         return (low_f, high_f)
 
+    def _watch_and_downscale(self, dataset_folder: Path, downscale_factor: float, file_manifest: dict) -> None:
+        """
+        Watches dataset_folder for new PNGs while the dataset subprocess is running
+        and downscales each one once it is fully written.
+        """
+        seen: set[Path] = set()
+        stable_candidates: dict[Path, int] = {}  
+        
+        while is_dataset_running() and not dataset_folder.exists():
+            time.sleep(0.1)
+
+        if not dataset_folder.exists():
+            log.error("Dataset folder never appeared: %s", dataset_folder)
+            return
+
+        output_dir = dataset_folder / "downscaled"
+        output_dir.mkdir(parents=True, exist_ok=True)
+
+        while is_dataset_running():
+            for png in dataset_folder.glob("*.png"):
+                if png in seen:
+                    continue
+
+                current_size = png.stat().st_size
+                if png in stable_candidates:
+                    if stable_candidates[png] == current_size:
+                        # size unchanged since last poll, can downscale now
+                        self._downscale_single(png, output_dir, downscale_factor, file_manifest)
+                        seen.add(png)
+                        del stable_candidates[png]
+                    else:
+                        stable_candidates[png] = current_size
+                else:
+                    stable_candidates[png] = current_size
+
+            time.sleep(0.5)
+
+        # dataset finished
+        for png in dataset_folder.glob("*.png"):
+            if png in seen:
+                continue
+            self._downscale_single(png, output_dir, downscale_factor, file_manifest)
+            seen.add(png)
+
+
+    def _downscale_single(self, src: Path, output_dir: Path, downscale_factor: float, file_manifest: dict) -> None:
+        img = cv2.imread(str(src))
+        if img is None:
+            log.error("Failed to read image for downscaling: %s", src)
+            return
+
+        h, w = img.shape[:2]
+        resized = cv2.resize(img, (max(1, int(round(w / downscale_factor))), max(1, int(round(h / downscale_factor)))))
+        dst = output_dir / f"{src.stem}.jpeg"
+        if not cv2.imwrite(str(dst), resized):
+            log.error("Failed to write downscaled image: %s", dst)
+            return
+
+        file_manifest["downscaled"].append(str(dst))
+        file_manifest["raw"].append(str(src))
+        log.info("Downscaled %s -> %s", src.name, dst.name)
+
+    @staticmethod
+    def _level_processing_to_proc_stage(level_processing: int) -> int:
+        if level_processing & ExperimentThread.PROCESS_INFERENCE_BIT:
+            return 3  # ProcessingStage::LDNeted
+        if level_processing & ExperimentThread.PROCESS_PREFILTER_BIT:
+            return 1  # ProcessingStage::Prefiltered
+        return 0      # ProcessingStage::NotPrefiltered

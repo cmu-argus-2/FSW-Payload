@@ -23,7 +23,7 @@
 #define ABSOLUTE_MAXIMUM_PERIOD 10800 // 3h
 
 // Error codes TODO with framework
-
+// TODO: is this really what defines a valid capture mode?
 inline bool IsValidCaptureMode(CAPTURE_MODE value)
 {
     return (value >= CAPTURE_MODE::PERIODIC && 

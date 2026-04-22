@@ -9,6 +9,8 @@ from thread_shared import PayloadState, experiment_queue, log, rx_queue, state_m
 from thread_shared import create_transaction_ack_event, init_transaction_ack_event, update_last_batch_event
 from thread_shared import update_last_batch_lock, update_last_batch_shared
 
+from external_bin_calls import start_dataset, stop_dataset
+
 
 
 class CommandThread(threading.Thread):
@@ -218,6 +220,11 @@ class CommandThread(threading.Thread):
         packet = pack(ack)
         tx_queue.put(packet)
         log.debug("Queued ACK for command_id=%s", command.command_id)
+
+    def _handle_stop_dataset(self, command: Command):
+        # TODO: do we want to stop here or within the thread itself somehow
+        ok = stop_dataset()
+        self._send_ack(command, ack_args={"stopped": ok})
     
     
     _handlers = {
@@ -225,6 +232,7 @@ class CommandThread(threading.Thread):
         "EXPERIMENT": _handle_experiment,
         "REQUEST_TM_PAYLOAD": _handle_request_tm_payload,
         "CONFIRM_LAST_BATCH": _handle_update_last_batch,
-        "TURN_OFF_PAYLOAD": _handle_turn_off_payload
+        "TURN_OFF_PAYLOAD": _handle_turn_off_payload,
+        "STOP_DATASET":  _handle_stop_dataset,
         # "CREATE_TRANS": _handle_create_trans
     }

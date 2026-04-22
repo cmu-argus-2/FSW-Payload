@@ -99,20 +99,25 @@ EC Dataset(::Dataset& dataset, InferenceManager& im, ProcessingStage target, boo
 
         discovered_ids.emplace_back(static_cast<uint8_t>(cam_id), timestamp);
 
+        // Load metadata first; only decode the JPEG when reprocessing is actually needed.
         Frame frame;
-        if (!LoadFrameFromFolder(timestamp, cam_id, folder, frame))
-        {
-            SPDLOG_ERROR("Reprocessing::Dataset: failed to load frame ({}, {})", cam_id, timestamp);
-            ++failed;
-            result = EC::FILE_NOT_FOUND;
-            continue;
-        }
+        Json metadata = DH::LoadFrameMetadataFromDisk(timestamp, cam_id, folder);
+        if (!metadata.empty())
+            frame.fromJson(metadata);
 
         if (!frame.ShouldReprocess(target, overwrite, rc_ver, ld_ver, ld_cfg))
         {
-            SPDLOG_INFO("Reprocessing::Dataset: skipping frame ({}, {}) — conditions match or overwrite=false",
+            SPDLOG_INFO("Reprocessing::Dataset: skipping frame ({}, {}) — up-to-date",
                         cam_id, timestamp);
             ++skipped;
+            continue;
+        }
+
+        if (!DH::ReadImageFromDisk(timestamp, cam_id, frame, folder))
+        {
+            SPDLOG_ERROR("Reprocessing::Dataset: failed to load image for frame ({}, {})", cam_id, timestamp);
+            ++failed;
+            result = EC::FILE_NOT_FOUND;
             continue;
         }
 

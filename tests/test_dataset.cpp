@@ -7,6 +7,10 @@
 #include <opencv2/opencv.hpp>
 #include <fstream>
 #include <filesystem>
+#include <sstream>
+#include <iomanip>
+#include <map>
+#include <algorithm>
 #include "toml.hpp"
 #include "spdlog/spdlog.h"
 #include <functional>
@@ -21,6 +25,8 @@
 #include "core/timing.hpp"
 #include "configuration.hpp"
 #include <core/errors.hpp>
+#include "vision/reprocessing.hpp"
+#include "core/data_handling.hpp"
 
 #undef private
 
@@ -759,17 +765,633 @@ TEST_F(DatasetManagerTest, CameraManager_FrameCount_NoUint8Wrap)
         << "Termination check must fire";
 }
 
-// ── Stubs for future tests ────────────────────────────────────────────────────
+// ── Reprocessing integration tests ───────────────────────────────────────────
+//
+// Uses the synthetic dataset at data/datasets/1776704900610_test/.
+// Dataset structure: 9 timestamps × 4 cameras = 36 frames total.
+//   cam_id=0 (9 frames): LDNeted (stage 3), rcnet_version=2, ldnet_version=1,
+//                        annotation_state=HasLandmark(3) — Earth-facing.
+//   cam_id=1,2,3 (27 frames): Prefiltered (stage 1) only — non-Earth-facing.
+//
+// These tests cover the skip-path logic (no TRT engines required).
+// Reprocess-path tests (overwrite=true + mismatched versions) require TRT
+// engines and are exercised via the reprocess_dataset script.
 
-TEST_F(DatasetTest, DatasetManagerConfigurationCheck)
+namespace {
+
+const std::string kSyntheticDataset    = "data/datasets/1776704900610_test/";
+constexpr int     kSyntheticFrameCount = 36;
+// Only cam_id=0 is Earth-facing; these frames are at LDNeted with inference results.
+constexpr int     kEarthFacingFrameCount = 9;
+constexpr uint64_t kSpotTs  = 1714575332000ULL;
+constexpr int      kSpotCam = 0;
+
+Json LoadDatasetJson(const std::string& folder)
 {
-    // TODO: Test error handling of definition of two overlapping datasets
-    // TODO: Test configuration of two sequential non-overlapping datasets
+    std::ifstream f(folder + "dataset.json");
+    if (!f) return {};
+    Json j;
+    f >> j;
+    return j;
 }
 
-TEST_F(DatasetTest, DatasetReprocessing)
+void ConfigureIM(InferenceManager& im, int rc_ver, int ld_ver)
 {
-    // TODO: Test reprocessing a dataset
+    im.SetRCNetVersion(rc_ver);
+    im.SetLDNetVersion(ld_ver);
+    im.SetLDNetConfig(NET_QUANTIZATION::FP16, 4608, 2592, false, true);
 }
 
-// TODO: Integration tests
+} // namespace
+
+struct ReprocessingDatasetTest : ::testing::Test
+{
+    std::string original_dataset_json_;
+
+    void SetUp() override
+    {
+        std::ifstream f(kSyntheticDataset + "dataset.json");
+        ASSERT_TRUE(f.is_open()) << "Synthetic dataset not found at " << kSyntheticDataset;
+        original_dataset_json_.assign(std::istreambuf_iterator<char>(f), {});
+    }
+
+    void TearDown() override
+    {
+        std::ofstream f(kSyntheticDataset + "dataset.json", std::ios::trunc);
+        f << original_dataset_json_;
+    }
+
+    int SpotFrameStage() const
+    {
+        Json j = DH::LoadFrameMetadataFromDisk(kSpotTs, kSpotCam, kSyntheticDataset);
+        return j.value("processing_stage", -1);
+    }
+};
+
+// ── Target = Prefiltered ──────────────────────────────────────────────────────
+
+// All frames are at stage 3 ≥ Prefiltered(1): skip regardless of overwrite.
+TEST_F(ReprocessingDatasetTest, Prefiltered_OverwriteFalse_AllSkipped)
+{
+    InferenceManager im;
+    ConfigureIM(im, 2, 1);
+    Dataset dataset(kSyntheticDataset);
+
+    EC ec = Reprocessing::Dataset(dataset, im, ProcessingStage::Prefiltered, /*overwrite=*/false);
+
+    EXPECT_EQ(ec, EC::OK);
+    EXPECT_EQ(SpotFrameStage(), 3) << "Frame JSONs must not be modified";
+    Json j = LoadDatasetJson(kSyntheticDataset);
+    EXPECT_EQ(j.value("target_processing_stage", -1),
+              static_cast<int>(ProcessingStage::Prefiltered));
+    EXPECT_EQ(j.value("frames_collected", 0), kSyntheticFrameCount);
+}
+
+TEST_F(ReprocessingDatasetTest, Prefiltered_OverwriteTrue_AllSkipped)
+{
+    InferenceManager im;
+    ConfigureIM(im, 2, 1);
+    Dataset dataset(kSyntheticDataset);
+
+    EC ec = Reprocessing::Dataset(dataset, im, ProcessingStage::Prefiltered, /*overwrite=*/true);
+
+    EXPECT_EQ(ec, EC::OK);
+    EXPECT_EQ(SpotFrameStage(), 3);
+    Json j = LoadDatasetJson(kSyntheticDataset);
+    EXPECT_EQ(j.value("target_processing_stage", -1),
+              static_cast<int>(ProcessingStage::Prefiltered));
+    EXPECT_EQ(j.value("frames_collected", 0), kSyntheticFrameCount);
+}
+
+// ── Target = RCNeted ─────────────────────────────────────────────────────────
+
+// Stored rc_version=2 matches requested version → conditions match → skip.
+TEST_F(ReprocessingDatasetTest, RCNeted_OverwriteFalse_MatchingVersion_AllSkipped)
+{
+    InferenceManager im;
+    ConfigureIM(im, /*rc=*/2, 1);
+    Dataset dataset(kSyntheticDataset);
+
+    EC ec = Reprocessing::Dataset(dataset, im, ProcessingStage::RCNeted, /*overwrite=*/false);
+
+    EXPECT_EQ(ec, EC::OK);
+    EXPECT_EQ(SpotFrameStage(), 3);
+    Json j = LoadDatasetJson(kSyntheticDataset);
+    EXPECT_EQ(j.value("target_processing_stage", -1),
+              static_cast<int>(ProcessingStage::RCNeted));
+    // Only the 9 Earth-facing cam_id=0 frames are at RCNeted; cam_id=1,2,3 are only Prefiltered.
+    EXPECT_EQ(j.value("num_frames_rcneted", 0), kEarthFacingFrameCount);
+}
+
+// rc_version mismatch + overwrite=false → conditions differ but must not reprocess.
+TEST_F(ReprocessingDatasetTest, RCNeted_OverwriteFalse_MismatchedVersion_AllSkipped)
+{
+    InferenceManager im;
+    ConfigureIM(im, /*rc=*/99, 1);
+    Dataset dataset(kSyntheticDataset);
+
+    EC ec = Reprocessing::Dataset(dataset, im, ProcessingStage::RCNeted, /*overwrite=*/false);
+
+    EXPECT_EQ(ec, EC::OK);
+    EXPECT_EQ(SpotFrameStage(), 3);
+    Json j = LoadDatasetJson(kSyntheticDataset);
+    EXPECT_EQ(j.value("frames_collected", 0), kSyntheticFrameCount);
+}
+
+// Conditions match (rc_version=2) → skip even though overwrite=true.
+TEST_F(ReprocessingDatasetTest, RCNeted_OverwriteTrue_MatchingVersion_AllSkipped)
+{
+    InferenceManager im;
+    ConfigureIM(im, /*rc=*/2, 1);
+    Dataset dataset(kSyntheticDataset);
+
+    EC ec = Reprocessing::Dataset(dataset, im, ProcessingStage::RCNeted, /*overwrite=*/true);
+
+    EXPECT_EQ(ec, EC::OK);
+    EXPECT_EQ(SpotFrameStage(), 3);
+}
+
+// ── Target = LDNeted ─────────────────────────────────────────────────────────
+
+// Both rc_version=2 and ld_version=1 match → skip.
+TEST_F(ReprocessingDatasetTest, LDNeted_OverwriteFalse_MatchingVersions_AllSkipped)
+{
+    InferenceManager im;
+    ConfigureIM(im, /*rc=*/2, /*ld=*/1);
+    Dataset dataset(kSyntheticDataset);
+
+    EC ec = Reprocessing::Dataset(dataset, im, ProcessingStage::LDNeted, /*overwrite=*/false);
+
+    EXPECT_EQ(ec, EC::OK);
+    EXPECT_EQ(SpotFrameStage(), 3);
+    Json j = LoadDatasetJson(kSyntheticDataset);
+    EXPECT_EQ(j.value("target_processing_stage", -1),
+              static_cast<int>(ProcessingStage::LDNeted));
+    // Only cam_id=0 (9 frames) are at LDNeted; cam_id=1,2,3 are non-Earth-facing (Prefiltered only).
+    EXPECT_EQ(j.value("num_frames_ldneted",  0), kEarthFacingFrameCount);
+    EXPECT_EQ(j.value("num_frames_earth",    0), kEarthFacingFrameCount);
+    EXPECT_EQ(j.value("num_frames_landmarks",0), kEarthFacingFrameCount);
+    EXPECT_EQ(j.value("frames_collected",    0), kSyntheticFrameCount);
+}
+
+// ld_version mismatch + overwrite=false → skip.
+TEST_F(ReprocessingDatasetTest, LDNeted_OverwriteFalse_MismatchedLDVersion_AllSkipped)
+{
+    InferenceManager im;
+    ConfigureIM(im, /*rc=*/2, /*ld=*/99);
+    Dataset dataset(kSyntheticDataset);
+
+    EC ec = Reprocessing::Dataset(dataset, im, ProcessingStage::LDNeted, /*overwrite=*/false);
+
+    EXPECT_EQ(ec, EC::OK);
+    EXPECT_EQ(SpotFrameStage(), 3);
+    Json j = LoadDatasetJson(kSyntheticDataset);
+    EXPECT_EQ(j.value("frames_collected", 0), kSyntheticFrameCount);
+}
+
+// Conditions match (rc=2, ld=1) → skip even though overwrite=true.
+TEST_F(ReprocessingDatasetTest, LDNeted_OverwriteTrue_MatchingVersions_AllSkipped)
+{
+    InferenceManager im;
+    ConfigureIM(im, /*rc=*/2, /*ld=*/1);
+    Dataset dataset(kSyntheticDataset);
+
+    EC ec = Reprocessing::Dataset(dataset, im, ProcessingStage::LDNeted, /*overwrite=*/true);
+
+    EXPECT_EQ(ec, EC::OK);
+    EXPECT_EQ(SpotFrameStage(), 3);
+    Json j = LoadDatasetJson(kSyntheticDataset);
+    EXPECT_EQ(j.value("target_processing_stage", -1),
+              static_cast<int>(ProcessingStage::LDNeted));
+}
+
+// ── Stored inference result validation + dataset report ──────────────────────
+//
+// Validates landmark detections stored in the frame JSONs against the YOLO
+// ground-truth .txt files co-located in the test dataset folder.
+// File naming: [RegionID]_[timestamp]_[cam_name].txt
+// Camera name → cam_id mapping: xp→0, yp→1, ym→2, xm→3.
+// Follows the same class-id + IoU-matching logic as test_inference.cpp.
+// Also writes a Markdown report (DATASET_REPORT_PATH or tests/dataset_test_report.md).
+
+namespace {
+
+static const char* kCamNames[] = {"xp", "yp", "ym", "xm"};
+
+int CamNameToId(const std::string& cam)
+{
+    for (int i = 0; i < 4; ++i)
+        if (cam == kCamNames[i]) return i;
+    return -1;
+}
+
+// Parse a YOLO-format .txt label file into (class_id, pixel-space Rect) pairs.
+std::vector<std::pair<int, cv::Rect>>
+ParseYoloLabels(const std::string& path, int img_w, int img_h)
+{
+    std::vector<std::pair<int, cv::Rect>> boxes;
+    std::ifstream f(path);
+    std::string line;
+    while (std::getline(f, line)) {
+        if (line.empty()) continue;
+        std::istringstream iss(line);
+        int cls;
+        float nx, ny, nw, nh;
+        if (!(iss >> cls >> nx >> ny >> nw >> nh)) continue;
+        const int x = static_cast<int>(nx * img_w - nw * img_w * 0.5f);
+        const int y = static_cast<int>(ny * img_h - nh * img_h * 0.5f);
+        const int w = static_cast<int>(nw * img_w);
+        const int h = static_cast<int>(nh * img_h);
+        boxes.push_back({cls, cv::Rect(x, y, w, h)});
+    }
+    return boxes;
+}
+
+static float BoxIoU(const cv::Rect& a, const cv::Rect& b)
+{
+    const int inter = (a & b).area();
+    const int uni   = (a | b).area();
+    return (uni == 0) ? 0.0f : static_cast<float>(inter) / static_cast<float>(uni);
+}
+
+struct LabelFile {
+    uint64_t    timestamp;
+    int         cam_id;
+    std::string region_str;
+    std::string txt_path;
+};
+
+// .txt files: [region]_[timestamp]_[cam].txt
+std::vector<LabelFile> DiscoverLabelFiles(const std::string& folder)
+{
+    std::vector<LabelFile> result;
+    for (const auto& e : fs::directory_iterator(folder)) {
+        if (!e.is_regular_file() || e.path().extension() != ".txt") continue;
+        const std::string stem = e.path().stem().string();
+        const auto last_us = stem.rfind('_');
+        if (last_us == std::string::npos) continue;
+        const auto prev_us = stem.rfind('_', last_us - 1);
+        if (prev_us == std::string::npos) continue;
+        const int cam_id = CamNameToId(stem.substr(last_us + 1));
+        if (cam_id < 0) continue;
+        uint64_t ts;
+        try { ts = std::stoull(stem.substr(prev_us + 1, last_us - prev_us - 1)); }
+        catch (...) { continue; }
+        result.push_back({ts, cam_id, stem.substr(0, prev_us), e.path().string()});
+    }
+    return result;
+}
+
+// Scan folder for all frame_*.json files; parse (cam_id, timestamp) from names.
+std::vector<std::pair<int,uint64_t>> DiscoverFrameIDs(const std::string& folder)
+{
+    std::vector<std::pair<int,uint64_t>> ids;
+    for (const auto& e : fs::directory_iterator(folder)) {
+        if (!e.is_regular_file() || e.path().extension() != ".json") continue;
+        const std::string stem = e.path().stem().string();
+        if (stem.rfind("frame_", 0) != 0) continue;
+        // frame_<timestamp>_<cam_id>
+        const auto last_us = stem.rfind('_');
+        const auto prev_us = stem.rfind('_', last_us - 1);
+        if (last_us == std::string::npos || prev_us == std::string::npos) continue;
+        try {
+            uint64_t ts  = std::stoull(stem.substr(prev_us + 1, last_us - prev_us - 1));
+            int      cam = std::stoi(stem.substr(last_us + 1));
+            ids.push_back({cam, ts});
+        } catch (...) {}
+    }
+    std::sort(ids.begin(), ids.end());
+    return ids;
+}
+
+// ── Report data structures ────────────────────────────────────────────────────
+
+struct LandmarkMatch {
+    std::string region_str;
+    int         class_id;
+    float       confidence;
+    float       best_iou;
+    bool        is_tp;
+};
+
+struct FrameResult {
+    uint64_t    timestamp   = 0;
+    int         cam_id      = -1;
+
+    // Prefilter
+    bool has_prefilter      = false;
+    bool prefilter_passed   = false;
+    float cloudiness        = 0;
+    float color_std         = 0;
+    float contrast_std      = 0;
+    float avg_value         = 0;
+    std::string dominant_type;
+
+    // RC
+    bool has_gt             = false;
+    std::string expected_region;
+    std::vector<std::pair<std::string, float>> detected_regions; // {region_str, confidence}
+    bool rc_correct         = false;
+
+    // LD
+    int gt_box_count        = 0;
+    int landmark_count      = 0;
+    int true_positives      = 0;
+    std::vector<LandmarkMatch> matches;
+};
+
+// ── Report writer ─────────────────────────────────────────────────────────────
+
+static std::string Pct(int num, int den)
+{
+    if (den == 0) return "n/a";
+    std::ostringstream ss;
+    ss << std::fixed << std::setprecision(1) << (100.0f * num / den) << "%";
+    return ss.str();
+}
+
+static void WriteDatasetReport(const std::vector<FrameResult>& results,
+                                const std::string& dataset_path)
+{
+    const char* env = std::getenv("DATASET_REPORT_PATH");
+    const std::string path = env ? env : "tests/dataset_test_report.md";
+
+    std::ofstream f(path);
+    if (!f.is_open()) { spdlog::error("Could not open report file: {}", path); return; }
+
+    // ── Global counts ────────────────────────────────────────────────────────
+    int total  = static_cast<int>(results.size());
+    int earth  = 0, n_with_gt = 0, rc_correct = 0;
+    int total_gt_boxes = 0, total_predicted = 0, total_tp = 0;
+
+    for (const auto& r : results) {
+        if (r.has_prefilter && r.prefilter_passed) ++earth;
+        if (r.has_gt) {
+            ++n_with_gt;
+            if (r.rc_correct) ++rc_correct;
+            total_gt_boxes  += r.gt_box_count;
+            total_predicted += r.landmark_count;
+            total_tp        += r.true_positives;
+        }
+    }
+
+    // ── Header ───────────────────────────────────────────────────────────────
+    f << "# Dataset Validation Report\n\n";
+    f << "**Dataset:** " << dataset_path << "\n";
+    f << "**Total frames:** " << total << "\n";
+    f << "**GT-labeled frames:** " << n_with_gt << "\n\n";
+    f << "---\n\n";
+
+    // ── Global summary ───────────────────────────────────────────────────────
+    f << "## Global Summary\n\n";
+
+    f << "### Prefiltering\n";
+    f << "- Earth-facing (passed): **" << earth << " / " << total
+      << "** (" << Pct(earth, total) << ")\n";
+    f << "- Non-earth (failed/no data): **" << (total - earth) << " / " << total
+      << "** (" << Pct(total - earth, total) << ")\n\n";
+
+    f << "### RC Classification\n";
+    f << "- Frames with GT region label: " << n_with_gt << "\n";
+    f << "- Correct region detected: **" << rc_correct << " / " << n_with_gt
+      << "** (" << Pct(rc_correct, n_with_gt) << ")\n\n";
+
+    f << "### LD Landmark Detection\n";
+    f << "- Total GT boxes: " << total_gt_boxes << "\n";
+    f << "- Total predicted landmarks: " << total_predicted << "\n";
+    f << "- True positives (IoU > 0.5): " << total_tp << "\n";
+    f << "- Recall  (TP / GT boxes):   **" << Pct(total_tp, total_gt_boxes)   << "**\n";
+    f << "- Precision (TP / Predicted): **" << Pct(total_tp, total_predicted) << "**\n\n";
+    f << "---\n\n";
+
+    // ── Per-frame sections ───────────────────────────────────────────────────
+    f << "## Per-Frame Results\n\n";
+
+    for (const auto& r : results) {
+        const std::string cam_name = (r.cam_id >= 0 && r.cam_id < 4) ? kCamNames[r.cam_id] : "?";
+        const std::string frame_label = "ts=" + std::to_string(r.timestamp)
+                                      + " cam=" + std::to_string(r.cam_id)
+                                      + " (" + cam_name + ")";
+
+        // Section header — include expected region if available
+        f << "### Frame " << frame_label;
+        if (r.has_gt) f << " — Region `" << r.expected_region << "`";
+        f << "\n\n";
+
+        // Prefilter
+        f << "#### Prefiltering\n";
+        if (!r.has_prefilter) {
+            f << "- No prefilter data\n\n";
+        } else {
+            f << "- Passed: **" << (r.prefilter_passed ? "yes" : "no") << "**\n";
+            if (!r.dominant_type.empty())
+                f << "- Dominant type: " << r.dominant_type << "\n";
+            f << "- Cloudiness: " << std::fixed << std::setprecision(1) << r.cloudiness << "\n";
+            f << "- Color std: "    << std::setprecision(2) << r.color_std
+              << " / Contrast std: " << r.contrast_std << "\n";
+            f << "- Avg value: "   << r.avg_value << "\n\n";
+        }
+
+        // RC
+        f << "#### RC Classification\n";
+        if (!r.has_gt) {
+            f << "- No ground-truth label for this frame\n\n";
+        } else {
+            f << "- Expected region: `" << r.expected_region << "`\n";
+            if (r.detected_regions.empty()) {
+                f << "- Detected: _none_\n";
+            } else {
+                f << "- Detected:";
+                for (const auto& [rstr, conf] : r.detected_regions)
+                    f << " `" << rstr << "` (" << std::fixed << std::setprecision(3) << conf << ")";
+                f << "\n";
+            }
+            f << "- RC correct: **" << (r.rc_correct ? "yes" : "NO") << "**\n\n";
+        }
+
+        // LD
+        f << "#### LD Landmark Detection\n";
+        if (!r.has_gt) {
+            f << "- No ground-truth labels for this frame\n\n";
+        } else {
+            f << "- GT boxes: " << r.gt_box_count << "\n";
+            f << "- Predicted: " << r.landmark_count << "\n";
+            f << "- True positives (IoU > 0.5): " << r.true_positives
+              << " / " << r.landmark_count
+              << " (recall vs GT: " << Pct(r.true_positives, r.gt_box_count) << ")\n\n";
+
+            if (!r.matches.empty()) {
+                // Sort: TP first, then by region, then class_id
+                auto sorted = r.matches;
+                std::sort(sorted.begin(), sorted.end(), [](const LandmarkMatch& a, const LandmarkMatch& b) {
+                    if (a.is_tp != b.is_tp) return a.is_tp > b.is_tp;
+                    if (a.region_str != b.region_str) return a.region_str < b.region_str;
+                    return a.class_id < b.class_id;
+                });
+
+                // Column widths
+                struct Row { std::string region, cls, conf, iou, tp; };
+                std::vector<Row> rows;
+                rows.reserve(sorted.size());
+                for (const auto& m : sorted) {
+                    std::ostringstream cs, is;
+                    cs << std::fixed << std::setprecision(3) << m.confidence;
+                    is << std::fixed << std::setprecision(3) << m.best_iou;
+                    rows.push_back({m.region_str, std::to_string(m.class_id),
+                                    cs.str(), is.str(), m.is_tp ? "yes" : "no"});
+                }
+                size_t w0=9, w1=8, w2=10, w3=8, w4=3;
+                for (const auto& row : rows) {
+                    w0 = std::max(w0, row.region.size());
+                    w1 = std::max(w1, row.cls.size());
+                    w2 = std::max(w2, row.conf.size());
+                    w3 = std::max(w3, row.iou.size());
+                    w4 = std::max(w4, row.tp.size());
+                }
+                auto cell = [](const std::string& s, size_t w) {
+                    return s + std::string(w - s.size(), ' ');
+                };
+                f << "| " << cell("region_id",  w0) << " | " << cell("class_id",   w1)
+                  << " | " << cell("confidence", w2) << " | " << cell("best_iou",   w3)
+                  << " | " << cell("TP?", w4) << " |\n";
+                f << "| " << std::string(w0,'-') << " | " << std::string(w1,'-')
+                  << " | " << std::string(w2,'-') << " | " << std::string(w3,'-')
+                  << " | " << std::string(w4,'-') << " |\n";
+                for (const auto& row : rows) {
+                    f << "| " << cell(row.region, w0) << " | " << cell(row.cls,  w1)
+                      << " | " << cell(row.conf,   w2) << " | " << cell(row.iou,  w3)
+                      << " | " << cell(row.tp,     w4) << " |\n";
+                }
+                f << "\n";
+            }
+        }
+        f << "---\n\n";
+    }
+
+    f.flush();
+    spdlog::info("Dataset report written to: {}", path);
+}
+
+} // namespace
+
+// Validates stored inference results against YOLO ground-truth and writes a
+// Markdown report (DATASET_REPORT_PATH env var, or tests/dataset_test_report.md).
+TEST(DatasetInferenceValidation, StoredLandmarks_MatchGroundTruth)
+{
+    constexpr float kIoUThreshold = 0.5f;
+
+    // Build a label index: {timestamp, cam_id} → LabelFile
+    const auto label_files = DiscoverLabelFiles(kSyntheticDataset);
+    std::map<std::pair<uint64_t,int>, const LabelFile*> label_index;
+    for (const auto& lf : label_files)
+        label_index[{lf.timestamp, lf.cam_id}] = &lf;
+
+    // Enumerate every frame JSON in the dataset
+    const auto frame_ids = DiscoverFrameIDs(kSyntheticDataset);
+    if (frame_ids.empty())
+        GTEST_SKIP() << "No frame JSON files found in " << kSyntheticDataset;
+
+    std::vector<FrameResult> report_data;
+    int frames_with_gt = 0, total_tp = 0, total_landmarks = 0;
+
+    for (const auto& [cam_id, ts] : frame_ids) {
+        Json frame_json = DH::LoadFrameMetadataFromDisk(ts, cam_id, kSyntheticDataset);
+        if (frame_json.empty()) continue;
+
+        FrameResult r;
+        r.timestamp = ts;
+        r.cam_id    = cam_id;
+
+        // ── Prefilter ────────────────────────────────────────────────────────
+        if (frame_json.contains("prefilter") && frame_json["prefilter"].is_object()) {
+            const auto& pf = frame_json["prefilter"];
+            r.has_prefilter     = true;
+            r.prefilter_passed  = pf.value("passed", false);
+            r.cloudiness        = pf.value("cloudiness", 0.0f);
+            r.color_std         = pf.value("color_std", 0.0f);
+            r.contrast_std      = pf.value("contrast_std", 0.0f);
+            r.avg_value         = pf.value("avg_value", 0.0f);
+            r.dominant_type     = pf.value("dominant_type", std::string{});
+        }
+
+        // ── RC + LD ──────────────────────────────────────────────────────────
+        Frame frame;
+        frame.fromJson(frame_json);
+
+        // Detected regions
+        for (const auto& rid : frame.GetRegionIDs()) {
+            float conf = 0.0f;
+            if (frame.GetInferenceResults().has_value()) {
+                for (const auto& reg : frame.GetInferenceResults()->regions)
+                    if (reg.id == rid) { conf = reg.confidence; break; }
+            }
+            r.detected_regions.push_back({std::string(GetRegionString(rid)), conf});
+        }
+
+        // GT label for this frame
+        auto it = label_index.find({ts, cam_id});
+        if (it != label_index.end()) {
+            const LabelFile& lf = *it->second;
+            const Json& ri = frame_json.contains("raw_image") ? frame_json["raw_image"] : Json{};
+            const int img_w = ri.value("width",  4608);
+            const int img_h = ri.value("height", 2592);
+            auto gt_boxes = ParseYoloLabels(lf.txt_path, img_w, img_h);
+
+            if (!gt_boxes.empty()) {
+                ++frames_with_gt;
+                r.has_gt          = true;
+                r.expected_region = lf.region_str;
+                r.gt_box_count    = static_cast<int>(gt_boxes.size());
+
+                // RC correct?
+                RegionID expected_rid = GetRegionID(lf.region_str);
+                r.rc_correct = std::any_of(frame.GetRegionIDs().begin(),
+                                           frame.GetRegionIDs().end(),
+                                           [&](RegionID rid){ return rid == expected_rid; });
+
+                // LD matching
+                const auto& landmarks = frame.GetLandmarks();
+                r.landmark_count = static_cast<int>(landmarks.size());
+                total_landmarks  += r.landmark_count;
+
+                for (const auto& lm : landmarks) {
+                    const cv::Rect pred(
+                        static_cast<int>(lm.x - lm.width  * 0.5f),
+                        static_cast<int>(lm.y - lm.height * 0.5f),
+                        static_cast<int>(lm.width),
+                        static_cast<int>(lm.height));
+
+                    float best_iou = 0.0f;
+                    for (const auto& [gt_cls, gt_box] : gt_boxes) {
+                        if (static_cast<int>(lm.class_id) != gt_cls) continue;
+                        best_iou = std::max(best_iou, BoxIoU(pred, gt_box));
+                    }
+                    const bool is_tp = (best_iou > kIoUThreshold);
+                    if (is_tp) { ++r.true_positives; ++total_tp; }
+                    r.matches.push_back({std::string(GetRegionString(lm.region_id)),
+                                         static_cast<int>(lm.class_id),
+                                         lm.confidence, best_iou, is_tp});
+                }
+            }
+        }
+        report_data.push_back(std::move(r));
+    }
+
+    // Sort by timestamp then cam_id for stable report ordering
+    std::sort(report_data.begin(), report_data.end(),
+              [](const FrameResult& a, const FrameResult& b){
+                  return a.timestamp != b.timestamp ? a.timestamp < b.timestamp
+                                                    : a.cam_id   < b.cam_id;
+              });
+
+    WriteDatasetReport(report_data, kSyntheticDataset);
+
+    if (frames_with_gt == 0)
+        GTEST_SKIP() << "All .txt label files are empty — no GT to validate against";
+
+    EXPECT_GT(total_landmarks, 0)
+        << "No landmarks in stored results for labeled frames";
+    EXPECT_GT(total_tp, 0)
+        << "No true-positive landmarks (IoU > " << kIoUThreshold << ") across "
+        << frames_with_gt << " labeled frames (" << total_landmarks << " landmarks checked)";
+}

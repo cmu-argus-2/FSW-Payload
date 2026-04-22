@@ -21,8 +21,6 @@ from external_bin_calls import run_inference
 
 from splat.splat.telemetry_codec import Command, pack
 
-import math
-import os
 
 
 class ExperimentThread(threading.Thread):

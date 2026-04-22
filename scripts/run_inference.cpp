@@ -59,7 +59,7 @@ static inline cv::Rect scaleBoxBackLetterbox(
     return r & cv::Rect(0, 0, imgSize.width, imgSize.height);
 }
 
-int main(int argc, char** argv)
+int run(int argc, char** argv)
 {
     std::string rc_trt_file_path;
     std::string ld_trt_folder_path;
@@ -68,14 +68,13 @@ int main(int argc, char** argv)
     if (argc < 5)
     {
         spdlog::info("Using default inference example");
-        rc_trt_file_path = "models/V1/trained-rc/effnet_0997acc.trt";
-        ld_trt_folder_path = "models/V1/trained-ld";
+        rc_trt_file_path = Inference::RCEnginePath(2);
+        ld_trt_folder_path = Inference::LDFolderPath(2);
         target_folder = "data/images";
-        // ld_trt_folder_path -> should be inferred from the parameters
         std::string tgt_region = "17T";
         std::string sample_id = "00277";
         bool isjpg = false;
-        sample_image_path = "models/V1/sample_images/" + tgt_region + "/l8_" + tgt_region + "_" + sample_id;
+        sample_image_path = "models/sample_images/" + tgt_region + "/l8_" + tgt_region + "_" + sample_id;
         if (isjpg) {
             sample_image_path = sample_image_path + ".jpg";
         } else {
@@ -102,9 +101,22 @@ int main(int argc, char** argv)
     // bool use_trt_for_ld = false;
 
     InferenceManager inference_manager;
-    inference_manager.SetRCNetEnginePath(rc_trt_file_path);
+
+    EC ec = inference_manager.SetRCNetEnginePath(rc_trt_file_path);
+    if (ec != EC::OK)
+    {
+        spdlog::error("Failed to set RC engine path '{}': error {}", rc_trt_file_path, to_uint8(ec));
+        return to_uint8(ec);
+    }
+
     inference_manager.SetLDNetConfig(weight_quant, input_width, input_height, embedded_nms, use_trt_for_ld);
-    inference_manager.SetLDNetEngineFolderPath(ld_trt_folder_path);
+
+    ec = inference_manager.SetLDNetEngineFolderPath(ld_trt_folder_path);
+    if (ec != EC::OK)
+    {
+        spdlog::error("Failed to set LD engine folder '{}': error {}", ld_trt_folder_path, to_uint8(ec));
+        return to_uint8(ec);
+    }
 
     spdlog::info("Using image file: {}", sample_image_path);
 
@@ -113,7 +125,7 @@ int main(int argc, char** argv)
     if (!DH::ReadImageFromDisk(sample_image_path, frame, 0,  static_cast<uint64_t>(timestamp)))
     {
         spdlog::error("Failed to read image from disk: {}", sample_image_path);
-        return 1;
+        return to_uint8(EC::FILE_NOT_FOUND);
     }
 
     std::shared_ptr<Frame> frame_ptr = std::make_shared<Frame>(frame);
@@ -123,7 +135,7 @@ int main(int argc, char** argv)
     if (status != EC::OK)
     {
         spdlog::error("Inference failed with error code: {}", to_uint8(status));
-        return 1;
+        return to_uint8(status);
     }
     spdlog::info("Inference completed successfully.");
     
@@ -224,4 +236,25 @@ int main(int argc, char** argv)
     }
 
     return 0;
+}
+
+int main(int argc, char** argv)
+{
+    int ret;
+    try
+    {
+        ret = run(argc, argv);
+    }
+    catch (const std::exception& e)
+    {
+        spdlog::critical("Unhandled exception: {}", e.what());
+        ret = to_uint8(EC::PLACEHOLDER);
+    }
+    catch (...)
+    {
+        spdlog::critical("Unhandled unknown exception");
+        ret = to_uint8(EC::PLACEHOLDER);
+    }
+    cudaDeviceReset();
+    return ret;
 }

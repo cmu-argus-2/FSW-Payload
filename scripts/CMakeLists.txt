@@ -79,6 +79,11 @@ target_link_libraries(reprocess_dataset PRIVATE PAYLOAD_LIB)
 add_executable(reprocess_image reprocess_image.cpp)
 target_link_libraries(reprocess_image PRIVATE PAYLOAD_LIB)
 
+##### LANDMARK MEASUREMENTS
+
+add_executable(prepare_ldmeas prepare_ldmeas.cpp)
+target_link_libraries(prepare_ldmeas PRIVATE PAYLOAD_LIB)
+
 ##### IMU
 
 add_executable(imu_run run_imu.cpp)

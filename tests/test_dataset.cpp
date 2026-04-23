@@ -767,23 +767,28 @@ TEST_F(DatasetManagerTest, CameraManager_FrameCount_NoUint8Wrap)
 
 // ── Reprocessing integration tests ───────────────────────────────────────────
 //
-// Uses the synthetic dataset at data/datasets/1776880159973_test/.
+// Uses the synthetic dataset at data/datasets/17R_Florida_test/.
 // Dataset structure: 9 timestamps × 4 cameras = 36 frames total.
-//   cam_id=0 (9 frames): LDNeted (stage 3), rcnet_version=2, ldnet_version=1,
-//                        annotation_state=HasLandmark(3) — Earth-facing.
-//   cam_id=1,2,3 (27 frames): Prefiltered (stage 1) only — non-Earth-facing.
+//   cam_id=0 (9 frames): LDNeted (stage 3), rcnet_version=2, ldnet_version=2,
+//                        annotation_state=HasLandmark(3) for 8 frames, HasRegion(2) for 1.
+//   cam_id=1 (9 frames): 1 frame LDNeted/Earth (no region detected), 8 frames Prefiltered/non-Earth.
+//   cam_id=2 (9 frames): LDNeted (stage 3); 5 frames HasRegion(2), 4 frames Earth(1).
+//   cam_id=3 (9 frames): Prefiltered (stage 1), non-Earth-facing.
 //
 // These tests cover the skip-path logic (no TRT engines required).
+// All Earth-facing frames are at LDNeted so no inference is triggered during skip tests.
 // Reprocess-path tests (overwrite=true + mismatched versions) require TRT
 // engines and are exercised via the reprocess_dataset script.
 
 namespace {
 
-const std::string kSyntheticDataset    = "data/datasets/1776880159973_test/";
+const std::string kSyntheticDataset    = "data/datasets/17R_Florida_test/";
 constexpr int     kSyntheticFrameCount = 36;
-// Only cam_id=0 is Earth-facing; these frames are at LDNeted with inference results.
-constexpr int     kEarthFacingFrameCount = 9;
-constexpr uint64_t kSpotTs  = 1714575332000ULL;
+constexpr int     kNumFramesRCNeted    = 19;  // stage >= 2: cam_id=0(9) + cam_id=1(1) + cam_id=2(9)
+constexpr int     kNumFramesLDNeted    = 19;  // stage >= 3: same breakdown
+constexpr int     kNumFramesEarth      = 19;  // annotation_state >= 1
+constexpr int     kNumFramesLandmarks  = 8;   // annotation_state >= 3: cam_id=0 only
+constexpr uint64_t kSpotTs  = 1714490526000ULL;
 constexpr int      kSpotCam = 0;
 
 Json LoadDatasetJson(const std::string& folder)
@@ -879,8 +884,7 @@ TEST_F(ReprocessingDatasetTest, RCNeted_OverwriteFalse_MatchingVersion_AllSkippe
     Json j = LoadDatasetJson(kSyntheticDataset);
     EXPECT_EQ(j.value("target_processing_stage", -1),
               static_cast<int>(ProcessingStage::RCNeted));
-    // Only the 9 Earth-facing cam_id=0 frames are at RCNeted; cam_id=1,2,3 are only Prefiltered.
-    EXPECT_EQ(j.value("num_frames_rcneted", 0), kEarthFacingFrameCount);
+    EXPECT_EQ(j.value("num_frames_rcneted", 0), kNumFramesRCNeted);
 }
 
 // rc_version mismatch + overwrite=false → conditions differ but must not reprocess.
@@ -913,11 +917,11 @@ TEST_F(ReprocessingDatasetTest, RCNeted_OverwriteTrue_MatchingVersion_AllSkipped
 
 // ── Target = LDNeted ─────────────────────────────────────────────────────────
 
-// Both rc_version=2 and ld_version=1 match → skip.
+// Both rc_version=2 and ld_version=2 match → skip.
 TEST_F(ReprocessingDatasetTest, LDNeted_OverwriteFalse_MatchingVersions_AllSkipped)
 {
     InferenceManager im;
-    ConfigureIM(im, /*rc=*/2, /*ld=*/1);
+    ConfigureIM(im, /*rc=*/2, /*ld=*/2);
     Dataset dataset(kSyntheticDataset);
 
     EC ec = Reprocessing::Dataset(dataset, im, ProcessingStage::LDNeted, /*overwrite=*/false);
@@ -927,10 +931,9 @@ TEST_F(ReprocessingDatasetTest, LDNeted_OverwriteFalse_MatchingVersions_AllSkipp
     Json j = LoadDatasetJson(kSyntheticDataset);
     EXPECT_EQ(j.value("target_processing_stage", -1),
               static_cast<int>(ProcessingStage::LDNeted));
-    // Only cam_id=0 (9 frames) are at LDNeted; cam_id=1,2,3 are non-Earth-facing (Prefiltered only).
-    EXPECT_EQ(j.value("num_frames_ldneted",  0), kEarthFacingFrameCount);
-    EXPECT_EQ(j.value("num_frames_earth",    0), kEarthFacingFrameCount);
-    EXPECT_EQ(j.value("num_frames_landmarks",0), kEarthFacingFrameCount);
+    EXPECT_EQ(j.value("num_frames_ldneted",  0), kNumFramesLDNeted);
+    EXPECT_EQ(j.value("num_frames_earth",    0), kNumFramesEarth);
+    EXPECT_EQ(j.value("num_frames_landmarks",0), kNumFramesLandmarks);
     EXPECT_EQ(j.value("frames_collected",    0), kSyntheticFrameCount);
 }
 
@@ -953,7 +956,7 @@ TEST_F(ReprocessingDatasetTest, LDNeted_OverwriteFalse_MismatchedLDVersion_AllSk
 TEST_F(ReprocessingDatasetTest, LDNeted_OverwriteTrue_MatchingVersions_AllSkipped)
 {
     InferenceManager im;
-    ConfigureIM(im, /*rc=*/2, /*ld=*/1);
+    ConfigureIM(im, /*rc=*/2, /*ld=*/2);
     Dataset dataset(kSyntheticDataset);
 
     EC ec = Reprocessing::Dataset(dataset, im, ProcessingStage::LDNeted, /*overwrite=*/true);

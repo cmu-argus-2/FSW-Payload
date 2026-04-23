@@ -155,6 +155,7 @@ bool OD::IsODPossible(const std::string& dataset_folder) const
     return true;
 }
 
+// TODO: Need to add logs to every exit point
 bool OD::DatasetPrepare(const std::string& dataset_folder,
                         const CameraCalibration& calibration,
                         const std::string& ld_model_folder)
@@ -237,6 +238,8 @@ bool OD::DatasetPrepare(const std::string& dataset_folder,
     constexpr double DEG_TO_RAD = M_PI / 180.0;
 
     for (const auto& fpath : frame_files) {
+        SPDLOG_INFO("Here now: {}", fpath.string());
+
         std::ifstream f(fpath);
         if (!f.is_open()) {
             SPDLOG_WARN("DatasetPrepare: cannot open {}", fpath.string());
@@ -252,8 +255,7 @@ bool OD::DatasetPrepare(const std::string& dataset_folder,
         }
 
         const int stage    = j.value("processing_stage",        0);
-        const int lm_count = j.value("detected_landmarks_count", 0);
-        if (stage < 3 || lm_count == 0) continue;
+        if (stage < 3) continue;
 
         const uint64_t ts_ms  = j.value("timestamp", uint64_t(0));
         const int      cam_id = j.value("cam_id",     0);
@@ -264,11 +266,24 @@ bool OD::DatasetPrepare(const std::string& dataset_folder,
 
         const double t_j2000 = static_cast<double>(ts_ms) / 1000.0
                                - static_cast<double>(J2000_EPOCH_UNIX_S);
+        
+        if (!j.contains("inference_results") || !j.at("inference_results").is_object()) {
+            SPDLOG_WARN("DatasetPrepare: inference_results missing or not an object in {}", fpath.string());
+            continue;
+        }
 
-        if (!j.contains("landmarks") || !j.at("landmarks").is_array()) continue;
+        nlohmann::json j_inf = j.at("inference_results");
+
+        const int lm_count = j_inf.value("detected_landmarks_count", 0);
+        if (lm_count == 0) continue;
+
+        if (!j_inf.contains("landmarks") || !j_inf.at("landmarks").is_array()) {
+            SPDLOG_WARN("DatasetPrepare: landmarks missing or not an array in {}", fpath.string());
+            continue;
+        }
 
         bool first_in_group = true;
-        for (const auto& lm_item : j.at("landmarks")) {
+        for (const auto& lm_item : j_inf.at("landmarks")) {
             for (const auto& [key, val] : lm_item.items()) {
                 const float    px        = val.value("x",         0.0f);
                 const float    py        = val.value("y",         0.0f);

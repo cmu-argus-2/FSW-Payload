@@ -31,6 +31,7 @@ sudo apt install -y \
   libeigen3-dev \
   libsuitesparse-dev \
   libreadline-dev \
+  libnvinfer-dev \
   nlohmann-json3-dev \
   libceres-dev \
   libprotobuf-dev \
@@ -38,7 +39,6 @@ sudo apt install -y \
   libhdf5-dev \
   libtbb-dev \
   ccache
-  # libnvinfer-dev \
 #  libopencv-dev \
 
 # Uncomment this line if you get ccache related issues

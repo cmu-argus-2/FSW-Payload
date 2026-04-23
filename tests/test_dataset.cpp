@@ -767,7 +767,7 @@ TEST_F(DatasetManagerTest, CameraManager_FrameCount_NoUint8Wrap)
 
 // ── Reprocessing integration tests ───────────────────────────────────────────
 //
-// Uses the synthetic dataset at data/datasets/1776704900610_test/.
+// Uses the synthetic dataset at data/datasets/1776880159973_test/.
 // Dataset structure: 9 timestamps × 4 cameras = 36 frames total.
 //   cam_id=0 (9 frames): LDNeted (stage 3), rcnet_version=2, ldnet_version=1,
 //                        annotation_state=HasLandmark(3) — Earth-facing.
@@ -779,7 +779,7 @@ TEST_F(DatasetManagerTest, CameraManager_FrameCount_NoUint8Wrap)
 
 namespace {
 
-const std::string kSyntheticDataset    = "data/datasets/1776704900610_test/";
+const std::string kSyntheticDataset    = "data/datasets/1776880159973_test/";
 constexpr int     kSyntheticFrameCount = 36;
 // Only cam_id=0 is Earth-facing; these frames are at LDNeted with inference results.
 constexpr int     kEarthFacingFrameCount = 9;

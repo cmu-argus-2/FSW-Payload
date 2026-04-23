@@ -10,6 +10,7 @@
 
 #include <filesystem>
 #include <fstream>
+#include <iomanip>
 #include <sstream>
 #include <string>
 #include <vector>
@@ -313,6 +314,29 @@ bool OD::DatasetPrepare(const std::string& dataset_folder,
     if (lm_rows.empty()) {
         SPDLOG_ERROR("DatasetPrepare: no landmark measurements extracted from {}", dataset_folder);
         return false;
+    }
+
+    // Write landmark_measurements.csv
+    const std::string lm_csv_path = dataset_folder + "/landmark_measurements.csv";
+    std::ofstream lm_csv(lm_csv_path);
+    if (!lm_csv.is_open()) {
+        SPDLOG_WARN("DatasetPrepare: cannot write landmark_measurements.csv to {}", lm_csv_path);
+    } else {
+        lm_csv << "timestamp_ms,bearing_x,bearing_y,bearing_z,eci_x_km,eci_y_km,eci_z_km,group,sigma\n";
+        lm_csv << std::fixed << std::setprecision(9);
+        int group_idx = -1;
+        for (size_t i = 0; i < lm_rows.size(); ++i) {
+            if (group_starts_vec[i]) ++group_idx;
+            const auto& row = lm_rows[i];
+            const uint64_t ts_ms_out = static_cast<uint64_t>(
+                (row[0] + static_cast<double>(J2000_EPOCH_UNIX_S)) * 1000.0);
+            lm_csv << ts_ms_out << ','
+                   << row[1] << ',' << row[2] << ',' << row[3] << ','
+                   << row[4] << ',' << row[5] << ',' << row[6] << ','
+                   << group_idx << ','
+                   << uncertainties[i] << '\n';
+        }
+        SPDLOG_INFO("DatasetPrepare: wrote {} rows to {}", lm_rows.size(), lm_csv_path);
     }
 
     // Parse imu_data.csv: Timestamp_ms, Gyro_X_dps, Gyro_Y_dps, Gyro_Z_dps [, ...]

@@ -306,11 +306,12 @@ bool OD::DatasetPrepare(const std::string& dataset_folder,
                 const Eigen::Vector3d bearing_body =
                     R_cam_to_body[static_cast<size_t>(cam_id)] * bearing_cam;
 
-                // ECI position of the landmark: geodetic, altitude = 0 m → convert to km
+                // ECI position of the landmark: geodetic, altitude = 0 km (sea level).
+                // LAT2ECI returns km (SPICE bodvrd_c radii are in km), so no conversion needed.
                 const double lon_rad = rows[class_id].first  * DEG_TO_RAD;
                 const double lat_rad = rows[class_id].second * DEG_TO_RAD;
                 const Eigen::Vector3d eci_km =
-                    LAT2ECI(Eigen::Vector3d(0.0, lon_rad, lat_rad), t_j2000, false) / 1000.0;
+                    LAT2ECI(Eigen::Vector3d(0.0, lon_rad, lat_rad), t_j2000, false);
 
                 // Per-landmark uncertainty: 3σ = half the smaller bbox side → σ = min(h,w)/(6f)
                 const double sigma =

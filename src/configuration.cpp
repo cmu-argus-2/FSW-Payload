@@ -223,14 +223,16 @@ void Configuration::ParseCameraCalibration()
         camera_calibration.dist_coeffs = D;
     }
 
-    // Per-camera cam_to_body from each [camera-device.camN]
-    std::size_t idx = 0;
+    // Per-camera cam_to_body from each [camera-device.camN], indexed by the camera id field.
     for (const auto& [key, value] : *camera_devices_config)
     {
         const auto* cam_table = value.as_table();
-        if (cam_table && idx < NUM_CAMERAS)
-            camera_calibration.cam_to_body[idx] = parse_mat3x3(*cam_table, "cam_to_body");
-        ++idx;
+        if (!cam_table) continue;
+        const auto id_node = cam_table->get_as<int64_t>("id");
+        if (!id_node) continue;
+        const std::size_t cam_idx = static_cast<std::size_t>((*id_node).get());
+        if (cam_idx >= NUM_CAMERAS) continue;
+        camera_calibration.cam_to_body[cam_idx] = parse_mat3x3(*cam_table, "cam_to_body");
     }
 }
 

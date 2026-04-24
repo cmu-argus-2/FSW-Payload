@@ -60,9 +60,22 @@ int main(int argc, char** argv)
     const CameraCalibration& calibration = config.GetCameraCalibration();
 
     OD od;
-    if (!od.DatasetPrepare(dataset_folder, calibration, ld_model_folder))
+    try
     {
-        spdlog::error("prepare_ldmeas: DatasetPrepare failed for {}", dataset_folder);
+        if (!od.DatasetPrepare(dataset_folder, calibration, ld_model_folder))
+        {
+            spdlog::error("prepare_ldmeas: DatasetPrepare failed for {}", dataset_folder);
+            return 1;
+        }
+    }
+    catch (const std::exception& e)
+    {
+        spdlog::error("prepare_ldmeas: DatasetPrepare threw an exception: {}", e.what());
+        return 1;
+    }
+    catch (...)
+    {
+        spdlog::error("prepare_ldmeas: DatasetPrepare threw an unknown exception");
         return 1;
     }
 

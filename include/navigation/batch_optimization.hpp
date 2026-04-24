@@ -1,13 +1,52 @@
 #ifndef BATCH_OPTIMIZATION_HPP
 #define BATCH_OPTIMIZATION_HPP
 
-#include "navigation/measurement_residuals.hpp"
+#include "navigation/od_measurements.hpp"
 #include "navigation/od.hpp"
 #include "navigation/pose_dynamics.hpp"
 #include <cstdint>
 #include <utility>
 
 #include <eigen3/Eigen/Dense>
+#include <eigen3/Eigen/Geometry>
+#include <ceres/ceres.h>
+
+// ── Ceres cost functor for landmark bearing residuals ──────────────────────────
+struct LandmarkCostFunctor {
+public:
+    LandmarkCostFunctor(const double* const landmark_row, const double landmark_std_dev)
+            : bearing_vec(landmark_row + LandmarkMeasurementIdx::BEARING_VEC_X),
+              landmark_pos(landmark_row + LandmarkMeasurementIdx::LANDMARK_POS_X),
+              landmark_std_dev(landmark_std_dev) {}
+
+    template<typename T>
+    bool operator()(const T* const pos,
+                    const T* const quat,
+                    T* const residuals) const {
+        const Eigen::Map<const Eigen::Matrix<T, 3, 1>> r(pos);
+        const Eigen::Map<const Eigen::Quaternion <T>> q(quat);
+
+        const Eigen::Matrix<T, 3, 1> landmark_pos_T = landmark_pos.template cast<T>();
+        const Eigen::Matrix<T, 3, 1> bearing_vec_T  = bearing_vec.template cast<T>();
+
+        Eigen::Map<Eigen::Matrix<T, 3, 1>> r_res(residuals);
+
+        const Eigen::Matrix<T, 3, 1> diff = (landmark_pos_T - r);
+        const T norm_sq  = diff.squaredNorm();
+        const T eps      = T(1e-6);
+        const T inv_norm = T(1.0) / ceres::sqrt(norm_sq + eps);
+        const Eigen::Matrix<T, 3, 1> predicted_bearing = diff * inv_norm;
+
+        r_res = (q.inverse() * predicted_bearing - bearing_vec_T) / T(landmark_std_dev);
+
+        return true;
+    }
+
+private:
+    const Eigen::Map<const Eigen::Vector3d> bearing_vec;
+    const Eigen::Map<const Eigen::Vector3d> landmark_pos;
+    const double landmark_std_dev;
+};
 
 enum class BatchOptimizationState {
     NOT_STARTED = 0,
@@ -59,84 +98,50 @@ using StateEstimates = Eigen::Matrix<double, Eigen::Dynamic, StateEstimateIdx::S
 using ResidualsOrCovariances = Eigen::Matrix<double, Eigen::Dynamic, StateResCovIdx::STATE_RES_COV_COUNT, Eigen::RowMajor>;
 using idx_t = Eigen::Index;
 
-/**
- * @brief Generates timestamps for the state estimates and the corresponding indices for the landmark groups and gyro
- *        measurements.
- *
- * @param landmark_measurements An Eigen matrix where each row contains a landmark bearing measurement. Each row
- *                              contains 7 elements: the timestamp, the bearing unit vector to the landmark in the body
- *                              frame, and the ECI position of the landmark. The timestamps must be non-strictly
- *                              monotonically increasing.
- * @param landmark_group_starts An Eigen matrix that contains the same number of rows as in
- *                              landmark_bearing_measurements where each row contains a single bool indicating whether
- *                              or not the corresponding measurement is the start of a new group. Measurements from the
- *                              same group are captured from the same image and are assumed to have the same timestamp.
- * @param gyro_measurements An Eigen matrix where each row contains a gyro measurement. Each row contains 4 elements:
- *                          the timestamp and the angular velocity vector in the body frame. The timestamps must be
- *                          strictly monotonically increasing.
- * @param num_groups The number of landmark groups. Must be the same as the number of true values in
- *                   landmark_group_starts.
- * @return A std::tuple containing:
- *         - A vector of timestamps for the state estimates (one per gyro measurement).
- *         - A vector of state indices for each landmark group (snapped to nearest gyro timestamp).
- */
-std::tuple<std::vector<double>, std::vector<idx_t>>
+struct StateTimestampsResult {
+    ErrorCode            code = ErrorCode::OK;
+    std::vector<double>  state_timestamps;
+    std::vector<idx_t>   landmark_group_indices;
+};
+
+struct BatchOptResult {
+    ErrorCode           code = ErrorCode::OK;
+    StateEstimates      state_estimates;
+    std::vector<double> covariance;
+    std::vector<double> residuals;
+};
+
+StateTimestampsResult
 get_state_timestamps(const LandmarkMeasurements& landmark_measurements,
                      const LandmarkGroupStarts& landmark_group_starts,
                      const GyroMeasurements& gyro_measurements,
                      const idx_t num_groups);
 
 std::vector<double> compute_covariance(ceres::Problem& problem,
-                        StateEstimates& state_estimates,
-                    BIAS_MODE bias_mode);
+                                       StateEstimates& state_estimates,
+                                       BIAS_MODE bias_mode);
 
-void build_ceres_problem(StateEstimates& state_estimates,
-                         const std::vector<double> state_timestamps,
-                         const std::vector<idx_t> landmark_group_indices,
-                         const LandmarkMeasurements& landmark_measurements,
-                         const LandmarkGroupStarts& landmark_group_starts,
-                         const GyroMeasurements& gyro_measurements,
-                         BIAS_MODE bias_mode,
-                         double uma_std_dev,
-                         double gyro_wn_std_dev_rad_s,
-                         double gyro_bias_instability,
-                         const Eigen::VectorXd& landmark_uncertainties,
-                         ceres::EigenQuaternionManifold* quaternion_manifold,
-                         ceres::Problem* problem);
+ErrorCode build_ceres_problem(StateEstimates& state_estimates,
+                              const std::vector<double> state_timestamps,
+                              const std::vector<idx_t> landmark_group_indices,
+                              const LandmarkMeasurements& landmark_measurements,
+                              const LandmarkGroupStarts& landmark_group_starts,
+                              const GyroMeasurements& gyro_measurements,
+                              BIAS_MODE bias_mode,
+                              double uma_std_dev,
+                              double gyro_wn_std_dev_rad_s,
+                              double gyro_bias_instability,
+                              const Eigen::VectorXd& landmark_uncertainties,
+                              ceres::EigenQuaternionManifold* quaternion_manifold,
+                              ceres::Problem* problem);
 
-/**
- * @brief Solves the batched nonlinear least squares optimization problem for orbit determination using Ceres Solver.
- *
- * For any given landmark group, only the first measurement in that group is used to read the timestamp. The rest of the
- * timestamps in that group are ignored and assumed to be the same as the first one.
- *
- * @param landmark_measurements An Eigen matrix where each row contains a landmark bearing measurement. Each row
- *                              contains 7 elements: the timestamp, the bearing unit vector to the landmark in the body
- *                              frame, and the ECI position of the landmark. The timestamps must be non-strictly
- *                              monotonically increasing.
- * @param landmark_group_starts An Eigen matrix that contains the same number of rows as in
- *                              landmark_bearing_measurements where each row contains a single bool indicating whether
- *                              or not the corresponding measurement is the start of a new group. Measurements from the
- *                              same group are captured from the same image and are assumed to have the same timestamp.
- * @param gyro_measurements An Eigen matrix where each row contains a gyro measurement. Each row contains 4 elements:
- *                          the timestamp and the angular velocity vector in the body frame. The timestamps must be
- *                          strictly monotonically increasing.
- * @param max_dt The maximum allowed time step between adjacent rows in the optimized states.
- * @return An std::pair containing:
- *         - An Eigen matrix containing the state estimates. Each row contains 14 elements: the timestamp, the ECI
- *           position of the cubesat, the ECI velocity of the cubesat, the quaternion representing the transformation
- *           from the body frame to the ECI frame, and the gyro bias in the body frame.
- *         - An Eigen vector containing the estimated gyro bias in the body frame.
- */
-
-// std::pair <StateEstimates, Eigen::Vector3d>
-// landmark_uncertainties: one sigma (radians) per landmark row; 3σ = half the smaller
-// bbox dimension / focal_length_px. Pass an empty vector to use the default 0.009.
-std::tuple <StateEstimates, std::vector<double>, std::vector<double>>
-solve_ceres_batch_opt(const LandmarkMeasurements& landmark_measurements,
-                      const LandmarkGroupStarts& landmark_group_starts,
-                      const GyroMeasurements& gyro_measurements,
-                      const Eigen::VectorXd& landmark_uncertainties,
-                      BATCH_OPT_config bo_config);
+// Runs the batch nonlinear least-squares orbit determination optimizer.
+// Returns BatchOptResult::code == ErrorCode::OK on success. On failure the code
+// is set to the appropriate ErrorCode (ODMEAS_NOT_VALID, BATCH_OPT_BUILD_FAILED,
+// BATCH_OPT_NO_CONVERGENCE, BATCH_OPT_SOLVER_FAILED, or BATCH_OPT_INVALID_OUTPUT)
+// and the remaining fields are empty. Covariance failure is non-fatal (code stays
+// OK, covariance field is empty).
+BatchOptResult solve_ceres_batch_opt(const ODMeasurements& measurements,
+                                     BATCH_OPT_config bo_config);
 
 #endif // BATCH_OPTIMIZATION_HPP

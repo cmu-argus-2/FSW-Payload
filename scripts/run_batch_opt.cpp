@@ -50,7 +50,13 @@ int main(int argc, char** argv)
     const std::string dataset_folder = argv[1];
     const std::string config_path    = (argc > 2) ? argv[2] : kDefaultConfigPath;
 
-    OD_Config od_config = ReadODConfig(config_path);
+    OD_Config od_config;
+    try {
+        od_config = ReadODConfig(config_path);
+    } catch (const std::exception& e) {
+        spdlog::error("Failed to load OD config from {}: {}", config_path, e.what());
+        return 1;
+    }
     spdlog::info("Loaded OD config from {}", config_path);
 
     // ── Read landmark_measurements.csv ────────────────────────────────────
@@ -171,9 +177,12 @@ int main(int argc, char** argv)
             gm(i, c) = gyro_rows[static_cast<size_t>(i)][static_cast<size_t>(c)];
     }
 
-    assert(lm.cols() == LandmarkMeasurementIdx::LANDMARK_COUNT);
-    assert(gm.cols() == GyroMeasurementIdx::GYRO_MEAS_COUNT);
-    assert(gs.rows() == lm.rows());
+    // ── Pack into ODMeasurements (validation happens inside solve_ceres_batch_opt) ──
+    ODMeasurements meas;
+    meas.landmark_measurements  = lm;
+    meas.group_starts           = gs;
+    meas.gyro_measurements      = gm;
+    meas.landmark_uncertainties = lu;
 
     {
         std::ostringstream oss;
@@ -187,21 +196,30 @@ int main(int argc, char** argv)
     }
 
     // ── Run batch optimization ────────────────────────────────────────────
-    auto [state_estimates, covariance, residuals] =
-        solve_ceres_batch_opt(lm, gs, gm, lu, od_config.batch_opt);
+    const auto result = solve_ceres_batch_opt(meas, od_config.batch_opt);
+    if (result.code != ErrorCode::OK) {
+        spdlog::error("Batch optimization failed (error code {}).",
+                      static_cast<int>(result.code));
+        return 1;
+    }
 
-    spdlog::info("Optimization complete: {} state estimates", state_estimates.rows());
+    spdlog::info("Optimization complete: {} state estimates", result.state_estimates.rows());
 
     // ── Save results ──────────────────────────────────────────────────────
+    const std::string out_path = dataset_folder + "/state_estimates.h5";
     try {
-        const std::string out_path = dataset_folder + "/state_estimates.h5";
         H5Easy::File outfile(out_path, HighFive::File::Overwrite);
-        H5Easy::dump(outfile, "state_estimates",                     state_estimates);
-        H5Easy::dump(outfile, "state_estimate_covariance_diagonal",  covariance);
-        H5Easy::dump(outfile, "residuals",                           residuals);
+        H5Easy::dump(outfile, "state_estimates", result.state_estimates);
+        if (!result.covariance.empty()) {
+            H5Easy::dump(outfile, "state_estimate_covariance_diagonal", result.covariance);
+        } else {
+            spdlog::warn("Covariance computation failed — "
+                         "'state_estimate_covariance_diagonal' not written to {}.", out_path);
+        }
+        H5Easy::dump(outfile, "residuals", result.residuals);
         spdlog::info("Saved state estimates to {}", out_path);
     } catch (const HighFive::Exception& e) {
-        spdlog::error("Failed to write state estimates: {}", e.what());
+        spdlog::error("Failed to write state estimates to {}: {}", out_path, e.what());
         return 1;
     }
 

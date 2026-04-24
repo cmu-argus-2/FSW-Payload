@@ -34,22 +34,21 @@ StateEstimates init_state_estimate(std::vector<double> state_timestamps) {
 }
 
 
-std::tuple<std::vector<double>, std::vector<idx_t>>
+StateTimestampsResult
 get_state_timestamps(const LandmarkMeasurements& landmark_measurements,
                      const LandmarkGroupStarts& landmark_group_starts,
                      const GyroMeasurements& gyro_measurements,
                      const idx_t num_groups) {
+    StateTimestampsResult result;
     const idx_t M = gyro_measurements.rows();
 
     // State timestamps are exactly the gyro measurement timestamps.
-    std::vector<double> state_timestamps;
-    state_timestamps.reserve(M);
+    result.state_timestamps.reserve(M);
     for (idx_t k = 0; k < M; ++k)
-        state_timestamps.push_back(gyro_measurements(k, GyroMeasurementIdx::GYRO_MEAS_TIMESTAMP));
+        result.state_timestamps.push_back(gyro_measurements(k, GyroMeasurementIdx::GYRO_MEAS_TIMESTAMP));
 
     // For each landmark group, snap to the nearest gyro timestamp.
-    std::vector<idx_t> landmark_group_indices;
-    landmark_group_indices.reserve(num_groups);
+    result.landmark_group_indices.reserve(num_groups);
 
     for (idx_t i = 0; i < landmark_group_starts.rows(); ++i) {
         if (!landmark_group_starts(i, 0)) continue;
@@ -57,43 +56,50 @@ get_state_timestamps(const LandmarkMeasurements& landmark_measurements,
         const double t_lm = landmark_measurements(i, LandmarkMeasurementIdx::LANDMARK_TIMESTAMP);
 
         // Binary search for the nearest gyro timestamp.
-        auto it = std::lower_bound(state_timestamps.begin(), state_timestamps.end(), t_lm);
+        auto it = std::lower_bound(result.state_timestamps.begin(), result.state_timestamps.end(), t_lm);
         idx_t best_k;
-        if (it == state_timestamps.end()) {
+        if (it == result.state_timestamps.end()) {
             best_k = M - 1;
-        } else if (it == state_timestamps.begin()) {
+        } else if (it == result.state_timestamps.begin()) {
             best_k = 0;
         } else {
             const auto prev = std::prev(it);
             best_k = (*it - t_lm < t_lm - *prev)
-                     ? static_cast<idx_t>(it   - state_timestamps.begin())
-                     : static_cast<idx_t>(prev - state_timestamps.begin());
+                     ? static_cast<idx_t>(it   - result.state_timestamps.begin())
+                     : static_cast<idx_t>(prev - result.state_timestamps.begin());
         }
-        landmark_group_indices.push_back(best_k);
+        result.landmark_group_indices.push_back(best_k);
     }
 
-    assert(static_cast<idx_t>(landmark_group_indices.size()) == num_groups);
+    if (static_cast<idx_t>(result.landmark_group_indices.size()) != num_groups) {
+        spdlog::error("get_state_timestamps: counted {} landmark group starts but expected {}; "
+                      "landmark_group_starts may be malformed.",
+                      result.landmark_group_indices.size(), num_groups);
+        LogError(ErrorCode::BATCH_OPT_BUILD_FAILED);
+        result.code = ErrorCode::BATCH_OPT_BUILD_FAILED;
+        return result;
+    }
 
     spdlog::info("State timestamps: {} gyro measurements over {:.3f} s; "
                  "{} landmark groups snapped to nearest gyro timestamp.",
-                 M, state_timestamps.back() - state_timestamps.front(), num_groups);
+                 M, result.state_timestamps.back() - result.state_timestamps.front(), num_groups);
 
-    return {state_timestamps, landmark_group_indices};
+    return result;
 }
 
-void build_ceres_problem(StateEstimates& state_estimates,
-                         const std::vector<double> state_timestamps,
-                         const std::vector<idx_t> landmark_group_indices,
-                         const LandmarkMeasurements& landmark_measurements,
-                         const LandmarkGroupStarts& landmark_group_starts,
-                         const GyroMeasurements& gyro_measurements,
-                         BIAS_MODE bias_mode,
-                         double uma_std_dev,
-                         double gyro_wn_std_dev_rad_s,
-                         double gyro_bias_instability,
-                         const Eigen::VectorXd& landmark_uncertainties,
-                         ceres::EigenQuaternionManifold* quaternion_manifold,
-                         ceres::Problem* problem) {
+ErrorCode build_ceres_problem(StateEstimates& state_estimates,
+                              const std::vector<double> state_timestamps,
+                              const std::vector<idx_t> landmark_group_indices,
+                              const LandmarkMeasurements& landmark_measurements,
+                              const LandmarkGroupStarts& landmark_group_starts,
+                              const GyroMeasurements& gyro_measurements,
+                              BIAS_MODE bias_mode,
+                              double uma_std_dev,
+                              double gyro_wn_std_dev_rad_s,
+                              double gyro_bias_instability,
+                              const Eigen::VectorXd& landmark_uncertainties,
+                              ceres::EigenQuaternionManifold* quaternion_manifold,
+                              ceres::Problem* problem) {
 
     for (idx_t i = 0; i < state_timestamps.size(); ++i) {
         state_estimates(i, StateEstimateIdx::STATE_ESTIMATE_TIMESTAMP) = state_timestamps[i];
@@ -121,19 +127,22 @@ void build_ceres_problem(StateEstimates& state_estimates,
         } else if (bias_mode == BIAS_MODE::NO_BIAS) {
             // Do not add parameter block for gyro bias
         } else {
-            throw std::invalid_argument("Invalid bias_mode: " + std::to_string(static_cast<int>(bias_mode)) +
-                                        ". Must be 2:'tv_bias', 1:'fix_bias', or 0:'no_bias'.");
+            spdlog::error("build_ceres_problem: invalid bias_mode {}; "
+                          "must be 2:'tv_bias', 1:'fix_bias', or 0:'no_bias'.",
+                          static_cast<int>(bias_mode));
+            LogError(ErrorCode::BATCH_OPT_BUILD_FAILED);
+            return ErrorCode::BATCH_OPT_BUILD_FAILED;
         }
 
     }
     // Linear Dynamics costs
     for (idx_t i = 0; i+1 < state_timestamps.size(); ++i) {
-        // In the last timestep it seems to show dt 60 
+        // In the last timestep it seems to show dt 60
         // seems to be because of the condition of requiring every timestamp to have an additional timestamp after it
         const double dt = state_timestamps[i + 1] - state_timestamps[i];
         const double pos_std_dev = 0.5*uma_std_dev*dt*std::sqrt(dt); // km
         const double vel_std_dev = uma_std_dev * std::sqrt(dt); // km/s
-        
+
         double* p_r0 = &state_estimates(i, StateEstimateIdx::POS_X);
         double* p_v0 = &state_estimates(i, StateEstimateIdx::VEL_X);
         double* p_r1 = &state_estimates(i+1, StateEstimateIdx::POS_X);
@@ -205,7 +214,13 @@ void build_ceres_problem(StateEstimates& state_estimates,
     // Landmark costs
     idx_t landmark_idx = 0;
     for (const auto& landmark_group_index : landmark_group_indices) {
-        assert(landmark_idx < landmark_group_starts.rows());
+        if (landmark_idx >= landmark_group_starts.rows()) {
+            spdlog::error("build_ceres_problem: landmark_idx {} is out of bounds (rows={}); "
+                          "landmark_group_indices contains more groups than group_starts rows.",
+                          landmark_idx, landmark_group_starts.rows());
+            LogError(ErrorCode::BATCH_OPT_BUILD_FAILED);
+            return ErrorCode::BATCH_OPT_BUILD_FAILED;
+        }
         double* const state_estimate_row =
                 state_estimates.data() + landmark_group_index * StateEstimateIdx::STATE_ESTIMATE_COUNT;
         double* const pos_estimate = state_estimate_row + StateEstimateIdx::POS_X;
@@ -225,8 +240,15 @@ void build_ceres_problem(StateEstimates& state_estimates,
             ++landmark_idx;
         } while (landmark_idx < landmark_group_starts.rows() && !landmark_group_starts(landmark_idx, 0));
     }
-    assert(landmark_idx == landmark_group_starts.rows());
+    if (landmark_idx != landmark_group_starts.rows()) {
+        spdlog::error("build_ceres_problem: consumed {} landmark rows but expected {}; "
+                      "group boundary accounting is inconsistent.",
+                      landmark_idx, landmark_group_starts.rows());
+        LogError(ErrorCode::BATCH_OPT_BUILD_FAILED);
+        return ErrorCode::BATCH_OPT_BUILD_FAILED;
+    }
 
+    return ErrorCode::OK;
 }
 
 std::vector<double> compute_covariance(ceres::Problem& problem,
@@ -239,7 +261,7 @@ std::vector<double> compute_covariance(ceres::Problem& problem,
     std::vector<std::pair<const double*, const double*>> covariance_blocks;
     for (idx_t i = 0; i < state_estimates.rows(); ++i) {
         double* const row_start = state_estimates.data() + i * StateEstimateIdx::STATE_ESTIMATE_COUNT;
-        
+
         covariance_blocks.push_back(std::make_pair(
             row_start + StateEstimateIdx::POS_X,
             row_start + StateEstimateIdx::POS_X
@@ -319,8 +341,10 @@ std::vector<double> compute_covariance(ceres::Problem& problem,
                 block_size = StateResCovIdx::STATE_RES_COV_COUNT - StateResCovIdx::GYRO_BIAS_COV_X;
             }
         } else {
-            throw std::invalid_argument("Invalid bias_mode: " + std::to_string(static_cast<int>(bias_mode)) +
-                                        ". Must be 2:'tv_bias', 1:'fix_bias', or 0:'no_bias'.");
+            spdlog::error("compute_covariance: invalid bias_mode {}; "
+                          "must be 2:'tv_bias', 1:'fix_bias', or 0:'no_bias'.",
+                          static_cast<int>(bias_mode));
+            return {};
         }
         j += 1;
 
@@ -337,73 +361,51 @@ std::vector<double> compute_covariance(ceres::Problem& problem,
         // double cov_matrix[block_size * block_size];
         //covariance.GetCovarianceBlock(block.first, block.first, cov_matrix);
         // covariance.GetCovarianceBlockInTangentSpace(block.first, block.first, cov_matrix);
-        
+
         for (int i = 0; i < block_size; ++i) {
             covariance_diagonal.push_back(cov_matrix[i * block_size + i]);
         }
     }
-    
+
     return covariance_diagonal;
 }
 
-std::tuple <StateEstimates, std::vector<double>, std::vector<double>>
-solve_ceres_batch_opt(const LandmarkMeasurements& landmark_measurements,
-                      const LandmarkGroupStarts& landmark_group_starts,
-                      const GyroMeasurements& gyro_measurements,
-                      const Eigen::VectorXd& landmark_uncertainties,
-                      BATCH_OPT_config bo_config) {
-    // Unpack configuration
-    const double max_dt = bo_config.max_dt;
+BatchOptResult solve_ceres_batch_opt(const ODMeasurements& measurements,
+                                     BATCH_OPT_config bo_config) {
+    BatchOptResult result;
+
+    // ── Validate inputs ───────────────────────────────────────────────────────
+    if (measurements.Validate() != ErrorCode::OK) {
+        result.code = ErrorCode::ODMEAS_NOT_VALID;
+        return result;
+    }
+
+    // Convert from dynamic ColMajor storage (ODMeasurements) to the RowMajor typed
+    // aliases expected by the internal solver functions.
+    const LandmarkMeasurements landmark_measurements = measurements.landmark_measurements;
+    const LandmarkGroupStarts  landmark_group_starts = measurements.group_starts;
+    const GyroMeasurements     gyro_measurements     = measurements.gyro_measurements;
+
     const BIAS_MODE bias_mode = bo_config.bias_mode;
 
-    // Input validation
-    assert(landmark_measurements.rows() == landmark_group_starts.rows() &&
-           "landmark_measurements and landmark_group_starts must have the same number of rows.");
-    assert(landmark_measurements.rows() > 0 &&
-           "landmark_measurements must have at least one row.");
-    assert(std::adjacent_find(landmark_measurements.col(0).begin(),
-                              landmark_measurements.col(0).end(),
-                              [](const double timestamp, const double next_timestamp) -> bool {
-                                  return next_timestamp < timestamp;
-                              })
-           == landmark_measurements.col(0).end() &&
-           "landmark_measurements timestamps must be non-strictly monotonically increasing.");
-    assert(landmark_group_starts(0, 0) == true &&
-           "landmark_group_starts must start with a true value.");
-    assert(gyro_measurements.rows() > 0 &&
-           "gyro_measurements must have at least one row.");
-    assert(std::adjacent_find(gyro_measurements.col(0).begin(),
-                              gyro_measurements.col(0).end(),
-                              [](const double timestamp, const double next_timestamp) -> bool {
-                                  return next_timestamp <= timestamp;
-                              })
-           == gyro_measurements.col(0).end() &&
-           "gyro_measurements timestamps must be strictly monotonically increasing.");
     const idx_t num_groups = std::count(landmark_group_starts.col(0).begin(),
                                         landmark_group_starts.col(0).end(),
                                         true);
 
-    const auto [state_timestamps, landmark_group_indices] = get_state_timestamps(
-            landmark_measurements,
-            landmark_group_starts,
-            gyro_measurements,
-            num_groups);
+    // ── Build timestamps and group index map ──────────────────────────────────
+    StateTimestampsResult ts = get_state_timestamps(
+            landmark_measurements, landmark_group_starts, gyro_measurements, num_groups);
+    if (ts.code != ErrorCode::OK) {
+        result.code = ts.code;
+        return result;
+    }
 
-    // give an initial guess
-    StateEstimates state_estimates = init_state_estimate(state_timestamps);        
-    
+    StateEstimates state_estimates = init_state_estimate(ts.state_timestamps);
+
     // TODO: this information should be obtained from the configuration file
     double uma_std_dev = 1; // km/s^2
-    const double gyro_wn_std_dev_rad_s = 0.0008726; //0.001; // rad/s
-    const double gyro_bias_instability = 1; // 0.0001; // rad/s^2
-    // Per-landmark bearing uncertainty (one sigma, radians).
-    // Falls back to 0.009 rad (~0.5 deg) if no per-landmark values were supplied.
-    const Eigen::VectorXd& lm_sigmas =
-        (landmark_uncertainties.size() == landmark_measurements.rows())
-        ? landmark_uncertainties
-        : Eigen::VectorXd::Constant(landmark_measurements.rows(), 0.009).eval();
-
-    
+    const double gyro_wn_std_dev_rad_s = 0.0008726; // rad/s
+    const double gyro_bias_instability = 1; // rad/s^2
 
     ceres::EigenQuaternionManifold quaternion_manifold = ceres::EigenQuaternionManifold{};
 
@@ -411,39 +413,71 @@ solve_ceres_batch_opt(const LandmarkMeasurements& landmark_measurements,
     problem_options.manifold_ownership = ceres::DO_NOT_TAKE_OWNERSHIP;
 
     ceres::Problem problem(problem_options);
-    build_ceres_problem(state_estimates,
-                         state_timestamps,
-                         landmark_group_indices,
-                         landmark_measurements,
-                         landmark_group_starts,
-                         gyro_measurements,
-                         bias_mode,
-                         uma_std_dev,
-                         gyro_wn_std_dev_rad_s,
-                         gyro_bias_instability,
-                         lm_sigmas,
-                         &quaternion_manifold,
-                         &problem);
 
+    // ── Build Ceres problem ───────────────────────────────────────────────────
+    const ErrorCode build_ec = build_ceres_problem(
+            state_estimates, ts.state_timestamps, ts.landmark_group_indices,
+            landmark_measurements, landmark_group_starts, gyro_measurements,
+            bias_mode, uma_std_dev, gyro_wn_std_dev_rad_s, gyro_bias_instability,
+            measurements.landmark_uncertainties, &quaternion_manifold, &problem);
+    if (build_ec != ErrorCode::OK) {
+        result.code = build_ec;
+        return result;
+    }
+
+    // ── Solve ─────────────────────────────────────────────────────────────────
     ceres::Solver::Options solver_options;
     solver_options.max_num_iterations = bo_config.max_iterations;
-    solver_options.linear_solver_type = ceres::SPARSE_NORMAL_CHOLESKY;; // ceres::ITERATIVE_SCHUR; // ceres::SPARSE_NORMAL_CHOLESKY;
-    // solver_options.use_explicit_schur_complement = true;
+    solver_options.linear_solver_type = ceres::SPARSE_NORMAL_CHOLESKY;
     solver_options.minimizer_progress_to_stdout = true;
     solver_options.function_tolerance = bo_config.solver_function_tolerance;
     solver_options.parameter_tolerance = bo_config.solver_parameter_tolerance;
-
-    // solver_options.preconditioner_type = ceres::SCHUR_POWER_SERIES_EXPANSION;
     solver_options.logging_type = ceres::LoggingType::PER_MINIMIZER_ITERATION;
 
     ceres::Solver::Summary summary;
     ceres::Solve(solver_options, &problem, &summary);
-
     spdlog::info("Ceres Solver Summary:\n{}", summary.FullReport());
 
+    switch (summary.termination_type) {
+        case ceres::CONVERGENCE:
+            break;
+        case ceres::NO_CONVERGENCE:
+            spdlog::error("solve_ceres_batch_opt: solver did not converge within limits.");
+            LogError(ErrorCode::BATCH_OPT_NO_CONVERGENCE);
+            result.code = ErrorCode::BATCH_OPT_NO_CONVERGENCE;
+            return result;
+        default:
+            spdlog::error("solve_ceres_batch_opt: solver failed — {}.", summary.message);
+            LogError(ErrorCode::BATCH_OPT_SOLVER_FAILED);
+            result.code = ErrorCode::BATCH_OPT_SOLVER_FAILED;
+            return result;
+    }
 
+    // ── Post-solve validity check ─────────────────────────────────────────────
+    bool output_valid = true;
+    for (Eigen::Index j = 0; j < state_estimates.size(); ++j) {
+        if (!std::isfinite(state_estimates.data()[j])) { output_valid = false; break; }
+    }
+    if (output_valid) {
+        for (idx_t i = 0; i < state_estimates.rows(); ++i) {
+            const double qx = state_estimates(i, StateEstimateIdx::QUAT_X);
+            const double qy = state_estimates(i, StateEstimateIdx::QUAT_Y);
+            const double qz = state_estimates(i, StateEstimateIdx::QUAT_Z);
+            const double qw = state_estimates(i, StateEstimateIdx::QUAT_W);
+            if (std::abs(std::sqrt(qx*qx + qy*qy + qz*qz + qw*qw) - 1.0) > 0.05) {
+                output_valid = false; break;
+            }
+        }
+    }
+    if (!output_valid) {
+        spdlog::error("solve_ceres_batch_opt: output contains NaN/inf or denormalized quaternions.");
+        LogError(ErrorCode::BATCH_OPT_INVALID_OUTPUT);
+        result.code = ErrorCode::BATCH_OPT_INVALID_OUTPUT;
+        return result;
+    }
+
+    // ── FIX_BIAS: propagate shared bias to all rows ───────────────────────────
     if (bias_mode == BIAS_MODE::FIX_BIAS) {
-        // Copy the fixed bias to all time steps
         const double* const fixed_bias = state_estimates.data() + StateEstimateIdx::GYRO_BIAS_X;
         for (idx_t i = 1; i < state_estimates.rows(); ++i) {
             double* const row_start = state_estimates.data() + i * StateEstimateIdx::STATE_ESTIMATE_COUNT;
@@ -454,15 +488,17 @@ solve_ceres_batch_opt(const LandmarkMeasurements& landmark_measurements,
         }
     }
 
-    std::vector<double> covariance = compute_covariance(problem, state_estimates, bias_mode);
+    // ── Covariance (non-fatal) ────────────────────────────────────────────────
+    result.covariance = compute_covariance(problem, state_estimates, bias_mode);
 
-    std::vector<double> residuals((state_timestamps.size()-1) * StateResCovIdx::STATE_RES_COV_COUNT + 
-                                  landmark_measurements.rows() * 3, 0.0);
-    // could also obtain gradient and cost if needed
-    problem.Evaluate(ceres::Problem::EvaluateOptions(), nullptr, &residuals, nullptr, nullptr);
+    // ── Residuals ─────────────────────────────────────────────────────────────
+    result.residuals.assign(
+            (ts.state_timestamps.size() - 1) * StateResCovIdx::STATE_RES_COV_COUNT
+            + static_cast<size_t>(landmark_measurements.rows()) * 3,
+            0.0);
+    problem.Evaluate(ceres::Problem::EvaluateOptions(), nullptr, &result.residuals, nullptr, nullptr);
 
-    // return state_estimates
-    return std::make_tuple(state_estimates,
-                            covariance,
-                            residuals);
+    result.state_estimates = std::move(state_estimates);
+    result.code = ErrorCode::OK;
+    return result;
 }

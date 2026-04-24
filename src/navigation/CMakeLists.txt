@@ -3,6 +3,7 @@ find_package (Eigen3 3.3 REQUIRED)
 add_library(navigation
     od.cpp
     od_alg.cpp
+    od_measurements.cpp
     batch_optimization.cpp
     pose_dynamics.cpp
     measurement_residuals.cpp

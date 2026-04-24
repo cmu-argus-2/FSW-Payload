@@ -50,14 +50,14 @@ void OD::_DoBatchOptimization()
         return;
     }
 
-    LandmarkMeasurements lm   = measurements_.landmark_measurements;
-    LandmarkGroupStarts  gs   = measurements_.group_starts;
-    GyroMeasurements     gm   = measurements_.gyro_measurements;
-
-    auto [state_estimates, covariance, residuals] =
-        solve_ceres_batch_opt(lm, gs, gm, measurements_.landmark_uncertainties, config.batch_opt);
-
-    SPDLOG_INFO("OD::_DoBatchOptimization: completed with {} state estimates", state_estimates.rows());
+    const auto result = solve_ceres_batch_opt(measurements_, config.batch_opt);
+    if (result.code != ErrorCode::OK) {
+        SPDLOG_ERROR("OD::_DoBatchOptimization: failed (error code {}).",
+                     static_cast<int>(result.code));
+    } else {
+        SPDLOG_INFO("OD::_DoBatchOptimization: completed with {} state estimates.",
+                    result.state_estimates.rows());
+    }
 
     SwitchState(OD_STATE::IDLE);
 }

@@ -1,6 +1,6 @@
 #include "navigation/batch_optimization.hpp"
 #include "navigation/pose_dynamics.hpp"
-#include "navigation/measurement_residuals.hpp"
+#include "navigation/od_measurements.hpp"
 #include <ceres/ceres.h>
 #include <ceres/internal/eigen.h>
 // #include <xtensor/xtensor.hpp>

@@ -55,9 +55,10 @@ max_buffers          = 2
 # Shared camera intrinsics (same lens for all cameras)
 # camera_matrix: intrinsic matrix K stored row-major [fx, 0, cx, 0, fy, cy, 0, 0, 1]
 # cx = resolution_width / 2, cy = resolution_height / 2 (principal point at centre)
-# fx, fy: focal length in pixels — set to 0.0 until calibrated
+# fx, fy: focal length in pixels — estimated from Arducam IMX708 66° HFOV spec (~3548 px).
+# Replace with values from a proper checkerboard calibration when available.
 [camera-calibration]
-camera_matrix = [0.0, 0.0, 2304.0, 0.0, 0.0, 1296.0, 0.0, 0.0, 1.0]
+camera_matrix = [3548.0, 0.0, 2304.0, 0.0, 3548.0, 1296.0, 0.0, 0.0, 1.0]
 # Distortion coefficients [k1, k2, p1, p2, k3] — set to 0.0 until calibrated
 dist_coeffs = [0.0, 0.0, 0.0, 0.0, 0.0]
 

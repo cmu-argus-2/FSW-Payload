@@ -34,99 +34,51 @@ StateEstimates init_state_estimate(std::vector<double> state_timestamps) {
 }
 
 
-std::tuple <std::vector<double>, std::vector<idx_t>, std::vector<idx_t>>
+std::tuple<std::vector<double>, std::vector<idx_t>>
 get_state_timestamps(const LandmarkMeasurements& landmark_measurements,
                      const LandmarkGroupStarts& landmark_group_starts,
                      const GyroMeasurements& gyro_measurements,
-                     const double max_dt,
                      const idx_t num_groups) {
+    const idx_t M = gyro_measurements.rows();
+
+    // State timestamps are exactly the gyro measurement timestamps.
     std::vector<double> state_timestamps;
-    // We know that we need at least this many timestamps, but we may need more
-    state_timestamps.reserve(num_groups + gyro_measurements.rows() + 1);
+    state_timestamps.reserve(M);
+    for (idx_t k = 0; k < M; ++k)
+        state_timestamps.push_back(gyro_measurements(k, GyroMeasurementIdx::GYRO_MEAS_TIMESTAMP));
 
-    std::vector <idx_t> landmark_group_indices;
-    std::vector <idx_t> gyro_measurement_indices;
-    // These reservations are the exact number of indices we need
+    // For each landmark group, snap to the nearest gyro timestamp.
+    std::vector<idx_t> landmark_group_indices;
     landmark_group_indices.reserve(num_groups);
-    gyro_measurement_indices.reserve(gyro_measurements.rows());
 
-    idx_t next_landmark_idx = 0;
-    idx_t next_gyro_idx = 0;
+    for (idx_t i = 0; i < landmark_group_starts.rows(); ++i) {
+        if (!landmark_group_starts(i, 0)) continue;
 
-    const auto append_timestamp = [&](const double timestamp) -> void {
-        if (state_timestamps.empty()) {
-            state_timestamps.push_back(timestamp);
-            return;
-        }
+        const double t_lm = landmark_measurements(i, LandmarkMeasurementIdx::LANDMARK_TIMESTAMP);
 
-        const double& last_timestamp = state_timestamps.back();
-        const double dt = timestamp - last_timestamp;
-        if (dt <= max_dt) {
-            if (dt <= 1e-9) {
-                for (idx_t i = 0; i < state_timestamps.size(); ++i) {
-                    if (abs(state_timestamps[i] - timestamp) < 1e-9) {
-                        return;
-                    }
-                }
-            }
-            state_timestamps.push_back(timestamp);
-            return;
-        }
-
-        const double num_steps = std::ceil(dt / max_dt);
-        for (idx_t i = 1; static_cast<double>(i) < num_steps + 0.5; ++i) {
-            state_timestamps.push_back(last_timestamp + (static_cast<double>(i) / num_steps) * dt);
-        }
-    };
-
-    const auto append_landmark_timestamp = [&](const double landmark_timestamp) -> void {
-        append_timestamp(landmark_timestamp);
-        landmark_group_indices.push_back(state_timestamps.size() - 1);
-
-        ++next_landmark_idx;
-        while (next_landmark_idx < landmark_group_starts.rows() && !landmark_group_starts(next_landmark_idx, 0)) {
-            ++next_landmark_idx;
-        }
-    };
-
-    const auto append_gyro_timestamp = [&](const double gyro_timestamp) -> void {
-        append_timestamp(gyro_timestamp);
-        gyro_measurement_indices.push_back(state_timestamps.size() - 1);
-        ++next_gyro_idx;
-    };
-
-    while (true) {
-        const bool next_landmark_idx_valid = next_landmark_idx < landmark_group_starts.rows();
-        const bool next_gyro_idx_valid = next_gyro_idx < gyro_measurements.rows();
-
-        if (next_landmark_idx_valid && next_gyro_idx_valid) {
-            assert(landmark_group_starts(next_landmark_idx, 0));
-            const double& landmark_timestamp = landmark_measurements(next_landmark_idx,
-                                                                     LandmarkMeasurementIdx::LANDMARK_TIMESTAMP);
-            const double& gyro_timestamp = gyro_measurements(next_gyro_idx, GyroMeasurementIdx::GYRO_MEAS_TIMESTAMP);
-            if (landmark_timestamp <= gyro_timestamp) {
-                append_landmark_timestamp(landmark_timestamp);
-            } else {
-                append_gyro_timestamp(gyro_timestamp);
-            }
-        } else if (next_landmark_idx_valid) {
-            assert(landmark_group_starts(next_landmark_idx, 0));
-            append_landmark_timestamp(landmark_measurements(next_landmark_idx, LandmarkMeasurementIdx::LANDMARK_TIMESTAMP));
-        } else if (next_gyro_idx_valid) {
-            append_gyro_timestamp(gyro_measurements(next_gyro_idx, GyroMeasurementIdx::GYRO_MEAS_TIMESTAMP));
+        // Binary search for the nearest gyro timestamp.
+        auto it = std::lower_bound(state_timestamps.begin(), state_timestamps.end(), t_lm);
+        idx_t best_k;
+        if (it == state_timestamps.end()) {
+            best_k = M - 1;
+        } else if (it == state_timestamps.begin()) {
+            best_k = 0;
         } else {
-            break;
+            const auto prev = std::prev(it);
+            best_k = (*it - t_lm < t_lm - *prev)
+                     ? static_cast<idx_t>(it   - state_timestamps.begin())
+                     : static_cast<idx_t>(prev - state_timestamps.begin());
         }
+        landmark_group_indices.push_back(best_k);
     }
-    assert(landmark_group_indices.size() == num_groups);
-    assert(gyro_measurement_indices.size() == gyro_measurements.rows());
 
-    spdlog::info("Generated {} state timestamps from {} landmark groups and {} gyro measurements over a {} s period.",
-                 state_timestamps.size(), num_groups, gyro_measurements.rows(), state_timestamps.back() - state_timestamps.front());
+    assert(static_cast<idx_t>(landmark_group_indices.size()) == num_groups);
 
-    return std::make_tuple(state_timestamps,
-                           landmark_group_indices,
-                           gyro_measurement_indices);
+    spdlog::info("State timestamps: {} gyro measurements over {:.3f} s; "
+                 "{} landmark groups snapped to nearest gyro timestamp.",
+                 M, state_timestamps.back() - state_timestamps.front(), num_groups);
+
+    return {state_timestamps, landmark_group_indices};
 }
 
 void build_ceres_problem(StateEstimates& state_estimates,
@@ -197,10 +149,9 @@ void build_ceres_problem(StateEstimates& state_estimates,
             p_v1);
     }
 
-    // Angular Dynamics costs
-    for (idx_t i = 0; i+1 < state_timestamps.size(); ++i) {
-        // In the last timestep it seems to show dt 60 
-        // seems to be because of the condition of requiring every timestamp to have an additional timestamp after it
+    // Angular Dynamics costs.
+    // State timestamps == gyro timestamps (one-to-one), so index i directly.
+    for (idx_t i = 0; i+1 < static_cast<idx_t>(state_timestamps.size()); ++i) {
         const double dt = state_timestamps[i + 1] - state_timestamps[i];
         const double quat_std_dev = gyro_wn_std_dev_rad_s * dt; // rad
         const double bias_std_dev = gyro_bias_instability * std::sqrt(dt); // rad/s
@@ -428,18 +379,14 @@ solve_ceres_batch_opt(const LandmarkMeasurements& landmark_measurements,
                               })
            == gyro_measurements.col(0).end() &&
            "gyro_measurements timestamps must be strictly monotonically increasing.");
-    assert(max_dt > 0.0 &&
-           "max_dt must be greater than 0.0.");
-
     const idx_t num_groups = std::count(landmark_group_starts.col(0).begin(),
                                         landmark_group_starts.col(0).end(),
                                         true);
-    
-    const auto [state_timestamps, landmark_group_indices, gyro_measurement_indices] = get_state_timestamps(
+
+    const auto [state_timestamps, landmark_group_indices] = get_state_timestamps(
             landmark_measurements,
             landmark_group_starts,
             gyro_measurements,
-            max_dt,
             num_groups);
 
     // give an initial guess

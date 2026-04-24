@@ -74,19 +74,16 @@ using idx_t = Eigen::Index;
  * @param gyro_measurements An Eigen matrix where each row contains a gyro measurement. Each row contains 4 elements:
  *                          the timestamp and the angular velocity vector in the body frame. The timestamps must be
  *                          strictly monotonically increasing.
- * @param max_dt The maximum allowed time step between adjacent rows in the optimized states.
  * @param num_groups The number of landmark groups. Must be the same as the number of true values in
  *                   landmark_group_starts.
  * @return A std::tuple containing:
- *         - A vector of timestamps for the state estimates.
- *         - A vector of indices into the state_timestamps vector for each landmark group.
- *         - A vector of indices into the state_timestamps vector for each gyro measurement.
+ *         - A vector of timestamps for the state estimates (one per gyro measurement).
+ *         - A vector of state indices for each landmark group (snapped to nearest gyro timestamp).
  */
-std::tuple <std::vector<double>, std::vector<idx_t>, std::vector<idx_t>>
+std::tuple<std::vector<double>, std::vector<idx_t>>
 get_state_timestamps(const LandmarkMeasurements& landmark_measurements,
                      const LandmarkGroupStarts& landmark_group_starts,
                      const GyroMeasurements& gyro_measurements,
-                     const double max_dt,
                      const idx_t num_groups);
 
 std::vector<double> compute_covariance(ceres::Problem& problem,

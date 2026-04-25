@@ -35,29 +35,40 @@ enum StateEstimateIdx {
     STATE_ESTIMATE_COUNT = 14
 };
 
-// Indexes for the residuals/covariance vector in the tangent space of the manifold
-enum StateResCovIdx {
-    RES_COV_TIMESTAMP = 0,
-    POS_COV_X = 1,
-    POS_COV_Y = 2,
-    POS_COV_Z = 3,
-    VEL_COV_X = 4,
-    VEL_COV_Y = 5,
-    VEL_COV_Z = 6,
-    ROT_COV_X = 7,
-    ROT_COV_Y = 8,
-    ROT_COV_Z = 9,
-    GYRO_BIAS_COV_X = 10,
-    GYRO_BIAS_COV_Y = 11,
-    GYRO_BIAS_COV_Z = 12,
-    STATE_RES_COV_COUNT = 13
+// Column indexes shared by the covariance matrix and the dynamics residuals matrix.
+// Both are (N-1)×13 (or N×13 for covariance) with one column per tangent-space component.
+enum StateResIdx {
+    RES_TIMESTAMP      = 0,
+    RES_POS_X          = 1,
+    RES_POS_Y          = 2,
+    RES_POS_Z          = 3,
+    RES_VEL_X          = 4,
+    RES_VEL_Y          = 5,
+    RES_VEL_Z          = 6,
+    RES_ROT_X          = 7,
+    RES_ROT_Y          = 8,
+    RES_ROT_Z          = 9,
+    RES_GYRO_BIAS_X    = 10,
+    RES_GYRO_BIAS_Y    = 11,
+    RES_GYRO_BIAS_Z    = 12,
+    STATE_RES_COUNT    = 13
 };
 
-using LandmarkMeasurements = Eigen::Matrix<double, Eigen::Dynamic, LandmarkMeasurementIdx::LANDMARK_COUNT, Eigen::RowMajor>;
-using LandmarkGroupStarts = Eigen::Matrix<bool, Eigen::Dynamic, 1, Eigen::ColMajor>;
-using GyroMeasurements = Eigen::Matrix<double, Eigen::Dynamic, GyroMeasurementIdx::GYRO_MEAS_COUNT, Eigen::RowMajor>;
-using StateEstimates = Eigen::Matrix<double, Eigen::Dynamic, StateEstimateIdx::STATE_ESTIMATE_COUNT, Eigen::RowMajor>;
-using ResidualsOrCovariances = Eigen::Matrix<double, Eigen::Dynamic, StateResCovIdx::STATE_RES_COV_COUNT, Eigen::RowMajor>;
+// Column indexes for the landmark measurement residuals matrix (M rows, one per measurement)
+enum LandmarkResIdx {
+    LANDMARK_RES_X     = 0,
+    LANDMARK_RES_Y     = 1,
+    LANDMARK_RES_Z     = 2,
+    LANDMARK_RES_COUNT = 3
+};
+
+using LandmarkMeasurements   = Eigen::Matrix<double, Eigen::Dynamic, LandmarkMeasurementIdx::LANDMARK_COUNT, Eigen::RowMajor>;
+using LandmarkGroupStarts    = Eigen::Matrix<bool,   Eigen::Dynamic, 1, Eigen::ColMajor>;
+using GyroMeasurements       = Eigen::Matrix<double, Eigen::Dynamic, GyroMeasurementIdx::GYRO_MEAS_COUNT, Eigen::RowMajor>;
+using StateEstimates         = Eigen::Matrix<double, Eigen::Dynamic, StateEstimateIdx::STATE_ESTIMATE_COUNT, Eigen::RowMajor>;
+using ResidualsOrCovariances = Eigen::Matrix<double, Eigen::Dynamic, StateResIdx::STATE_RES_COUNT, Eigen::RowMajor>;
+using DynamicsResiduals      = Eigen::Matrix<double, Eigen::Dynamic, StateResIdx::STATE_RES_COUNT, Eigen::RowMajor>;
+using LandmarkResiduals      = Eigen::Matrix<double, Eigen::Dynamic, LandmarkResIdx::LANDMARK_RES_COUNT, Eigen::RowMajor>;
 using idx_t = Eigen::Index;
 
 struct StateTimestampsResult {
@@ -67,19 +78,19 @@ struct StateTimestampsResult {
 };
 
 struct SolverSummaryInfo {
-    std::string termination_type;
-    int         num_iterations = 0;
-    double      initial_cost   = 0.0;
-    double      final_cost     = 0.0;
-    std::string message;
+    int    termination_type = 0;  // ceres::TerminationType: 0=CONVERGENCE, 1=NO_CONVERGENCE, 2=FAILURE, 3=USER_SUCCESS, 4=USER_FAILURE
+    int    num_iterations   = 0;
+    double initial_cost     = 0.0;
+    double final_cost       = 0.0;
 };
 
 struct BatchOptResult {
-    ErrorCode           code = ErrorCode::OK;
-    StateEstimates      state_estimates;
-    std::vector<double> covariance;
-    std::vector<double> residuals;
-    SolverSummaryInfo   solver_summary;
+    ErrorCode              code = ErrorCode::OK;
+    StateEstimates         state_estimates;
+    ResidualsOrCovariances covariance;          // Nx13 per StateResIdx; 0 rows if unavailable
+    DynamicsResiduals      dynamics_residuals;  // (N-1)x13 per StateResIdx
+    LandmarkResiduals      landmark_residuals;  // Mx3 per LandmarkResIdx
+    SolverSummaryInfo      solver_summary;
 };
 
 StateTimestampsResult
@@ -88,9 +99,9 @@ get_state_timestamps(const LandmarkMeasurements& landmark_measurements,
                      const GyroMeasurements& gyro_measurements,
                      const idx_t num_groups);
 
-std::vector<double> compute_covariance(ceres::Problem& problem,
-                                       StateEstimates& state_estimates,
-                                       BIAS_MODE bias_mode);
+ResidualsOrCovariances compute_covariance(ceres::Problem& problem,
+                                          StateEstimates& state_estimates,
+                                          BIAS_MODE bias_mode);
 
 ErrorCode build_ceres_problem(StateEstimates& state_estimates,
                               const std::vector<double> state_timestamps,

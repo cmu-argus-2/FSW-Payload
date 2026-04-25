@@ -12,25 +12,109 @@
 #include <vector>
 
 
-StateEstimates init_state_estimate(std::vector<double> state_timestamps) {
-    StateEstimates state_estimates(state_timestamps.size(), StateEstimateIdx::STATE_ESTIMATE_COUNT);
-    for (int i = 0; i < state_timestamps.size(); ++i) {
-        state_estimates(i, StateEstimateIdx::STATE_ESTIMATE_TIMESTAMP) = state_timestamps[i];
-        state_estimates(i, StateEstimateIdx::POS_X) = 0.0; // km
-        state_estimates(i, StateEstimateIdx::POS_Y) = 0.0;
-        state_estimates(i, StateEstimateIdx::POS_Z) = 7000.0;
-        state_estimates(i, StateEstimateIdx::VEL_X) = 0.0;
-        state_estimates(i, StateEstimateIdx::VEL_Y) = 8.0; // km/s
-        state_estimates(i, StateEstimateIdx::VEL_Z) = 0.0; // km/s
-        state_estimates(i, StateEstimateIdx::QUAT_X) = 0.0;
-        state_estimates(i, StateEstimateIdx::QUAT_Y) = 0.0;
-        state_estimates(i, StateEstimateIdx::QUAT_Z) = 0.0;
-        state_estimates(i, StateEstimateIdx::QUAT_W) = 1.0;
-        state_estimates(i, StateEstimateIdx::GYRO_BIAS_X) = 0.0;
-        state_estimates(i, StateEstimateIdx::GYRO_BIAS_Y) = 0.0;
-        state_estimates(i, StateEstimateIdx::GYRO_BIAS_Z) = 0.0;
+// Interpolate/extrapolate position from sparse keyframes {t, pos}.
+static Eigen::Vector3d interp_kf(
+        const std::vector<std::pair<double, Eigen::Vector3d>>& kf,
+        double t)
+{
+    const size_t n = kf.size();
+    if (n == 1) return kf[0].second;
+
+    if (t <= kf.front().first) {
+        const double dt = kf[1].first - kf[0].first;
+        if (std::abs(dt) < 1e-9) return kf[0].second;
+        return kf[0].second + (kf[1].second - kf[0].second) / dt * (t - kf[0].first);
     }
-    return state_estimates;
+    if (t >= kf.back().first) {
+        const double dt = kf[n-1].first - kf[n-2].first;
+        if (std::abs(dt) < 1e-9) return kf.back().second;
+        return kf.back().second + (kf[n-1].second - kf[n-2].second) / dt * (t - kf.back().first);
+    }
+    size_t lo = 0, hi = n - 1;
+    while (hi - lo > 1) {
+        const size_t mid = (lo + hi) / 2;
+        if (kf[mid].first <= t) lo = mid; else hi = mid;
+    }
+    const double alpha = (t - kf[lo].first) / (kf[hi].first - kf[lo].first);
+    return (1.0 - alpha) * kf[lo].second + alpha * kf[hi].second;
+}
+
+
+StateEstimates init_state_estimate(
+        const std::vector<double>& state_timestamps,
+        const LandmarkMeasurements& landmark_measurements,
+        const LandmarkGroupStarts& landmark_group_starts)
+{
+    // Earth mean radius + 600 km orbit
+    constexpr double R_ORBIT_KM = 6371.0 + 600.0;
+
+    // One position keyframe per landmark group: mean landmark ECI position
+    // direction normalized to the assumed orbital altitude.
+    std::vector<std::pair<double, Eigen::Vector3d>> keyframes;
+
+    const idx_t N = landmark_measurements.rows();
+    idx_t row = 0;
+    while (row < N) {
+        const double t_group =
+            landmark_measurements(row, LandmarkMeasurementIdx::LANDMARK_TIMESTAMP);
+        Eigen::Vector3d sum = Eigen::Vector3d::Zero();
+        do {
+            sum.x() += landmark_measurements(row, LandmarkMeasurementIdx::LANDMARK_POS_X);
+            sum.y() += landmark_measurements(row, LandmarkMeasurementIdx::LANDMARK_POS_Y);
+            sum.z() += landmark_measurements(row, LandmarkMeasurementIdx::LANDMARK_POS_Z);
+            ++row;
+        } while (row < N && !landmark_group_starts(row, 0));
+
+        const double norm = sum.norm();
+        if (norm < 1e-6) continue;
+        keyframes.emplace_back(t_group, sum / norm * R_ORBIT_KM);
+    }
+    spdlog::info("init_state_estimate: {} landmark groups → {} position keyframes",
+                 keyframes.size(), keyframes.size());
+
+    const idx_t M = static_cast<idx_t>(state_timestamps.size());
+    StateEstimates se(M, StateEstimateIdx::STATE_ESTIMATE_COUNT);
+
+    // Fill position by interpolating between group keyframes.
+    for (idx_t i = 0; i < M; ++i) {
+        const double t = state_timestamps[static_cast<size_t>(i)];
+        const Eigen::Vector3d pos = keyframes.empty()
+            ? Eigen::Vector3d(0.0, 0.0, R_ORBIT_KM)
+            : interp_kf(keyframes, t);
+        se(i, StateEstimateIdx::STATE_ESTIMATE_TIMESTAMP) = t;
+        se(i, StateEstimateIdx::POS_X)       = pos.x();
+        se(i, StateEstimateIdx::POS_Y)       = pos.y();
+        se(i, StateEstimateIdx::POS_Z)       = pos.z();
+        se(i, StateEstimateIdx::QUAT_X)      = 0.0;
+        se(i, StateEstimateIdx::QUAT_Y)      = 0.0;
+        se(i, StateEstimateIdx::QUAT_Z)      = 0.0;
+        se(i, StateEstimateIdx::QUAT_W)      = 1.0;
+        se(i, StateEstimateIdx::GYRO_BIAS_X) = 0.0;
+        se(i, StateEstimateIdx::GYRO_BIAS_Y) = 0.0;
+        se(i, StateEstimateIdx::GYRO_BIAS_Z) = 0.0;
+    }
+
+    // Velocity as finite differences: central at interior, one-sided at endpoints.
+    for (idx_t i = 0; i < M; ++i) {
+        const idx_t i0 = (i == 0)     ? 0     : i - 1;
+        const idx_t i1 = (i == M - 1) ? M - 1 : i + 1;
+        if (i0 == i1) {
+            se(i, StateEstimateIdx::VEL_X) = 0.0;
+            se(i, StateEstimateIdx::VEL_Y) = 0.0;
+            se(i, StateEstimateIdx::VEL_Z) = 0.0;
+            continue;
+        }
+        const double dt = state_timestamps[static_cast<size_t>(i1)]
+                        - state_timestamps[static_cast<size_t>(i0)];
+        se(i, StateEstimateIdx::VEL_X) =
+            (se(i1, StateEstimateIdx::POS_X) - se(i0, StateEstimateIdx::POS_X)) / dt;
+        se(i, StateEstimateIdx::VEL_Y) =
+            (se(i1, StateEstimateIdx::POS_Y) - se(i0, StateEstimateIdx::POS_Y)) / dt;
+        se(i, StateEstimateIdx::VEL_Z) =
+            (se(i1, StateEstimateIdx::POS_Z) - se(i0, StateEstimateIdx::POS_Z)) / dt;
+    }
+
+    return se;
 }
 
 
@@ -251,123 +335,84 @@ ErrorCode build_ceres_problem(StateEstimates& state_estimates,
     return ErrorCode::OK;
 }
 
-std::vector<double> compute_covariance(ceres::Problem& problem,
-                        StateEstimates& state_estimates,
-                        BIAS_MODE bias_mode) {
+ResidualsOrCovariances compute_covariance(ceres::Problem& problem,
+                                          StateEstimates& state_estimates,
+                                          BIAS_MODE bias_mode) {
+    const idx_t N = state_estimates.rows();
     ceres::Covariance::Options options;
-    // options.algorithm_type = ceres::CovarianceAlgorithmType::DENSE_SVD;
     ceres::Covariance covariance(options);
 
     std::vector<std::pair<const double*, const double*>> covariance_blocks;
-    for (idx_t i = 0; i < state_estimates.rows(); ++i) {
-        double* const row_start = state_estimates.data() + i * StateEstimateIdx::STATE_ESTIMATE_COUNT;
-
-        covariance_blocks.push_back(std::make_pair(
-            row_start + StateEstimateIdx::POS_X,
-            row_start + StateEstimateIdx::POS_X
-        ));
-        covariance_blocks.push_back(std::make_pair(
-            row_start + StateEstimateIdx::VEL_X,
-            row_start + StateEstimateIdx::VEL_X
-        ));
-        covariance_blocks.push_back(std::make_pair(
-            row_start + StateEstimateIdx::QUAT_X,
-            row_start + StateEstimateIdx::QUAT_X
-        ));
-        if (bias_mode == BIAS_MODE::TV_BIAS)
-        covariance_blocks.push_back(std::make_pair(
-            row_start + StateEstimateIdx::GYRO_BIAS_X,
-            row_start + StateEstimateIdx::GYRO_BIAS_X
-        ));
-        else if (bias_mode == BIAS_MODE::FIX_BIAS && i == 0) {
-            covariance_blocks.push_back(std::make_pair(
-                row_start + StateEstimateIdx::GYRO_BIAS_X,
-                row_start + StateEstimateIdx::GYRO_BIAS_X
-            ));
+    for (idx_t i = 0; i < N; ++i) {
+        const double* const row = state_estimates.data() + i * StateEstimateIdx::STATE_ESTIMATE_COUNT;
+        covariance_blocks.push_back({row + StateEstimateIdx::POS_X,        row + StateEstimateIdx::POS_X});
+        covariance_blocks.push_back({row + StateEstimateIdx::VEL_X,        row + StateEstimateIdx::VEL_X});
+        covariance_blocks.push_back({row + StateEstimateIdx::QUAT_X,       row + StateEstimateIdx::QUAT_X});
+        if (bias_mode == BIAS_MODE::TV_BIAS) {
+            covariance_blocks.push_back({row + StateEstimateIdx::GYRO_BIAS_X, row + StateEstimateIdx::GYRO_BIAS_X});
+        } else if (bias_mode == BIAS_MODE::FIX_BIAS && i == 0) {
+            covariance_blocks.push_back({row + StateEstimateIdx::GYRO_BIAS_X, row + StateEstimateIdx::GYRO_BIAS_X});
         }
     }
 
-    bool compute_check = covariance.Compute(covariance_blocks, &problem);
-    if(!compute_check) {
+    if (!covariance.Compute(covariance_blocks, &problem)) {
         spdlog::error("Covariance computation failed.");
-        return {};
+        return ResidualsOrCovariances(0, StateResIdx::STATE_RES_COUNT);
     }
 
-    std::vector<double> covariance_diagonal;
-    int j = 0;
-    // currently a bit unnecessary since they're all size 3 in the tangent space. Was only worth it
-    // if getting the quaternion covariance
-    int block_size = 0;
-    std::vector<double> cov_matrix;
-    size_t capacity = 0;
+    ResidualsOrCovariances result(N, StateResIdx::STATE_RES_COUNT);
+    result.setZero();
 
-    for (const auto& block : covariance_blocks) {
-        if (bias_mode == BIAS_MODE::NO_BIAS) {
-            if (j % 3 == 0) {
-                block_size = StateResCovIdx::VEL_COV_X - StateResCovIdx::POS_COV_X;
-            } else if (j % 3 == 1) {
-                block_size = StateResCovIdx::ROT_COV_X - StateResCovIdx::VEL_COV_X;
-            } else {
-                block_size = StateResCovIdx::GYRO_BIAS_COV_X - StateResCovIdx::ROT_COV_X;
-            }
+    // For FIX_BIAS: extract shared bias covariance from row 0 and replicate
+    double fix_bias_cov[3] = {0.0, 0.0, 0.0};
+    if (bias_mode == BIAS_MODE::FIX_BIAS) {
+        const double* bias_ptr = state_estimates.data() + StateEstimateIdx::GYRO_BIAS_X;
+        double cov9[9];
+        covariance.GetCovarianceBlockInTangentSpace(bias_ptr, bias_ptr, cov9);
+        fix_bias_cov[0] = cov9[0];
+        fix_bias_cov[1] = cov9[4];
+        fix_bias_cov[2] = cov9[8];
+    }
+
+    double cov9[9];
+    for (idx_t i = 0; i < N; ++i) {
+        const double* const row = state_estimates.data() + i * StateEstimateIdx::STATE_ESTIMATE_COUNT;
+        result(i, StateResIdx::RES_TIMESTAMP) =
+                state_estimates(i, StateEstimateIdx::STATE_ESTIMATE_TIMESTAMP);
+
+        covariance.GetCovarianceBlockInTangentSpace(
+                row + StateEstimateIdx::POS_X, row + StateEstimateIdx::POS_X, cov9);
+        result(i, StateResIdx::RES_POS_X) = cov9[0];
+        result(i, StateResIdx::RES_POS_Y) = cov9[4];
+        result(i, StateResIdx::RES_POS_Z) = cov9[8];
+
+        covariance.GetCovarianceBlockInTangentSpace(
+                row + StateEstimateIdx::VEL_X, row + StateEstimateIdx::VEL_X, cov9);
+        result(i, StateResIdx::RES_VEL_X) = cov9[0];
+        result(i, StateResIdx::RES_VEL_Y) = cov9[4];
+        result(i, StateResIdx::RES_VEL_Z) = cov9[8];
+
+        covariance.GetCovarianceBlockInTangentSpace(
+                row + StateEstimateIdx::QUAT_X, row + StateEstimateIdx::QUAT_X, cov9);
+        result(i, StateResIdx::RES_ROT_X) = cov9[0];
+        result(i, StateResIdx::RES_ROT_Y) = cov9[4];
+        result(i, StateResIdx::RES_ROT_Z) = cov9[8];
+
+        if (bias_mode == BIAS_MODE::TV_BIAS) {
+            covariance.GetCovarianceBlockInTangentSpace(
+                    row + StateEstimateIdx::GYRO_BIAS_X, row + StateEstimateIdx::GYRO_BIAS_X, cov9);
+            result(i, StateResIdx::RES_GYRO_BIAS_X) = cov9[0];
+            result(i, StateResIdx::RES_GYRO_BIAS_Y) = cov9[4];
+            result(i, StateResIdx::RES_GYRO_BIAS_Z) = cov9[8];
         } else if (bias_mode == BIAS_MODE::FIX_BIAS) {
-            if (j < 4) {
-                if (j % 4 == 0) {
-                    block_size = StateResCovIdx::VEL_COV_X - StateResCovIdx::POS_COV_X;
-                } else if (j % 4 == 1) {
-                    block_size = StateResCovIdx::ROT_COV_X - StateResCovIdx::VEL_COV_X;
-                } else if (j % 4 == 2) {
-                    block_size = StateResCovIdx::GYRO_BIAS_COV_X - StateResCovIdx::ROT_COV_X;
-                } else {
-                    block_size = StateResCovIdx::STATE_RES_COV_COUNT - StateResCovIdx::GYRO_BIAS_COV_X;
-                }
-            } else {
-                if ((j - 4) % 3 == 0) {
-                    block_size = StateResCovIdx::VEL_COV_X - StateResCovIdx::POS_COV_X;
-                } else if ((j - 4) % 3 == 1) {
-                    block_size = StateResCovIdx::ROT_COV_X - StateResCovIdx::VEL_COV_X;
-                } else {
-                    block_size = StateResCovIdx::GYRO_BIAS_COV_X - StateResCovIdx::ROT_COV_X;
-                }
-            }
-        } else if (bias_mode == BIAS_MODE::TV_BIAS) { // tv_bias
-            if (j % 4 == 0) {
-                block_size = StateResCovIdx::VEL_COV_X - StateResCovIdx::POS_COV_X;
-            } else if (j % 4 == 1) {
-                block_size = StateResCovIdx::ROT_COV_X - StateResCovIdx::VEL_COV_X;
-            } else if (j % 4 == 2) {
-                block_size = StateResCovIdx::GYRO_BIAS_COV_X - StateResCovIdx::ROT_COV_X;
-            } else {
-                block_size = StateResCovIdx::STATE_RES_COV_COUNT - StateResCovIdx::GYRO_BIAS_COV_X;
-            }
-        } else {
-            spdlog::error("compute_covariance: invalid bias_mode {}; "
-                          "must be 2:'tv_bias', 1:'fix_bias', or 0:'no_bias'.",
-                          static_cast<int>(bias_mode));
-            return {};
+            result(i, StateResIdx::RES_GYRO_BIAS_X) = fix_bias_cov[0];
+            result(i, StateResIdx::RES_GYRO_BIAS_Y) = fix_bias_cov[1];
+            result(i, StateResIdx::RES_GYRO_BIAS_Z) = fix_bias_cov[2];
         }
-        j += 1;
-
-        std::vector<std::pair<const double*, const double*>> single_block = {block};
-        const size_t needed = static_cast<size_t>(block_size) * block_size;
-        if (needed > capacity) {
-            cov_matrix.resize(needed);
-            capacity = needed;
-        } else {
-            cov_matrix.resize(needed); // just adjusts size, no reallocation
-        }
-
-        covariance.GetCovarianceBlockInTangentSpace(block.first, block.first, cov_matrix.data());
-        // double cov_matrix[block_size * block_size];
-        //covariance.GetCovarianceBlock(block.first, block.first, cov_matrix);
-        // covariance.GetCovarianceBlockInTangentSpace(block.first, block.first, cov_matrix);
-
-        for (int i = 0; i < block_size; ++i) {
-            covariance_diagonal.push_back(cov_matrix[i * block_size + i]);
-        }
+        // NO_BIAS: bias columns remain zero
     }
 
-    return covariance_diagonal;
+    return result;
 }
 
 BatchOptResult solve_ceres_batch_opt(const ODMeasurements& measurements,
@@ -400,7 +445,8 @@ BatchOptResult solve_ceres_batch_opt(const ODMeasurements& measurements,
         return result;
     }
 
-    StateEstimates state_estimates = init_state_estimate(ts.state_timestamps);
+    StateEstimates state_estimates = init_state_estimate(
+            ts.state_timestamps, landmark_measurements, landmark_group_starts);
 
     // TODO: this information should be obtained from the configuration file
     double uma_std_dev = 1; // km/s^2
@@ -439,21 +485,10 @@ BatchOptResult solve_ceres_batch_opt(const ODMeasurements& measurements,
     spdlog::info("Ceres Solver Summary:\n{}", summary.FullReport());
 
     // Populate summary info on all paths so callers always have it.
-    static const auto termination_str = [](ceres::TerminationType t) -> std::string {
-        switch (t) {
-            case ceres::CONVERGENCE:    return "CONVERGENCE";
-            case ceres::NO_CONVERGENCE: return "NO_CONVERGENCE";
-            case ceres::FAILURE:        return "FAILURE";
-            case ceres::USER_SUCCESS:   return "USER_SUCCESS";
-            case ceres::USER_FAILURE:   return "USER_FAILURE";
-            default:                    return "UNKNOWN";
-        }
-    };
-    result.solver_summary.termination_type = termination_str(summary.termination_type);
+    result.solver_summary.termination_type = static_cast<int>(summary.termination_type);
     result.solver_summary.num_iterations   = summary.num_successful_steps + summary.num_unsuccessful_steps;
     result.solver_summary.initial_cost     = summary.initial_cost;
     result.solver_summary.final_cost       = summary.final_cost;
-    result.solver_summary.message          = summary.message;
 
     switch (summary.termination_type) {
         case ceres::CONVERGENCE:
@@ -509,11 +544,50 @@ BatchOptResult solve_ceres_batch_opt(const ODMeasurements& measurements,
     result.covariance = compute_covariance(problem, state_estimates, bias_mode);
 
     // ── Residuals ─────────────────────────────────────────────────────────────
-    result.residuals.assign(
-            (ts.state_timestamps.size() - 1) * StateResCovIdx::STATE_RES_COV_COUNT
-            + static_cast<size_t>(landmark_measurements.rows()) * 3,
-            0.0);
-    problem.Evaluate(ceres::Problem::EvaluateOptions(), nullptr, &result.residuals, nullptr, nullptr);
+    // Ceres appends residual blocks in add order: linear dynamics, angular dynamics,
+    // then landmark measurements. Unpack into structured matrices.
+    std::vector<double> raw_residuals;
+    problem.Evaluate(ceres::Problem::EvaluateOptions(), nullptr, &raw_residuals, nullptr, nullptr);
+
+    const idx_t num_intervals  = state_estimates.rows() - 1;
+    const int   ang_res_stride = (bias_mode == BIAS_MODE::TV_BIAS) ? 6 : 3;
+    const int   lin_res_stride = 6;
+    const idx_t M_lm           = landmark_measurements.rows();
+
+    result.dynamics_residuals.resize(num_intervals, StateResIdx::STATE_RES_COUNT);
+    result.dynamics_residuals.setZero();
+
+    for (idx_t i = 0; i < num_intervals; ++i) {
+        result.dynamics_residuals(i, StateResIdx::RES_TIMESTAMP) = ts.state_timestamps[static_cast<size_t>(i)];
+
+        const size_t lin_base = static_cast<size_t>(i) * lin_res_stride;
+        result.dynamics_residuals(i, StateResIdx::RES_POS_X) = raw_residuals[lin_base + 0];
+        result.dynamics_residuals(i, StateResIdx::RES_POS_Y) = raw_residuals[lin_base + 1];
+        result.dynamics_residuals(i, StateResIdx::RES_POS_Z) = raw_residuals[lin_base + 2];
+        result.dynamics_residuals(i, StateResIdx::RES_VEL_X) = raw_residuals[lin_base + 3];
+        result.dynamics_residuals(i, StateResIdx::RES_VEL_Y) = raw_residuals[lin_base + 4];
+        result.dynamics_residuals(i, StateResIdx::RES_VEL_Z) = raw_residuals[lin_base + 5];
+
+        const size_t ang_base = static_cast<size_t>(num_intervals) * lin_res_stride
+                                + static_cast<size_t>(i) * ang_res_stride;
+        result.dynamics_residuals(i, StateResIdx::RES_ROT_X) = raw_residuals[ang_base + 0];
+        result.dynamics_residuals(i, StateResIdx::RES_ROT_Y) = raw_residuals[ang_base + 1];
+        result.dynamics_residuals(i, StateResIdx::RES_ROT_Z) = raw_residuals[ang_base + 2];
+        if (bias_mode == BIAS_MODE::TV_BIAS) {
+            result.dynamics_residuals(i, StateResIdx::RES_GYRO_BIAS_X) = raw_residuals[ang_base + 3];
+            result.dynamics_residuals(i, StateResIdx::RES_GYRO_BIAS_Y) = raw_residuals[ang_base + 4];
+            result.dynamics_residuals(i, StateResIdx::RES_GYRO_BIAS_Z) = raw_residuals[ang_base + 5];
+        }
+    }
+
+    result.landmark_residuals.resize(M_lm, LandmarkResIdx::LANDMARK_RES_COUNT);
+    const size_t ldmk_base = static_cast<size_t>(num_intervals) * (lin_res_stride + ang_res_stride);
+    for (idx_t i = 0; i < M_lm; ++i) {
+        const size_t base = ldmk_base + static_cast<size_t>(i) * 3;
+        result.landmark_residuals(i, LandmarkResIdx::LANDMARK_RES_X) = raw_residuals[base + 0];
+        result.landmark_residuals(i, LandmarkResIdx::LANDMARK_RES_Y) = raw_residuals[base + 1];
+        result.landmark_residuals(i, LandmarkResIdx::LANDMARK_RES_Z) = raw_residuals[base + 2];
+    }
 
     result.state_estimates = std::move(state_estimates);
     result.code = ErrorCode::OK;

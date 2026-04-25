@@ -219,27 +219,26 @@ int main(int argc, char** argv)
 
     // ── Run batch optimization ────────────────────────────────────────────
     const auto result = solve_ceres_batch_opt(meas, od_config.batch_opt);
+    const int64_t run_end_ms = std::chrono::duration_cast<std::chrono::milliseconds>(
+            std::chrono::system_clock::now().time_since_epoch()).count();
 
     // ── Write od_result.json (always, even on failure) ────────────────────
     {
         nlohmann::json meta;
-        const std::string bias_mode_str =
-            od_config.batch_opt.bias_mode == BIAS_MODE::NO_BIAS  ? "no_bias"  :
-            od_config.batch_opt.bias_mode == BIAS_MODE::FIX_BIAS ? "fix_bias" : "tv_bias";
         meta["dataset_folder"]       = dataset_folder;
         meta["run_unix_ms"]          = run_unix_ms;
+        meta["run_time_ms"]          = run_end_ms - run_unix_ms;
         meta["error_code"]           = static_cast<int>(result.code);
-        meta["bias_mode"]            = bias_mode_str;
+        meta["bias_mode"]            = static_cast<int>(od_config.batch_opt.bias_mode);
         meta["solver"]["termination_type"] = result.solver_summary.termination_type;
         meta["solver"]["num_iterations"]   = result.solver_summary.num_iterations;
         meta["solver"]["initial_cost"]     = result.solver_summary.initial_cost;
         meta["solver"]["final_cost"]       = result.solver_summary.final_cost;
-        meta["solver"]["message"]          = result.solver_summary.message;
         meta["inputs"]["num_landmark_rows"]    = static_cast<int>(lm_rows.size());
         meta["inputs"]["num_landmark_groups"]  = num_groups;
         meta["inputs"]["num_gyro_rows"]        = static_cast<int>(gyro_rows.size());
         meta["outputs"]["num_state_estimates"] = result.state_estimates.rows();
-        meta["outputs"]["covariance_available"] = !result.covariance.empty();
+        meta["outputs"]["covariance_available"] = result.covariance.rows() > 0;
 
         std::ofstream jf(results_dir + "/od_result.json");
         if (jf.is_open()) {
@@ -281,30 +280,64 @@ int main(int argc, char** argv)
     }
 
     // ── Write covariance.csv (omitted if unavailable) ─────────────────────
-    if (!result.covariance.empty()) {
+    if (result.covariance.rows() > 0) {
         std::ofstream f(results_dir + "/covariance.csv");
         if (!f.is_open()) {
             spdlog::warn("Failed to open covariance.csv for writing.");
         } else {
-            f << "covariance_diagonal\n" << std::setprecision(12);
-            for (const double v : result.covariance)
-                f << v << '\n';
-            spdlog::info("Wrote covariance.csv ({} values)", result.covariance.size());
+            f << "timestamp_j2000,pos_cov_x,pos_cov_y,pos_cov_z,"
+                 "vel_cov_x,vel_cov_y,vel_cov_z,"
+                 "rot_cov_x,rot_cov_y,rot_cov_z,"
+                 "gyro_bias_cov_x,gyro_bias_cov_y,gyro_bias_cov_z\n";
+            f << std::setprecision(12);
+            for (idx_t i = 0; i < result.covariance.rows(); ++i) {
+                for (int c = 0; c < StateResIdx::STATE_RES_COUNT; ++c) {
+                    if (c > 0) f << ',';
+                    f << result.covariance(i, c);
+                }
+                f << '\n';
+            }
+            spdlog::info("Wrote covariance.csv ({} rows)", result.covariance.rows());
         }
     } else {
         spdlog::warn("Covariance unavailable — covariance.csv not written.");
     }
 
-    // ── Write residuals.csv ───────────────────────────────────────────────
+    // ── Write dynamics_residuals.csv ──────────────────────────────────────
     {
-        std::ofstream f(results_dir + "/residuals.csv");
+        std::ofstream f(results_dir + "/dynamics_residuals.csv");
         if (!f.is_open()) {
-            spdlog::warn("Failed to open residuals.csv for writing.");
+            spdlog::warn("Failed to open dynamics_residuals.csv for writing.");
         } else {
-            f << "residual\n" << std::setprecision(12);
-            for (const double v : result.residuals)
-                f << v << '\n';
-            spdlog::info("Wrote residuals.csv ({} values)", result.residuals.size());
+            f << "timestamp_j2000,pos_res_x,pos_res_y,pos_res_z,"
+                 "vel_res_x,vel_res_y,vel_res_z,"
+                 "rot_res_x,rot_res_y,rot_res_z,"
+                 "gyro_bias_res_x,gyro_bias_res_y,gyro_bias_res_z\n";
+            f << std::setprecision(12);
+            for (idx_t i = 0; i < result.dynamics_residuals.rows(); ++i) {
+                for (int c = 0; c < StateResIdx::STATE_RES_COUNT; ++c) {
+                    if (c > 0) f << ',';
+                    f << result.dynamics_residuals(i, c);
+                }
+                f << '\n';
+            }
+            spdlog::info("Wrote dynamics_residuals.csv ({} rows)", result.dynamics_residuals.rows());
+        }
+    }
+
+    // ── Write landmark_residuals.csv ───────────────────────────────────────
+    {
+        std::ofstream f(results_dir + "/landmark_residuals.csv");
+        if (!f.is_open()) {
+            spdlog::warn("Failed to open landmark_residuals.csv for writing.");
+        } else {
+            f << "res_x,res_y,res_z\n" << std::setprecision(12);
+            for (idx_t i = 0; i < result.landmark_residuals.rows(); ++i) {
+                f << result.landmark_residuals(i, LandmarkResIdx::LANDMARK_RES_X) << ','
+                  << result.landmark_residuals(i, LandmarkResIdx::LANDMARK_RES_Y) << ','
+                  << result.landmark_residuals(i, LandmarkResIdx::LANDMARK_RES_Z) << '\n';
+            }
+            spdlog::info("Wrote landmark_residuals.csv ({} rows)", result.landmark_residuals.rows());
         }
     }
 

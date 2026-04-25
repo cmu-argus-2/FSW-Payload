@@ -17,7 +17,6 @@ Plots are saved into <results_dir>/plots/.
 """
 import argparse
 import json
-import os
 from pathlib import Path
 
 import h5py
@@ -46,14 +45,20 @@ def load_od_results(results_dir: Path) -> dict:
     cov_path = results_dir / "covariance.csv"
     covariance = np.genfromtxt(cov_path, delimiter=",", skip_header=1) if cov_path.exists() else None
 
-    res_path = results_dir / "residuals.csv"
-    residuals = np.genfromtxt(res_path, delimiter=",", skip_header=1) if res_path.exists() else None
+    dyn_res_path = results_dir / "dynamics_residuals.csv"
+    dynamics_residuals = (np.genfromtxt(dyn_res_path, delimiter=",", skip_header=1)
+                          if dyn_res_path.exists() else None)
+
+    ldmk_res_path = results_dir / "landmark_residuals.csv"
+    landmark_residuals = (np.genfromtxt(ldmk_res_path, delimiter=",", skip_header=1)
+                          if ldmk_res_path.exists() else None)
 
     return {
         "meta": meta,
-        "state_estimates": state_estimates,   # Nx14 array
-        "covariance": covariance,             # 1-D array or None
-        "residuals": residuals,               # 1-D array or None
+        "state_estimates":    state_estimates,    # Nx14 array
+        "covariance":         covariance,         # Nx13 array (StateResIdx columns) or None
+        "dynamics_residuals": dynamics_residuals, # (N-1)x13 array (StateResIdx columns) or None
+        "landmark_residuals": landmark_residuals, # Mx3 array (LandmarkResIdx columns) or None
     }
 
 
@@ -71,165 +76,200 @@ def load_h5(path: Path) -> dict:
     return data
 
 
+J2000_EPOCH_UNIX_S = 946727936.0
+
+
+def load_landmark_timestamps(dataset_dir: Path):
+    """Return landmark timestamps in J2000 seconds from landmark_measurements.csv, or None."""
+    csv = Path(dataset_dir) / "landmark_measurements.csv"
+    if not csv.exists():
+        return None
+    data = np.genfromtxt(csv, delimiter=",", skip_header=1)
+    if data.ndim < 2:
+        return None
+    return data[:, 0] / 1000.0 - J2000_EPOCH_UNIX_S
+
+
 # ── Processing helpers ─────────────────────────────────────────────────────────
 
-def process_covariances(covariances, bias_mode):
-    state_count_with_bias    = 12
-    state_count_without_bias = 9
-    if bias_mode == "no_bias":
-        nsteps = covariances.shape[0] // state_count_without_bias
-        est_covariances = covariances.reshape(-1, nsteps, state_count_without_bias)
-    elif bias_mode == "fix_bias":
-        start    = covariances[:state_count_with_bias]
-        rest     = covariances[state_count_with_bias:]
-        rest_cov = rest.reshape(-1, state_count_without_bias)
-        rest_cov = np.hstack((
-            rest_cov,
-            start[state_count_without_bias:].reshape(1, 3).repeat(rest_cov.shape[0], axis=0)
-        ))
-        est_covariances = np.vstack((start, rest_cov))
-    elif bias_mode == "tv_bias":
-        nsteps = covariances.shape[0] // state_count_with_bias
-        est_covariances = covariances.reshape(-1, nsteps, state_count_with_bias)
-    else:
-        raise ValueError(f"Unknown bias mode: {bias_mode}")
-    return est_covariances
-
-
-def process_residuals(residuals, n_steps, n_ldmks, bias_mode):
-    lindynres = np.zeros((n_steps - 1, 6))
-    for i in range(n_steps - 1):
-        lindynres[i] = residuals[i * 6:(i + 1) * 6]
-    k = (n_steps - 1) * 6
-
-    if bias_mode in ["fix_bias", "no_bias"]:
-        angdynres = np.zeros((n_steps - 1, 3))
-        for i in range(n_steps - 1):
-            angdynres[i] = residuals[k + i * 3:k + (i + 1) * 3]
-        k += (n_steps - 1) * 3
-    elif bias_mode == "tv_bias":
-        angdynres = np.zeros((n_steps - 1, 6))
-        for i in range(n_steps - 1):
-            angdynres[i] = residuals[k + i * 6:k + (i + 1) * 6]
-        k += (n_steps - 1) * 6
-    else:
-        raise ValueError(f"Unknown bias mode: {bias_mode}")
-
-    ldmkmeasres = np.zeros((n_ldmks, 3))
-    for i in range(n_ldmks):
-        ldmkmeasres[i] = residuals[k + i * 3:k + (i + 1) * 3]
-
+def process_residuals(dynamics_residuals, landmark_residuals, bias_mode):
+    # dynamics_residuals columns (StateResIdx): 0=timestamp, 1:4=pos, 4:7=vel, 7:10=rot, 10:13=bias
+    lindynres   = dynamics_residuals[:, 1:7]    # pos + vel
+    angdynres   = (dynamics_residuals[:, 7:13]  # rot + bias (TV_BIAS)
+                   if bias_mode == "tv_bias"
+                   else dynamics_residuals[:, 7:10])  # rot only
+    ldmkmeasres = landmark_residuals[:, :3]
     return lindynres, angdynres, ldmkmeasres
 
 
-# ── Plot functions ─────────────────────────────────────────────────────────────
+# ── State plots ────────────────────────────────────────────────────────────────
 
-def plot_states(true_states, est_states, orbit_measurements, out_dir):
-    true_time   = true_states["unixtime"]
-    est_time    = est_states[:, 0]
-    t0          = true_time[0] if len(true_time) > 0 else 0
-    t_true      = true_time - t0
-    t_est       = est_time - t0
-    colors      = ["C0", "C1"]
+def plot_states(est_states, out_dir, true_states=None, orbit_measurements=None):
+    """Plot state estimates; overlay ground truth when true_states is provided."""
+    have_gt = true_states is not None
+    colors  = ["C0", "C1"]
+
+    if have_gt:
+        t0     = true_states["unixtime"][0] if len(true_states["unixtime"]) > 0 else 0.0
+        t_true = true_states["unixtime"] - t0
+        t_est  = (est_states[:, 0] + J2000_EPOCH_UNIX_S) - t0
+    else:
+        t_est  = est_states[:, 0] - est_states[0, 0]
+
+    def _save(fig, name):
+        plt.tight_layout(); plt.subplots_adjust(top=0.92)
+        plt.savefig(out_dir / name); plt.close()
 
     # Position
-    true_pos = true_states["states"][:, :3]
-    est_pos  = est_states[:, 1:4]
+    est_pos = est_states[:, 1:4]
     fig, axs = plt.subplots(3, 1, sharex=True, figsize=(10, 6))
     for i, ax in enumerate(axs):
-        ax.plot(t_true, true_pos[:, i], label="true", color=colors[0])
-        ax.plot(t_est,  est_pos[:, i],  label="est",  color=colors[1], linestyle="--")
-        ax.set_ylabel(["Position X (km)", "Position Y (km)", "Position Z (km)"][i])
-        ax.grid(True)
-        if i == 0: ax.legend(loc="upper right")
+        if have_gt:
+            ax.plot(t_true, true_states["states"][:, i],  label="true", color=colors[0])
+            ax.plot(t_est,  est_pos[:, i], label="est",  color=colors[1], linestyle="--")
+        else:
+            ax.plot(t_est, est_pos[:, i], color=colors[0])
+        ax.set_ylabel(["Pos X (km)", "Pos Y (km)", "Pos Z (km)"][i]); ax.grid(True)
+        if i == 0 and have_gt: ax.legend(loc="upper right")
     axs[-1].set_xlabel("time (s) since start")
-    fig.suptitle("ECI Position: True vs Estimated")
-    plt.tight_layout(); plt.subplots_adjust(top=0.92)
-    plt.savefig(out_dir / "eci_position_true_vs_estimated.png")
-    plt.close()
+    fig.suptitle("ECI Position: True vs Estimated" if have_gt else "ECI Position Estimate")
+    _save(fig, "eci_position.png")
 
     # Velocity
-    true_vel = true_states["states"][:, 3:6]
-    est_vel  = est_states[:, 4:7]
+    est_vel = est_states[:, 4:7]
     fig, axs = plt.subplots(3, 1, sharex=True, figsize=(10, 6))
     for i, ax in enumerate(axs):
-        ax.plot(t_true, true_vel[:, i], label="true", color=colors[0])
-        ax.plot(t_est,  est_vel[:, i],  label="est",  color=colors[1], linestyle="--")
-        ax.set_ylabel(["Velocity X (km/s)", "Velocity Y (km/s)", "Velocity Z (km/s)"][i])
-        ax.grid(True)
-        if i == 0: ax.legend(loc="upper right")
+        if have_gt:
+            ax.plot(t_true, true_states["states"][:, 3 + i], label="true", color=colors[0])
+            ax.plot(t_est,  est_vel[:, i], label="est",  color=colors[1], linestyle="--")
+        else:
+            ax.plot(t_est, est_vel[:, i], color=colors[0])
+        ax.set_ylabel(["Vel X (km/s)", "Vel Y (km/s)", "Vel Z (km/s)"][i]); ax.grid(True)
+        if i == 0 and have_gt: ax.legend(loc="upper right")
     axs[-1].set_xlabel("time (s) since start")
-    fig.suptitle("ECI Velocity: True vs Estimated")
-    plt.tight_layout(); plt.subplots_adjust(top=0.92)
-    plt.savefig(out_dir / "eci_velocity_true_vs_estimated.png")
-    plt.close()
+    fig.suptitle("ECI Velocity: True vs Estimated" if have_gt else "ECI Velocity Estimate")
+    _save(fig, "eci_velocity.png")
 
-    # Quaternion — est order in CSV: quat_x, quat_y, quat_z, quat_w (cols 7-10)
-    # reorder to [w, x, y, z] for display
-    true_quat = true_states["states"][:, 6:10]
-    true_quat = true_quat * np.sign(true_quat[:, 0:1])
-    est_quat  = est_states[:, [10, 7, 8, 9]]   # [w, x, y, z]
-    est_quat  = est_quat * np.sign(est_quat[:, 0:1])
-    fig, axs  = plt.subplots(4, 1, sharex=True, figsize=(10, 6))
+    # Quaternion — est CSV order: quat_x, quat_y, quat_z, quat_w (cols 7–10)
+    # Reorder to [w, x, y, z] for display; flip sign for consistent hemisphere
+    est_quat = est_states[:, [10, 7, 8, 9]]
+    est_quat = est_quat * np.sign(est_quat[:, 0:1])
+    fig, axs = plt.subplots(4, 1, sharex=True, figsize=(10, 6))
     for i, ax in enumerate(axs):
-        ax.plot(t_true, true_quat[:, i], label="true", color=colors[0])
-        ax.plot(t_est,  est_quat[:, i],  label="est",  color=colors[1], linestyle="--")
-        ax.set_ylabel(["QW", "QX", "QY", "QZ"][i])
-        ax.grid(True)
-        if i == 0: ax.legend(loc="upper right")
+        if have_gt:
+            true_quat = true_states["states"][:, 6:10]
+            true_quat = true_quat * np.sign(true_quat[:, 0:1])
+            ax.plot(t_true, true_quat[:, i], label="true", color=colors[0])
+            ax.plot(t_est,  est_quat[:, i],  label="est",  color=colors[1], linestyle="--")
+        else:
+            ax.plot(t_est, est_quat[:, i], color=colors[0])
+        ax.set_ylabel(["QW", "QX", "QY", "QZ"][i]); ax.grid(True)
+        if i == 0 and have_gt: ax.legend(loc="upper right")
     axs[-1].set_xlabel("time (s) since start")
-    fig.suptitle("Quaternion: True vs Estimated")
-    plt.tight_layout(); plt.subplots_adjust(top=0.92)
-    plt.savefig(out_dir / "quaternion_true_vs_estimated.png")
-    plt.close()
+    fig.suptitle("Quaternion: True vs Estimated" if have_gt else "Quaternion Estimate")
+    _save(fig, "quaternion.png")
 
     # Gyro bias
-    true_bias = true_states["states"][:, 13:16]
-    est_bias  = est_states[:, 11:14]
-    fig, axs  = plt.subplots(3, 1, sharex=True, figsize=(10, 6))
+    est_bias = est_states[:, 11:14]
+    fig, axs = plt.subplots(3, 1, sharex=True, figsize=(10, 6))
     for i, ax in enumerate(axs):
-        ax.plot(t_true, true_bias[:, i], label="true", color=colors[0])
-        ax.plot(t_est,  est_bias[:, i],  label="est",  color=colors[1], linestyle="--")
-        ax.set_ylabel(["Bias X (rad/s)", "Bias Y (rad/s)", "Bias Z (rad/s)"][i])
-        ax.grid(True)
-        if i == 0: ax.legend(loc="upper right")
+        if have_gt:
+            true_bias = true_states["states"][:, 13:16]
+            ax.plot(t_true, true_bias[:, i], label="true", color=colors[0])
+            ax.plot(t_est,  est_bias[:, i],  label="est",  color=colors[1], linestyle="--")
+        else:
+            ax.plot(t_est, est_bias[:, i], color=colors[0])
+        ax.set_ylabel(["Bias X (rad/s)", "Bias Y (rad/s)", "Bias Z (rad/s)"][i]); ax.grid(True)
+        if i == 0 and have_gt: ax.legend(loc="upper right")
     axs[-1].set_xlabel("time (s) since start")
-    fig.suptitle("Gyro Bias: True vs Estimated")
-    plt.tight_layout(); plt.subplots_adjust(top=0.92)
-    plt.savefig(out_dir / "gyro_bias_true_vs_estimated.png")
-    plt.close()
+    fig.suptitle("Gyro Bias: True vs Estimated" if have_gt else "Gyro Bias Estimate")
+    _save(fig, "gyro_bias.png")
 
-    # Angular velocity (gyro measurement minus estimated bias)
-    true_ang_vel = true_states["states"][:, 10:13]
-    gyro_meas    = orbit_measurements["gyro_measurements"][:, 1:4]
-    est_ang_vel  = gyro_meas - est_bias
-    fig, axs     = plt.subplots(3, 1, sharex=True, figsize=(10, 6))
+    # Angular velocity (GT only — requires gyro measurements)
+    if have_gt and orbit_measurements is not None:
+        true_ang_vel = true_states["states"][:, 10:13]
+        gyro_meas    = orbit_measurements["gyro_measurements"][:, 1:4]
+        est_ang_vel  = gyro_meas - est_bias
+        fig, axs     = plt.subplots(3, 1, sharex=True, figsize=(10, 6))
+        for i, ax in enumerate(axs):
+            ax.plot(t_true, true_ang_vel[:, i], label="true", color=colors[0])
+            ax.plot(t_est,  est_ang_vel[:, i],  label="est",  color=colors[1], linestyle="--")
+            ax.set_ylabel(["Omega X (rad/s)", "Omega Y (rad/s)", "Omega Z (rad/s)"][i])
+            ax.grid(True)
+            if i == 0: ax.legend(loc="upper right")
+        axs[-1].set_xlabel("time (s) since start")
+        fig.suptitle("Angular Velocity: True vs Estimated")
+        _save(fig, "angular_velocity.png")
+
+
+def plot_residuals_standalone(dynamics_residuals, landmark_residuals, bias_mode,
+                              ldmk_t, out_dir):
+    t_dyn = dynamics_residuals[:, 0] - dynamics_residuals[0, 0]
+
+    # Linear dynamics residuals (pos + vel)
+    lindynres = dynamics_residuals[:, 1:7]
+    fig, axs = plt.subplots(6, 1, sharex=True, figsize=(10, 8))
+    labels = ["Pos X", "Pos Y", "Pos Z", "Vel X", "Vel Y", "Vel Z"]
     for i, ax in enumerate(axs):
-        ax.plot(t_true, true_ang_vel[:, i], label="true", color=colors[0])
-        ax.plot(t_est,  est_ang_vel[:, i],  label="est",  color=colors[1], linestyle="--")
-        ax.set_ylabel(["Omega X (rad/s)", "Omega Y (rad/s)", "Omega Z (rad/s)"][i])
-        ax.grid(True)
-        if i == 0: ax.legend(loc="upper right")
+        ax.plot(t_dyn, lindynres[:, i], color="C0")
+        ax.axhline(0, color="k", linewidth=0.5)
+        ax.set_ylabel(labels[i]); ax.grid(True)
     axs[-1].set_xlabel("time (s) since start")
-    fig.suptitle("Angular Velocity: True vs Estimated")
+    fig.suptitle("Linear Dynamics Residuals")
     plt.tight_layout(); plt.subplots_adjust(top=0.92)
-    plt.savefig(out_dir / "angular_velocity_true_vs_estimated.png")
-    plt.close()
+    plt.savefig(out_dir / "linear_dynamics_residuals.png"); plt.close()
 
+    # Angular dynamics residuals
+    if bias_mode == "tv_bias":
+        angdynres = dynamics_residuals[:, 7:13]
+        ang_labels = ["Rot X", "Rot Y", "Rot Z", "Bias X", "Bias Y", "Bias Z"]
+    else:
+        angdynres = dynamics_residuals[:, 7:10]
+        ang_labels = ["Rot X", "Rot Y", "Rot Z"]
+    fig, axs = plt.subplots(len(ang_labels), 1, sharex=True, figsize=(10, 6))
+    axs = np.atleast_1d(axs)
+    for i, ax in enumerate(axs):
+        ax.plot(t_dyn, angdynres[:, i], color="C0")
+        ax.axhline(0, color="k", linewidth=0.5)
+        ax.set_ylabel(ang_labels[i]); ax.grid(True)
+    axs[-1].set_xlabel("time (s) since start")
+    fig.suptitle("Angular Dynamics Residuals")
+    plt.tight_layout(); plt.subplots_adjust(top=0.92)
+    plt.savefig(out_dir / "angular_dynamics_residuals.png"); plt.close()
+
+    # Landmark measurement residuals
+    if ldmk_t is not None:
+        t_ldmk = ldmk_t - ldmk_t[0]
+        xlabel = "time (s) since start"
+    else:
+        t_ldmk = np.arange(landmark_residuals.shape[0])
+        xlabel = "measurement index"
+    fig, axs = plt.subplots(3, 1, sharex=True, figsize=(10, 6))
+    for i, ax in enumerate(axs):
+        ax.plot(t_ldmk, landmark_residuals[:, i],
+                linestyle="None", marker=".", color="C0")
+        ax.axhline(0, color="k", linewidth=0.5)
+        ax.set_ylabel(["Res X", "Res Y", "Res Z"][i]); ax.grid(True)
+    axs[-1].set_xlabel(xlabel)
+    fig.suptitle("Landmark Measurement Residuals")
+    plt.tight_layout(); plt.subplots_adjust(top=0.92)
+    plt.savefig(out_dir / "landmark_residuals.png"); plt.close()
+
+
+# ── Comparison plots (ground truth required) ───────────────────────────────────
 
 def plot_errors(true_states, est_states, est_covars, bias_mode, out_dir):
-    true_time = true_states["unixtime"]
-    est_time  = est_states[:, 0]
+    true_time = true_states["unixtime"]                                # Unix seconds
     t0        = true_time[0] if len(true_time) > 0 else 0
     t_true    = true_time - t0
-    t_est     = est_time - t0
+    t_est     = (est_states[:, 0] + J2000_EPOCH_UNIX_S) - t0          # J2000 → Unix → relative
     colors    = ["C0", "C1"]
 
     # Position error
     true_pos           = true_states["states"][:, :3]
     est_pos            = est_states[:, 1:4]
     true_pos_at_est    = np.zeros(est_pos.shape)
-    est_covars_pos     = np.sqrt(est_covars[:, :3])
+    est_covars_pos     = np.sqrt(est_covars[:, 1:4])
     for i in range(3):
         true_pos_at_est[:, i] = np.interp(t_est, t_true, true_pos[:, i])
     fig, axs = plt.subplots(3, 1, sharex=True, figsize=(10, 6))
@@ -247,7 +287,7 @@ def plot_errors(true_states, est_states, est_covars, bias_mode, out_dir):
     plt.close()
 
     pos_norm           = np.linalg.norm(true_pos_at_est - est_pos, axis=1)
-    est_covars_pos_norm = np.sqrt(est_covars[:, :3].sum(axis=1))
+    est_covars_pos_norm = np.sqrt(est_covars[:, 1:4].sum(axis=1))
     fig, ax = plt.subplots(figsize=(10, 4))
     ax.plot(t_est, pos_norm, label="Position Error Norm", color="C0")
     ax.fill_between(t_est, np.zeros_like(t_est), 3 * est_covars_pos_norm,
@@ -262,7 +302,7 @@ def plot_errors(true_states, est_states, est_covars, bias_mode, out_dir):
     true_vel        = true_states["states"][:, 3:6]
     est_vel         = est_states[:, 4:7]
     true_vel_at_est = np.zeros(est_vel.shape)
-    vel_covar       = np.sqrt(est_covars[:, 3:6])
+    vel_covar       = np.sqrt(est_covars[:, 4:7])
     for i in range(3):
         true_vel_at_est[:, i] = np.interp(t_est, t_true, true_vel[:, i])
     fig, axs = plt.subplots(3, 1, sharex=True, figsize=(10, 6))
@@ -280,7 +320,7 @@ def plot_errors(true_states, est_states, est_covars, bias_mode, out_dir):
     plt.close()
 
     vel_norm            = np.linalg.norm(true_vel_at_est - est_vel, axis=1)
-    est_covars_vel_norm = np.sqrt(est_covars[:, 3:6].sum(axis=1))
+    est_covars_vel_norm = np.sqrt(est_covars[:, 4:7].sum(axis=1))
     fig, ax = plt.subplots(figsize=(10, 4))
     ax.plot(t_est, vel_norm, label="Velocity Error Norm", color="C0")
     ax.fill_between(t_est, np.zeros_like(t_est), 3 * est_covars_vel_norm,
@@ -311,7 +351,7 @@ def plot_errors(true_states, est_states, est_covars, bias_mode, out_dir):
     plt.savefig(out_dir / "quaternion_four_error.png")
     plt.close()
 
-    att_covar        = np.rad2deg(np.sqrt(est_covars[:, 6:9]))
+    att_covar        = np.rad2deg(np.sqrt(est_covars[:, 7:10]))
     angle_errors     = np.zeros((est_quat.shape[0], 3))
     angle_error_norm = np.zeros(est_quat.shape[0])
     att_norm_std     = np.linalg.norm(att_covar, axis=1)
@@ -353,7 +393,7 @@ def plot_errors(true_states, est_states, est_covars, bias_mode, out_dir):
     for i in range(3):
         true_bias_at_est[:, i] = np.interp(t_est, t_true, true_bias[:, i])
     gyro_bias_covar = (np.zeros(est_bias.shape) if bias_mode == "no_bias"
-                       else np.sqrt(est_covars[:, 9:12]))
+                       else np.sqrt(est_covars[:, 10:13]))
     fig, axs = plt.subplots(3, 1, sharex=True, figsize=(10, 6))
     for i, ax in enumerate(axs):
         ax.plot(t_est, true_bias_at_est[:, i] - est_bias[:, i], label="error", color=colors[0])
@@ -368,7 +408,7 @@ def plot_errors(true_states, est_states, est_covars, bias_mode, out_dir):
     plt.close()
 
     gyro_bias_norm           = np.linalg.norm(true_bias_at_est - est_bias, axis=1)
-    est_covars_gyro_bias_norm = np.sqrt(est_covars[:, 9:12].sum(axis=1))
+    est_covars_gyro_bias_norm = np.sqrt(est_covars[:, 10:13].sum(axis=1))
     fig, ax = plt.subplots(figsize=(10, 4))
     ax.plot(t_est, gyro_bias_norm, label="Gyro Bias Error Norm", color="C0")
     ax.fill_between(t_est, np.zeros_like(t_est), 3 * est_covars_gyro_bias_norm,
@@ -414,12 +454,11 @@ def plot_measurements(measurements, ground_truth_states, est_states, ldmkmeasres
     plt.close()
 
 
-def plot_residuals(lindynres, angdynres, ldmkmeasres, measurements, est_states,
+def plot_residuals(lindynres, angdynres, ldmkmeasres, ldmk_t, est_states,
                    true_states, bias_mode, out_dir):
-    true_time = true_states["unixtime"]
-    est_time  = est_states[:, 0]
+    true_time = true_states["unixtime"]                                # Unix seconds
     t0        = true_time[0] if len(true_time) > 0 else 0
-    t_est     = est_time - t0
+    t_est     = (est_states[:, 0] + J2000_EPOCH_UNIX_S) - t0          # J2000 -> Unix -> relative
     colors    = ["C0", "C1"]
 
     fig, axs = plt.subplots(6, 1, sharex=True, figsize=(10, 6))
@@ -434,7 +473,7 @@ def plot_residuals(lindynres, angdynres, ldmkmeasres, measurements, est_states,
     axs[-1].set_xlabel("time step")
     fig.suptitle("Linear Dynamics Residuals")
     plt.tight_layout(); plt.subplots_adjust(top=0.92)
-    plt.savefig(out_dir / "linear_dynamics_residuals.png")
+    plt.savefig(out_dir / "linear_dynamics_residuals_gt.png")
     plt.close()
 
     n_angdyn = 3 if bias_mode in ["fix_bias", "no_bias"] else 6
@@ -449,14 +488,18 @@ def plot_residuals(lindynres, angdynres, ldmkmeasres, measurements, est_states,
                         color="C0", alpha=0.3, label="3-sigma")
         ax.set_ylabel(labels[i]); ax.grid(True)
         if i == 0: ax.legend(loc="upper right")
-    axs[-1].set_xlabel("time step")
+    axs[-1].set_xlabel("time (s) since start")
     fig.suptitle("Angular Dynamics Residuals")
     plt.tight_layout(); plt.subplots_adjust(top=0.92)
-    plt.savefig(out_dir / "angular_dynamics_residuals.png")
+    plt.savefig(out_dir / "angular_dynamics_residuals_gt.png")
     plt.close()
 
-    landmark_meas = measurements["landmark_measurements"]
-    t_landmark    = landmark_meas[:, 0] - t0
+    if ldmk_t is not None:
+        t_landmark = (ldmk_t + J2000_EPOCH_UNIX_S) - t0   # J2000 -> Unix -> relative
+        xlabel_ldmk = "time (s) since start"
+    else:
+        t_landmark  = np.arange(ldmkmeasres.shape[0], dtype=float)
+        xlabel_ldmk = "measurement index"
     fig, axs = plt.subplots(3, 1, sharex=True, figsize=(10, 6))
     for i, ax in enumerate(axs):
         ax.plot(t_landmark, ldmkmeasres[:, i], label="residual",
@@ -464,10 +507,10 @@ def plot_residuals(lindynres, angdynres, ldmkmeasres, measurements, est_states,
         ax.fill_between(t_landmark, -3, 3, color="C0", alpha=0.3, label="3-sigma")
         ax.set_ylabel(["Ldmk Meas Res X", "Ldmk Meas Res Y", "Ldmk Meas Res Z"][i]); ax.grid(True)
         if i == 0: ax.legend(loc="upper right")
-    axs[-1].set_xlabel("time step")
+    axs[-1].set_xlabel(xlabel_ldmk)
     fig.suptitle("Landmark Measurement Residuals")
     plt.tight_layout(); plt.subplots_adjust(top=0.92)
-    plt.savefig(out_dir / "landmark_measurement_residuals.png")
+    plt.savefig(out_dir / "landmark_measurement_residuals_gt.png")
     plt.close()
 
 
@@ -489,9 +532,10 @@ if __name__ == "__main__":
     od = load_od_results(results_dir)
     meta        = od["meta"]
     est_states  = od["state_estimates"]
-    covariance  = od["covariance"]
-    residuals   = od["residuals"]
-    bias_mode   = meta.get("bias_mode", "fix_bias")
+    covariance         = od["covariance"]
+    dynamics_residuals = od["dynamics_residuals"]
+    landmark_residuals = od["landmark_residuals"]
+    bias_mode          = meta.get("bias_mode", "fix_bias")
 
     print(f"Loaded OD results from {results_dir}")
     print(f"  error_code : {meta.get('error_code')}")
@@ -524,29 +568,32 @@ if __name__ == "__main__":
         print("Ground truth / measurements not found — skipping comparison plots.")
 
     # Residual decomposition
-    if residuals is not None and have_gt:
-        n_steps  = est_states.shape[0]
-        n_ldmks  = measurements["landmark_measurements"].shape[0]
+    if dynamics_residuals is not None and landmark_residuals is not None:
         lindynres, angdynres, ldmkmeasres = process_residuals(
-            residuals, n_steps, n_ldmks, bias_mode)
+            dynamics_residuals, landmark_residuals, bias_mode)
     else:
         lindynres = angdynres = ldmkmeasres = None
 
-    # Covariance processing
-    if covariance is not None:
-        est_covars = process_covariances(covariance, bias_mode)
-        est_covars = np.squeeze(est_covars)
-    else:
-        est_covars = None
-        print("Covariance unavailable — skipping error-bound plots.")
+    # Covariance is already Nx13 structured (StateResIdx columns)
+    est_covars = covariance
 
+    ldmk_t = load_landmark_timestamps(dataset_dir)
+
+    # ── State estimate plots (always; overlaid with GT when available) ───────────
+    plot_states(est_states, out_dir,
+                true_states=ground_truth if have_gt else None,
+                orbit_measurements=measurements if have_gt else None)
+    if dynamics_residuals is not None and landmark_residuals is not None:
+        plot_residuals_standalone(dynamics_residuals, landmark_residuals,
+                                  bias_mode, ldmk_t, out_dir)
+
+    # ── Comparison plots (simulation ground truth only) ───────────────────────
     if have_gt:
-        plot_states(ground_truth, est_states, measurements, out_dir)
         if est_covars is not None:
             plot_errors(ground_truth, est_states, est_covars, bias_mode, out_dir)
         plot_measurements(measurements, ground_truth, est_states, ldmkmeasres, out_dir)
         if ldmkmeasres is not None:
             plot_residuals(lindynres, angdynres, ldmkmeasres,
-                           measurements, est_states, ground_truth, bias_mode, out_dir)
+                           ldmk_t, est_states, ground_truth, bias_mode, out_dir)
 
     print("Done.")

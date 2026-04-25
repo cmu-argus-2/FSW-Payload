@@ -5,6 +5,7 @@ add_library(navigation
     od_alg.cpp
     od_measurements.cpp
     batch_optimization.cpp
+    trajectory_initializer.cpp
     pose_dynamics.cpp
     quaternion.cpp
     utils.cpp

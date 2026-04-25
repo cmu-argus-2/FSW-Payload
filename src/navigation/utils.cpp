@@ -6,12 +6,12 @@
 #include <cmath>
 using namespace Eigen;
 // seconds elapsed between the Unix and J2000 epoch
-static constexpr int64_t J2000epochInUnixTime = 946727936;
+static constexpr double J2000epochInUnixTime = 946727936.0;
 
 // Astronomical Unit [m]
 static constexpr double ASTRONOMICAL_UNIT = 149597870700;
 
-int64_t unixToJ2000(int64_t unixSeconds) {
+double unixToJ2000(double unixSeconds) {
     return unixSeconds - J2000epochInUnixTime;
 }
 

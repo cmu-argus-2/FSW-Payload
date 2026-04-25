@@ -257,6 +257,29 @@ int main(int argc, char** argv)
 
     spdlog::info("Optimization complete: {} state estimates", result.state_estimates.rows());
 
+    // ── Write initial_trajectory.csv ─────────────────────────────────────
+    {
+        const std::string path = results_dir + "/initial_trajectory.csv";
+        std::ofstream f(path);
+        if (!f.is_open()) {
+            spdlog::warn("Failed to open initial_trajectory.csv for writing.");
+        } else {
+            f << "timestamp_j2000,pos_x_km,pos_y_km,pos_z_km,"
+                 "vel_x_kms,vel_y_kms,vel_z_kms,"
+                 "quat_x,quat_y,quat_z,quat_w,"
+                 "gyro_bias_x_rads,gyro_bias_y_rads,gyro_bias_z_rads\n";
+            f << std::setprecision(12);
+            for (idx_t i = 0; i < result.initial_trajectory.rows(); ++i) {
+                for (int c = 0; c < StateEstimateIdx::STATE_ESTIMATE_COUNT; ++c) {
+                    if (c > 0) f << ',';
+                    f << result.initial_trajectory(i, c);
+                }
+                f << '\n';
+            }
+            spdlog::info("Wrote initial_trajectory.csv ({} rows)", result.initial_trajectory.rows());
+        }
+    }
+
     // ── Write state_estimates.csv ─────────────────────────────────────────
     {
         std::ofstream f(results_dir + "/state_estimates.csv");

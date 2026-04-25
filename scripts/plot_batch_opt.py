@@ -536,6 +536,8 @@ if __name__ == "__main__":
     dynamics_residuals = od["dynamics_residuals"]
     landmark_residuals = od["landmark_residuals"]
     bias_mode          = meta.get("bias_mode", "fix_bias")
+    if isinstance(bias_mode, int):
+        bias_mode = {0: "no_bias", 1: "fix_bias", 2: "tv_bias"}.get(bias_mode, "fix_bias")
 
     print(f"Loaded OD results from {results_dir}")
     print(f"  error_code : {meta.get('error_code')}")

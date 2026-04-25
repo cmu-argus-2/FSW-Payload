@@ -86,6 +86,7 @@ struct SolverSummaryInfo {
 
 struct BatchOptResult {
     ErrorCode              code = ErrorCode::OK;
+    StateEstimates         initial_trajectory;  // Nx14 pre-solve initial guess
     StateEstimates         state_estimates;
     ResidualsOrCovariances covariance;          // Nx13 per StateResIdx; 0 rows if unavailable
     DynamicsResiduals      dynamics_residuals;  // (N-1)x13 per StateResIdx

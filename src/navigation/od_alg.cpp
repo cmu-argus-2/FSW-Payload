@@ -264,8 +264,7 @@ bool OD::DatasetPrepare(const std::string& dataset_folder,
             continue;
         }
 
-        const double t_j2000 = static_cast<double>(ts_ms) / 1000.0
-                               - static_cast<double>(J2000_EPOCH_UNIX_S);
+        const double t_j2000 = unixToJ2000(static_cast<double>(ts_ms) / 1000.0);
         
         if (!j.contains("inference_results") || !j.at("inference_results").is_object()) {
             SPDLOG_WARN("DatasetPrepare: inference_results missing or not an object in {}", fpath.string());
@@ -311,7 +310,7 @@ bool OD::DatasetPrepare(const std::string& dataset_folder,
                 const double lon_rad = rows[class_id].first  * DEG_TO_RAD;
                 const double lat_rad = rows[class_id].second * DEG_TO_RAD;
                 const Eigen::Vector3d eci_km =
-                    LAT2ECI(Eigen::Vector3d(0.0, lon_rad, lat_rad), t_j2000, false);
+                    LAT2ECI(Eigen::Vector3d(0.0, lon_rad, lat_rad), t_j2000, true);
 
                 // Per-landmark uncertainty: 3σ = half the smaller bbox side → σ = min(h,w)/(6f)
                 const double sigma =

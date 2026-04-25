@@ -7,12 +7,15 @@
 #include <mutex>
 #include <memory>
 #include <tuple>
+#include <optional>
 
 #include <opencv2/opencv.hpp>
 
 #include <vision/regions.hpp>
 #include <vision/ld.hpp>
+#include <vision/prefiltering.hpp>
 #include <nlohmann/json.hpp>
+#include "inference/inference_results.hpp"
 using Json = nlohmann::json;
 
 
@@ -104,22 +107,39 @@ public:
     nlohmann::ordered_json toOrderedJson() const;
     void fromJson(const Json& j);
 
+    // Inference results — set atomically by InferenceManager
+    const std::optional<InferenceResults>& GetInferenceResults() const;
+    void SetInferenceResults(InferenceResults results);
+    void ClearInferenceResults();
+
+    // Convenience accessors — forward into InferenceResults; return empty if absent
     const std::vector<Region>& GetRegions() const;
     const std::vector<RegionID> GetRegionIDs() const;
     const std::vector<float> GetRegionConfidences() const;
     const std::vector<Landmark>& GetLandmarks() const;
-    
-    void AddRegion(const Region& region);
-    void AddRegion(RegionID region_id, float confidence);
-    void ClearRegions();
-    void AddLandmark(const Landmark& landmark); 
-    void AddLandmark(float x, float y, uint16_t class_id, RegionID region_id, float height_, float width_, float confidence_);
-    void ClearLandmarks();
+    const std::optional<PrefilterResult>& GetPrefilterResult() const;
+
     void RunPrefiltering();
+
+    // Resets the full processing pipeline: clears inference results, prefilter result,
+    // and stage back to NotPrefiltered so the frame can be run through the pipeline again.
+    void ResetProcessing();
+
+    // Returns true if the frame should be run through the processing pipeline up to
+    // target_stage. Same conditions always reuse; different conditions defer to overwrite.
+    bool ShouldReprocess(ProcessingStage target, bool overwrite,
+                         int rc_version, int ld_version,
+                         const LDNetConfig& ldnet_config) const;
+
+    bool HasRegion()   const { return _annotation_state >= ImageState::HasRegion; }
+    bool HasLandmark() const { return _annotation_state >= ImageState::HasLandmark; }
 
     bool IsBlurred();
 
 private:
+    void UpdateRank();
+    void UpdateAnnotationState();
+
     int _cam_id;
     cv::Mat _img;
     std::uint64_t _timestamp;
@@ -127,8 +147,8 @@ private:
     ImageState _annotation_state;
     float _rank; // score to rank images with the same annotation_state (higher = better)
     ProcessingStage _processing_stage;
-    std::vector<Region> _regions;  // Container for regions
-    std::vector<Landmark> _landmarks;  // Container for landmarks
+    std::optional<InferenceResults> _inference_results;
+    std::optional<PrefilterResult> _prefilter_result;
 
     // mutex is not copyable
     std::shared_ptr<std::mutex> _img_mtx; // using shared_ptr for copyability (private anyway)

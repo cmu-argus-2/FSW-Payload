@@ -37,7 +37,10 @@ else()
     set(PAYLOAD_SPDLOG_TARGET spdlog::spdlog)
 endif()
 find_package(Eigen3 3.3 REQUIRED NO_MODULE)
-include_directories(${EIGEN_INCLUDE_DIR})
+# Eigen3::Eigen (config mode) sets INTERFACE_INCLUDE_DIRECTORIES to the eigen3/ prefix.
+# Registering it globally lets Ceres headers use the non-prefixed <Eigen/Core> form.
+get_target_property(_eigen3_inc Eigen3::Eigen INTERFACE_INCLUDE_DIRECTORIES)
+include_directories(${_eigen3_inc})
 link_directories(${EIGEN_LIBRARY_DIRS})
 find_package(Ceres 2.2.0 REQUIRED)
 find_package(OpenCV REQUIRED COMPONENTS core dnn imgcodecs imgproc highgui)
@@ -76,6 +79,8 @@ endif()
 # Add the source files subdirectory
 set(CMAKE_POSITION_INDEPENDENT_CODE ON)
 add_subdirectory(src)
+# Add the dependencies subdirectory
+add_subdirectory(deps)
 
 
 ##### MAIN FLIGHT SOFTWARE PROCESS
@@ -124,18 +129,20 @@ else()
     message(FATAL_ERROR "Readline library not found. Please install libreadline-dev.")
 endif()
 
-##### IMU
-
-add_executable(imu_run src/imu/run_imu.cpp)
-target_link_libraries(imu_run PRIVATE PAYLOAD_LIB)
-
 ##### TESTS
 
 option(BUILD_TESTS "Build tests" ON)
 
 if(BUILD_TESTS)
-    enable_testing()    
-    find_package(GTest REQUIRED)
+    enable_testing()
+    include(FetchContent)
+    FetchContent_Declare(
+        googletest
+        SOURCE_DIR ${CMAKE_SOURCE_DIR}/deps/googletest
+    )
+    set(INSTALL_GTEST OFF CACHE BOOL "" FORCE)
+    set(BUILD_GMOCK   OFF CACHE BOOL "" FORCE)
+    FetchContent_MakeAvailable(googletest)
     add_subdirectory(tests)
 endif()
 

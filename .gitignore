@@ -35,6 +35,12 @@
 
 #### PYTHON
 
+# python payload stuff
+src/python_payload/scripts/laptop_server.py
+src/python_payload/scripts/remote_upload.sh
+# this is something that i am using for development to make it easier to update the code on the jetson
+src/python_payload/main.py
+
 # Byte-compiled / optimized / DLL files
 __pycache__/
 *.py[cod]
@@ -230,7 +236,10 @@ data/
 bin/
 logs/
 
-# ignore install folder
-deps/
+# ignore build artifacts inside dep submodules (source trees are tracked as submodules)
+deps/spdlog/build/
+deps/HighFive-src/build/
+deps/ceres-solver/build/
+deps/googletest/build/
 
 workspace/

@@ -1,0 +1,15 @@
+capture_start_time = 0 # if less than curr time, it starts immediately
+
+maximum_period = 60 # sec
+
+target_frame_nb = 24 # < 255
+
+dataset_capture_mode = 2 # PERIODIC
+
+imu_collection_mode = 1
+
+image_capture_rate = 10
+
+imu_sample_rate_hz = 1.0
+
+target_processing_stage = 0

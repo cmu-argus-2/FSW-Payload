@@ -17,6 +17,7 @@
 #include "communication/named_pipe.hpp"
 #include "communication/uart.hpp"
 #include "telemetry/telemetry.hpp"
+#include "inference/inference_manager.hpp"
 
 enum class PayloadState : uint8_t {
     STARTUP = 0x00,
@@ -50,8 +51,8 @@ public:
     const TX_Queue& GetTxQueue() const; 
     TX_Queue& GetTxQueue(); 
 
-    const CameraManager& GetCameraManager() const; 
-    CameraManager& GetCameraManager(); 
+    const CameraManager& GetCameraManager() const;
+    CameraManager& GetCameraManager();
 
     const Telemetry& GetTelemetry() const;
     Telemetry& GetTelemetry();
@@ -61,6 +62,9 @@ public:
 
     const IMUManager& GetIMUManager() const;
     IMUManager& GetIMUManager();
+
+    const InferenceManager& GetInferenceManager() const;
+    InferenceManager& GetInferenceManager();
 
     size_t GetNbTasksInExecution();
 
@@ -98,6 +102,9 @@ private:
     std::thread communication_thread;
     void StartCommunicationThread();
     void StopCommunicationThread();
+
+    // Inference interface (no dedicated thread — synchronous, mutex-protected)
+    InferenceManager inference_manager;
 
     // Camera interface
     CameraManager camera_manager;
@@ -142,6 +149,7 @@ namespace sys
     inline IMUManager& imuManager() { return payload().GetIMUManager(); }
     inline OD& od() { return payload().GetOD(); }
     inline Telemetry& telemetry() { return payload().GetTelemetry(); }
+    inline InferenceManager& inferenceManager() { return payload().GetInferenceManager(); }
 }
 
 

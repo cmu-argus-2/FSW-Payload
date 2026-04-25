@@ -10,13 +10,12 @@
 // Expose private members intentionally so we can verify setter side-effects
 // and directly unit-test RCPreprocessImg / LDPreprocessImg.
 #define private public
-#include <inference/orchestrator.hpp>
+#include <inference/inference_manager.hpp>
+#include <inference/runtimes.hpp>  // full LDNet/RCNet definitions for member access
 #undef private
 
 #include <NvInfer.h>
 #include <opencv2/opencv.hpp>
-
-using namespace Inference;
 
 // ============================================================
 // Helpers
@@ -37,12 +36,12 @@ static nvinfer1::Dims MakeDims(std::initializer_list<int64_t> sizes)
 }
 
 // ============================================================
-// Fixture shared by all Orchestrator tests
+// Fixture shared by all InferenceManager tests
 // ============================================================
 
 class OrchestratorTest : public ::testing::Test {
 protected:
-    Orchestrator orc;
+    InferenceManager im;
 };
 
 // ============================================================
@@ -52,6 +51,7 @@ protected:
 struct LDNetConfigCase {
     NET_QUANTIZATION quant;
     int width;
+    int height;
     bool embedded_nms;
     bool use_trt;
     std::string_view expected;
@@ -62,16 +62,19 @@ class LDNetConfigTest : public ::testing::TestWithParam<LDNetConfigCase> {};
 TEST_P(LDNetConfigTest, GetFileNameAppendix)
 {
     auto& p = GetParam();
-    LDNetConfig cfg{p.quant, p.width, p.width, p.embedded_nms, p.use_trt};
+    LDNetConfig cfg{p.quant, p.width, p.height, p.embedded_nms, p.use_trt};
     EXPECT_EQ(cfg.GetFileNameAppendix(), p.expected);
 }
 
 INSTANTIATE_TEST_SUITE_P(NNetConfiguration, LDNetConfigTest, ::testing::Values(
-    LDNetConfigCase{NET_QUANTIZATION::FP16, 4608, false, true,  "_weights_fp16_sz_4608.trt"},
-    LDNetConfigCase{NET_QUANTIZATION::FP32, 4608, false, false, "_weights_fp32_sz_4608.onnx"},
-    LDNetConfigCase{NET_QUANTIZATION::INT8, 4608, true,  true,  "_weights_int8_sz_4608_nms.trt"},
-    LDNetConfigCase{NET_QUANTIZATION::FP16, 4608, true,  false, "_weights_fp16_sz_4608_nms.onnx"},
-    LDNetConfigCase{NET_QUANTIZATION::FP32, 1024, false, false, "_weights_fp32_sz_1024.onnx"}
+    // Square inputs (single-number size token)
+    LDNetConfigCase{NET_QUANTIZATION::FP16, 4608, 4608, false, true,  "_weights_fp16_sz_4608.trt"},
+    LDNetConfigCase{NET_QUANTIZATION::FP32, 4608, 4608, false, false, "_weights_fp32_sz_4608.onnx"},
+    LDNetConfigCase{NET_QUANTIZATION::INT8, 4608, 4608, true,  true,  "_weights_int8_sz_4608_nms.trt"},
+    LDNetConfigCase{NET_QUANTIZATION::FP16, 4608, 4608, true,  false, "_weights_fp16_sz_4608_nms.onnx"},
+    LDNetConfigCase{NET_QUANTIZATION::FP32, 1024, 1024, false, false, "_weights_fp32_sz_1024.onnx"},
+    // Non-square input (HxW size token)
+    LDNetConfigCase{NET_QUANTIZATION::FP16, 4608, 2592, false, true,  "_weights_fp16_sz_2592x4608.trt"}
 ));
 
 // ============================================================
@@ -92,7 +95,7 @@ TEST_P(GetMemorySizeTest, ComputesCorrectly)
     nvinfer1::Dims dims{};
     dims.nbDims = static_cast<int>(p.dims_vec.size());
     for (int i = 0; i < dims.nbDims; i++) dims.d[i] = p.dims_vec[i];
-    EXPECT_EQ(Orchestrator::GetMemorySize(dims, p.element_size), p.expected);
+    EXPECT_EQ(InferenceManager::GetMemorySize(dims, p.element_size), p.expected);
 }
 
 INSTANTIATE_TEST_SUITE_P(NNetConfiguration, GetMemorySizeTest, ::testing::Values(
@@ -108,7 +111,7 @@ INSTANTIATE_TEST_SUITE_P(NNetConfiguration, GetMemorySizeTest, ::testing::Values
 TEST(NNetConfiguration, GetMemorySize_DynamicDim_ReturnsZero)
 {
     nvinfer1::Dims dims = MakeDims({1, 3, -1, -1}); // e.g. dynamic H×W
-    EXPECT_EQ(Orchestrator::GetMemorySize(dims, sizeof(float)), 0UL);
+    EXPECT_EQ(InferenceManager::GetMemorySize(dims, sizeof(float)), 0UL);
 }
 
 // ============================================================
@@ -117,14 +120,14 @@ TEST(NNetConfiguration, GetMemorySize_DynamicDim_ReturnsZero)
 
 TEST_F(OrchestratorTest, SetPreloadRCEngine_UpdatesFlag)
 {
-    orc.SetPreloadRCEngine(true);  EXPECT_TRUE(orc.preload_rc_engine_);
-    orc.SetPreloadRCEngine(false); EXPECT_FALSE(orc.preload_rc_engine_);
+    im.SetPreloadRCEngine(true);  EXPECT_TRUE(im.preload_rc_engine_);
+    im.SetPreloadRCEngine(false); EXPECT_FALSE(im.preload_rc_engine_);
 }
 
 TEST_F(OrchestratorTest, SetPreloadLDEngines_UpdatesFlag)
 {
-    orc.SetPreloadLDEngines(true);  EXPECT_TRUE(orc.preload_ld_engines_);
-    orc.SetPreloadLDEngines(false); EXPECT_FALSE(orc.preload_ld_engines_);
+    im.SetPreloadLDEngines(true);  EXPECT_TRUE(im.preload_ld_engines_);
+    im.SetPreloadLDEngines(false); EXPECT_FALSE(im.preload_ld_engines_);
 }
 
 // ============================================================
@@ -133,23 +136,175 @@ TEST_F(OrchestratorTest, SetPreloadLDEngines_UpdatesFlag)
 
 TEST_F(OrchestratorTest, SetRCNetEnginePath_InvalidPath_Rejected)
 {
-    std::string original = orc.rc_engine_path_;
-    EXPECT_EQ(orc.SetRCNetEnginePath("/bad/path/engine.trt"), EC::FILE_DOES_NOT_EXIST);
-    EXPECT_EQ(orc.rc_engine_path_, original);
+    std::string original_path    = im.rc_engine_path_;
+    int         original_version = im.rc_version_;
+    EXPECT_EQ(im.SetRCNetEnginePath("/bad/path/engine.trt"), EC::FILE_DOES_NOT_EXIST);
+    EXPECT_EQ(im.rc_engine_path_, original_path);
+    EXPECT_EQ(im.rc_version_,     original_version);
 }
 
 TEST_F(OrchestratorTest, SetRCNetEnginePath_EmptyPath_Rejected)
 {
-    std::string original = orc.rc_engine_path_;
-    EXPECT_EQ(orc.SetRCNetEnginePath(""), EC::FILE_DOES_NOT_EXIST);
-    EXPECT_EQ(orc.rc_engine_path_, original);
+    std::string original_path    = im.rc_engine_path_;
+    int         original_version = im.rc_version_;
+    EXPECT_EQ(im.SetRCNetEnginePath(""), EC::FILE_DOES_NOT_EXIST);
+    EXPECT_EQ(im.rc_engine_path_, original_path);
+    EXPECT_EQ(im.rc_version_,     original_version);
 }
 
 TEST_F(OrchestratorTest, SetLDNetEngineFolderPath_InvalidPath_Rejected)
 {
-    std::string original = orc.ld_engine_folder_path_;
-    EXPECT_EQ(orc.SetLDNetEngineFolderPath("/bad/folder"), EC::FILE_DOES_NOT_EXIST);
-    EXPECT_EQ(orc.ld_engine_folder_path_, original);
+    std::string original_path    = im.ld_engine_folder_path_;
+    int         original_version = im.ld_version_;
+    EXPECT_EQ(im.SetLDNetEngineFolderPath("/bad/folder"), EC::FILE_DOES_NOT_EXIST);
+    EXPECT_EQ(im.ld_engine_folder_path_, original_path);
+    EXPECT_EQ(im.ld_version_,            original_version);
+}
+
+
+// --- SetRCNetEnginePath / SetLDNetEngineFolderPath: version parsing on success ---
+
+// When the path follows the standard convention the version int is parsed from it.
+TEST_F(OrchestratorTest, SetRCNetEnginePath_StandardPath_ParsesVersion)
+{
+    const std::string v3_path = Inference::RCEnginePath(3);
+    if (!std::filesystem::exists(v3_path))
+        GTEST_SKIP() << "RC V3 engine not present: " << v3_path;
+    EXPECT_EQ(im.SetRCNetEnginePath(v3_path), EC::OK);
+    EXPECT_EQ(im.rc_version_, 3);
+}
+
+TEST_F(OrchestratorTest, SetLDNetEngineFolderPath_StandardPath_ParsesVersion)
+{
+    const std::string v3_path = Inference::LDFolderPath(3);
+    if (!std::filesystem::exists(v3_path))
+        GTEST_SKIP() << "LD V3 folder not present: " << v3_path;
+    EXPECT_EQ(im.SetLDNetEngineFolderPath(v3_path), EC::OK);
+    EXPECT_EQ(im.ld_version_, 3);
+}
+
+// When a valid but non-standard path is set, the version is reset to the sentinel -1.
+TEST_F(OrchestratorTest, SetRCNetEnginePath_NonStandardPath_SetsVersionSentinel)
+{
+    // Create a temporary file so the filesystem check passes.
+    const std::string tmp = "/tmp/custom_rc_engine.trt";
+    std::ofstream(tmp).close();
+
+    ASSERT_EQ(im.SetRCNetEnginePath(tmp), EC::OK);
+    EXPECT_EQ(im.rc_version_, -1);
+
+    std::filesystem::remove(tmp);
+}
+
+TEST_F(OrchestratorTest, SetLDNetEngineFolderPath_NonStandardPath_SetsVersionSentinel)
+{
+    const std::string tmp = "/tmp/custom_ld_folder";
+    std::filesystem::create_directory(tmp);
+
+    ASSERT_EQ(im.SetLDNetEngineFolderPath(tmp), EC::OK);
+    EXPECT_EQ(im.ld_version_, -1);
+
+    std::filesystem::remove(tmp);
+}
+
+TEST_F(OrchestratorTest, DefaultRCPath_IsVersion2)
+{
+    EXPECT_EQ(im.rc_engine_path_, Inference::RCEnginePath(2));
+}
+
+TEST_F(OrchestratorTest, DefaultLDPath_IsVersion2)
+{
+    EXPECT_EQ(im.ld_engine_folder_path_, Inference::LDFolderPath(2));
+}
+
+TEST_F(OrchestratorTest, DefaultRCVersion_Is2)
+{
+    EXPECT_EQ(im.rc_version_, 2);
+}
+
+TEST_F(OrchestratorTest, DefaultLDVersion_Is2)
+{
+    EXPECT_EQ(im.ld_version_, 2);
+}
+
+// --- Zero / negative versions must be rejected before any filesystem access ---
+
+TEST_F(OrchestratorTest, SetRCNetVersion_ZeroVersion_Rejected)
+{
+    std::string original_path = im.rc_engine_path_;
+    int original_version      = im.rc_version_;
+    EXPECT_EQ(im.SetRCNetVersion(0), EC::NN_INVALID_VERSION);
+    EXPECT_EQ(im.rc_engine_path_, original_path);
+    EXPECT_EQ(im.rc_version_,     original_version);
+}
+
+TEST_F(OrchestratorTest, SetRCNetVersion_NegativeVersion_Rejected)
+{
+    std::string original_path = im.rc_engine_path_;
+    int original_version      = im.rc_version_;
+    EXPECT_EQ(im.SetRCNetVersion(-5), EC::NN_INVALID_VERSION);
+    EXPECT_EQ(im.rc_engine_path_, original_path);
+    EXPECT_EQ(im.rc_version_,     original_version);
+}
+
+TEST_F(OrchestratorTest, SetLDNetVersion_ZeroVersion_Rejected)
+{
+    std::string original_path = im.ld_engine_folder_path_;
+    int original_version      = im.ld_version_;
+    EXPECT_EQ(im.SetLDNetVersion(0), EC::NN_INVALID_VERSION);
+    EXPECT_EQ(im.ld_engine_folder_path_, original_path);
+    EXPECT_EQ(im.ld_version_,           original_version);
+}
+
+TEST_F(OrchestratorTest, SetLDNetVersion_NegativeVersion_Rejected)
+{
+    std::string original_path = im.ld_engine_folder_path_;
+    int original_version      = im.ld_version_;
+    EXPECT_EQ(im.SetLDNetVersion(-1), EC::NN_INVALID_VERSION);
+    EXPECT_EQ(im.ld_engine_folder_path_, original_path);
+    EXPECT_EQ(im.ld_version_,           original_version);
+}
+
+// --- Non-existent version: path must not change AND version int must not change ---
+
+TEST_F(OrchestratorTest, SetRCNetVersion_InvalidVersion_Rejected)
+{
+    std::string original_path = im.rc_engine_path_;
+    int original_version      = im.rc_version_;
+    EXPECT_EQ(im.SetRCNetVersion(99), EC::FILE_DOES_NOT_EXIST);
+    EXPECT_EQ(im.rc_engine_path_, original_path);
+    EXPECT_EQ(im.rc_version_,     original_version);
+}
+
+TEST_F(OrchestratorTest, SetLDNetVersion_InvalidVersion_Rejected)
+{
+    std::string original_path = im.ld_engine_folder_path_;
+    int original_version      = im.ld_version_;
+    EXPECT_EQ(im.SetLDNetVersion(99), EC::FILE_DOES_NOT_EXIST);
+    EXPECT_EQ(im.ld_engine_folder_path_, original_path);
+    EXPECT_EQ(im.ld_version_,           original_version);
+}
+
+// --- Valid version: both path and version int must update (skipped if files absent) ---
+
+TEST_F(OrchestratorTest, SetRCNetVersion_ValidVersion_UpdatesPath)
+{
+    const std::string v2_path = std::string(MODELS_DIR) + "/trained-rc/V2/rc_model_weights.trt";
+    if (!std::filesystem::exists(v2_path))
+        GTEST_SKIP() << "RC V2 not yet using standard naming: " << v2_path;
+    EXPECT_EQ(im.SetRCNetVersion(2), EC::OK);
+    EXPECT_EQ(im.rc_engine_path_, Inference::RCEnginePath(2));
+    EXPECT_EQ(im.rc_version_, 2);
+}
+
+TEST_F(OrchestratorTest, SetLDNetVersion_ValidVersion_UpdatesPath)
+{
+    const std::string v2_path = std::string(MODELS_DIR) + "/trained-ld/V2";
+    if (!std::filesystem::exists(v2_path))
+        GTEST_SKIP() << "LD V2 folder not found: " << v2_path;
+    EXPECT_EQ(im.SetLDNetVersion(2), EC::OK);
+    EXPECT_EQ(im.ld_engine_folder_path_, Inference::LDFolderPath(2));
+    EXPECT_EQ(im.ld_version_, 2);
 }
 
 // ============================================================
@@ -158,22 +313,23 @@ TEST_F(OrchestratorTest, SetLDNetEngineFolderPath_InvalidPath_Rejected)
 
 TEST_F(OrchestratorTest, SetLDNetConfig_AllFieldsUpdated)
 {
-    orc.SetLDNetConfig(NET_QUANTIZATION::INT8, 1024, 768, true, false);
-    EXPECT_EQ(orc.ldnet_config.weight_quant, NET_QUANTIZATION::INT8);
-    EXPECT_EQ(orc.ldnet_config.input_width,  1024);
-    EXPECT_EQ(orc.ldnet_config.input_height, 768);
-    EXPECT_TRUE(orc.ldnet_config.embedded_nms);
-    EXPECT_FALSE(orc.ldnet_config.use_trt);
+    // ONNX models use square inputs, so width == height → single-number size token.
+    im.SetLDNetConfig(NET_QUANTIZATION::INT8, 1024, 1024, true, false);
+    EXPECT_EQ(im.ldnet_config_.weight_quant, NET_QUANTIZATION::INT8);
+    EXPECT_EQ(im.ldnet_config_.input_width,  1024);
+    EXPECT_EQ(im.ldnet_config_.input_height, 1024);
+    EXPECT_TRUE(im.ldnet_config_.embedded_nms);
+    EXPECT_FALSE(im.ldnet_config_.use_trt);
     // Cross-check via appendix so the struct is actually being used correctly
-    EXPECT_EQ(orc.ldnet_config.GetFileNameAppendix(), "_weights_int8_sz_1024_nms.onnx");
+    EXPECT_EQ(im.ldnet_config_.GetFileNameAppendix(), "_weights_int8_sz_1024_nms.onnx");
 }
 
 TEST_F(OrchestratorTest, SetLDNetConfig_CanBeOverwritten)
 {
-    orc.SetLDNetConfig(NET_QUANTIZATION::FP16, 4608, 2592, false, true);
-    orc.SetLDNetConfig(NET_QUANTIZATION::FP32, 2048, 2048, true,  false);
-    EXPECT_EQ(orc.ldnet_config.weight_quant, NET_QUANTIZATION::FP32);
-    EXPECT_EQ(orc.ldnet_config.input_width,  2048);
+    im.SetLDNetConfig(NET_QUANTIZATION::FP16, 4608, 2592, false, true);
+    im.SetLDNetConfig(NET_QUANTIZATION::FP32, 2048, 2048, true,  false);
+    EXPECT_EQ(im.ldnet_config_.weight_quant, NET_QUANTIZATION::FP32);
+    EXPECT_EQ(im.ldnet_config_.input_width,  2048);
 }
 
 // ============================================================
@@ -182,28 +338,28 @@ TEST_F(OrchestratorTest, SetLDNetConfig_CanBeOverwritten)
 
 TEST_F(OrchestratorTest, GrabNewImage_NullFrame_IsNoOp)
 {
-    EXPECT_NO_FATAL_FAILURE(orc.GrabNewImage(nullptr));
-    EXPECT_EQ(orc.original_frame_, nullptr);
+    EXPECT_NO_FATAL_FAILURE(im.GrabNewImage(nullptr));
+    EXPECT_EQ(im.current_frame_, nullptr);
 }
 
 TEST_F(OrchestratorTest, GrabNewImage_ValidFrame_SetsPointerAndResetsCounters)
 {
-    orc.num_rc_inferences_on_current_frame_ = 5;
-    orc.num_ld_inferences_on_current_frame_ = 3;
+    im.num_rc_inferences_on_current_frame_ = 5;
+    im.num_ld_inferences_on_current_frame_ = 3;
     auto frame = MakeSyntheticFrame();
-    orc.GrabNewImage(frame);
+    im.GrabNewImage(frame);
 
-    EXPECT_EQ(orc.original_frame_, frame);
-    EXPECT_EQ(orc.num_rc_inferences_on_current_frame_, 0);
-    EXPECT_EQ(orc.num_ld_inferences_on_current_frame_, 0);
+    EXPECT_EQ(im.current_frame_, frame);
+    EXPECT_EQ(im.num_rc_inferences_on_current_frame_, 0);
+    EXPECT_EQ(im.num_ld_inferences_on_current_frame_, 0);
 }
 
 TEST_F(OrchestratorTest, GrabNewImage_SuccessiveCallsReplaceFrame)
 {
-    orc.GrabNewImage(MakeSyntheticFrame(320, 240));
+    im.GrabNewImage(MakeSyntheticFrame(320, 240));
     auto frame2 = MakeSyntheticFrame(640, 480);
-    orc.GrabNewImage(frame2);
-    EXPECT_EQ(orc.original_frame_, frame2);
+    im.GrabNewImage(frame2);
+    EXPECT_EQ(im.current_frame_, frame2);
 }
 
 // ============================================================
@@ -212,7 +368,7 @@ TEST_F(OrchestratorTest, GrabNewImage_SuccessiveCallsReplaceFrame)
 
 TEST_F(OrchestratorTest, ExecRCInference_NoFrame_ReturnsNoFrameError)
 {
-    EXPECT_EQ(orc.ExecRCInference(), EC::NN_NO_FRAME_AVAILABLE);
+    EXPECT_EQ(im.ExecRCInference(), EC::NN_NO_FRAME_AVAILABLE);
 }
 
 // Both preload modes should end in NN_FAILED_TO_OPEN_ENGINE_FILE when the engine file is absent.
@@ -221,22 +377,22 @@ TEST_F(OrchestratorTest, ExecRCInference_NoFrame_ReturnsNoFrameError)
 // unload it and redirect rc_engine_path_ to a non-existent file via the private member.
 TEST_F(OrchestratorTest, ExecRCInference_EngineAbsent_PreloadOn_ReturnsFailedToOpenEngine)
 {
-    orc.FreeRCNet();
-    orc.rc_engine_path_ = "/nonexistent/path.trt"; // bypass filesystem-validated setter
-    orc.SetPreloadRCEngine(true);
-    orc.GrabNewImage(MakeSyntheticFrame());
+    im.FreeRCNet();
+    im.rc_engine_path_ = "/nonexistent/path.trt"; // bypass filesystem-validated setter
+    im.SetPreloadRCEngine(true);
+    im.GrabNewImage(MakeSyntheticFrame());
     // preload=true but engine absent → load attempt fails to open file
-    EXPECT_EQ(orc.ExecRCInference(), EC::NN_FAILED_TO_OPEN_ENGINE_FILE);
+    EXPECT_EQ(im.ExecRCInference(), EC::NN_FAILED_TO_OPEN_ENGINE_FILE);
 }
 
 TEST_F(OrchestratorTest, ExecRCInference_EngineAbsent_PreloadOff_ReturnsFailedToOpenEngine)
 {
-    orc.FreeRCNet();
-    orc.rc_engine_path_ = "/nonexistent/path.trt"; // bypass filesystem-validated setter
-    orc.SetPreloadRCEngine(false);
-    orc.GrabNewImage(MakeSyntheticFrame());
+    im.FreeRCNet();
+    im.rc_engine_path_ = "/nonexistent/path.trt"; // bypass filesystem-validated setter
+    im.SetPreloadRCEngine(false);
+    im.GrabNewImage(MakeSyntheticFrame());
     // preload=off and engine absent → load attempt fails to open file
-    EXPECT_EQ(orc.ExecRCInference(), EC::NN_FAILED_TO_OPEN_ENGINE_FILE);
+    EXPECT_EQ(im.ExecRCInference(), EC::NN_FAILED_TO_OPEN_ENGINE_FILE);
 }
 
 // ============================================================
@@ -245,19 +401,19 @@ TEST_F(OrchestratorTest, ExecRCInference_EngineAbsent_PreloadOff_ReturnsFailedTo
 
 TEST_F(OrchestratorTest, ExecLDInference_NoFrame_ReturnsNoFrameError)
 {
-    EXPECT_EQ(orc.ExecLDInference(), EC::NN_NO_FRAME_AVAILABLE);
+    EXPECT_EQ(im.ExecLDInference(), EC::NN_NO_FRAME_AVAILABLE);
 }
 
 TEST_F(OrchestratorTest, ExecLDInference_FrameWithNoRegions_ReturnsOK)
 {
     // Frame has no RC detections → LD short-circuits cleanly
-    orc.GrabNewImage(MakeSyntheticFrame());
-    EXPECT_EQ(orc.ExecLDInference(), EC::OK);
+    im.GrabNewImage(MakeSyntheticFrame());
+    EXPECT_EQ(im.ExecLDInference(), EC::OK);
 }
 
 TEST_F(OrchestratorTest, ExecFullInference_NoFrame_ReturnsNoFrameError)
 {
-    EXPECT_EQ(orc.ExecFullInference(), EC::NN_NO_FRAME_AVAILABLE);
+    EXPECT_EQ(im.ExecFullInference(), EC::NN_NO_FRAME_AVAILABLE);
 }
 
 // ============================================================
@@ -266,16 +422,16 @@ TEST_F(OrchestratorTest, ExecFullInference_NoFrame_ReturnsNoFrameError)
 
 TEST_F(OrchestratorTest, FreeAll_DoesNotCrash)
 {
-    EXPECT_NO_FATAL_FAILURE(orc.FreeEngines());
-    EXPECT_NO_FATAL_FAILURE(orc.FreeRCNet());
-    EXPECT_NO_FATAL_FAILURE(orc.FreeLDNets());
-    EXPECT_NO_FATAL_FAILURE(orc.FreeEngines()); // double-free safe
+    EXPECT_NO_FATAL_FAILURE(im.FreeEngines());
+    EXPECT_NO_FATAL_FAILURE(im.FreeRCNet());
+    EXPECT_NO_FATAL_FAILURE(im.FreeLDNets());
+    EXPECT_NO_FATAL_FAILURE(im.FreeEngines()); // double-free safe
 }
 
 TEST_F(OrchestratorTest, FreeLDNetForRegion_RegionNotInMap_DoesNotCrash)
 {
     // ld_nets_ is empty (no model folder found) — must be a silent no-op
-    EXPECT_NO_FATAL_FAILURE(orc.FreeLDNetForRegion(RegionID::R_17T));
+    EXPECT_NO_FATAL_FAILURE(im.FreeLDNetForRegion(RegionID::R_17T));
 }
 
 // ============================================================
@@ -285,14 +441,14 @@ TEST_F(OrchestratorTest, FreeLDNetForRegion_RegionNotInMap_DoesNotCrash)
 TEST_F(OrchestratorTest, RCPreprocessImg_EmptyImage_OutputReleased)
 {
     cv::Mat output(10, 10, CV_32F, cv::Scalar(1.0f));
-    orc.RCPreprocessImg(cv::Mat{}, output);
+    im.RCPreprocessImg(cv::Mat{}, output);
     EXPECT_TRUE(output.empty());
 }
 
 TEST_F(OrchestratorTest, RCPreprocessImg_ValidBGR_ProducesCorrectBlob)
 {
     cv::Mat output;
-    orc.RCPreprocessImg(cv::Mat(480, 640, CV_8UC3, cv::Scalar(100, 150, 200)), output);
+    im.RCPreprocessImg(cv::Mat(480, 640, CV_8UC3, cv::Scalar(100, 150, 200)), output);
     EXPECT_FALSE(output.empty());
     EXPECT_EQ(output.depth(), CV_32F);
     EXPECT_EQ(output.total(), 1UL * 3 * 224 * 224); // NCHW blob
@@ -301,7 +457,7 @@ TEST_F(OrchestratorTest, RCPreprocessImg_ValidBGR_ProducesCorrectBlob)
 TEST_F(OrchestratorTest, RCPreprocessImg_ValuesAreImageNetNormalised)
 {
     cv::Mat output;
-    orc.RCPreprocessImg(cv::Mat(224, 224, CV_8UC3, cv::Scalar(128, 128, 128)), output);
+    im.RCPreprocessImg(cv::Mat(224, 224, CV_8UC3, cv::Scalar(128, 128, 128)), output);
     // blobFromImageWithParams produces a 4D array (1×3×H×W); minMaxLoc only accepts ≤2D.
     // Use minMaxIdx which works on N-dimensional arrays.
     double min_val, max_val;
@@ -318,7 +474,7 @@ TEST_P(RCPreprocessSrcSizeTest, AlwaysOutputs224x224)
 {
     auto [w, h] = GetParam();
     cv::Mat output;
-    orc.RCPreprocessImg(cv::Mat(h, w, CV_8UC3, cv::Scalar(50, 100, 200)), output);
+    im.RCPreprocessImg(cv::Mat(h, w, CV_8UC3, cv::Scalar(50, 100, 200)), output);
     EXPECT_EQ(output.total(), 1UL * 3 * 224 * 224) << "Source: " << w << "x" << h;
 }
 
@@ -335,7 +491,7 @@ INSTANTIATE_TEST_SUITE_P(NNetConfiguration, RCPreprocessSrcSizeTest, ::testing::
 TEST_F(OrchestratorTest, LDPreprocessImg_ValuesNormalisedTo0_1)
 {
     cv::Mat output;
-    orc.LDPreprocessImg(cv::Mat(256, 256, CV_8UC3, cv::Scalar(255, 255, 255)), output, 256, 256);
+    im.LDPreprocessImg(cv::Mat(256, 256, CV_8UC3, cv::Scalar(255, 255, 255)), output, 256, 256);
     // Same issue as RC: blob is 4D, use minMaxIdx instead of minMaxLoc.
     double min_val, max_val;
     cv::minMaxIdx(output, &min_val, &max_val);
@@ -353,7 +509,7 @@ TEST_P(LDPreprocessTargetTest, OutputMatchesTargetDimensions)
 {
     auto& p = GetParam();
     cv::Mat output;
-    orc.LDPreprocessImg(cv::Mat(p.src_h, p.src_w, CV_8UC3, cv::Scalar(50, 100, 150)), output, p.tgt_w, p.tgt_h);
+    im.LDPreprocessImg(cv::Mat(p.src_h, p.src_w, CV_8UC3, cv::Scalar(50, 100, 150)), output, p.tgt_w, p.tgt_h);
     EXPECT_EQ(output.depth(), CV_32F);
     EXPECT_EQ(output.total(), static_cast<size_t>(1 * 3 * p.tgt_h * p.tgt_w));
 }
@@ -391,22 +547,22 @@ TEST_F(OrchestratorTest, SetLDNetConfig_Reinit_NoGPUMemoryLeak)
 
     // Load a single region engine — sufficient to detect a leak without
     // risking OOM from loading the full fleet.
-    if (orc.ld_nets_.empty())
+    if (im.ld_nets_.empty())
     {
         GTEST_SKIP() << "No LDNet runtimes initialised (missing model assets). Skipping.";
     }
-    RegionID test_region = orc.ld_nets_.begin()->first;
-    ASSERT_EQ(orc.LoadLDNetEngineForRegion(test_region), EC::OK);
+    RegionID test_region = im.ld_nets_.begin()->first;
+    ASSERT_EQ(im.LoadLDNetEngineForRegion(test_region), EC::OK);
 
     size_t free_before, free_after;
     cudaMemGetInfo(&free_before, &total);
 
     // Changing config must free the loaded engine before rebuilding.
-    orc.SetLDNetConfig(orc.ldnet_config.weight_quant,
-                       orc.ldnet_config.input_width,
-                       orc.ldnet_config.input_height,
-                       orc.ldnet_config.embedded_nms,
-                       orc.ldnet_config.use_trt);
+    im.SetLDNetConfig(im.ldnet_config_.weight_quant,
+                       im.ldnet_config_.input_width,
+                       im.ldnet_config_.input_height,
+                       im.ldnet_config_.embedded_nms,
+                       im.ldnet_config_.use_trt);
 
     cudaMemGetInfo(&free_after, &total);
 
@@ -430,18 +586,18 @@ TEST_F(OrchestratorTest, SetLDNetConfig_Reinit_NoGPUMemoryLeak)
 
 TEST_F(OrchestratorTest, LoadEngine_InsufficientGPUMemory_ReturnsError)
 {
-    if (orc.ld_nets_.empty())
+    if (im.ld_nets_.empty())
         GTEST_SKIP() << "No LDNet runtimes available (missing model assets).";
 
-    RegionID region = orc.ld_nets_.begin()->first;
+    RegionID region = im.ld_nets_.begin()->first;
     // Force the guard to fire: require SIZE_MAX/2 bytes beyond the 2.5x estimate.
     // The check is overflow-safe, so this always exceeds real free memory.
-    orc.ld_nets_[region]->gpu_reserve_bytes_ = SIZE_MAX / 2;
+    im.ld_nets_[region]->gpu_reserve_bytes_ = SIZE_MAX / 2;
 
-    EXPECT_EQ(orc.LoadLDNetEngineForRegion(region), EC::NN_INSUFFICIENT_GPU_MEMORY);
-    EXPECT_FALSE(orc.ld_nets_[region]->IsInitialized()); // no engine was loaded
+    EXPECT_EQ(im.LoadLDNetEngineForRegion(region), EC::NN_INSUFFICIENT_GPU_MEMORY);
+    EXPECT_FALSE(im.ld_nets_[region]->IsInitialized()); // no engine was loaded
 
-    orc.ld_nets_[region]->gpu_reserve_bytes_ = 0; // restore
+    im.ld_nets_[region]->gpu_reserve_bytes_ = 0; // restore
 }
 
 TEST_F(OrchestratorTest, EnsureScratchBuffers_InsufficientGPUMemory_ReturnsError)
@@ -452,34 +608,112 @@ TEST_F(OrchestratorTest, EnsureScratchBuffers_InsufficientGPUMemory_ReturnsError
     cudaMemGetInfo(&gpu_free, &gpu_total);
     if (gpu_free < kMinFree)
         GTEST_SKIP() << "Only " << (gpu_free >> 20) << " MiB GPU free — need 128 MiB to load one engine.";
-    if (orc.ld_nets_.empty())
+    if (im.ld_nets_.empty())
         GTEST_SKIP() << "No LDNet runtimes available (missing model assets).";
 
-    RegionID region = orc.ld_nets_.begin()->first;
-    ASSERT_EQ(orc.LoadLDNetEngineForRegion(region), EC::OK);
+    RegionID region = im.ld_nets_.begin()->first;
+    ASSERT_EQ(im.LoadLDNetEngineForRegion(region), EC::OK);
 
-    orc.ld_nets_[region]->gpu_reserve_bytes_ = SIZE_MAX / 2;
-    EXPECT_EQ(orc.ld_nets_[region]->EnsureScratchBuffers(), EC::NN_INSUFFICIENT_GPU_MEMORY);
+    im.ld_nets_[region]->gpu_reserve_bytes_ = SIZE_MAX / 2;
+    EXPECT_EQ(im.ld_nets_[region]->EnsureScratchBuffers(), EC::NN_INSUFFICIENT_GPU_MEMORY);
 
-    orc.ld_nets_[region]->gpu_reserve_bytes_ = 0;
-    orc.FreeLDNetForRegion(region);
+    im.ld_nets_[region]->gpu_reserve_bytes_ = 0;
+    im.FreeLDNetForRegion(region);
 }
 
 TEST_F(OrchestratorTest, LoadLDNetEngines_LowMemory_StopsBeforeFirstLoad)
 {
     // Drive the between-load threshold above any realistic free memory so
     // LoadLDNetEngines() halts immediately without touching the GPU.
-    orc.min_gpu_free_between_loads_ = SIZE_MAX / 2;
-    orc.SetPreloadLDEngines(true);
-    orc.LoadLDNetEngines();
+    im.min_gpu_free_between_loads_ = SIZE_MAX / 2;
+    im.SetPreloadLDEngines(true);
+    im.LoadLDNetEngines();
 
-    for (const auto& [region_id, ld_net] : orc.ld_nets_)
+    for (const auto& [region_id, ld_net] : im.ld_nets_)
     {
         EXPECT_FALSE(ld_net->IsInitialized())
             << "Region " << GetRegionString(region_id) << " should not be loaded under simulated low GPU memory.";
     }
 
-    orc.min_gpu_free_between_loads_ = 256ULL * 1024 * 1024; // restore
+    im.min_gpu_free_between_loads_ = 256ULL * 1024 * 1024; // restore
+}
+
+// ============================================================
+// Frame InferenceResults API
+// ============================================================
+
+TEST(FrameInferenceResultsTest, Default_NoResults)
+{
+    Frame f;
+    EXPECT_FALSE(f.GetInferenceResults().has_value());
+    EXPECT_TRUE(f.GetRegions().empty());
+    EXPECT_TRUE(f.GetLandmarks().empty());
+    EXPECT_TRUE(f.GetRegionIDs().empty());
+}
+
+TEST(FrameInferenceResultsTest, SetResults_StoredCorrectly)
+{
+    Frame f;
+    InferenceResults r;
+    r.rc_version = 2;
+    r.ld_version = 3;
+    r.regions.emplace_back(RegionID::R_10S, 0.9f);
+    f.SetInferenceResults(r);
+
+    ASSERT_TRUE(f.GetInferenceResults().has_value());
+    EXPECT_EQ(f.GetInferenceResults()->rc_version, 2);
+    EXPECT_EQ(f.GetInferenceResults()->ld_version, 3);
+    ASSERT_EQ(f.GetRegions().size(), 1u);
+    EXPECT_EQ(f.GetRegionIDs().front(), RegionID::R_10S);
+    EXPECT_NEAR(f.GetRegionConfidences().front(), 0.9f, 1e-5f);
+}
+
+TEST(FrameInferenceResultsTest, SetResults_WithLandmarks)
+{
+    Frame f;
+    InferenceResults r;
+    r.rc_version = 2;
+    r.ld_version = 2;
+    r.regions.emplace_back(RegionID::R_17R, 0.85f);
+    r.landmarks.emplace_back(100.0f, 200.0f, uint16_t{1}, RegionID::R_17R, 50.0f, 30.0f, 0.95f);
+    f.SetInferenceResults(r);
+
+    ASSERT_TRUE(f.GetInferenceResults().has_value());
+    EXPECT_EQ(f.GetLandmarks().size(), 1u);
+    EXPECT_NEAR(f.GetLandmarks().front().confidence, 0.95f, 1e-5f);
+}
+
+TEST(FrameInferenceResultsTest, ClearResults_RemovesData)
+{
+    Frame f;
+    InferenceResults r;
+    r.rc_version = 1;
+    r.regions.emplace_back(RegionID::R_17R, 0.8f);
+    f.SetInferenceResults(r);
+
+    f.ClearInferenceResults();
+
+    EXPECT_FALSE(f.GetInferenceResults().has_value());
+    EXPECT_TRUE(f.GetRegions().empty());
+    EXPECT_TRUE(f.GetLandmarks().empty());
+}
+
+TEST(FrameInferenceResultsTest, SetResults_OverwritesPrevious)
+{
+    Frame f;
+    InferenceResults r1;
+    r1.rc_version = 1;
+    r1.regions.emplace_back(RegionID::R_10S, 0.7f);
+    f.SetInferenceResults(r1);
+
+    InferenceResults r2;
+    r2.rc_version = 2;
+    r2.regions.emplace_back(RegionID::R_17T, 0.9f);
+    f.SetInferenceResults(r2);
+
+    ASSERT_TRUE(f.GetInferenceResults().has_value());
+    EXPECT_EQ(f.GetInferenceResults()->rc_version, 2);
+    EXPECT_EQ(f.GetRegionIDs().front(), RegionID::R_17T);
 }
 
 // ============================================================
@@ -647,27 +881,31 @@ static void WriteInferenceReport(const std::map<std::string, RegionTestResult>& 
     spdlog::info("Inference test report written to: {}", path);
 }
 
-// Collect one labeled .png per region from the sample_images folder.
+// Collect one labeled image per region from the sample_images folder.
+// Expected naming: l8_{regionstr}_{imageid}.jpg or .png with a matching .txt label.
 // Called once at link-time via ValuesIn(); returns empty when assets absent.
 static std::vector<SampleImageCase> CollectSampleCases()
 {
     std::vector<SampleImageCase> result;
-    const fs::path sample_dir = fs::path(MODELS_DIR) / "V1" / "sample_images";
+    const fs::path sample_dir = fs::path(MODELS_DIR) / "sample_images";
     if (!fs::exists(sample_dir)) return result;
 
     for (RegionID rid : GetAllRegionIDs())
     {
         const std::string region_str = std::string(GetRegionString(rid));
-        const std::string prefix = "l8_" + region_str + "_";
-        for (const auto& entry : fs::directory_iterator(sample_dir))
+        const fs::path region_dir = sample_dir / region_str;
+        if (!fs::exists(region_dir) || !fs::is_directory(region_dir)) continue;
+        const std::string expected_prefix = "l8_" + region_str + "_";
+        for (const auto& entry : fs::directory_iterator(region_dir))
         {
             if (!entry.is_regular_file()) continue;
+            const auto ext = entry.path().extension();
+            if (ext != ".jpg" && ext != ".png") continue;
             const std::string fname = entry.path().filename().string();
-            if (fname.compare(0, prefix.size(), prefix) != 0) continue;
-            if (entry.path().extension() != ".png") continue;
+            if (fname.rfind(expected_prefix, 0) != 0) continue;
             fs::path txt = entry.path();
             txt.replace_extension(".txt");
-            if (!fs::exists(txt)) continue;
+            if (!fs::exists(txt) || fs::file_size(txt) == 0) continue;
             result.push_back({region_str, entry.path().string(), txt.string()});
             break; // one labeled example per region is sufficient
         }
@@ -687,21 +925,31 @@ static float ComputeIoU(const cv::Rect& a, const cv::Rect& b)
 class InferenceIntegrationTest : public ::testing::TestWithParam<SampleImageCase>
 {
 protected:
-    // One Orchestrator for the entire suite — avoids repeated TRT context
-    static Orchestrator* orc_;
+    // One InferenceManager for the entire suite — avoids repeated TRT context
+    static InferenceManager* orc_;
     static std::map<std::string, RegionTestResult> results_;
 
     static void SetUpTestSuite()
     {
         const std::string models = MODELS_DIR;
-        orc_ = new Orchestrator();
-        if (orc_->SetRCNetEnginePath(models + "/V1/trained-rc/effnet_0997acc.trt") != EC::OK)
+        orc_ = new InferenceManager();
+
+        // Find the RC V2 TRT engine regardless of filename (standard name is
+        // rc_model_weights.trt; legacy builds may still use effnet_0997acc.trt).
+        fs::path rc_engine;
+        const fs::path rc_dir = fs::path(models) / "trained-rc" / "V2";
+        if (fs::exists(rc_dir)) {
+            for (const auto& e : fs::directory_iterator(rc_dir)) {
+                if (e.path().extension() == ".trt") { rc_engine = e.path(); break; }
+            }
+        }
+        if (rc_engine.empty() || orc_->SetRCNetEnginePath(rc_engine.string()) != EC::OK)
         {
             delete orc_;
             orc_ = nullptr;
             return;
         }
-        orc_->SetLDNetEngineFolderPath(models + "/V1/trained-ld");
+        orc_->SetLDNetEngineFolderPath(models + "/trained-ld/V2");
     }
 
     static void TearDownTestSuite()
@@ -712,7 +960,7 @@ protected:
     }
 };
 
-Orchestrator* InferenceIntegrationTest::orc_ = nullptr;
+InferenceManager* InferenceIntegrationTest::orc_ = nullptr;
 std::map<std::string, RegionTestResult> InferenceIntegrationTest::results_;
 
 TEST_P(InferenceIntegrationTest, FullInference_DetectsRegionAndTruePositiveLandmarks)
@@ -728,9 +976,9 @@ TEST_P(InferenceIntegrationTest, FullInference_DetectsRegionAndTruePositiveLandm
     }
 
     // Guard: TRT FP16 engine exists for this region
-    const std::string engine_path = std::string(MODELS_DIR) + "/V1/trained-ld/"
+    const std::string engine_path = std::string(MODELS_DIR) + "/trained-ld/V2/"
                                   + p.region_str + "/" + p.region_str
-                                  + "_weights_fp16_sz_4608.trt";
+                                  + "_weights_fp16_sz_2592x4608.trt";
     if (!fs::exists(engine_path)) {
         result.status = RegionTestResult::Status::SKIP;
         result.skip_reason = "TRT engine not found: " + engine_path;
@@ -751,10 +999,9 @@ TEST_P(InferenceIntegrationTest, FullInference_DetectsRegionAndTruePositiveLandm
     cudaDeviceSynchronize();
 
     auto frame_ptr = std::make_shared<Frame>(0, img, 0ULL);
-    orc_->GrabNewImage(frame_ptr);
 
     {
-        const EC infer_status = orc_->ExecFullInference();
+        const EC infer_status = orc_->ProcessFrame(frame_ptr, ProcessingStage::LDNeted);
         if (infer_status == EC::NN_INSUFFICIENT_GPU_MEMORY) {
             result.status = RegionTestResult::Status::SKIP;
             result.skip_reason = "Insufficient GPU memory";

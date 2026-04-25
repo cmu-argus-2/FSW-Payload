@@ -12,83 +12,147 @@
 #include <vector>
 
 
-// Interpolate/extrapolate position from sparse keyframes {t, pos}.
-static Eigen::Vector3d interp_kf(
-        const std::vector<std::pair<double, Eigen::Vector3d>>& kf,
-        double t)
+struct PoseKeyframe {
+    double             t;
+    Eigen::Vector3d    pos;
+    Eigen::Quaterniond quat;
+};
+
+// Linear interpolation/extrapolation of position between keyframes.
+static Eigen::Vector3d interp_kf(const std::vector<PoseKeyframe>& kf, double t)
 {
     const size_t n = kf.size();
-    if (n == 1) return kf[0].second;
+    if (n == 1) return kf[0].pos;
 
-    if (t <= kf.front().first) {
-        const double dt = kf[1].first - kf[0].first;
-        if (std::abs(dt) < 1e-9) return kf[0].second;
-        return kf[0].second + (kf[1].second - kf[0].second) / dt * (t - kf[0].first);
+    if (t <= kf.front().t) {
+        const double dt = kf[1].t - kf[0].t;
+        if (std::abs(dt) < 1e-9) return kf[0].pos;
+        return kf[0].pos + (kf[1].pos - kf[0].pos) / dt * (t - kf[0].t);
     }
-    if (t >= kf.back().first) {
-        const double dt = kf[n-1].first - kf[n-2].first;
-        if (std::abs(dt) < 1e-9) return kf.back().second;
-        return kf.back().second + (kf[n-1].second - kf[n-2].second) / dt * (t - kf.back().first);
+    if (t >= kf.back().t) {
+        const double dt = kf[n-1].t - kf[n-2].t;
+        if (std::abs(dt) < 1e-9) return kf.back().pos;
+        return kf.back().pos + (kf[n-1].pos - kf[n-2].pos) / dt * (t - kf.back().t);
     }
     size_t lo = 0, hi = n - 1;
     while (hi - lo > 1) {
         const size_t mid = (lo + hi) / 2;
-        if (kf[mid].first <= t) lo = mid; else hi = mid;
+        if (kf[mid].t <= t) lo = mid; else hi = mid;
     }
-    const double alpha = (t - kf[lo].first) / (kf[hi].first - kf[lo].first);
-    return (1.0 - alpha) * kf[lo].second + alpha * kf[hi].second;
+    const double alpha = (t - kf[lo].t) / (kf[hi].t - kf[lo].t);
+    return (1.0 - alpha) * kf[lo].pos + alpha * kf[hi].pos;
+}
+
+// SLERP between keyframe quaternions; clamps outside the keyframe range.
+static Eigen::Quaterniond slerp_kf(const std::vector<PoseKeyframe>& kf, double t)
+{
+    const size_t n = kf.size();
+    if (n == 1) return kf[0].quat;
+    if (t <= kf.front().t) return kf.front().quat;
+    if (t >= kf.back().t)  return kf.back().quat;
+
+    size_t lo = 0, hi = n - 1;
+    while (hi - lo > 1) {
+        const size_t mid = (lo + hi) / 2;
+        if (kf[mid].t <= t) lo = mid; else hi = mid;
+    }
+    const double alpha = (t - kf[lo].t) / (kf[hi].t - kf[lo].t);
+    return kf[lo].quat.slerp(alpha, kf[hi].quat);
+}
+
+// Wahba's problem via SVD: find rotation R minimising sum ||d_eci_j - R*b_body_j||^2.
+// B = sum_j  d_eci_j * b_body_j^T.  Returns identity on degenerate input.
+static Eigen::Quaterniond wahba_svd(const Eigen::Matrix3d& B)
+{
+    if (B.norm() < 1e-9) return Eigen::Quaterniond::Identity();
+    const Eigen::JacobiSVD<Eigen::Matrix3d> svd(B, Eigen::ComputeFullU | Eigen::ComputeFullV);
+    Eigen::Matrix3d diag        = Eigen::Matrix3d::Identity();
+    diag(2, 2) = (svd.matrixU() * svd.matrixV().transpose()).determinant() > 0.0 ? 1.0 : -1.0;
+    return Eigen::Quaterniond(svd.matrixU() * diag * svd.matrixV().transpose()).normalized();
 }
 
 
 StateEstimates init_state_estimate(
         const std::vector<double>& state_timestamps,
         const LandmarkMeasurements& landmark_measurements,
-        const LandmarkGroupStarts& landmark_group_starts)
+        const LandmarkGroupStarts& landmark_group_starts,
+        BIAS_MODE bias_mode,
+        const GyroMeasurements& gyro_measurements)
 {
-    // Earth mean radius + 600 km orbit
     constexpr double R_ORBIT_KM = 6371.0 + 600.0;
 
-    // One position keyframe per landmark group: mean landmark ECI position
-    // direction normalized to the assumed orbital altitude.
-    std::vector<std::pair<double, Eigen::Vector3d>> keyframes;
+    // One pose keyframe per landmark group.
+    // Position: mean landmark ECI direction scaled to orbital altitude.
+    // Attitude: Wahba SVD on (body bearing → satellite-to-landmark ECI direction) pairs.
+    std::vector<PoseKeyframe> keyframes;
+
+    struct LmEntry { Eigen::Vector3d pos, bearing; };
 
     const idx_t N = landmark_measurements.rows();
     idx_t row = 0;
     while (row < N) {
         const double t_group =
             landmark_measurements(row, LandmarkMeasurementIdx::LANDMARK_TIMESTAMP);
-        Eigen::Vector3d sum = Eigen::Vector3d::Zero();
+
+        // Buffer this group's landmarks so we can compute r_group first,
+        // then build the Wahba B matrix in a single sweep.
+        std::vector<LmEntry> group_lms;
+        Eigen::Vector3d pos_sum = Eigen::Vector3d::Zero();
         do {
-            sum.x() += landmark_measurements(row, LandmarkMeasurementIdx::LANDMARK_POS_X);
-            sum.y() += landmark_measurements(row, LandmarkMeasurementIdx::LANDMARK_POS_Y);
-            sum.z() += landmark_measurements(row, LandmarkMeasurementIdx::LANDMARK_POS_Z);
+            const Eigen::Vector3d lm_pos(
+                landmark_measurements(row, LandmarkMeasurementIdx::LANDMARK_POS_X),
+                landmark_measurements(row, LandmarkMeasurementIdx::LANDMARK_POS_Y),
+                landmark_measurements(row, LandmarkMeasurementIdx::LANDMARK_POS_Z));
+            const Eigen::Vector3d bearing(
+                landmark_measurements(row, LandmarkMeasurementIdx::BEARING_VEC_X),
+                landmark_measurements(row, LandmarkMeasurementIdx::BEARING_VEC_Y),
+                landmark_measurements(row, LandmarkMeasurementIdx::BEARING_VEC_Z));
+            pos_sum += lm_pos;
+            group_lms.push_back({lm_pos, bearing});
             ++row;
         } while (row < N && !landmark_group_starts(row, 0));
 
-        const double norm = sum.norm();
-        if (norm < 1e-6) continue;
-        keyframes.emplace_back(t_group, sum / norm * R_ORBIT_KM);
+        const double pos_norm = pos_sum.norm();
+        if (pos_norm < 1e-6) continue;
+        const Eigen::Vector3d r_group = pos_sum / pos_norm * R_ORBIT_KM;
+
+        // Wahba B matrix: B = sum_j  d_eci_j * b_body_j^T
+        // where d_eci_j = normalize(lm_pos_j - r_group) is the satellite-to-landmark
+        // direction in ECI and b_body_j is the measured bearing in body frame.
+        Eigen::Matrix3d B = Eigen::Matrix3d::Zero();
+        for (const auto& lm : group_lms) {
+            const Eigen::Vector3d diff = lm.pos - r_group;
+            const double diff_norm = diff.norm();
+            if (diff_norm < 1e-6) continue;
+            B += (diff / diff_norm) * lm.bearing.transpose();
+        }
+
+        keyframes.push_back({t_group, r_group, wahba_svd(B)});
     }
-    spdlog::info("init_state_estimate: {} landmark groups → {} position keyframes",
-                 keyframes.size(), keyframes.size());
+    spdlog::info("init_state_estimate: {} pose keyframes from {} landmark rows",
+                 keyframes.size(), N);
 
     const idx_t M = static_cast<idx_t>(state_timestamps.size());
     StateEstimates se(M, StateEstimateIdx::STATE_ESTIMATE_COUNT);
 
-    // Fill position by interpolating between group keyframes.
     for (idx_t i = 0; i < M; ++i) {
         const double t = state_timestamps[static_cast<size_t>(i)];
-        const Eigen::Vector3d pos = keyframes.empty()
+
+        const Eigen::Vector3d    pos = keyframes.empty()
             ? Eigen::Vector3d(0.0, 0.0, R_ORBIT_KM)
             : interp_kf(keyframes, t);
+        const Eigen::Quaterniond q   = keyframes.empty()
+            ? Eigen::Quaterniond::Identity()
+            : slerp_kf(keyframes, t);
+
         se(i, StateEstimateIdx::STATE_ESTIMATE_TIMESTAMP) = t;
         se(i, StateEstimateIdx::POS_X)       = pos.x();
         se(i, StateEstimateIdx::POS_Y)       = pos.y();
         se(i, StateEstimateIdx::POS_Z)       = pos.z();
-        se(i, StateEstimateIdx::QUAT_X)      = 0.0;
-        se(i, StateEstimateIdx::QUAT_Y)      = 0.0;
-        se(i, StateEstimateIdx::QUAT_Z)      = 0.0;
-        se(i, StateEstimateIdx::QUAT_W)      = 1.0;
+        se(i, StateEstimateIdx::QUAT_X)      = q.x();
+        se(i, StateEstimateIdx::QUAT_Y)      = q.y();
+        se(i, StateEstimateIdx::QUAT_Z)      = q.z();
+        se(i, StateEstimateIdx::QUAT_W)      = q.w();
         se(i, StateEstimateIdx::GYRO_BIAS_X) = 0.0;
         se(i, StateEstimateIdx::GYRO_BIAS_Y) = 0.0;
         se(i, StateEstimateIdx::GYRO_BIAS_Z) = 0.0;
@@ -112,6 +176,69 @@ StateEstimates init_state_estimate(
             (se(i1, StateEstimateIdx::POS_Y) - se(i0, StateEstimateIdx::POS_Y)) / dt;
         se(i, StateEstimateIdx::VEL_Z) =
             (se(i1, StateEstimateIdx::POS_Z) - se(i0, StateEstimateIdx::POS_Z)) / dt;
+    }
+
+    // ── Gyro bias initialization ──────────────────────────────────────────────
+    // Differentiate the initialized attitude (forward difference: q_i^{-1} ⊗ q_{i+1})
+    // to get the estimated body-frame angular rate, then:
+    //   bias_i = ω_gyro_i − ω_att_i
+    // FIX_BIAS: average across all timestamps, written to row 0.
+    // TV_BIAS:  per-timestamp estimate written to each row.
+    if (bias_mode != BIAS_MODE::NO_BIAS) {
+        const idx_t Mg = gyro_measurements.rows();
+        const idx_t Nb = std::min(M, Mg);
+
+        auto quat_at = [&](idx_t i) {
+            return Eigen::Quaterniond(
+                se(i, StateEstimateIdx::QUAT_W),
+                se(i, StateEstimateIdx::QUAT_X),
+                se(i, StateEstimateIdx::QUAT_Y),
+                se(i, StateEstimateIdx::QUAT_Z));
+        };
+
+        // Forward difference at every timestamp; backward at the last one.
+        auto omega_att_at = [&](idx_t i) -> Eigen::Vector3d {
+            const idx_t i0 = (i < M - 1) ? i     : i - 1;
+            const idx_t i1 = (i < M - 1) ? i + 1 : i;
+            const double dt = state_timestamps[static_cast<size_t>(i1)]
+                            - state_timestamps[static_cast<size_t>(i0)];
+            if (std::abs(dt) < 1e-9) return Eigen::Vector3d::Zero();
+            // δq = q_i0^{-1} ⊗ q_i1 is the rotation increment in body frame.
+            // First-order: ω_body ≈ 2 · δq.vec / dt
+            return 2.0 * (quat_at(i0).conjugate() * quat_at(i1)).vec() / dt;
+        };
+
+        if (bias_mode == BIAS_MODE::FIX_BIAS) {
+            Eigen::Vector3d bias_sum = Eigen::Vector3d::Zero();
+            int count = 0;
+            for (idx_t i = 0; i < Nb; ++i) {
+                const Eigen::Vector3d omega_meas(
+                    gyro_measurements(i, GyroMeasurementIdx::ANG_VEL_X),
+                    gyro_measurements(i, GyroMeasurementIdx::ANG_VEL_Y),
+                    gyro_measurements(i, GyroMeasurementIdx::ANG_VEL_Z));
+                bias_sum += omega_meas - omega_att_at(i);
+                ++count;
+            }
+            if (count > 0) {
+                const Eigen::Vector3d b = bias_sum / static_cast<double>(count);
+                se(0, StateEstimateIdx::GYRO_BIAS_X) = b.x();
+                se(0, StateEstimateIdx::GYRO_BIAS_Y) = b.y();
+                se(0, StateEstimateIdx::GYRO_BIAS_Z) = b.z();
+                spdlog::info("init_state_estimate: fixed bias init [{:.4e}, {:.4e}, {:.4e}] rad/s",
+                             b.x(), b.y(), b.z());
+            }
+        } else { // TV_BIAS
+            for (idx_t i = 0; i < Nb; ++i) {
+                const Eigen::Vector3d omega_meas(
+                    gyro_measurements(i, GyroMeasurementIdx::ANG_VEL_X),
+                    gyro_measurements(i, GyroMeasurementIdx::ANG_VEL_Y),
+                    gyro_measurements(i, GyroMeasurementIdx::ANG_VEL_Z));
+                const Eigen::Vector3d b = omega_meas - omega_att_at(i);
+                se(i, StateEstimateIdx::GYRO_BIAS_X) = b.x();
+                se(i, StateEstimateIdx::GYRO_BIAS_Y) = b.y();
+                se(i, StateEstimateIdx::GYRO_BIAS_Z) = b.z();
+            }
+        }
     }
 
     return se;
@@ -446,7 +573,8 @@ BatchOptResult solve_ceres_batch_opt(const ODMeasurements& measurements,
     }
 
     StateEstimates state_estimates = init_state_estimate(
-            ts.state_timestamps, landmark_measurements, landmark_group_starts);
+            ts.state_timestamps, landmark_measurements, landmark_group_starts,
+            bias_mode, gyro_measurements);
 
     // TODO: this information should be obtained from the configuration file
     double uma_std_dev = 1; // km/s^2

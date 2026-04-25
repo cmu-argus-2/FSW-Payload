@@ -37,7 +37,10 @@ else()
     set(PAYLOAD_SPDLOG_TARGET spdlog::spdlog)
 endif()
 find_package(Eigen3 3.3 REQUIRED NO_MODULE)
-include_directories(${EIGEN_INCLUDE_DIR})
+# Eigen3::Eigen (config mode) sets INTERFACE_INCLUDE_DIRECTORIES to the eigen3/ prefix.
+# Registering it globally lets Ceres headers use the non-prefixed <Eigen/Core> form.
+get_target_property(_eigen3_inc Eigen3::Eigen INTERFACE_INCLUDE_DIRECTORIES)
+include_directories(${_eigen3_inc})
 link_directories(${EIGEN_LIBRARY_DIRS})
 find_package(Ceres 2.2.0 REQUIRED)
 find_package(OpenCV REQUIRED COMPONENTS core dnn imgcodecs imgproc highgui)

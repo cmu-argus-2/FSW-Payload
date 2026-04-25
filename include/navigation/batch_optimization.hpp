@@ -5,48 +5,10 @@
 #include "navigation/od.hpp"
 #include "navigation/pose_dynamics.hpp"
 #include <cstdint>
+#include <string>
 #include <utility>
 
 #include <eigen3/Eigen/Dense>
-#include <eigen3/Eigen/Geometry>
-#include <ceres/ceres.h>
-
-// ── Ceres cost functor for landmark bearing residuals ──────────────────────────
-struct LandmarkCostFunctor {
-public:
-    LandmarkCostFunctor(const double* const landmark_row, const double landmark_std_dev)
-            : bearing_vec(landmark_row + LandmarkMeasurementIdx::BEARING_VEC_X),
-              landmark_pos(landmark_row + LandmarkMeasurementIdx::LANDMARK_POS_X),
-              landmark_std_dev(landmark_std_dev) {}
-
-    template<typename T>
-    bool operator()(const T* const pos,
-                    const T* const quat,
-                    T* const residuals) const {
-        const Eigen::Map<const Eigen::Matrix<T, 3, 1>> r(pos);
-        const Eigen::Map<const Eigen::Quaternion <T>> q(quat);
-
-        const Eigen::Matrix<T, 3, 1> landmark_pos_T = landmark_pos.template cast<T>();
-        const Eigen::Matrix<T, 3, 1> bearing_vec_T  = bearing_vec.template cast<T>();
-
-        Eigen::Map<Eigen::Matrix<T, 3, 1>> r_res(residuals);
-
-        const Eigen::Matrix<T, 3, 1> diff = (landmark_pos_T - r);
-        const T norm_sq  = diff.squaredNorm();
-        const T eps      = T(1e-6);
-        const T inv_norm = T(1.0) / ceres::sqrt(norm_sq + eps);
-        const Eigen::Matrix<T, 3, 1> predicted_bearing = diff * inv_norm;
-
-        r_res = (q.inverse() * predicted_bearing - bearing_vec_T) / T(landmark_std_dev);
-
-        return true;
-    }
-
-private:
-    const Eigen::Map<const Eigen::Vector3d> bearing_vec;
-    const Eigen::Map<const Eigen::Vector3d> landmark_pos;
-    const double landmark_std_dev;
-};
 
 enum class BatchOptimizationState {
     NOT_STARTED = 0,
@@ -104,11 +66,20 @@ struct StateTimestampsResult {
     std::vector<idx_t>   landmark_group_indices;
 };
 
+struct SolverSummaryInfo {
+    std::string termination_type;
+    int         num_iterations = 0;
+    double      initial_cost   = 0.0;
+    double      final_cost     = 0.0;
+    std::string message;
+};
+
 struct BatchOptResult {
     ErrorCode           code = ErrorCode::OK;
     StateEstimates      state_estimates;
     std::vector<double> covariance;
     std::vector<double> residuals;
+    SolverSummaryInfo   solver_summary;
 };
 
 StateTimestampsResult

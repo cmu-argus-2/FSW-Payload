@@ -6,7 +6,6 @@ add_library(navigation
     od_measurements.cpp
     batch_optimization.cpp
     pose_dynamics.cpp
-    measurement_residuals.cpp
     quaternion.cpp
     utils.cpp
 )

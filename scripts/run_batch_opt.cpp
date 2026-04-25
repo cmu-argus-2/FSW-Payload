@@ -11,9 +11,11 @@
     imu_data.csv               — raw IMU log
       columns: Timestamp_ms, Gyro_X_dps, Gyro_Y_dps, Gyro_Z_dps
 
-  Output (written to <dataset_folder>/):
-    state_estimates.h5  — state_estimates, state_estimate_covariance_diagonal,
-                          residuals datasets
+  Output (written to data/results/<dataset_name>_<unix_ms>/):
+    od_result.json             — solver metadata and run info
+    state_estimates.csv        — Nx14 state estimate matrix
+    covariance.csv             — diagonal of tangent-space covariance (absent if failed)
+    residuals.csv              — flat residual vector
 */
 
 #include "navigation/od.hpp"
@@ -22,8 +24,7 @@
 static constexpr int64_t J2000_EPOCH_UNIX_S = 946727936LL;
 
 #include <Eigen/Eigen>
-#include <highfive/H5Easy.hpp>
-#include <highfive/highfive.hpp>
+#include <nlohmann/json.hpp>
 #include <spdlog/spdlog.h>
 
 #include <string>
@@ -32,9 +33,10 @@ static constexpr int64_t J2000_EPOCH_UNIX_S = 946727936LL;
 #include <sstream>
 #include <vector>
 #include <array>
-#include <cassert>
+#include <chrono>
 #include <cmath>
-#include <stdexcept>
+#include <filesystem>
+#include <iomanip>
 
 static constexpr const char* kDefaultConfigPath = "config/od.toml";
 static constexpr double DPS_TO_RADPS = M_PI / 180.0;
@@ -49,6 +51,11 @@ int main(int argc, char** argv)
 
     const std::string dataset_folder = argv[1];
     const std::string config_path    = (argc > 2) ? argv[2] : kDefaultConfigPath;
+
+    // Capture run timestamp immediately so the results folder name reflects
+    // when the run was initiated, not when writing completes.
+    const int64_t run_unix_ms = std::chrono::duration_cast<std::chrono::milliseconds>(
+            std::chrono::system_clock::now().time_since_epoch()).count();
 
     OD_Config od_config;
     try {
@@ -177,7 +184,7 @@ int main(int argc, char** argv)
             gm(i, c) = gyro_rows[static_cast<size_t>(i)][static_cast<size_t>(c)];
     }
 
-    // ── Pack into ODMeasurements (validation happens inside solve_ceres_batch_opt) ──
+    // ── Pack into ODMeasurements ──────────────────────────────────────────
     ODMeasurements meas;
     meas.landmark_measurements  = lm;
     meas.group_starts           = gs;
@@ -195,33 +202,112 @@ int main(int argc, char** argv)
         spdlog::info("Gyro measurements     (first 3 rows):\n{}", oss.str());
     }
 
+    // ── Create results folder: data/results/<dataset_name>_<unix_ms> ───────
+    const std::string dataset_name =
+            std::filesystem::path(dataset_folder).filename().string();
+    const std::string results_dir =
+            std::string("data/results/") + dataset_name + "_" + std::to_string(run_unix_ms);
+
+    if (!std::filesystem::create_directories(results_dir)) {
+        spdlog::error("Failed to create results directory: {}", results_dir);
+        return 1;
+    }
+    spdlog::info("Writing results to {}", results_dir);
+
+    const int num_groups = static_cast<int>(
+            std::count(group_starts_vec.begin(), group_starts_vec.end(), true));
+
     // ── Run batch optimization ────────────────────────────────────────────
     const auto result = solve_ceres_batch_opt(meas, od_config.batch_opt);
+
+    // ── Write od_result.json (always, even on failure) ────────────────────
+    {
+        nlohmann::json meta;
+        const std::string bias_mode_str =
+            od_config.batch_opt.bias_mode == BIAS_MODE::NO_BIAS  ? "no_bias"  :
+            od_config.batch_opt.bias_mode == BIAS_MODE::FIX_BIAS ? "fix_bias" : "tv_bias";
+        meta["dataset_folder"]       = dataset_folder;
+        meta["run_unix_ms"]          = run_unix_ms;
+        meta["error_code"]           = static_cast<int>(result.code);
+        meta["bias_mode"]            = bias_mode_str;
+        meta["solver"]["termination_type"] = result.solver_summary.termination_type;
+        meta["solver"]["num_iterations"]   = result.solver_summary.num_iterations;
+        meta["solver"]["initial_cost"]     = result.solver_summary.initial_cost;
+        meta["solver"]["final_cost"]       = result.solver_summary.final_cost;
+        meta["solver"]["message"]          = result.solver_summary.message;
+        meta["inputs"]["num_landmark_rows"]    = static_cast<int>(lm_rows.size());
+        meta["inputs"]["num_landmark_groups"]  = num_groups;
+        meta["inputs"]["num_gyro_rows"]        = static_cast<int>(gyro_rows.size());
+        meta["outputs"]["num_state_estimates"] = result.state_estimates.rows();
+        meta["outputs"]["covariance_available"] = !result.covariance.empty();
+
+        std::ofstream jf(results_dir + "/od_result.json");
+        if (jf.is_open()) {
+            jf << meta.dump(2) << '\n';
+        } else {
+            spdlog::warn("Failed to write od_result.json to {}", results_dir);
+        }
+    }
+
     if (result.code != ErrorCode::OK) {
-        spdlog::error("Batch optimization failed (error code {}).",
-                      static_cast<int>(result.code));
+        spdlog::error("Batch optimization failed (error code {}); "
+                      "partial metadata written to {}.",
+                      static_cast<int>(result.code), results_dir);
         return 1;
     }
 
     spdlog::info("Optimization complete: {} state estimates", result.state_estimates.rows());
 
-    // ── Save results ──────────────────────────────────────────────────────
-    const std::string out_path = dataset_folder + "/state_estimates.h5";
-    try {
-        H5Easy::File outfile(out_path, HighFive::File::Overwrite);
-        H5Easy::dump(outfile, "state_estimates", result.state_estimates);
-        if (!result.covariance.empty()) {
-            H5Easy::dump(outfile, "state_estimate_covariance_diagonal", result.covariance);
-        } else {
-            spdlog::warn("Covariance computation failed — "
-                         "'state_estimate_covariance_diagonal' not written to {}.", out_path);
+    // ── Write state_estimates.csv ─────────────────────────────────────────
+    {
+        std::ofstream f(results_dir + "/state_estimates.csv");
+        if (!f.is_open()) {
+            spdlog::error("Failed to open state_estimates.csv for writing.");
+            return 1;
         }
-        H5Easy::dump(outfile, "residuals", result.residuals);
-        spdlog::info("Saved state estimates to {}", out_path);
-    } catch (const HighFive::Exception& e) {
-        spdlog::error("Failed to write state estimates to {}: {}", out_path, e.what());
-        return 1;
+        f << "timestamp_j2000,pos_x_km,pos_y_km,pos_z_km,"
+             "vel_x_kms,vel_y_kms,vel_z_kms,"
+             "quat_x,quat_y,quat_z,quat_w,"
+             "gyro_bias_x_rads,gyro_bias_y_rads,gyro_bias_z_rads\n";
+        f << std::setprecision(12);
+        for (idx_t i = 0; i < result.state_estimates.rows(); ++i) {
+            for (int c = 0; c < StateEstimateIdx::STATE_ESTIMATE_COUNT; ++c) {
+                if (c > 0) f << ',';
+                f << result.state_estimates(i, c);
+            }
+            f << '\n';
+        }
+        spdlog::info("Wrote state_estimates.csv ({} rows)", result.state_estimates.rows());
     }
 
+    // ── Write covariance.csv (omitted if unavailable) ─────────────────────
+    if (!result.covariance.empty()) {
+        std::ofstream f(results_dir + "/covariance.csv");
+        if (!f.is_open()) {
+            spdlog::warn("Failed to open covariance.csv for writing.");
+        } else {
+            f << "covariance_diagonal\n" << std::setprecision(12);
+            for (const double v : result.covariance)
+                f << v << '\n';
+            spdlog::info("Wrote covariance.csv ({} values)", result.covariance.size());
+        }
+    } else {
+        spdlog::warn("Covariance unavailable — covariance.csv not written.");
+    }
+
+    // ── Write residuals.csv ───────────────────────────────────────────────
+    {
+        std::ofstream f(results_dir + "/residuals.csv");
+        if (!f.is_open()) {
+            spdlog::warn("Failed to open residuals.csv for writing.");
+        } else {
+            f << "residual\n" << std::setprecision(12);
+            for (const double v : result.residuals)
+                f << v << '\n';
+            spdlog::info("Wrote residuals.csv ({} values)", result.residuals.size());
+        }
+    }
+
+    spdlog::info("OD complete. Results in {}", results_dir);
     return 0;
 }

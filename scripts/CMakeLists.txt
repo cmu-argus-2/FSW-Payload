@@ -15,8 +15,6 @@ target_link_libraries(RUN_BATCH_OPT
     PRIVATE
     spdlog::spdlog
     PAYLOAD_LIB
-    HDF5::HDF5           
-    HighFive::HighFive
     Ceres::ceres
     Eigen3::Eigen
 )

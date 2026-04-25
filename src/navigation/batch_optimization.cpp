@@ -438,6 +438,23 @@ BatchOptResult solve_ceres_batch_opt(const ODMeasurements& measurements,
     ceres::Solve(solver_options, &problem, &summary);
     spdlog::info("Ceres Solver Summary:\n{}", summary.FullReport());
 
+    // Populate summary info on all paths so callers always have it.
+    static const auto termination_str = [](ceres::TerminationType t) -> std::string {
+        switch (t) {
+            case ceres::CONVERGENCE:    return "CONVERGENCE";
+            case ceres::NO_CONVERGENCE: return "NO_CONVERGENCE";
+            case ceres::FAILURE:        return "FAILURE";
+            case ceres::USER_SUCCESS:   return "USER_SUCCESS";
+            case ceres::USER_FAILURE:   return "USER_FAILURE";
+            default:                    return "UNKNOWN";
+        }
+    };
+    result.solver_summary.termination_type = termination_str(summary.termination_type);
+    result.solver_summary.num_iterations   = summary.num_successful_steps + summary.num_unsuccessful_steps;
+    result.solver_summary.initial_cost     = summary.initial_cost;
+    result.solver_summary.final_cost       = summary.final_cost;
+    result.solver_summary.message          = summary.message;
+
     switch (summary.termination_type) {
         case ceres::CONVERGENCE:
             break;

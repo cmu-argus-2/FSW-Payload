@@ -37,18 +37,14 @@ else()
     set(PAYLOAD_SPDLOG_TARGET spdlog::spdlog)
 endif()
 find_package(Eigen3 3.3 REQUIRED NO_MODULE)
-# Eigen3::Eigen (config mode) sets INTERFACE_INCLUDE_DIRECTORIES to the eigen3/ prefix.
-# Registering it globally lets Ceres headers use the non-prefixed <Eigen/Core> form.
 get_target_property(_eigen3_inc Eigen3::Eigen INTERFACE_INCLUDE_DIRECTORIES)
 include_directories(${_eigen3_inc})
 link_directories(${EIGEN_LIBRARY_DIRS})
-find_package(Ceres 2.2.0 REQUIRED)
 find_package(OpenCV REQUIRED COMPONENTS core dnn imgcodecs imgproc highgui)
 
 enable_language(C)
 find_package(HDF5 REQUIRED COMPONENTS C CXX HL)
 list(APPEND CMAKE_PREFIX_PATH "${PWD}/depsbuild/install")
-find_package(HighFive REQUIRED)
 
 find_package(CUDA)
 if(CUDA_FOUND)
@@ -65,6 +61,75 @@ if(CUDA_ENABLED)
     find_library(NVINFER_PLUGIN_LIBRARY nvinfer_plugin REQUIRED)
 endif()
 find_package(nlohmann_json REQUIRED)
+
+# IPOPT — built from source via deps/Ipopt submodule.
+# MUMPS is statically linked into libipopt.so using the PIC static libs in
+# deps/mumps/lib/, so no MUMPS .so files are needed at runtime.
+include(ExternalProject)
+include(ProcessorCount)
+ProcessorCount(NPROC)
+if(NOT NPROC OR NPROC EQUAL 0)
+    set(NPROC 4)
+endif()
+
+set(MUMPS_INCLUDE_DIR   "${CMAKE_SOURCE_DIR}/deps/mumps/include")
+set(MUMPS_LIB_DIR       "${CMAKE_SOURCE_DIR}/deps/mumps/lib")
+set(IPOPT_INSTALL_DIR   "${CMAKE_BINARY_DIR}/ipopt_install")
+set(IPOPT_INCLUDE_DIR   "${IPOPT_INSTALL_DIR}/include/coin-or")
+set(IPOPT_LIBRARY       "${IPOPT_INSTALL_DIR}/lib/libipopt.so")
+
+# Build-time flags passed to Ipopt's Autotools configure. Using full paths
+# to the .a files forces static (PIC) MUMPS linkage into libipopt.so.
+set(_MUMPS_LFLAGS
+    "${MUMPS_LIB_DIR}/libdmumps_seq.a \
+${MUMPS_LIB_DIR}/libmumps_common_seq.a \
+${MUMPS_LIB_DIR}/libpord_seq.a \
+${MUMPS_LIB_DIR}/libmpiseq_seq.a \
+${MUMPS_LIB_DIR}/libesmumps.a \
+${MUMPS_LIB_DIR}/libscotch.a \
+${MUMPS_LIB_DIR}/libscotcherr.a \
+-lgfortran -llapack -lblas")
+
+# Write a shell wrapper so the configure flags are passed as one shell word
+# each, avoiding CMake list-tokenisation issues with spaces in flag strings.
+file(WRITE "${CMAKE_BINARY_DIR}/configure_ipopt.sh"
+    "#!/bin/sh\n"
+    "exec \"${CMAKE_SOURCE_DIR}/deps/Ipopt/configure\" \\\n"
+    "  --prefix=\"${IPOPT_INSTALL_DIR}\" \\\n"
+    "  --disable-java \\\n"
+    "  --with-mumps \\\n"
+    "  \"--with-mumps-cflags=-I${MUMPS_INCLUDE_DIR} -I${MUMPS_INCLUDE_DIR}/mumps_seq\" \\\n"
+    "  \"--with-mumps-lflags=${_MUMPS_LFLAGS}\" \\\n"
+    "  \"$@\"\n"
+)
+file(CHMOD "${CMAKE_BINARY_DIR}/configure_ipopt.sh"
+     PERMISSIONS OWNER_READ OWNER_WRITE OWNER_EXECUTE
+                 GROUP_READ GROUP_EXECUTE WORLD_READ WORLD_EXECUTE)
+
+ExternalProject_Add(ipopt_ext
+    SOURCE_DIR  "${CMAKE_SOURCE_DIR}/deps/Ipopt"
+    BINARY_DIR  "${CMAKE_BINARY_DIR}/ipopt_build"
+    INSTALL_DIR "${IPOPT_INSTALL_DIR}"
+    CONFIGURE_COMMAND sh "${CMAKE_BINARY_DIR}/configure_ipopt.sh"
+    BUILD_COMMAND     make -j${NPROC}
+    INSTALL_COMMAND   make install
+    BUILD_BYPRODUCTS  "${IPOPT_LIBRARY}"
+)
+
+# Create the include dir now so CMake doesn't warn about a non-existent path
+# on an imported target before the ExternalProject has run.
+file(MAKE_DIRECTORY "${IPOPT_INCLUDE_DIR}")
+
+add_library(Ipopt::Ipopt SHARED IMPORTED GLOBAL)
+set_target_properties(Ipopt::Ipopt PROPERTIES
+    IMPORTED_LOCATION             "${IPOPT_LIBRARY}"
+    INTERFACE_INCLUDE_DIRECTORIES "${IPOPT_INCLUDE_DIR}")
+add_dependencies(Ipopt::Ipopt ipopt_ext)
+
+include_directories(SYSTEM "${IPOPT_INCLUDE_DIR}")
+# libipopt.so is in the build tree; embed its path as RPATH in every target.
+list(APPEND CMAKE_BUILD_RPATH   "${IPOPT_INSTALL_DIR}/lib")
+list(APPEND CMAKE_INSTALL_RPATH "${IPOPT_INSTALL_DIR}/lib")
 
 
 # Include OpenCV directories

@@ -218,7 +218,7 @@ int main(int argc, char** argv)
             std::count(group_starts_vec.begin(), group_starts_vec.end(), true));
 
     // ── Run batch optimization ────────────────────────────────────────────
-    const auto result = solve_ceres_batch_opt(meas, od_config.batch_opt);
+    const auto result = solve_batch_opt(meas, od_config.batch_opt);
     const int64_t run_end_ms = std::chrono::duration_cast<std::chrono::milliseconds>(
             std::chrono::system_clock::now().time_since_epoch()).count();
 

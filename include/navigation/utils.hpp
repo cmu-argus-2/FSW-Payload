@@ -22,7 +22,7 @@ using namespace Eigen;
  * @return int64_t # of seconds past the J2000 epoch (Jan 1, 2000 11:58:55.816
  * AM)
  */
-int64_t unixToJ2000(int64_t unixSeconds);
+double unixToJ2000(double unixSeconds);
 
 /**
  * @brief Compute the skew-symmetric, 3x3 matrix corresponding to

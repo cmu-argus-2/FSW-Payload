@@ -50,7 +50,7 @@ void OD::_DoBatchOptimization()
         return;
     }
 
-    const auto result = solve_ceres_batch_opt(measurements_, config.batch_opt);
+    const auto result = solve_batch_opt(measurements_, config.batch_opt);
     if (result.code != ErrorCode::OK) {
         SPDLOG_ERROR("OD::_DoBatchOptimization: failed (error code {}).",
                      static_cast<int>(result.code));

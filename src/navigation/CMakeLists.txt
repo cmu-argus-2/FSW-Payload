@@ -5,6 +5,7 @@ add_library(navigation
     od_alg.cpp
     od_measurements.cpp
     batch_optimization.cpp
+    batch_nlp.cpp
     trajectory_initializer.cpp
     pose_dynamics.cpp
     quaternion.cpp
@@ -12,7 +13,9 @@ add_library(navigation
 )
 
 target_link_libraries(navigation
-        PRIVATE Eigen3::Eigen HighFive::HighFive Ceres::ceres HDF5::HDF5 spice opencv_calib3d
-                nlohmann_json::nlohmann_json)
+        PRIVATE Eigen3::Eigen HDF5::HDF5 spice opencv_calib3d
+                nlohmann_json::nlohmann_json
+                Ipopt::Ipopt)
+add_dependencies(navigation ipopt_ext)
 
 # target_link_libraries(navigation <dependencies>)

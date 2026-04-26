@@ -100,31 +100,11 @@ get_state_timestamps(const LandmarkMeasurements& landmark_measurements,
                      const GyroMeasurements& gyro_measurements,
                      const idx_t num_groups);
 
-ResidualsOrCovariances compute_covariance(ceres::Problem& problem,
-                                          StateEstimates& state_estimates,
-                                          BIAS_MODE bias_mode);
-
-ErrorCode build_ceres_problem(StateEstimates& state_estimates,
-                              const std::vector<double> state_timestamps,
-                              const std::vector<idx_t> landmark_group_indices,
-                              const LandmarkMeasurements& landmark_measurements,
-                              const LandmarkGroupStarts& landmark_group_starts,
-                              const GyroMeasurements& gyro_measurements,
-                              BIAS_MODE bias_mode,
-                              double uma_std_dev,
-                              double gyro_wn_std_dev_rad_s,
-                              double gyro_bias_instability,
-                              const Eigen::VectorXd& landmark_uncertainties,
-                              ceres::EigenQuaternionManifold* quaternion_manifold,
-                              ceres::Problem* problem);
-
-// Runs the batch nonlinear least-squares orbit determination optimizer.
+// Runs the batch NLP orbit determination optimizer (IPOPT).
 // Returns BatchOptResult::code == ErrorCode::OK on success. On failure the code
-// is set to the appropriate ErrorCode (ODMEAS_NOT_VALID, BATCH_OPT_BUILD_FAILED,
-// BATCH_OPT_NO_CONVERGENCE, BATCH_OPT_SOLVER_FAILED, or BATCH_OPT_INVALID_OUTPUT)
-// and the remaining fields are empty. Covariance failure is non-fatal (code stays
-// OK, covariance field is empty).
-BatchOptResult solve_ceres_batch_opt(const ODMeasurements& measurements,
-                                     BATCH_OPT_config bo_config);
+// is set to ODMEAS_NOT_VALID, BATCH_OPT_NO_CONVERGENCE, BATCH_OPT_SOLVER_FAILED,
+// or BATCH_OPT_INVALID_OUTPUT. The covariance field is always empty (0 rows).
+BatchOptResult solve_batch_opt(const ODMeasurements& measurements,
+                               BATCH_OPT_config bo_config);
 
 #endif // BATCH_OPTIMIZATION_HPP

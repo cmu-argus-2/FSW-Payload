@@ -2,9 +2,57 @@
 #define POSE_DYNAMICS_HPP
 
 #include <Eigen/Core>
-#include <ceres/ceres.h>
-#include <ceres/rotation.h>
 #include <core/timing.hpp>
+#include <cmath>
+
+// Templated rotation helpers (drop-in replacements for the removed Ceres functions).
+// Quaternion convention: [w, x, y, z] at indices [0, 1, 2, 3].
+namespace rotation {
+
+template <typename T>
+void AngleAxisToQuaternion(const T* angle_axis, T* q) {
+    using std::sqrt; using std::sin; using std::cos;
+    const T theta_sq = angle_axis[0]*angle_axis[0]
+                     + angle_axis[1]*angle_axis[1]
+                     + angle_axis[2]*angle_axis[2];
+    if (theta_sq > T(0)) {
+        const T theta      = sqrt(theta_sq);
+        const T half_theta = T(0.5) * theta;
+        const T k          = sin(half_theta) / theta;
+        q[0] = cos(half_theta);
+        q[1] = angle_axis[0] * k;
+        q[2] = angle_axis[1] * k;
+        q[3] = angle_axis[2] * k;
+    } else {
+        // First-order Taylor expansion near zero rotation
+        q[0] = T(1);
+        q[1] = angle_axis[0] * T(0.5);
+        q[2] = angle_axis[1] * T(0.5);
+        q[3] = angle_axis[2] * T(0.5);
+    }
+}
+
+template <typename T>
+void QuaternionToAngleAxis(const T* q, T* angle_axis) {
+    using std::sqrt; using std::atan2;
+    const T sin_sq = q[1]*q[1] + q[2]*q[2] + q[3]*q[3];
+    if (sin_sq > T(0)) {
+        const T sin_theta = sqrt(sin_sq);
+        const T two_theta = T(2) * ((q[0] < T(0))
+            ? atan2(-sin_theta, -q[0])
+            : atan2( sin_theta,  q[0]));
+        const T k = two_theta / sin_theta;
+        angle_axis[0] = q[1] * k;
+        angle_axis[1] = q[2] * k;
+        angle_axis[2] = q[3] * k;
+    } else {
+        angle_axis[0] = q[1] * T(2);
+        angle_axis[1] = q[2] * T(2);
+        angle_axis[2] = q[3] * T(2);
+    }
+}
+
+} // namespace rotation
 
 struct InertialData
 {
@@ -167,16 +215,14 @@ public:
     }
 };
 
-class LinearDynamicsAnalytic
-    : public ceres::SizedCostFunction<6, 3, 3, 3, 3>
-    , public DynamicsResidual {
+class LinearDynamicsAnalytic : public DynamicsResidual {
 public:
     static constexpr int NX = 6;
     LinearDynamicsAnalytic(const double dt, const double pos_std_dev, const double vel_std_dev) : DynamicsResidual(NX, 0, dt), pos_std_dev(pos_std_dev), vel_std_dev(vel_std_dev) {}
 
-    virtual bool Evaluate(double const* const* parameters,
-                          double* residuals,
-                          double** jacobians) const override
+    bool Evaluate(double const* const* parameters,
+                  double* residuals,
+                  double** jacobians) const
     {
         const Eigen::Map<const Eigen::Matrix<double, 3, 1>> r0(parameters[0]);
         const Eigen::Map<const Eigen::Matrix<double, 3, 1>> v0(parameters[1]);
@@ -318,7 +364,8 @@ public:
     Eigen::Map <Eigen::Matrix<T, 3, 1>> v_res(residuals + 3);
 
     const T eps = T(1e-8);
-    const T r_norm_safe = ceres::sqrt(r0.squaredNorm() + eps*eps);
+    using std::sqrt;
+    const T r_norm_safe = sqrt(r0.squaredNorm() + eps*eps);
     const T denom = r_norm_safe * r_norm_safe * r_norm_safe;
 
     r_res = r1 - (r0 + v0 * dt);
@@ -375,7 +422,7 @@ public:
         };
         // Ceres expects quaternion in order [x, y, z, w]
         T dq_arr[4];
-        ceres::AngleAxisToQuaternion(angle_axis, dq_arr);
+        rotation::AngleAxisToQuaternion(angle_axis, dq_arr);
         // Eigen::Quaternion constructor takes (w, x, y, z)
         dq = Eigen::Quaternion<T>(dq_arr[0], dq_arr[1], dq_arr[2], dq_arr[3]);
     }
@@ -385,7 +432,7 @@ public:
         const Eigen::Quaternion<T> q_err = q_pred.conjugate() * q1;
         T q_err_arr[4] = { q_err.w(), q_err.x(), q_err.y(), q_err.z() };
         // Write angle-axis into residuals
-        ceres::QuaternionToAngleAxis(q_err_arr, q_res.data());
+        rotation::QuaternionToAngleAxis(q_err_arr, q_res.data());
     }
     q_res = q_res / T(quat_std_dev);
     b_res = (b_w_1 - b_w_0) / T(bias_std_dev); // assuming constant bias for now
@@ -435,7 +482,7 @@ public:
             };
             // Ceres expects quaternion in order [x, y, z, w]
             T dq_arr[4];
-            ceres::AngleAxisToQuaternion(angle_axis, dq_arr);
+            rotation::AngleAxisToQuaternion(angle_axis, dq_arr);
             // Eigen::Quaternion constructor takes (w, x, y, z)
             dq = Eigen::Quaternion<T>(dq_arr[0], dq_arr[1], dq_arr[2], dq_arr[3]);
         }
@@ -445,7 +492,7 @@ public:
             const Eigen::Quaternion<T> q_err = q_pred.conjugate() * q1;
             T q_err_arr[4] = { q_err.w(), q_err.x(), q_err.y(), q_err.z() };
             // Write angle-axis into residuals
-            ceres::QuaternionToAngleAxis(q_err_arr, q_res.data());
+            rotation::QuaternionToAngleAxis(q_err_arr, q_res.data());
         }
         // Normalize by standard deviation
         q_res = q_res / T(quat_std_dev); // assuming 0.01 rad std dev
@@ -493,7 +540,7 @@ public:
             };
             // Ceres expects quaternion in order [x, y, z, w]
             T dq_arr[4];
-            ceres::AngleAxisToQuaternion(angle_axis, dq_arr);
+            rotation::AngleAxisToQuaternion(angle_axis, dq_arr);
             // Eigen::Quaternion constructor takes (w, x, y, z)
             dq = Eigen::Quaternion<T>(dq_arr[0], dq_arr[1], dq_arr[2], dq_arr[3]);
         }
@@ -503,7 +550,7 @@ public:
             const Eigen::Quaternion<T> q_err = q_pred.conjugate() * q1;
             T q_err_arr[4] = { q_err.w(), q_err.x(), q_err.y(), q_err.z() };
             // Write angle-axis into residuals
-            ceres::QuaternionToAngleAxis(q_err_arr, q_res.data());
+            rotation::QuaternionToAngleAxis(q_err_arr, q_res.data());
         }
         // Normalize by standard deviation
         q_res = q_res / T(quat_std_dev); // assuming 0.01 rad std dev

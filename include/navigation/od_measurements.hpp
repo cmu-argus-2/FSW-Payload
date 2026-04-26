@@ -4,7 +4,7 @@
 #include "core/errors.hpp"
 #include <eigen3/Eigen/Dense>
 #include <eigen3/Eigen/Geometry>
-#include <ceres/ceres.h>
+#include <cmath>
 
 // ── Landmark column index and cost functor ────────────────────────────────────
 enum LandmarkMeasurementIdx {
@@ -18,7 +18,7 @@ enum LandmarkMeasurementIdx {
     LANDMARK_COUNT     = 7
 };
 
-// ── Ceres cost functor for landmark bearing residuals ─────────────────────────
+// ── Landmark bearing residual functor ────────────────────────────────────────
 struct LandmarkCostFunctor {
 public:
     LandmarkCostFunctor(const double* const landmark_row, const double landmark_std_dev)
@@ -41,7 +41,8 @@ public:
         const Eigen::Matrix<T, 3, 1> diff = (landmark_pos_T - r);
         const T norm_sq  = diff.squaredNorm();
         const T eps      = T(1e-6);
-        const T inv_norm = T(1.0) / ceres::sqrt(norm_sq + eps);
+        using std::sqrt;
+        const T inv_norm = T(1.0) / sqrt(norm_sq + eps);
         const Eigen::Matrix<T, 3, 1> predicted_bearing = diff * inv_norm;
 
         r_res = (q.inverse() * predicted_bearing - bearing_vec_T) / T(landmark_std_dev);
@@ -55,10 +56,7 @@ private:
     const double landmark_std_dev;
 };
 
-// ── Measurement bundle for solve_ceres_batch_opt ──────────────────────────────
-// Uses raw Eigen dynamic types to avoid a circular include with batch_optimization.hpp
-// (which includes od.hpp for BATCH_OPT_config). They are assignment-compatible with the
-// RowMajor typedefs in batch_optimization.hpp as long as column counts match at runtime.
+// ── Measurement bundle for solve_batch_opt ────────────────────────────────────
 struct ODMeasurements
 {
     Eigen::MatrixXd                          landmark_measurements;  // Nx7
@@ -66,8 +64,6 @@ struct ODMeasurements
     Eigen::MatrixXd                          gyro_measurements;      // Mx4
     Eigen::VectorXd                          landmark_uncertainties; // Nx1, one sigma per row
 
-    // Validates all fields for use by solve_ceres_batch_opt. Logs each specific
-    // problem via spdlog::error and calls LogError on failure.
     // Returns ErrorCode::OK on success, ErrorCode::ODMEAS_NOT_VALID on failure.
     ErrorCode Validate() const;
 };

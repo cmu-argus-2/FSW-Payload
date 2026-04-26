@@ -238,8 +238,8 @@ logs/
 
 # ignore build artifacts inside dep submodules (source trees are tracked as submodules)
 deps/spdlog/build/
-deps/HighFive-src/build/
-deps/ceres-solver/build/
 deps/googletest/build/
+# populated by install_deps.sh from system packages; not committed
+deps/mumps/
 
 workspace/

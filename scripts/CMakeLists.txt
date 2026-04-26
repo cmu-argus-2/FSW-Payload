@@ -15,21 +15,6 @@ target_link_libraries(RUN_BATCH_OPT
     PRIVATE
     spdlog::spdlog
     PAYLOAD_LIB
-    Ceres::ceres
-    Eigen3::Eigen
-)
-
-# temporary executable to test jacobians
-add_executable(test_jacobians
-    navigation/test_jacobians.cpp
-)
-target_link_libraries(test_jacobians
-    PRIVATE
-    spdlog::spdlog
-    PAYLOAD_LIB
-    HDF5::HDF5           
-    HighFive::HighFive
-    Ceres::ceres
     Eigen3::Eigen
 )
 

@@ -22,27 +22,66 @@ sudo apt install -y \
   nano \
   v4l-utils \
   clang \
-  libgoogle-glog-dev \
-  libgflags-dev \
-  libatlas-base-dev \
   libeigen3-dev \
-  libsuitesparse-dev \
   libreadline-dev \
   libnvinfer-dev \
   nlohmann-json3-dev \
-  libceres-dev \
   libprotobuf-dev \
   protobuf-compiler \
   libhdf5-dev \
   libtbb-dev \
-  ccache
+  ccache \
+  autoconf \
+  automake \
+  libtool \
+  pkg-config \
+  gfortran \
+  liblapack-dev \
+  libblas-dev \
+  libmumps-seq-dev \
+  libmumps-headers-dev \
+  libscotch-dev
 #  libopencv-dev \
 
 # Uncomment this line if you get ccache related issues
 # sudo apt-get install --reinstall -y ccache
 
-# Initialise all submodules (source deps + Spice + models)
+# Initialise all submodules (source deps + Spice + models + Ipopt)
 git submodule update --init --recursive
+
+# Stage MUMPS libraries and headers into deps/mumps/ so CMake can find them.
+# This directory is gitignored; it is (re)populated here from the system packages
+# installed above (libmumps-seq-dev, libmumps-headers-dev, libscotch-dev).
+MULTIARCH=$(dpkg-architecture -qDEB_HOST_MULTIARCH 2>/dev/null || echo "aarch64-linux-gnu")
+MUMPS_LIB_SYS="/usr/lib/${MULTIARCH}"
+
+mkdir -p deps/mumps/lib deps/mumps/include/mumps_seq
+
+# Static libraries baked into libipopt.so at build time
+cp "${MUMPS_LIB_SYS}/libdmumps_seq.a" \
+   "${MUMPS_LIB_SYS}/libmumps_common_seq.a" \
+   "${MUMPS_LIB_SYS}/libpord_seq.a" \
+   "${MUMPS_LIB_SYS}/libmpiseq_seq.a" \
+   "${MUMPS_LIB_SYS}/libesmumps.a" \
+   "${MUMPS_LIB_SYS}/libscotch.a" \
+   "${MUMPS_LIB_SYS}/libscotcherr.a" \
+   deps/mumps/lib/
+
+# Headers (including the sequential MPI stub in mumps_seq/)
+cp /usr/include/dmumps_c.h \
+   /usr/include/dmumps_root.h \
+   /usr/include/dmumps_struc.h \
+   /usr/include/mumps_c_types.h \
+   /usr/include/mumps_compat.h \
+   /usr/include/mumps_int_def.h \
+   deps/mumps/include/
+cp /usr/include/mumps_seq/mpi.h \
+   /usr/include/mumps_seq/mpif.h \
+   /usr/include/mumps_seq/elapse.h \
+   deps/mumps/include/mumps_seq/
+
+# Ipopt (deps/Ipopt submodule) is built from source automatically by CMake's
+# ExternalProject_Add during the main build — no manual build step needed here.
 
 # Install spdlog from source (pinned via submodule)
 cd deps/spdlog
@@ -51,29 +90,6 @@ cmake ..
 make -j
 sudo make install
 cd ../../..
-
-# Install HighFive from source (pinned via submodule; HighFive has its own submodules)
-cmake -DHIGHFIVE_EXAMPLES=Off \
-      -DHIGHFIVE_USE_BOOST=Off \
-      -DHIGHFIVE_UNIT_TESTS=Off \
-      -DCMAKE_INSTALL_PREFIX=${HIGHFIVE_INSTALL_PREFIX} \
-      -B deps/HighFive-src/build \
-      deps/HighFive-src
-cmake --build deps/HighFive-src/build
-sudo cmake --install deps/HighFive-src/build
-
-# Install Ceres Solver from source (pinned via submodule)
-# Takes a long time to build; skip if already installed at the right version.
-if pkg-config --exact-version=2.2.0 ceres 2>/dev/null; then
-    echo "Ceres 2.2.0 already installed — skipping build."
-else
-    cd deps/ceres-solver
-    mkdir -p build && cd build
-    cmake ..
-    make -j3
-    sudo make install
-    cd ../../..
-fi
 
 # googletest is integrated via CMake FetchContent (deps/googletest submodule).
 # No separate build/install step needed.

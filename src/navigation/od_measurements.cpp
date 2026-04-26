@@ -1,6 +1,25 @@
 #include "navigation/od_measurements.hpp"
+#include "navigation/quaternion.hpp"
 #include "navigation/pose_dynamics.hpp"  // GyroMeasurementIdx
+#include <casadi/casadi.hpp>
 #include "spdlog/spdlog.h"
+
+using casadi::DM;
+using casadi::MX;
+
+MX landmark_residual_casadi(
+    const MX& r,
+    const MX& q,
+    const DM& lmk_pos,
+    const DM& bearing_meas,
+    double sigma)
+{
+    MX diff         = MX(lmk_pos) - r;
+    MX dist         = sqrt(dot(diff, diff) + 1e-6);
+    MX bearing_eci  = diff / dist;
+    MX bearing_body = quat_inv_rotate_xyzw(q, bearing_eci);
+    return (bearing_body - MX(bearing_meas)) / sigma;
+}
 
 ErrorCode ODMeasurements::Validate() const
 {

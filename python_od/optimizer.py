@@ -25,10 +25,12 @@ IPOPT's interior-point solver handles the constraint structure directly.
 """
 from __future__ import annotations
 
+import json
+import csv
+import time
 from pathlib import Path
 
 import casadi as ca
-import h5py
 import numpy as np
 import scipy.linalg
 
@@ -48,11 +50,224 @@ UMA_STD_DEV     = 1e-5        # km/s²  — expected magnitude of unmodelled for
 GYRO_WN_STD_DEV = 0.0008726   # rad/s  — gyro white noise std dev
 LANDMARK_STD    = 0.009       # rad    — landmark bearing noise
 
-# ── Initial guess (circular orbit ~7000 km altitude, no spin, zero bias) ───────
-INIT_R = np.array([0.0, 0.0, 7000.0])    # km
-INIT_V = np.array([0.0, 8.0, 0.0])       # km/s
-INIT_Q = np.array([0.0, 0.0, 0.0, 1.0]) # identity [x,y,z,w]
-INIT_B = np.array([0.0, 0.0, 0.0])       # rad/s
+R_ORBIT_KM = 6371.0 + 600.0  # default orbital altitude for position initialisation
+
+
+# ── Trajectory initializer ───────────────────────────────────────────────────────
+
+def _wahba_svd(B: np.ndarray) -> np.ndarray:
+    """
+    Wahba's problem via SVD: find rotation R minimising sum‖d_eci − R·b_body‖².
+    B = Σ d_eci · b_body^T.  Returns identity quaternion [x,y,z,w] on degenerate input.
+    """
+    if np.linalg.norm(B) < 1e-9:
+        return np.array([0.0, 0.0, 0.0, 1.0])
+    U, _, Vt = np.linalg.svd(B)
+    diag = np.array([1.0, 1.0, np.linalg.det(U @ Vt)])
+    R = U @ np.diag(diag) @ Vt
+    # Convert rotation matrix to quaternion [x, y, z, w]
+    trace = R[0, 0] + R[1, 1] + R[2, 2]
+    if trace > 0:
+        s = 0.5 / np.sqrt(trace + 1.0)
+        w = 0.25 / s
+        x = (R[2, 1] - R[1, 2]) * s
+        y = (R[0, 2] - R[2, 0]) * s
+        z = (R[1, 0] - R[0, 1]) * s
+    elif R[0, 0] > R[1, 1] and R[0, 0] > R[2, 2]:
+        s = 2.0 * np.sqrt(1.0 + R[0, 0] - R[1, 1] - R[2, 2])
+        w = (R[2, 1] - R[1, 2]) / s
+        x = 0.25 * s
+        y = (R[0, 1] + R[1, 0]) / s
+        z = (R[0, 2] + R[2, 0]) / s
+    elif R[1, 1] > R[2, 2]:
+        s = 2.0 * np.sqrt(1.0 + R[1, 1] - R[0, 0] - R[2, 2])
+        w = (R[0, 2] - R[2, 0]) / s
+        x = (R[0, 1] + R[1, 0]) / s
+        y = 0.25 * s
+        z = (R[1, 2] + R[2, 1]) / s
+    else:
+        s = 2.0 * np.sqrt(1.0 + R[2, 2] - R[0, 0] - R[1, 1])
+        w = (R[1, 0] - R[0, 1]) / s
+        x = (R[0, 2] + R[2, 0]) / s
+        y = (R[1, 2] + R[2, 1]) / s
+        z = 0.25 * s
+    q = np.array([x, y, z, w])
+    return q / np.linalg.norm(q)
+
+
+def _slerp(q0: np.ndarray, q1: np.ndarray, alpha: float) -> np.ndarray:
+    """SLERP between two unit quaternions [x,y,z,w]."""
+    dot = float(np.dot(q0, q1))
+    if dot < 0.0:
+        q1 = -q1
+        dot = -dot
+    dot = min(dot, 1.0)
+    if dot > 0.9995:
+        return (q0 + alpha * (q1 - q0)) / np.linalg.norm(q0 + alpha * (q1 - q0))
+    theta0 = np.arccos(dot)
+    theta  = theta0 * alpha
+    sin0   = np.sin(theta0)
+    return np.sin(theta0 - theta) / sin0 * q0 + np.sin(theta) / sin0 * q1
+
+
+class TrajectoryInitializer:
+    """
+    Mirrors C++ TrajectoryInitializer in src/navigation/trajectory_initializer.cpp.
+
+    Per-group pose keyframes:
+      position  = mean landmark ECI position renormalised to R_ORBIT_KM
+      attitude  = Wahba SVD on (satellite-to-landmark ECI direction, body bearing) pairs
+
+    All states:
+      position  = linear interpolation/extrapolation between keyframes
+      attitude  = SLERP between keyframes
+      velocity  = central finite differences of position
+
+    Gyro bias (fixed):
+      mean over all states of (ω_meas − ω_att),
+      where ω_att ≈ 2·(q₀⁻¹⊗q₁).vec / dt
+    """
+
+    def __init__(
+        self,
+        state_timestamps:       list[float],
+        landmark_measurements:  np.ndarray,   # (N, 7): [t, bx, by, bz, ex, ey, ez]
+        landmark_group_starts:  np.ndarray,   # (N,) bool
+        gyro_measurements:      np.ndarray,   # (M, 4): [t, wx, wy, wz] rad/s
+        estimate_bias:          bool = True,
+    ) -> None:
+        ts = np.array(state_timestamps)
+        M  = len(ts)
+        N_lmk = len(landmark_measurements)
+
+        # ── Build pose keyframes (one per landmark group) ─────────────────────
+        keyframe_t:   list[float]      = []
+        keyframe_pos: list[np.ndarray] = []
+        keyframe_quat: list[np.ndarray] = []
+
+        i = 0
+        while i < N_lmk:
+            if not landmark_group_starts[i]:
+                i += 1
+                continue
+
+            t_group = landmark_measurements[i, 0]
+            lm_pos_list:  list[np.ndarray] = []
+            bearing_list: list[np.ndarray] = []
+
+            # collect all rows belonging to this group
+            while i < N_lmk and (len(lm_pos_list) == 0 or not landmark_group_starts[i]):
+                lm_pos_list.append(landmark_measurements[i, 4:7].copy())
+                bearing_list.append(landmark_measurements[i, 1:4].copy())
+                i += 1
+
+            if not lm_pos_list:
+                continue
+
+            pos_sum = sum(lm_pos_list)
+            norm    = np.linalg.norm(pos_sum)
+            if norm < 1e-6:
+                continue
+            r_group = pos_sum / norm * R_ORBIT_KM
+
+            B = np.zeros((3, 3))
+            for lm_pos, bearing in zip(lm_pos_list, bearing_list):
+                diff = lm_pos - r_group
+                d    = np.linalg.norm(diff)
+                if d < 1e-6:
+                    continue
+                B += np.outer(diff / d, bearing)
+
+            keyframe_t.append(t_group)
+            keyframe_pos.append(r_group)
+            keyframe_quat.append(_wahba_svd(B))
+
+        # ── Interpolate to all state timestamps ───────────────────────────────
+        positions  = np.zeros((M, 3))
+        quaternions = np.zeros((M, 4))
+        quaternions[:, 3] = 1.0   # identity [x,y,z,w]
+
+        if not keyframe_t:
+            positions[:, 2] = R_ORBIT_KM
+        else:
+            kf_t = np.array(keyframe_t)
+            kf_p = np.array(keyframe_pos)    # (K, 3)
+            kf_q = np.array(keyframe_quat)   # (K, 4)
+            K    = len(kf_t)
+
+            for j, t in enumerate(ts):
+                if K == 1:
+                    positions[j]  = kf_p[0]
+                    quaternions[j] = kf_q[0]
+                elif t <= kf_t[0]:
+                    # Extrapolate before first keyframe
+                    dt = kf_t[1] - kf_t[0]
+                    if abs(dt) < 1e-9:
+                        positions[j] = kf_p[0]
+                    else:
+                        positions[j] = kf_p[0] + (kf_p[1] - kf_p[0]) / dt * (t - kf_t[0])
+                    quaternions[j] = kf_q[0]
+                elif t >= kf_t[-1]:
+                    dt = kf_t[-1] - kf_t[-2]
+                    if abs(dt) < 1e-9:
+                        positions[j] = kf_p[-1]
+                    else:
+                        positions[j] = kf_p[-1] + (kf_p[-1] - kf_p[-2]) / dt * (t - kf_t[-1])
+                    quaternions[j] = kf_q[-1]
+                else:
+                    idx = int(np.searchsorted(kf_t, t, side="right")) - 1
+                    idx = max(0, min(idx, K - 2))
+                    alpha = (t - kf_t[idx]) / (kf_t[idx + 1] - kf_t[idx])
+                    positions[j] = (1.0 - alpha) * kf_p[idx] + alpha * kf_p[idx + 1]
+                    quaternions[j] = _slerp(kf_q[idx], kf_q[idx + 1], alpha)
+
+        # ── Velocity: central finite differences ──────────────────────────────
+        velocities = np.zeros((M, 3))
+        for j in range(M):
+            i0 = max(0, j - 1)
+            i1 = min(M - 1, j + 1)
+            if i0 == i1:
+                continue
+            dt = ts[i1] - ts[i0]
+            velocities[j] = (positions[i1] - positions[i0]) / dt
+
+        # ── Gyro bias: mean(ω_meas − ω_att) ──────────────────────────────────
+        gyro_bias = np.zeros(3)
+        if estimate_bias and len(gyro_measurements) > 0:
+            Mg = len(gyro_measurements)
+            Nb = min(M, Mg)
+            bias_sum = np.zeros(3)
+            count    = 0
+            for j in range(Nb):
+                i0 = j if j < M - 1 else j - 1
+                i1 = i0 + 1
+                dt = ts[i1] - ts[i0]
+                if abs(dt) < 1e-9:
+                    continue
+                # q0^{-1} ⊗ q1 — Hamilton product with q0 conjugated
+                q0  = quaternions[i0]  # [x,y,z,w]
+                q1  = quaternions[i1]
+                # conjugate of q0: [-x,-y,-z,w]
+                q0c = np.array([-q0[0], -q0[1], -q0[2], q0[3]])
+                # Hamilton product q0c ⊗ q1
+                x0, y0, z0, w0 = q0c
+                x1, y1, z1, w1 = q1
+                dq_vec = np.array([
+                    w0*x1 + x0*w1 + y0*z1 - z0*y1,
+                    w0*y1 - x0*z1 + y0*w1 + z0*x1,
+                    w0*z1 + x0*y1 - y0*x1 + z0*w1,
+                ])
+                omega_att = 2.0 * dq_vec / dt
+                omega_meas = gyro_measurements[j, 1:4]
+                bias_sum += omega_meas - omega_att
+                count    += 1
+            if count > 0:
+                gyro_bias = bias_sum / count
+
+        self.positions   = positions    # (M, 3)
+        self.velocities  = velocities   # (M, 3)
+        self.quaternions = quaternions  # (M, 4)  [x,y,z,w]
+        self.gyro_bias   = gyro_bias    # (3,)
 
 
 # ── Helpers ─────────────────────────────────────────────────────────────────────
@@ -243,10 +458,10 @@ def _compute_covariance(
 # ── Main solver ─────────────────────────────────────────────────────────────────
 
 def build_and_solve(
-    landmark_measurements:  np.ndarray,   # (N_lmk,  7): [t, bx, by, bz, lx, ly, lz]
-    landmark_group_starts:  np.ndarray,   # (N_lmk,)  bool
-    gyro_measurements:      np.ndarray,   # (N_gyro,  4): [t, wx, wy, wz]
-    max_dt:          float          = 60.0,
+    landmark_measurements:  np.ndarray,         # (N_lmk, 7): [t_j2000, bx, by, bz, ex, ey, ez]
+    landmark_group_starts:  np.ndarray,         # (N_lmk,) bool
+    gyro_measurements:      np.ndarray,         # (N_gyro, 4): [t_j2000, wx, wy, wz] rad/s
+    landmark_uncertainties: np.ndarray | None = None,  # (N_lmk,) per-measurement sigma [rad]
     uma_std:         float          = UMA_STD_DEV,
     integrator_type: IntegratorType = IntegratorType.FORWARD_EULER,
     use_j2:           bool        = False,
@@ -288,15 +503,16 @@ def build_and_solve(
         residuals           : (flat,)   float64  (see process_residuals format)
         pos_var / vel_var / rot_var / uma_var / bias_var  — covariance blocks
     """
-    # ── 1. Timeline ────────────────────────────────────────────────────────────
-    ts_list, lmk_group_indices, gyro_indices = get_state_timestamps(
-        landmark_measurements, landmark_group_starts, gyro_measurements, max_dt
+    # ── 1. Timeline (mirrors C++: states = gyro timestamps) ───────────────────
+    ts_list, lmk_group_indices = get_state_timestamps(
+        landmark_measurements, landmark_group_starts, gyro_measurements
     )
     ts    = np.array(ts_list, dtype=np.float64)
     N     = len(ts)
     N_uma = N - 1
 
-    gyro_at_state: dict[int, int] = {si: j for j, si in enumerate(gyro_indices)}
+    # Every state i has exactly one gyro measurement (state timestamps = gyro timestamps)
+    gyro_at_state: dict[int, int] = {i: i for i in range(N)}
     lmk_groups = _build_landmark_groups(landmark_group_starts, lmk_group_indices)
 
     if use_drag and bc_inv_std is None:
@@ -309,7 +525,6 @@ def build_and_solve(
     ).strip()
     print(f"[optimizer] {N} states | "
           f"{len(lmk_group_indices)} landmark groups | "
-          f"{len(gyro_indices)} gyro measurements | "
           f"span {ts[-1] - ts[0]:.1f} s  |  UMA σ = {uma_std:.2e} km/s²  |  "
           f"integrator = {integrator_type.value}  |  physics = {physics_flags}")
 
@@ -377,21 +592,27 @@ def build_and_solve(
         for row in meas_rows:
             lmk_pos      = ca.DM(landmark_measurements[row, 4:7].astype(float))
             bearing_meas = ca.DM(landmark_measurements[row, 1:4].astype(float))
+            sigma = (float(landmark_uncertainties[row])
+                     if landmark_uncertainties is not None else LANDMARK_STD)
             res = landmark_residual(r[:, state_idx], q[:, state_idx],
-                                    lmk_pos, bearing_meas, LANDMARK_STD)
+                                    lmk_pos, bearing_meas, sigma)
             landmark_res_syms.append(res)
             obj += ca.dot(res, res)
 
     opti.minimize(obj)
 
-    # ── 5. Initial guess ───────────────────────────────────────────────────────
+    # ── 5. Initial guess (trajectory initializer, mirrors C++) ────────────────
+    traj_init = TrajectoryInitializer(
+        ts_list, landmark_measurements, landmark_group_starts,
+        gyro_measurements, estimate_bias=True,
+    )
     for i in range(N):
-        opti.set_initial(r[:, i], INIT_R)
-        opti.set_initial(v[:, i], INIT_V)
-        opti.set_initial(q[:, i], INIT_Q)
+        opti.set_initial(r[:, i], traj_init.positions[i])
+        opti.set_initial(v[:, i], traj_init.velocities[i])
+        opti.set_initial(q[:, i], traj_init.quaternions[i])
     for i in range(N_uma):
         opti.set_initial(a[:, i], [0.0, 0.0, 0.0])
-    opti.set_initial(b, INIT_B)
+    opti.set_initial(b, traj_init.gyro_bias)
     if use_drag:
         opti.set_initial(bc_inv, bc_inv_nominal)
 
@@ -432,9 +653,12 @@ def build_and_solve(
         + [res for res in angular_res_syms if res is not None]
         + landmark_res_syms
     )
+    cov_start = time.perf_counter()
     cov = _compute_covariance(cost_residuals, dyn_constraint_syms, sol,
                               r, v, q, a, b, N, uma_std,
                               bc_inv=bc_inv if use_drag else None)
+    covariance_time_ms = (time.perf_counter() - cov_start) * 1000.0
+    print(f"[covariance] Complete in {covariance_time_ms:.1f} ms")
 
     # ── 9. Extract solution ────────────────────────────────────────────────────
     a_val = np.asarray(sol.value(a))
@@ -442,70 +666,157 @@ def build_and_solve(
         a_val = a_val.reshape(3, 1)
 
     result = {
-        "state_timestamps":  ts,
-        "positions":         sol.value(r).T,    # (N, 3)
-        "velocities":        sol.value(v).T,    # (N, 3)
-        "quaternions":       sol.value(q).T,    # (N, 4)
-        "uma_accelerations": a_val.T,           # (N-1, 3)
-        "gyro_bias":         sol.value(b),      # (3,)
-        "residuals":         residuals_flat,
+        "state_timestamps":   ts,
+        "positions":          sol.value(r).T,           # (N, 3)
+        "velocities":         sol.value(v).T,           # (N, 3)
+        "quaternions":        sol.value(q).T,           # (N, 4)  [x,y,z,w]
+        "gyro_bias":          np.asarray(sol.value(b)), # (3,)
+        "uma_accelerations":  a_val.T,                  # (N-1, 3)
+        # initial trajectory for CSV output
+        "init_positions":     traj_init.positions,      # (N, 3)
+        "init_velocities":    traj_init.velocities,     # (N, 3)
+        "init_quaternions":   traj_init.quaternions,    # (N, 4)
+        "init_gyro_bias":     traj_init.gyro_bias,      # (3,)
+        # residuals split by type (for separate CSV files)
+        "lin_residuals":      lin_vals.reshape(-1, 6),  # (N-1, 6)
+        "ang_residuals":      ang_vals.reshape(-1, 3),  # (N-1, 3)
+        "lmk_residuals":      lmk_vals.reshape(-1, 3),  # (N_lmk, 3)
         **cov,
     }
     if use_drag:
-        result["bc_inv"] = float(sol.value(bc_inv))   # km²/kg
+        result["bc_inv"] = float(sol.value(bc_inv))
 
     return result
 
 
-# ── Output ──────────────────────────────────────────────────────────────────────
+# ── Output (CSV format matching C++ run_od_on_dataset) ───────────────────────────
 
-def save_results(results: dict, output_path: Path) -> None:
+_STATE_HEADER = (
+    "timestamp_j2000,pos_x_km,pos_y_km,pos_z_km,"
+    "vel_x_kms,vel_y_kms,vel_z_kms,"
+    "quat_x,quat_y,quat_z,quat_w"
+)
+_DYN_RES_HEADER = (
+    "timestamp_j2000,pos_res_x,pos_res_y,pos_res_z,"
+    "vel_res_x,vel_res_y,vel_res_z,"
+    "rot_res_x,rot_res_y,rot_res_z,"
+    "gyro_bias_res_x,gyro_bias_res_y,gyro_bias_res_z"
+)
+_LMK_RES_HEADER = "res_x,res_y,res_z"
+_COV_HEADER = (
+    "timestamp_j2000,pos_cov_x,pos_cov_y,pos_cov_z,"
+    "vel_cov_x,vel_cov_y,vel_cov_z,"
+    "rot_cov_x,rot_cov_y,rot_cov_z"
+)
+
+
+def _write_state_csv(path: Path, timestamps: np.ndarray,
+                     positions: np.ndarray, velocities: np.ndarray,
+                     quaternions: np.ndarray) -> None:
+    N = len(timestamps)
+    with open(path, "w", newline="") as f:
+        f.write(_STATE_HEADER + "\n")
+        for i in range(N):
+            row = [timestamps[i],
+                   positions[i, 0], positions[i, 1], positions[i, 2],
+                   velocities[i, 0], velocities[i, 1], velocities[i, 2],
+                   quaternions[i, 0], quaternions[i, 1],
+                   quaternions[i, 2], quaternions[i, 3]]
+            f.write(",".join(f"{v:.12g}" for v in row) + "\n")
+
+
+def save_results(results: dict, results_dir: Path, meta: dict | None = None) -> None:
     """
-    Write optimizer results to HDF5.
+    Write optimizer results to CSVs matching C++ run_od_on_dataset output.
 
-    state_estimates (N, 14):
-        [timestamp, px, py, pz, vx, vy, vz, qx, qy, qz, qw, bx, by, bz]
-
-    residuals ((N-1)*6 + (N-1)*3 + N_lmk*3,):
-        (N-1)*6  linear dynamics constraint violations  (should be ~0)
-        (N-1)*3  angular dynamics residuals
-        N_lmk*3  landmark bearing residuals
-
-    state_estimate_covariance_diagonal (9N+3,) — fix_bias layout:
-        state 0   : [px, py, pz, vx, vy, vz, rx, ry, rz, bx, by, bz]  (12 values)
-        state 1…N : [px, py, pz, vx, vy, vz, rx, ry, rz]               (9 values each)
-
-    uma_accelerations (N-1, 3):  estimated unmodelled acceleration [km/s²]
-    uma_variance      (N-1, 3):  UMA marginal variance             [(km/s²)²]
+    Files written to results_dir/:
+      state_estimates.csv       — N×14 final state estimates
+      initial_trajectory.csv    — N×14 initial trajectory guess
+      dynamics_residuals.csv    — (N-1)×13 (timestamp + 12 residual fields)
+      landmark_residuals.csv    — N_lmk×3
+      covariance.csv            — N×13  (if covariance was computed)
+      od_result.json            — metadata (if meta dict is provided)
     """
-    output_path = Path(output_path)
-    output_path.parent.mkdir(parents=True, exist_ok=True)
+    results_dir = Path(results_dir)
+    results_dir.mkdir(parents=True, exist_ok=True)
 
-    N    = len(results["state_timestamps"])
+    ts   = results["state_timestamps"]
     bias = np.asarray(results["gyro_bias"]).ravel()
+    N    = len(ts)
 
-    state_estimates          = np.zeros((N, 14), dtype=np.float64)
-    state_estimates[:, 0]    = results["state_timestamps"]
-    state_estimates[:, 1:4]  = results["positions"]
-    state_estimates[:, 4:7]  = results["velocities"]
-    state_estimates[:, 7:11] = results["quaternions"]
-    state_estimates[:, 11:]  = np.tile(bias, (N, 1))
+    # state_estimates.csv  (11 cols; gyro_bias moved to od_result.json estimates)
+    _write_state_csv(
+        results_dir / "state_estimates.csv",
+        ts, results["positions"], results["velocities"],
+        results["quaternions"],
+    )
 
-    pos_var  = results["pos_var"]
-    vel_var  = results["vel_var"]
-    rot_var  = results["rot_var"]
-    bias_var = np.asarray(results["bias_var"]).ravel()
+    # initial_trajectory.csv
+    _write_state_csv(
+        results_dir / "initial_trajectory.csv",
+        ts, results["init_positions"], results["init_velocities"],
+        results["init_quaternions"],
+    )
 
-    state0   = np.concatenate([pos_var[0], vel_var[0], rot_var[0], bias_var])
-    rest     = np.concatenate([pos_var[1:], vel_var[1:], rot_var[1:]], axis=1)
-    cov_diag = np.concatenate([state0, rest.ravel()]).astype(np.float64)
+    # dynamics_residuals.csv
+    # lin_residuals (N-1, 6): pos+vel; ang_residuals (N-1, 3): rot; zeros for gyro_bias_res
+    lin_res = np.asarray(results["lin_residuals"])   # (N-1, 6)
+    ang_res = np.asarray(results["ang_residuals"])   # (N-1, 3)
+    with open(results_dir / "dynamics_residuals.csv", "w", newline="") as f:
+        f.write(_DYN_RES_HEADER + "\n")
+        for i in range(N - 1):
+            row = [ts[i],
+                   lin_res[i, 0], lin_res[i, 1], lin_res[i, 2],
+                   lin_res[i, 3], lin_res[i, 4], lin_res[i, 5],
+                   ang_res[i, 0], ang_res[i, 1], ang_res[i, 2],
+                   0.0, 0.0, 0.0]
+            f.write(",".join(f"{v:.12g}" for v in row) + "\n")
 
-    with h5py.File(output_path, "w") as f:
-        f.create_dataset("state_estimates",                    data=state_estimates)
-        f.create_dataset("gyro_bias",                          data=bias)
-        f.create_dataset("residuals",                          data=results["residuals"].astype(np.float64))
-        f.create_dataset("state_estimate_covariance_diagonal", data=cov_diag)
-        f.create_dataset("uma_accelerations",                  data=results["uma_accelerations"].astype(np.float64))
-        f.create_dataset("uma_variance",                       data=results["uma_var"].astype(np.float64))
+    # landmark_residuals.csv
+    lmk_res = np.asarray(results["lmk_residuals"])  # (N_lmk, 3)
+    with open(results_dir / "landmark_residuals.csv", "w", newline="") as f:
+        f.write(_LMK_RES_HEADER + "\n")
+        for i in range(len(lmk_res)):
+            f.write(f"{lmk_res[i,0]:.12g},{lmk_res[i,1]:.12g},{lmk_res[i,2]:.12g}\n")
 
-    print(f"[optimizer] Results saved → {output_path}")
+    # covariance.csv (10 cols; gyro_bias_cov moved to od_result.json estimates)
+    if "pos_var" in results:
+        pos_var = np.asarray(results["pos_var"])
+        vel_var = np.asarray(results["vel_var"])
+        rot_var = np.asarray(results["rot_var"])
+        with open(results_dir / "covariance.csv", "w", newline="") as f:
+            f.write(_COV_HEADER + "\n")
+            for i in range(N):
+                row = [ts[i],
+                       pos_var[i, 0], pos_var[i, 1], pos_var[i, 2],
+                       vel_var[i, 0], vel_var[i, 1], vel_var[i, 2],
+                       rot_var[i, 0], rot_var[i, 1], rot_var[i, 2]]
+                f.write(",".join(f"{v:.12g}" for v in row) + "\n")
+
+    # Populate meta["estimates"] with gyro_bias, bc_inv, and their covariances
+    if meta is not None:
+        outputs = meta.setdefault("outputs", {})
+        outputs["covariance_available"] = "pos_var" in results
+        outputs["covariance_computed"] = "pos_var" in results
+
+        est = meta.setdefault("estimates", {})
+        est["gyro_bias_x_rads"] = float(bias[0])
+        est["gyro_bias_y_rads"] = float(bias[1])
+        est["gyro_bias_z_rads"] = float(bias[2])
+        if "bc_inv" in results:
+            est["bc_inv_km2_kg"] = float(results["bc_inv"])
+        if "bias_var" in results:
+            bv = np.asarray(results["bias_var"]).ravel()
+            est["gyro_bias_cov_x_rads2"] = float(bv[0])
+            est["gyro_bias_cov_y_rads2"] = float(bv[1])
+            est["gyro_bias_cov_z_rads2"] = float(bv[2])
+        if "bc_inv_var" in results:
+            est["bc_inv_var_km4_kg2"] = float(results["bc_inv_var"])
+
+    # od_result.json
+    if meta is not None:
+        with open(results_dir / "od_result.json", "w") as f:
+            json.dump(meta, f, indent=2)
+            f.write("\n")
+
+    print(f"[optimizer] Results saved → {results_dir}")

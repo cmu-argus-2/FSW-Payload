@@ -5,6 +5,7 @@
 #include "core/timing.hpp"
 #include "telemetry/telemetry.hpp"
 #include "vision/dataset_manager.hpp"
+#include "navigation/od.hpp"
 #include "core/errors.hpp"
 #include "communication/comms.hpp"
 #include "communication/tilepack.hpp"
@@ -12,8 +13,10 @@
 
 #include <array>
 #include <chrono>
-#include <thread>
 #include <filesystem>
+#include <mutex>
+#include <stdexcept>
+#include <thread>
 
 #define DATASET_KEY_CMD "CMD"
 
@@ -62,6 +65,54 @@ std::array<std::string_view, COMMAND_NUMBER> COMMAND_NAMES = {
     "DEBUG_DISPLAY_CAMERA",
     "DEBUG_STOP_DISPLAY",
     "REQUEST_NEXT_FILE_PACKETS"};
+
+namespace
+{
+std::mutex g_od_job_mtx;
+bool g_od_job_started = false;
+ODRunStatus g_od_run_status = ODRunStatus::NOT_STARTED;
+ODResult g_od_result;
+
+void start_od_job(const ODRequest& request)
+{
+    {
+        std::lock_guard<std::mutex> lock(g_od_job_mtx);
+        if (g_od_run_status == ODRunStatus::RUNNING) {
+            throw std::runtime_error("OD job already running");
+        }
+
+        g_od_job_started = true;
+        g_od_run_status = ODRunStatus::RUNNING;
+        g_od_result = ODResult{};
+        g_od_result.dataset_folder = request.dataset_folder;
+        g_od_result.stage = ODStage::DATASET_NOT_AVAILABLE;
+    }
+
+    std::thread([request]() {
+        ODResult result;
+        try {
+            result = RunODOnDataset(request);
+        } catch (const std::exception& e) {
+            SPDLOG_ERROR("RUN_OD worker failed with exception: {}", e.what());
+            result = ODResult{};
+            result.dataset_folder = request.dataset_folder;
+            result.code = ErrorCode::BATCH_OPT_BUILD_FAILED;
+            result.stage = ODStage::FAILED;
+        } catch (...) {
+            SPDLOG_ERROR("RUN_OD worker failed with unknown exception");
+            result = ODResult{};
+            result.dataset_folder = request.dataset_folder;
+            result.code = ErrorCode::BATCH_OPT_BUILD_FAILED;
+            result.stage = ODStage::FAILED;
+        }
+
+        std::lock_guard<std::mutex> lock(g_od_job_mtx);
+        g_od_result = result;
+        g_od_run_status = result.code == ErrorCode::OK ? ODRunStatus::COMPLETED
+                                                       : ODRunStatus::FAILED;
+    }).detach();
+}
+}
 
 void ping_ack([[maybe_unused]] std::vector<uint8_t> &data)
 {
@@ -559,7 +610,29 @@ void run_od([[maybe_unused]] std::vector<uint8_t> &data)
 {
     SPDLOG_INFO("Running orbit determination..");
 
-    // TODO
+    std::string dataset_folder;
+    for (uint8_t byte : data) {
+        if (byte == 0) break;
+        dataset_folder.push_back(static_cast<char>(byte));
+    }
+    if (dataset_folder.empty()) {
+        SPDLOG_ERROR("RUN_OD: expected dataset folder path as command payload");
+        std::shared_ptr<Message> msg = CreateErrorAckMessage(CommandID::RUN_OD, 0x70);
+        sys::payload().TransmitMessage(msg);
+        return;
+    }
+
+    ODRequest request;
+    request.dataset_folder = dataset_folder;
+
+    try {
+        start_od_job(request);
+    } catch (const std::exception& e) {
+        SPDLOG_ERROR("RUN_OD: failed to start OD job: {}", e.what());
+        std::shared_ptr<Message> msg = CreateErrorAckMessage(CommandID::RUN_OD, 0x71);
+        sys::payload().TransmitMessage(msg);
+        return;
+    }
 
     sys::payload().SetLastExecutedCmdID(CommandID::RUN_OD);
 }
@@ -568,7 +641,28 @@ void request_od_result([[maybe_unused]] std::vector<uint8_t> &data)
 {
     SPDLOG_INFO("Requesting OD result..");
 
-    // TODO
+    bool job_started = false;
+    ODRunStatus run_status = ODRunStatus::NOT_STARTED;
+    ODResult result;
+    {
+        std::lock_guard<std::mutex> lock(g_od_job_mtx);
+        job_started = g_od_job_started;
+        run_status = g_od_run_status;
+        result = g_od_result;
+    }
+
+    if (!job_started) {
+        SPDLOG_WARN("REQUEST_OD_RESULT: no active OD job");
+        std::shared_ptr<Message> msg = CreateErrorAckMessage(CommandID::REQUEST_OD_RESULT, 0x72);
+        sys::payload().TransmitMessage(msg);
+        return;
+    }
+
+    SPDLOG_INFO("OD status: run_status={} stage={} dataset={} results={}",
+                static_cast<int>(run_status),
+                static_cast<int>(result.stage),
+                result.dataset_folder,
+                result.results_dir);
 
     sys::payload().SetLastExecutedCmdID(CommandID::REQUEST_OD_RESULT);
 }

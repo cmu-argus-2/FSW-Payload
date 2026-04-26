@@ -1,65 +1,106 @@
 #!/usr/bin/env python3
 """
-Batch orbit determination using CasADi + IPOPT — fixed gyro bias.
+Batch orbit determination using CasADi + IPOPT.
 
-Reproduces the fixed-bias variant of the C++ Ceres batch optimizer
-(scripts/navigation/run_batch_opt.cpp).
+  • Reads landmark_measurements.csv and imu_data.csv from a dataset folder
+  • Runs the fixed-bias batch OD optimizer
+  • Writes CSV results to data/results/<dataset_name>_<unix_ms>/
 
-Run from the repository root:
-    python python_od/ipopt_od.py
+Usage (from the repository root):
+    python python_od/ipopt_od.py <dataset_folder> [--j2] [--drag]
 
-Or from within python_od/:
-    python ipopt_od.py
+Example:
+    python python_od/ipopt_od.py data/datasets/17R_Florida_nadir_test
 """
 import sys
+import time
+import argparse
 from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).parent))
 
 import numpy as np
 
-from data_loader import load_h5
+from data_loader import load_landmark_csv, load_imu_csv
 from optimizer import build_and_solve, save_results
 from residuals import IntegratorType
 
-# ── Paths ───────────────────────────────────────────────────────────────────────
-DATA_DIR   = Path("data/datasets/batch_opt_gen")
-OUTPUT_DIR = DATA_DIR
-
 
 def main() -> None:
+    parser = argparse.ArgumentParser(description="Python batch OD (CasADi/IPOPT)")
+    parser.add_argument("dataset_folder", type=Path,
+                        help="Path to dataset folder containing "
+                             "landmark_measurements.csv and imu_data.csv")
+    parser.add_argument("--j2",   action="store_true", help="Enable J2 perturbation")
+    parser.add_argument("--drag", action="store_true", help="Enable atmospheric drag")
+    parser.add_argument("--rk4",  action="store_true", help="Use RK4 integrator (default: Euler)")
+    args = parser.parse_args()
+
+    dataset_folder = Path(args.dataset_folder)
+    run_unix_ms    = int(time.time() * 1000)
+
     # ── Load measurements ───────────────────────────────────────────────────────
-    meas = load_h5(DATA_DIR / "orbit_measurements.h5")
+    lm_csv  = dataset_folder / "landmark_measurements.csv"
+    imu_csv = dataset_folder / "imu_data.csv"
 
-    landmark_measurements = meas["landmark_measurements"].astype(np.float64)    # (N_lmk,  7)
-    landmark_group_starts = meas["group_starts"].astype(bool).ravel()  # (N_lmk,)
-    gyro_measurements     = meas["gyro_measurements"].astype(np.float64)         # (N_gyro, 4)
+    print(f"Loading landmark measurements from {lm_csv} …")
+    landmark_measurements, landmark_group_starts, landmark_uncertainties = \
+        load_landmark_csv(lm_csv)
 
-    print(f"Landmark measurements : {landmark_measurements.shape}")
-    print(f"Gyro measurements     : {gyro_measurements.shape}")
-    print(f"Landmark groups       : {landmark_group_starts.sum()}")
+    print(f"Loading IMU data from {imu_csv} …")
+    gyro_measurements = load_imu_csv(imu_csv)
+
+    print(f"Landmark rows   : {len(landmark_measurements)}")
+    print(f"Landmark groups : {landmark_group_starts.sum()}")
+    print(f"Gyro rows       : {len(gyro_measurements)}")
+
+    # ── Results folder: data/results/<dataset_name>_<unix_ms> ──────────────────
+    dataset_name = dataset_folder.resolve().name
+    results_dir  = Path("data/results") / f"{dataset_name}_{run_unix_ms}"
 
     # ── Solve ───────────────────────────────────────────────────────────────────
+    integrator = IntegratorType.RK4 if args.rk4 else IntegratorType.FORWARD_EULER
+
+    t0 = time.time()
     results = build_and_solve(
         landmark_measurements,
         landmark_group_starts,
         gyro_measurements,
-        max_dt=60.0,
-        uma_std=1e-5,
-        integrator_type=IntegratorType.RK4,
-        use_j2=True,
-        use_drag=True,
-        bc_inv_nominal=0.0,
-        bc_inv_std=1.0,
+        landmark_uncertainties = landmark_uncertainties,
+        # uma_std         = 1e-5,
+        integrator_type = integrator,
+        use_j2          = args.j2,
+        use_drag        = args.drag,
+        bc_inv_nominal  = 0.0,
+        bc_inv_std      = 1.0 if args.drag else None,
     )
+    run_time_ms = int((time.time() - t0) * 1000)
 
     # ── Report ──────────────────────────────────────────────────────────────────
-    print(f"\nEstimated gyro bias : {results['gyro_bias']} rad/s")
+    bias = np.asarray(results["gyro_bias"]).ravel()
+    print(f"\nEstimated gyro bias : {bias} rad/s")
     print(f"Final position      : {results['positions'][-1]} km")
     print(f"Final velocity      : {results['velocities'][-1]} km/s")
 
     # ── Save ────────────────────────────────────────────────────────────────────
-    save_results(results, OUTPUT_DIR / "state_estimates.h5")
+    meta = {
+        "dataset_folder":        str(dataset_folder),
+        "run_unix_ms":           run_unix_ms,
+        "run_time_ms":           run_time_ms,
+        "use_j2":                args.j2,
+        "use_drag":              args.drag,
+        "integrator":            integrator.value,
+        "inputs": {
+            "num_landmark_rows":   int(len(landmark_measurements)),
+            "num_landmark_groups": int(landmark_group_starts.sum()),
+            "num_gyro_rows":       int(len(gyro_measurements)),
+        },
+        "outputs": {
+            "num_state_estimates": int(len(results["state_timestamps"])),
+            "covariance_available": "pos_var" in results,
+        },
+    }
+    save_results(results, results_dir, meta=meta)
 
 
 if __name__ == "__main__":

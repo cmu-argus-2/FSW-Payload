@@ -1,7 +1,7 @@
 #include "navigation/od.hpp"
-#include "payload.hpp"
 #include "spdlog/spdlog.h"
 #include "toml.hpp"
+#include <stdexcept>
 
 
 INIT_config::INIT_config()
@@ -19,7 +19,13 @@ solver_function_tolerance(1e-6),
 solver_parameter_tolerance(1e-10),
 max_iterations(10000),
 bias_mode(BIAS_MODE::FIX_BIAS),
-max_dt(60.0)
+max_dt(60.0),
+compute_covariance(false),
+use_j2(false),
+use_drag(false),
+bc_inv_nominal(0.0),
+bc_inv_std(1e-8),
+integrator(Integrator::EULER)
 {
 }
 
@@ -30,92 +36,13 @@ OD_Config::OD_Config()
 
 
 OD::OD(const std::string& config_path)
-: 
-process_state(OD_STATE::IDLE)
 {
     SPDLOG_INFO("Will read OD configuration file...");
     ReadConfig(config_path);
 }
 
-
-void OD::RunLoop()
+OD::~OD()
 {
-    loop_flag = true;
-
-    while (loop_flag.load())
-    {
-        {
-            std::unique_lock<std::mutex> lock(mtx_active);
-            cv_active.wait(lock, [this] { return !loop_flag.load() || process_state != OD_STATE::IDLE; });
-            SPDLOG_DEBUG("OD loop - Waking up");
-        }
-
-        if (!loop_flag.load())
-        {
-            break;
-        }
-
-        switch (process_state)
-        {
-            case OD_STATE::IDLE:
-            {
-                SPDLOG_INFO("OD: IDLE");
-                break;
-            }
-
-            case OD_STATE::INIT:
-            {
-                SPDLOG_INFO("OD: INIT");
-                _DoInit();
-                break;
-            }
-
-            case OD_STATE::BATCH_OPT:
-            {
-                SPDLOG_INFO("OD: BATCH_OPT");
-                _DoBatchOptimization();
-                break;
-            }
-
-            default:
-                SPDLOG_WARN("OD: Unknown process state");
-                break;
-        }
-
-    }
-
-    SPDLOG_INFO("OD Loop Stopped");
-}
-
-void OD::StopLoop()
-{
-    {
-        std::lock_guard<std::mutex> lock(mtx_active);
-        loop_flag.store(false);
-    }
-    cv_active.notify_all(); 
-}
-
-
-OD_STATE OD::GetState() const
-{
-    return process_state;
-}
-
-void OD::StartExperiment()
-{
-    experiment_done.store(false);
-    process_state.store(OD_STATE::INIT);
-}
-
-bool OD::IsExperimentDone() const
-{
-    return experiment_done.load();
-}
-
-void OD::SwitchState(OD_STATE new_od_state)
-{
-    process_state.store(new_od_state);
 }
 
 
@@ -157,6 +84,12 @@ void OD::ReadConfig(const std::string& config_path)
     config.batch_opt.max_iterations = BATCH_OPT_params->get_as<int64_t>("max_iterations")->value_or(config.batch_opt.max_iterations);
     config.batch_opt.max_dt = get_param_as_double(BATCH_OPT_params, "max_dt", config.batch_opt.max_dt);
     config.batch_opt.bias_mode = static_cast<BIAS_MODE>(BATCH_OPT_params->get_as<int64_t>("bias_mode")->value_or(static_cast<int64_t>(config.batch_opt.bias_mode)));
+    config.batch_opt.compute_covariance = BATCH_OPT_params->get_as<bool>("compute_covariance")->value_or(config.batch_opt.compute_covariance);
+    config.batch_opt.use_j2   = BATCH_OPT_params->get_as<bool>("use_j2")->value_or(config.batch_opt.use_j2);
+    config.batch_opt.use_drag = BATCH_OPT_params->get_as<bool>("use_drag")->value_or(config.batch_opt.use_drag);
+    config.batch_opt.bc_inv_nominal = get_param_as_double(BATCH_OPT_params, "bc_inv_nominal", config.batch_opt.bc_inv_nominal);
+    config.batch_opt.bc_inv_std     = get_param_as_double(BATCH_OPT_params, "bc_inv_std",     config.batch_opt.bc_inv_std);
+    config.batch_opt.integrator     = static_cast<Integrator>(BATCH_OPT_params->get_as<int64_t>("integrator")->value_or(static_cast<int64_t>(config.batch_opt.integrator)));
     // TODO: safe value checking on each params
     
     LogConfig();
@@ -179,40 +112,13 @@ void OD::LogConfig()
     SPDLOG_INFO("  max_iterations: {}", config.batch_opt.max_iterations);
     SPDLOG_INFO("  max_dt: {}", config.batch_opt.max_dt);
     SPDLOG_INFO("  bias_mode: {}", static_cast<int>(config.batch_opt.bias_mode));
-
-} 
-
-bool OD::HandleStop()
-{
-    bool return_status = false;
-
-    if (!loop_flag.load())
-    {
-        // Need to save some data and states for the next run
-        return_status = true;
-
-        switch (process_state)
-        {
-
-            case OD_STATE::INIT:
-            {
-                SPDLOG_INFO("Stopping in INIT");
-                // Stop the data collection process 
-                break;
-            }
-
-            case OD_STATE::BATCH_OPT:
-            {
-                SPDLOG_INFO("Stopping in BATCH_OPT");
-                // At this point might be better to just cancel the run (should be fairly fast that we shouldn't need to cache stuff)
-                break;
-            }
-
-
-        }
-    }
-
-    return return_status;
+    SPDLOG_INFO("  compute_covariance: {}", config.batch_opt.compute_covariance);
+    SPDLOG_INFO("  use_j2: {}", config.batch_opt.use_j2);
+    SPDLOG_INFO("  use_drag: {}", config.batch_opt.use_drag);
+    SPDLOG_INFO("  bc_inv_nominal: {}", config.batch_opt.bc_inv_nominal);
+    SPDLOG_INFO("  bc_inv_std: {}", config.batch_opt.bc_inv_std);
+    SPDLOG_INFO("  integrator: {} ({})", static_cast<int>(config.batch_opt.integrator),
+                config.batch_opt.integrator == Integrator::RK4 ? "RK4" : "Euler");
 
 }
 
@@ -257,6 +163,12 @@ OD_Config ReadODConfig(const std::string& config_path)
     od_config.batch_opt.max_iterations = BATCH_OPT_params->get_as<int64_t>("max_iterations")->value_or(od_config.batch_opt.max_iterations);
     od_config.batch_opt.max_dt = get_param_as_double(BATCH_OPT_params, "max_dt", od_config.batch_opt.max_dt);
     od_config.batch_opt.bias_mode = static_cast<BIAS_MODE>(BATCH_OPT_params->get_as<int64_t>("bias_mode")->value_or(static_cast<int64_t>(od_config.batch_opt.bias_mode)));
+    od_config.batch_opt.compute_covariance = BATCH_OPT_params->get_as<bool>("compute_covariance")->value_or(od_config.batch_opt.compute_covariance);
+    od_config.batch_opt.use_j2   = BATCH_OPT_params->get_as<bool>("use_j2")->value_or(od_config.batch_opt.use_j2);
+    od_config.batch_opt.use_drag = BATCH_OPT_params->get_as<bool>("use_drag")->value_or(od_config.batch_opt.use_drag);
+    od_config.batch_opt.bc_inv_nominal = get_param_as_double(BATCH_OPT_params, "bc_inv_nominal", od_config.batch_opt.bc_inv_nominal);
+    od_config.batch_opt.bc_inv_std     = get_param_as_double(BATCH_OPT_params, "bc_inv_std",     od_config.batch_opt.bc_inv_std);
+    od_config.batch_opt.integrator     = static_cast<Integrator>(BATCH_OPT_params->get_as<int64_t>("integrator")->value_or(static_cast<int64_t>(od_config.batch_opt.integrator)));
 
     // Print the configuration
     SPDLOG_INFO("OD Configuration parameters set");

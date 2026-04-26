@@ -101,18 +101,20 @@ Vector3d LAT2ECEF(Vector3d v_lat, bool geoc) {
     SpiceDouble ecef[3]; //ECEF vector output
 
     loadAllKernels();
+
+    SpiceDouble radii[3];
+    SpiceDouble f, re, rp;
+    SpiceInt n;
+    bodvrd_c ( "EARTH", "RADII", 3, &n, radii );
+
+    re  =  radii[0];
+    rp  =  radii[2];
+    f   =  ( re - rp ) / re;
+    
     if (geoc) { // geocentric
         // input v_lat(0) must be radius
-        latrec_c(v_lat(0), v_lat(1), v_lat(2), ecef); // r [input units], longitude [rad], latitude [rad]
+        latrec_c(v_lat(0)+radii[0], v_lat(1), v_lat(2), ecef); // r [input units], longitude [rad], latitude [rad]
     } else {
-        SpiceDouble radii[3];
-        SpiceDouble f, re, rp;
-        SpiceInt n;
-        bodvrd_c ( "EARTH", "RADII", 3, &n, radii );
-
-         re  =  radii[0];
-         rp  =  radii[2];
-         f   =  ( re - rp ) / re;
 
         // input v_lat(0) must be altitude, not radius if !geoc / geodetic coordinates
          georec_c (v_lat(1), v_lat(2), v_lat(0), radii[0], f, ecef);

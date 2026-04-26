@@ -25,8 +25,9 @@ echo "NN module is ${ENABLE_VISION_NN}"
 git submodule update --init models
 git -C models lfs pull
 
-# Ensure Ipopt submodule is present (built from source by CMake ExternalProject_Add)
+# Ensure IPOPT and CasADi submodules are present (built by install_deps.sh)
 git submodule update --init deps/Ipopt
+git submodule update --init deps/casadi
 
 # Create binary directory
 mkdir -p bin

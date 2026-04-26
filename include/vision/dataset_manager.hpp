@@ -47,6 +47,7 @@ public:
     static std::shared_ptr<DatasetManager> Create(double max_period, uint8_t target_frame_nb, CAPTURE_MODE capture_mode, uint64_t capture_start_time,
                                                   IMU_COLLECTION_MODE imu_collection_mode, uint8_t image_capture_rate, float imu_sample_rate_hz,
                                                   ProcessingStage target_processing_stage, std::string ds_key, CameraManager& cam_manager, IMUManager& imu_manager, InferenceManager& inference_manager);
+    static std::shared_ptr<DatasetManager> Create(const DatasetConfig& config, std::string ds_key, CameraManager& cam_manager, IMUManager& imu_manager, InferenceManager& inference_manager);
     // If the folder path does not exist or does not contain a config file, it throws.
     static std::shared_ptr<DatasetManager> Create(const std::string& folder_path, std::string key, CameraManager& cam_manager, IMUManager& imu_manager, InferenceManager& inference_manager);
 
@@ -66,6 +67,7 @@ public:
     IMUManager& getIMUManager() { return imuManager; }
 
     uint64_t GetCaptureStartTime() const { return current_dataset.GetCaptureStartTime(); }
+    std::string GetDatasetFolder() const { return current_dataset.GetFolderPath(); }
 
     // Actual constructors ~ not to be used
     DatasetManager(Dataset dataset, CameraManager& cam_manager, IMUManager& imu_manager, InferenceManager& inference_manager);

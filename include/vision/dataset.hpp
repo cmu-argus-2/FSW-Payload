@@ -19,6 +19,18 @@
 
 // Error codes TODO with framework
 
+struct DatasetConfig
+{
+    double maximum_period = DEFAULT_COLLECTION_PERIOD;
+    uint8_t target_frame_nb = MAX_SAMPLES;
+    CAPTURE_MODE capture_mode = CAPTURE_MODE::PERIODIC;
+    uint64_t capture_start_time = 0;
+    IMU_COLLECTION_MODE imu_collection_mode = IMU_COLLECTION_MODE::GYRO_ONLY;
+    uint8_t image_capture_rate = 60;
+    float imu_sample_rate_hz = 1.0f;
+    ProcessingStage target_processing_stage = ProcessingStage::NotPrefiltered;
+};
+
 inline bool IsValidCaptureMode(CAPTURE_MODE value)
 {
     return (value >= CAPTURE_MODE::PERIODIC && 
@@ -62,6 +74,7 @@ public:
     Dataset(double max_period, uint8_t nb_frames, CAPTURE_MODE capture_mode, IMU_COLLECTION_MODE imu_collection_mode,
             uint8_t image_capture_rate, float imu_sample_rate_hz, ProcessingStage target_processing_stage,
             uint64_t capture_start_time=0);
+    Dataset(const DatasetConfig& config);
 
     // TODO: Rethink if function below is truly needed, seems redundant with json
     Dataset(const std::string& folder_path);

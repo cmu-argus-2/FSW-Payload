@@ -767,7 +767,7 @@ TEST_F(DatasetManagerTest, CameraManager_FrameCount_NoUint8Wrap)
 
 // ── Reprocessing integration tests ───────────────────────────────────────────
 //
-// Uses the synthetic dataset at data/datasets/17R_Florida_test/.
+// Uses the synthetic dataset at data/datasets/17R_Florida_nadir_test/.
 // Dataset structure: 9 timestamps × 4 cameras = 36 frames total.
 //   cam_id=0 (9 frames): LDNeted (stage 3), rcnet_version=2, ldnet_version=2,
 //                        annotation_state=HasLandmark(3) for 8 frames, HasRegion(2) for 1.
@@ -782,7 +782,7 @@ TEST_F(DatasetManagerTest, CameraManager_FrameCount_NoUint8Wrap)
 
 namespace {
 
-const std::string kSyntheticDataset    = "data/datasets/17R_Florida_test/";
+const std::string kSyntheticDataset    = "data/datasets/17R_Florida_nadir_test/";
 constexpr int     kSyntheticFrameCount = 36;
 constexpr int     kNumFramesRCNeted    = 19;  // stage >= 2: cam_id=0(9) + cam_id=1(1) + cam_id=2(9)
 constexpr int     kNumFramesLDNeted    = 19;  // stage >= 3: same breakdown

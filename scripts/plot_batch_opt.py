@@ -55,8 +55,8 @@ def load_od_results(results_dir: Path) -> dict:
 
     return {
         "meta": meta,
-        "state_estimates":    state_estimates,    # Nx14 array
-        "covariance":         covariance,         # Nx13 array (StateResIdx columns) or None
+        "state_estimates":    state_estimates,    # Nx11 array
+        "covariance":         covariance,         # Nx10 array (timestamp+pos+vel+rot) or None
         "dynamics_residuals": dynamics_residuals, # (N-1)x13 array (StateResIdx columns) or None
         "landmark_residuals": landmark_residuals, # Mx3 array (LandmarkResIdx columns) or None
     }
@@ -104,7 +104,7 @@ def process_residuals(dynamics_residuals, landmark_residuals, bias_mode):
 
 # ── State plots ────────────────────────────────────────────────────────────────
 
-def plot_states(est_states, out_dir, true_states=None, orbit_measurements=None):
+def plot_states(est_states, out_dir, true_states=None, orbit_measurements=None, bias_fixed=None):
     """Plot state estimates; overlay ground truth when true_states is provided."""
     have_gt = true_states is not None
     colors  = ["C0", "C1"]
@@ -170,7 +170,8 @@ def plot_states(est_states, out_dir, true_states=None, orbit_measurements=None):
     _save(fig, "quaternion.png")
 
     # Gyro bias
-    est_bias = est_states[:, 11:14]
+    est_bias = (np.tile(bias_fixed, (len(t_est), 1)) if bias_fixed is not None
+                else est_states[:, 11:14])
     fig, axs = plt.subplots(3, 1, sharex=True, figsize=(10, 6))
     for i, ax in enumerate(axs):
         if have_gt:
@@ -258,25 +259,28 @@ def plot_residuals_standalone(dynamics_residuals, landmark_residuals, bias_mode,
 
 # ── Comparison plots (ground truth required) ───────────────────────────────────
 
-def plot_errors(true_states, est_states, est_covars, bias_mode, out_dir):
+def plot_errors(true_states, est_states, est_covars, bias_mode, out_dir,
+                bias_fixed=None, bias_cov_fixed=None):
     true_time = true_states["unixtime"]                                # Unix seconds
     t0        = true_time[0] if len(true_time) > 0 else 0
     t_true    = true_time - t0
     t_est     = (est_states[:, 0] + J2000_EPOCH_UNIX_S) - t0          # J2000 → Unix → relative
     colors    = ["C0", "C1"]
+    have_cov  = est_covars is not None
 
     # Position error
     true_pos           = true_states["states"][:, :3]
     est_pos            = est_states[:, 1:4]
     true_pos_at_est    = np.zeros(est_pos.shape)
-    est_covars_pos     = np.sqrt(est_covars[:, 1:4])
+    est_covars_pos     = np.sqrt(est_covars[:, 1:4]) if have_cov else None
     for i in range(3):
         true_pos_at_est[:, i] = np.interp(t_est, t_true, true_pos[:, i])
     fig, axs = plt.subplots(3, 1, sharex=True, figsize=(10, 6))
     for i, ax in enumerate(axs):
         ax.plot(t_est, true_pos_at_est[:, i] - est_pos[:, i], label="error", color=colors[0])
-        ax.fill_between(t_est, -3 * est_covars_pos[:, i], 3 * est_covars_pos[:, i],
-                        color=colors[0], alpha=0.3, label="3-sigma")
+        if have_cov:
+            ax.fill_between(t_est, -3 * est_covars_pos[:, i], 3 * est_covars_pos[:, i],
+                            color=colors[0], alpha=0.3, label="3-sigma")
         ax.set_ylabel(["Error X (km)", "Error Y (km)", "Error Z (km)"][i])
         ax.grid(True)
         if i == 0: ax.legend(loc="upper right")
@@ -287,11 +291,12 @@ def plot_errors(true_states, est_states, est_covars, bias_mode, out_dir):
     plt.close()
 
     pos_norm           = np.linalg.norm(true_pos_at_est - est_pos, axis=1)
-    est_covars_pos_norm = np.sqrt(est_covars[:, 1:4].sum(axis=1))
+    est_covars_pos_norm = np.sqrt(est_covars[:, 1:4].sum(axis=1)) if have_cov else None
     fig, ax = plt.subplots(figsize=(10, 4))
     ax.plot(t_est, pos_norm, label="Position Error Norm", color="C0")
-    ax.fill_between(t_est, np.zeros_like(t_est), 3 * est_covars_pos_norm,
-                    color="C0", alpha=0.3, label="3-sigma")
+    if have_cov:
+        ax.fill_between(t_est, np.zeros_like(t_est), 3 * est_covars_pos_norm,
+                        color="C0", alpha=0.3, label="3-sigma")
     ax.set_ylabel("Error Norm (km)"); ax.set_xlabel("time (s) since start")
     ax.set_title("Position Error Norm"); ax.grid(True); ax.legend(loc="upper right")
     plt.tight_layout(); plt.subplots_adjust(top=0.92)
@@ -302,14 +307,15 @@ def plot_errors(true_states, est_states, est_covars, bias_mode, out_dir):
     true_vel        = true_states["states"][:, 3:6]
     est_vel         = est_states[:, 4:7]
     true_vel_at_est = np.zeros(est_vel.shape)
-    vel_covar       = np.sqrt(est_covars[:, 4:7])
+    vel_covar       = np.sqrt(est_covars[:, 4:7]) if have_cov else None
     for i in range(3):
         true_vel_at_est[:, i] = np.interp(t_est, t_true, true_vel[:, i])
     fig, axs = plt.subplots(3, 1, sharex=True, figsize=(10, 6))
     for i, ax in enumerate(axs):
         ax.plot(t_est, true_vel_at_est[:, i] - est_vel[:, i], label="error", color=colors[0])
-        ax.fill_between(t_est, -3 * vel_covar[:, i], 3 * vel_covar[:, i],
-                        color=colors[0], alpha=0.3, label="3-sigma")
+        if have_cov:
+            ax.fill_between(t_est, -3 * vel_covar[:, i], 3 * vel_covar[:, i],
+                            color=colors[0], alpha=0.3, label="3-sigma")
         ax.set_ylabel(["Error X (km/s)", "Error Y (km/s)", "Error Z (km/s)"][i])
         ax.grid(True)
         if i == 0: ax.legend(loc="upper right")
@@ -320,11 +326,12 @@ def plot_errors(true_states, est_states, est_covars, bias_mode, out_dir):
     plt.close()
 
     vel_norm            = np.linalg.norm(true_vel_at_est - est_vel, axis=1)
-    est_covars_vel_norm = np.sqrt(est_covars[:, 4:7].sum(axis=1))
+    est_covars_vel_norm = np.sqrt(est_covars[:, 4:7].sum(axis=1)) if have_cov else None
     fig, ax = plt.subplots(figsize=(10, 4))
     ax.plot(t_est, vel_norm, label="Velocity Error Norm", color="C0")
-    ax.fill_between(t_est, np.zeros_like(t_est), 3 * est_covars_vel_norm,
-                    color="C0", alpha=0.3, label="3-sigma")
+    if have_cov:
+        ax.fill_between(t_est, np.zeros_like(t_est), 3 * est_covars_vel_norm,
+                        color="C0", alpha=0.3, label="3-sigma")
     ax.set_ylabel("Error Norm (km/s)"); ax.set_xlabel("time (s) since start")
     ax.set_title("Velocity Error Norm"); ax.grid(True); ax.legend(loc="upper right")
     plt.tight_layout(); plt.subplots_adjust(top=0.92)
@@ -351,10 +358,10 @@ def plot_errors(true_states, est_states, est_covars, bias_mode, out_dir):
     plt.savefig(out_dir / "quaternion_four_error.png")
     plt.close()
 
-    att_covar        = np.rad2deg(np.sqrt(est_covars[:, 7:10]))
+    att_covar        = np.rad2deg(np.sqrt(est_covars[:, 7:10])) if have_cov else None
     angle_errors     = np.zeros((est_quat.shape[0], 3))
     angle_error_norm = np.zeros(est_quat.shape[0])
-    att_norm_std     = np.linalg.norm(att_covar, axis=1)
+    att_norm_std     = np.linalg.norm(att_covar, axis=1) if have_cov else None
     for i in range(est_quat.shape[0]):
         q_true = pyqt.Quaternion(*true_quat_at_est[i])
         q_est  = pyqt.Quaternion(*est_quat[i])
@@ -365,8 +372,9 @@ def plot_errors(true_states, est_states, est_covars, bias_mode, out_dir):
     fig, axs = plt.subplots(3, 1, sharex=True, figsize=(10, 4))
     for i, ax in enumerate(axs):
         ax.plot(t_est, angle_errors[:, i], label="error", color=colors[0])
-        ax.fill_between(t_est, -3 * att_covar[:, i], 3 * att_covar[:, i],
-                        color=colors[0], alpha=0.3, label="3-sigma")
+        if have_cov:
+            ax.fill_between(t_est, -3 * att_covar[:, i], 3 * att_covar[:, i],
+                            color=colors[0], alpha=0.3, label="3-sigma")
         ax.set_ylabel(["X (deg)", "Y (deg)", "Z (deg)"][i]); ax.grid(True)
         if i == 0: ax.legend(loc="upper right")
     axs[-1].set_xlabel("time (s) since start")
@@ -377,28 +385,39 @@ def plot_errors(true_states, est_states, est_covars, bias_mode, out_dir):
 
     fig, ax = plt.subplots(figsize=(10, 4))
     ax.plot(t_est, angle_error_norm, label="Attitude Error", color="C0")
-    ax.fill_between(t_est, np.zeros_like(t_est), 3 * att_norm_std,
-                    color="C0", alpha=0.3, label="3-sigma")
+    if have_cov:
+        ax.fill_between(t_est, np.zeros_like(t_est), 3 * att_norm_std,
+                        color="C0", alpha=0.3, label="3-sigma")
     ax.set_ylabel("Error (degrees)"); ax.set_xlabel("time (s) since start")
     ax.set_title("Attitude Error Norm"); ax.grid(True)
-    ax.set_ylim(0, np.minimum(max(np.max(angle_error_norm), np.max(3 * att_norm_std)) * 1.1, 180))
+    ylim_ref = max(np.max(angle_error_norm), np.max(3 * att_norm_std)) if have_cov else np.max(angle_error_norm)
+    ax.set_ylim(0, np.minimum(ylim_ref * 1.1, 180))
     plt.tight_layout(); plt.subplots_adjust(top=0.92)
     plt.savefig(out_dir / "attitude_error_norm.png")
     plt.close()
 
     # Gyro bias error
-    true_bias      = true_states["states"][:, 13:16]
-    est_bias       = est_states[:, 11:14]
+    true_bias = true_states["states"][:, 13:16]
+    est_bias  = (np.tile(bias_fixed, (len(t_est), 1)) if bias_fixed is not None
+                 else est_states[:, 11:14])
     true_bias_at_est = np.zeros(est_bias.shape)
     for i in range(3):
         true_bias_at_est[:, i] = np.interp(t_est, t_true, true_bias[:, i])
-    gyro_bias_covar = (np.zeros(est_bias.shape) if bias_mode == "no_bias"
-                       else np.sqrt(est_covars[:, 10:13]))
+    if not have_cov or bias_mode == "no_bias":
+        gyro_bias_covar = np.zeros(est_bias.shape)
+    elif bias_mode == "fix_bias":
+        if bias_cov_fixed is not None:
+            gyro_bias_covar = np.tile(np.sqrt(np.asarray(bias_cov_fixed)), (len(t_est), 1))
+        else:
+            gyro_bias_covar = np.zeros((len(t_est), 3))
+    else:
+        gyro_bias_covar = np.sqrt(est_covars[:, 10:13])
     fig, axs = plt.subplots(3, 1, sharex=True, figsize=(10, 6))
     for i, ax in enumerate(axs):
         ax.plot(t_est, true_bias_at_est[:, i] - est_bias[:, i], label="error", color=colors[0])
-        ax.fill_between(t_est, -3 * gyro_bias_covar[:, i], 3 * gyro_bias_covar[:, i],
-                        color=colors[0], alpha=0.3, label="3-sigma")
+        if have_cov:
+            ax.fill_between(t_est, -3 * gyro_bias_covar[:, i], 3 * gyro_bias_covar[:, i],
+                            color=colors[0], alpha=0.3, label="3-sigma")
         ax.set_ylabel(["Bias X (rad/s)", "Bias Y (rad/s)", "Bias Z (rad/s)"][i]); ax.grid(True)
         if i == 0: ax.legend(loc="upper right")
     axs[-1].set_xlabel("time (s) since start")
@@ -408,11 +427,12 @@ def plot_errors(true_states, est_states, est_covars, bias_mode, out_dir):
     plt.close()
 
     gyro_bias_norm           = np.linalg.norm(true_bias_at_est - est_bias, axis=1)
-    est_covars_gyro_bias_norm = np.sqrt(est_covars[:, 10:13].sum(axis=1))
+    est_covars_gyro_bias_norm = np.linalg.norm(gyro_bias_covar, axis=1)
     fig, ax = plt.subplots(figsize=(10, 4))
     ax.plot(t_est, gyro_bias_norm, label="Gyro Bias Error Norm", color="C0")
-    ax.fill_between(t_est, np.zeros_like(t_est), 3 * est_covars_gyro_bias_norm,
-                    color="C0", alpha=0.3, label="3-sigma")
+    if have_cov:
+        ax.fill_between(t_est, np.zeros_like(t_est), 3 * est_covars_gyro_bias_norm,
+                        color="C0", alpha=0.3, label="3-sigma")
     ax.set_ylabel("Error Norm (rad/s)"); ax.set_xlabel("time (s) since start")
     ax.set_title("Gyro Bias Error Norm"); ax.grid(True); ax.legend(loc="upper right")
     plt.tight_layout(); plt.subplots_adjust(top=0.92)
@@ -542,11 +562,43 @@ if __name__ == "__main__":
     print(f"Loaded OD results from {results_dir}")
     print(f"  error_code : {meta.get('error_code')}")
     print(f"  bias_mode  : {bias_mode}")
-    print(f"  solver     : {meta.get('solver', {}).get('termination_type')} "
-          f"({meta.get('solver', {}).get('num_iterations')} iters, "
-          f"cost {meta.get('solver', {}).get('initial_cost', 0):.3f} → "
-          f"{meta.get('solver', {}).get('final_cost', 0):.3f})")
+    solver_info = meta.get("solver", {})
+    print(f"  solver     : {solver_info.get('return_status')} "
+          f"({solver_info.get('iter_count')} iters, "
+          f"cost {solver_info.get('final_cost', 0.0):.3f})")
     print(f"  states     : {est_states.shape}")
+
+    estimates = meta.get("estimates", {})
+    bias_fixed = None
+    bias_cov_fixed = None
+    if "gyro_bias_x_rads" in estimates:
+        bias_fixed = np.array([
+            estimates["gyro_bias_x_rads"],
+            estimates["gyro_bias_y_rads"],
+            estimates["gyro_bias_z_rads"],
+        ])
+        sigma_bias = (np.sqrt(np.array([
+            estimates["gyro_bias_cov_x_rads2"],
+            estimates["gyro_bias_cov_y_rads2"],
+            estimates["gyro_bias_cov_z_rads2"],
+        ])) if "gyro_bias_cov_x_rads2" in estimates else None)
+        bias_cov_fixed = (np.array([
+            estimates["gyro_bias_cov_x_rads2"],
+            estimates["gyro_bias_cov_y_rads2"],
+            estimates["gyro_bias_cov_z_rads2"],
+        ]) if "gyro_bias_cov_x_rads2" in estimates else None)
+        for i, axis in enumerate("xyz"):
+            if sigma_bias is not None:
+                print(f"  gyro_bias_{axis} : {bias_fixed[i]:.6e} ± {sigma_bias[i]:.2e} rad/s")
+            else:
+                print(f"  gyro_bias_{axis} : {bias_fixed[i]:.6e} rad/s")
+    bc_inv = estimates.get("bc_inv_km2_kg")
+    if bc_inv is not None:
+        bc_inv_var = estimates.get("bc_inv_var_km4_kg2")
+        if bc_inv_var is not None:
+            print(f"  bc_inv     : {bc_inv:.4e} ± {bc_inv_var**0.5:.2e} km²/kg")
+        else:
+            print(f"  bc_inv     : {bc_inv:.4e} km²/kg")
 
     # Resolve dataset folder
     dataset_dir = args.dataset or Path(meta.get("dataset_folder", ""))
@@ -576,7 +628,7 @@ if __name__ == "__main__":
     else:
         lindynres = angdynres = ldmkmeasres = None
 
-    # Covariance is already Nx13 structured (StateResIdx columns)
+    # Covariance is Nx10 (timestamp + pos + vel + rot; gyro_bias_cov in od_result.json)
     est_covars = covariance
 
     ldmk_t = load_landmark_timestamps(dataset_dir)
@@ -584,15 +636,16 @@ if __name__ == "__main__":
     # ── State estimate plots (always; overlaid with GT when available) ───────────
     plot_states(est_states, out_dir,
                 true_states=ground_truth if have_gt else None,
-                orbit_measurements=measurements if have_gt else None)
+                orbit_measurements=measurements if have_gt else None,
+                bias_fixed=bias_fixed)
     if dynamics_residuals is not None and landmark_residuals is not None:
         plot_residuals_standalone(dynamics_residuals, landmark_residuals,
                                   bias_mode, ldmk_t, out_dir)
 
     # ── Comparison plots (simulation ground truth only) ───────────────────────
     if have_gt:
-        if est_covars is not None:
-            plot_errors(ground_truth, est_states, est_covars, bias_mode, out_dir)
+        plot_errors(ground_truth, est_states, est_covars, bias_mode, out_dir,
+                    bias_fixed=bias_fixed, bias_cov_fixed=bias_cov_fixed)
         plot_measurements(measurements, ground_truth, est_states, ldmkmeasres, out_dir)
         if ldmkmeasres is not None:
             plot_residuals(lindynres, angdynres, ldmkmeasres,

@@ -2,6 +2,9 @@
 #include "navigation/batch_optimization.hpp"
 #include "navigation/utils.hpp"
 #include "configuration.hpp"
+#include "core/timing.hpp"
+#include "inference/types.hpp"
+#include "vision/dataset_manager.hpp"
 #include "vision/regions.hpp"
 
 #include <nlohmann/json.hpp>
@@ -19,48 +22,8 @@
 #include <algorithm>
 #include <cmath>
 #include <limits>
-
-
-void OD::_DoInit()
-{
-    // Initialize the OD process
-
-    // Might need to read an OD previous run file ~ something that logs the results
-
-    // Check if there is any active AND valid data collection already started (in case came from reboot/or any)
-    // -- validity check can also include the amount of time since we did capture
-    // Also check that we haven't already used that guy
-    // If yes, restart that collection process
-    // If No, create that new data process and start it
-    // Monitor continuously progress
-    // If we need to stop --> stop collection and exit
-    // if completed, switch our state to BATCH_OPT
-
-
-
-    SwitchState(OD_STATE::BATCH_OPT);
-}
-
-void OD::_DoBatchOptimization()
-{
-    // Perform batch optimization
-    if (!measurements_ready_) {
-        SPDLOG_ERROR("OD::_DoBatchOptimization: measurements not ready, aborting");
-        SwitchState(OD_STATE::IDLE);
-        return;
-    }
-
-    const auto result = solve_batch_opt(measurements_, config.batch_opt);
-    if (result.code != ErrorCode::OK) {
-        SPDLOG_ERROR("OD::_DoBatchOptimization: failed (error code {}).",
-                     static_cast<int>(result.code));
-    } else {
-        SPDLOG_INFO("OD::_DoBatchOptimization: completed with {} state estimates.",
-                    result.state_estimates.rows());
-    }
-
-    SwitchState(OD_STATE::IDLE);
-}
+#include <chrono>
+#include <thread>
 
 bool OD::IsODPossible(const std::string& dataset_folder) const
 {
@@ -155,10 +118,8 @@ bool OD::IsODPossible(const std::string& dataset_folder) const
     return true;
 }
 
-// TODO: Need to add logs to every exit point
 bool OD::DatasetPrepare(const std::string& dataset_folder,
-                        const CameraCalibration& calibration,
-                        const std::string& ld_model_folder)
+                        const CameraCalibration& calibration)
 {
     namespace fs = std::filesystem;
     measurements_ready_ = false;
@@ -174,6 +135,57 @@ bool OD::DatasetPrepare(const std::string& dataset_folder,
     const double fy = calibration.camera_matrix.at<double>(1, 1);
     const double focal_length_px = (fx + fy) / 2.0;
 
+    // Gather and sort frame JSON files (filename embeds timestamp → lexicographic = chronological)
+    std::vector<fs::path> frame_files;
+    if (!fs::is_directory(dataset_folder)) {
+        SPDLOG_ERROR("DatasetPrepare: dataset folder does not exist: {}", dataset_folder);
+        return false;
+    }
+    for (const auto& entry : fs::directory_iterator(dataset_folder)) {
+        const std::string fname = entry.path().filename().string();
+        if (fname.rfind("frame_", 0) == 0 && entry.path().extension() == ".json") {
+            frame_files.push_back(entry.path());
+        }
+    }
+    std::sort(frame_files.begin(), frame_files.end());
+
+    int inferred_ld_version = -1;
+    for (const auto& fpath : frame_files) {
+        std::ifstream f(fpath);
+        if (!f.is_open()) continue;
+
+        try {
+            const nlohmann::json j = nlohmann::json::parse(f);
+            const int stage = j.value("processing_stage", 0);
+            if (stage < static_cast<int>(ProcessingStage::LDNeted)) continue;
+            if (!j.contains("inference_results") || !j.at("inference_results").is_object()) continue;
+
+            const nlohmann::json& j_inf = j.at("inference_results");
+            if (j_inf.value("detected_landmarks_count", 0) <= 0) continue;
+
+            const int ld_version = j_inf.value("ldnet_version", -1);
+            if (ld_version <= 0) {
+                SPDLOG_ERROR("DatasetPrepare: invalid or missing ldnet_version in {}", fpath.string());
+                return false;
+            }
+            if (inferred_ld_version < 0) {
+                inferred_ld_version = ld_version;
+            } else if (inferred_ld_version != ld_version) {
+                SPDLOG_ERROR("DatasetPrepare: mixed LD model versions in dataset: {} and {}",
+                             inferred_ld_version, ld_version);
+                return false;
+            }
+        } catch (const std::exception& e) {
+            SPDLOG_WARN("DatasetPrepare: failed to inspect {}: {}", fpath.string(), e.what());
+        }
+    }
+    if (inferred_ld_version <= 0) {
+        SPDLOG_ERROR("DatasetPrepare: could not infer LD model version from {}", dataset_folder);
+        return false;
+    }
+    SPDLOG_INFO("DatasetPrepare: inferred LD model version V{} from {}",
+                inferred_ld_version, dataset_folder);
+
     // Lazy-loaded bounding_boxes cache: region_id int → [(lon_deg, lat_deg), ...]
     std::map<int, std::vector<std::pair<double, double>>> bbox_cache;
 
@@ -187,7 +199,7 @@ bool OD::DatasetPrepare(const std::string& dataset_folder,
             return false;
         }
 
-        const std::string csv_path = ld_model_folder + "/" + region_str + "/bounding_boxes.csv";
+        const std::string csv_path = Inference::LDBoundingBoxesPath(inferred_ld_version, region_str);
         std::ifstream f(csv_path);
         if (!f.is_open()) {
             SPDLOG_WARN("DatasetPrepare: bounding_boxes.csv not found: {}", csv_path);
@@ -216,20 +228,6 @@ bool OD::DatasetPrepare(const std::string& dataset_folder,
         return true;
     };
 
-    // Gather and sort frame JSON files (filename embeds timestamp → lexicographic = chronological)
-    std::vector<fs::path> frame_files;
-    if (!fs::is_directory(dataset_folder)) {
-        SPDLOG_ERROR("DatasetPrepare: dataset folder does not exist: {}", dataset_folder);
-        return false;
-    }
-    for (const auto& entry : fs::directory_iterator(dataset_folder)) {
-        const std::string fname = entry.path().filename().string();
-        if (fname.rfind("frame_", 0) == 0 && entry.path().extension() == ".json") {
-            frame_files.push_back(entry.path());
-        }
-    }
-    std::sort(frame_files.begin(), frame_files.end());
-
     // Accumulate landmark measurements
     std::vector<std::array<double, 7>> lm_rows;
     std::vector<bool>   group_starts_vec;
@@ -238,8 +236,6 @@ bool OD::DatasetPrepare(const std::string& dataset_folder,
     constexpr double DEG_TO_RAD = M_PI / 180.0;
 
     for (const auto& fpath : frame_files) {
-        SPDLOG_INFO("Here now: {}", fpath.string());
-
         std::ifstream f(fpath);
         if (!f.is_open()) {
             SPDLOG_WARN("DatasetPrepare: cannot open {}", fpath.string());
@@ -310,7 +306,7 @@ bool OD::DatasetPrepare(const std::string& dataset_folder,
                 const double lon_rad = rows[class_id].first  * DEG_TO_RAD;
                 const double lat_rad = rows[class_id].second * DEG_TO_RAD;
                 const Eigen::Vector3d eci_km =
-                    LAT2ECI(Eigen::Vector3d(0.0, lon_rad, lat_rad), t_j2000, true);
+                    LAT2ECI(Eigen::Vector3d(0.0, lon_rad, lat_rad), t_j2000, false);
 
                 // Per-landmark uncertainty: 3σ = half the smaller bbox side → σ = min(h,w)/(6f)
                 const double sigma =
@@ -418,4 +414,394 @@ bool OD::DatasetPrepare(const std::string& dataset_folder,
     SPDLOG_INFO("DatasetPrepare: {} landmark rows, {} gyro rows extracted from {}",
                 N, M, dataset_folder);
     return true;
+}
+
+ODStage InspectDatasetForOD(const std::string& dataset_folder)
+{
+    namespace fs = std::filesystem;
+    if (!fs::is_directory(dataset_folder)) {
+        return ODStage::DATASET_NOT_AVAILABLE;
+    }
+
+    const bool has_measurements = fs::exists(fs::path(dataset_folder) / "landmark_measurements.csv");
+    if (has_measurements) {
+        return ODStage::MEASUREMENTS_READY;
+    }
+
+    bool saw_frame = false;
+    bool saw_ldneted_landmark_frame = false;
+    for (const auto& entry : fs::directory_iterator(dataset_folder)) {
+        const std::string fname = entry.path().filename().string();
+        if (fname.rfind("frame_", 0) != 0 || entry.path().extension() != ".json") {
+            continue;
+        }
+        saw_frame = true;
+        std::ifstream f(entry.path());
+        if (!f.is_open()) continue;
+        try {
+            const nlohmann::json j = nlohmann::json::parse(f);
+            const int stage = j.value("processing_stage", 0);
+            const nlohmann::json* inf = j.contains("inference_results") && j.at("inference_results").is_object()
+                                      ? &j.at("inference_results")
+                                      : nullptr;
+            const int lm_count = inf ? inf->value("detected_landmarks_count", 0)
+                                     : j.value("detected_landmarks_count", 0);
+            if (stage >= static_cast<int>(ProcessingStage::LDNeted) && lm_count > 0) {
+                saw_ldneted_landmark_frame = true;
+                break;
+            }
+        } catch (const std::exception& e) {
+            SPDLOG_WARN("InspectDatasetForOD: failed to parse {}: {}", entry.path().string(), e.what());
+        }
+    }
+
+    if (!saw_frame || !saw_ldneted_landmark_frame) {
+        return ODStage::DATASET_NOT_PROCESSED;
+    }
+    return ODStage::DATASET_PROCESSED;
+}
+
+ODMeasurements LoadODMeasurementsFromDataset(const std::string& dataset_folder)
+{
+    constexpr double DPS_TO_RADPS = M_PI / 180.0;
+    namespace fs = std::filesystem;
+
+    const fs::path lm_csv_path = fs::path(dataset_folder) / "landmark_measurements.csv";
+    const fs::path imu_csv_path = fs::path(dataset_folder) / "imu_data.csv";
+
+    std::vector<std::array<double, 7>> lm_rows;
+    std::vector<bool> group_starts_vec;
+    std::vector<double> uncertainties;
+
+    {
+        std::ifstream f(lm_csv_path);
+        if (!f.is_open()) {
+            throw std::runtime_error("cannot open " + lm_csv_path.string());
+        }
+
+        std::string line;
+        std::getline(f, line);
+        int prev_group = -1;
+        while (std::getline(f, line)) {
+            if (line.empty()) continue;
+            std::istringstream ss(line);
+            std::string tok;
+            std::vector<std::string> tokens;
+            while (std::getline(ss, tok, ',')) tokens.push_back(tok);
+            if (tokens.size() < 9) continue;
+            try {
+                const double ts_ms = std::stod(tokens[0]);
+                const double t_j2000 = ts_ms / 1000.0 - static_cast<double>(J2000_EPOCH_UNIX_S);
+                const double bx = std::stod(tokens[1]);
+                const double by = std::stod(tokens[2]);
+                const double bz = std::stod(tokens[3]);
+                const double ex = std::stod(tokens[4]);
+                const double ey = std::stod(tokens[5]);
+                const double ez = std::stod(tokens[6]);
+                const int group = std::stoi(tokens[7]);
+                const double sigma = std::stod(tokens[8]);
+
+                lm_rows.push_back({t_j2000, bx, by, bz, ex, ey, ez});
+                group_starts_vec.push_back(group != prev_group);
+                uncertainties.push_back(sigma);
+                prev_group = group;
+            } catch (const std::exception& e) {
+                SPDLOG_WARN("LoadODMeasurementsFromDataset: skipping malformed landmark row: {}", e.what());
+            }
+        }
+    }
+    if (lm_rows.empty()) {
+        throw std::runtime_error("no landmark measurements loaded from " + lm_csv_path.string());
+    }
+
+    std::vector<std::array<double, 4>> gyro_rows;
+    {
+        std::ifstream f(imu_csv_path);
+        if (!f.is_open()) {
+            throw std::runtime_error("cannot open " + imu_csv_path.string());
+        }
+
+        std::string line;
+        std::getline(f, line);
+        while (std::getline(f, line)) {
+            if (line.empty()) continue;
+            std::istringstream ss(line);
+            std::string tok;
+            std::vector<std::string> tokens;
+            while (std::getline(ss, tok, ',')) tokens.push_back(tok);
+            if (tokens.size() < 4) continue;
+            try {
+                const double ts_ms = std::stod(tokens[0]);
+                const double t_j2000 = ts_ms / 1000.0 - static_cast<double>(J2000_EPOCH_UNIX_S);
+                const double wx = std::stod(tokens[1]) * DPS_TO_RADPS;
+                const double wy = std::stod(tokens[2]) * DPS_TO_RADPS;
+                const double wz = std::stod(tokens[3]) * DPS_TO_RADPS;
+                gyro_rows.push_back({t_j2000, wx, wy, wz});
+            } catch (const std::exception& e) {
+                SPDLOG_WARN("LoadODMeasurementsFromDataset: skipping malformed IMU row: {}", e.what());
+            }
+        }
+    }
+    if (gyro_rows.empty()) {
+        throw std::runtime_error("no IMU data loaded from " + imu_csv_path.string());
+    }
+
+    const idx_t N = static_cast<idx_t>(lm_rows.size());
+    const idx_t M = static_cast<idx_t>(gyro_rows.size());
+
+    ODMeasurements meas;
+    meas.landmark_measurements.resize(N, LandmarkMeasurementIdx::LANDMARK_COUNT);
+    meas.group_starts.resize(N);
+    meas.landmark_uncertainties.resize(N);
+    meas.gyro_measurements.resize(M, GyroMeasurementIdx::GYRO_MEAS_COUNT);
+
+    for (idx_t i = 0; i < N; ++i) {
+        for (int c = 0; c < LandmarkMeasurementIdx::LANDMARK_COUNT; ++c) {
+            meas.landmark_measurements(i, c) = lm_rows[static_cast<size_t>(i)][static_cast<size_t>(c)];
+        }
+        meas.group_starts(i) = group_starts_vec[static_cast<size_t>(i)];
+        meas.landmark_uncertainties(i) = uncertainties[static_cast<size_t>(i)];
+    }
+    for (idx_t i = 0; i < M; ++i) {
+        for (int c = 0; c < GyroMeasurementIdx::GYRO_MEAS_COUNT; ++c) {
+            meas.gyro_measurements(i, c) = gyro_rows[static_cast<size_t>(i)][static_cast<size_t>(c)];
+        }
+    }
+
+    SPDLOG_INFO("LoadODMeasurementsFromDataset: loaded {} landmark rows and {} gyro rows from {}",
+                N, M, dataset_folder);
+    return meas;
+}
+
+static bool write_state_csv(const std::string& path, const StateEstimates& states)
+{
+    std::ofstream f(path);
+    if (!f.is_open()) return false;
+    f << "timestamp_j2000,pos_x_km,pos_y_km,pos_z_km,"
+         "vel_x_kms,vel_y_kms,vel_z_kms,"
+         "quat_x,quat_y,quat_z,quat_w\n";
+    f << std::setprecision(12);
+    for (idx_t i = 0; i < states.rows(); ++i) {
+        for (int c = 0; c <= StateEstimateIdx::QUAT_W; ++c) {
+            if (c > 0) f << ',';
+            f << states(i, c);
+        }
+        f << '\n';
+    }
+    return true;
+}
+
+static bool WriteBatchODResults(const std::string& dataset_folder,
+                                const std::string& results_dir,
+                                const BatchOptResult& result,
+                                const OD_Config& od_config,
+                                int64_t run_unix_ms,
+                                int64_t run_end_ms,
+                                int num_landmark_rows,
+                                int num_landmark_groups,
+                                int num_gyro_rows)
+{
+    namespace fs = std::filesystem;
+    fs::create_directories(results_dir);
+
+    nlohmann::json meta;
+    meta["dataset_folder"] = dataset_folder;
+    meta["run_unix_ms"] = run_unix_ms;
+    meta["run_time_ms"] = run_end_ms - run_unix_ms;
+    meta["timing"]["covariance_time_ms"] =
+        result.covariance_time_ms >= 0.0 ? nlohmann::json(result.covariance_time_ms) : nlohmann::json(nullptr);
+    meta["error_code"] = static_cast<int>(result.code);
+    meta["bias_mode"] = static_cast<int>(od_config.batch_opt.bias_mode);
+    meta["solver"]["return_status"] = result.solver_summary.return_status;
+    meta["solver"]["iter_count"] = result.solver_summary.iter_count;
+    meta["solver"]["final_cost"] = result.solver_summary.final_cost;
+    meta["inputs"]["num_landmark_rows"] = num_landmark_rows;
+    meta["inputs"]["num_landmark_groups"] = num_landmark_groups;
+    meta["inputs"]["num_gyro_rows"] = num_gyro_rows;
+    meta["outputs"]["num_state_estimates"] = result.state_estimates.rows();
+    meta["outputs"]["covariance_available"] = result.covariance.rows() > 0;
+    meta["outputs"]["covariance_computed"] = result.covariance_computed;
+    meta["config"]["use_j2"] = od_config.batch_opt.use_j2;
+    meta["config"]["use_drag"] = od_config.batch_opt.use_drag;
+    meta["config"]["compute_covariance"] = od_config.batch_opt.compute_covariance;
+    meta["config"]["integrator"] = static_cast<int>(od_config.batch_opt.integrator);
+    if (od_config.batch_opt.bias_mode == BIAS_MODE::FIX_BIAS) {
+        meta["estimates"]["gyro_bias_x_rads"] = result.gyro_bias_fixed[0];
+        meta["estimates"]["gyro_bias_y_rads"] = result.gyro_bias_fixed[1];
+        meta["estimates"]["gyro_bias_z_rads"] = result.gyro_bias_fixed[2];
+    }
+    if (result.bc_inv_estimated) {
+        meta["estimates"]["bc_inv_km2_kg"] = result.bc_inv;
+    }
+    if (result.covariance_computed) {
+        meta["estimates"]["gyro_bias_cov_x_rads2"] = result.gyro_bias_var[0];
+        meta["estimates"]["gyro_bias_cov_y_rads2"] = result.gyro_bias_var[1];
+        meta["estimates"]["gyro_bias_cov_z_rads2"] = result.gyro_bias_var[2];
+        if (result.bc_inv_estimated) {
+            meta["estimates"]["bc_inv_var_km4_kg2"] = result.bc_inv_var;
+        }
+    }
+
+    {
+        std::ofstream jf(results_dir + "/od_result.json");
+        if (!jf.is_open()) return false;
+        jf << meta.dump(2) << '\n';
+    }
+
+    if (result.code != ErrorCode::OK) return true;
+
+    write_state_csv(results_dir + "/initial_trajectory.csv", result.initial_trajectory);
+    write_state_csv(results_dir + "/state_estimates.csv", result.state_estimates);
+
+    if (result.covariance.rows() > 0) {
+        std::ofstream f(results_dir + "/covariance.csv");
+        if (f.is_open()) {
+            f << "timestamp_j2000,pos_cov_x,pos_cov_y,pos_cov_z,"
+                 "vel_cov_x,vel_cov_y,vel_cov_z,"
+                 "rot_cov_x,rot_cov_y,rot_cov_z\n";
+            f << std::setprecision(12);
+            for (idx_t i = 0; i < result.covariance.rows(); ++i) {
+                for (int c = 0; c <= StateResIdx::RES_ROT_Z; ++c) {
+                    if (c > 0) f << ',';
+                    f << result.covariance(i, c);
+                }
+                f << '\n';
+            }
+        }
+    }
+
+    {
+        std::ofstream f(results_dir + "/dynamics_residuals.csv");
+        if (f.is_open()) {
+            f << "timestamp_j2000,pos_res_x,pos_res_y,pos_res_z,"
+                 "vel_res_x,vel_res_y,vel_res_z,"
+                 "rot_res_x,rot_res_y,rot_res_z,"
+                 "gyro_bias_res_x,gyro_bias_res_y,gyro_bias_res_z\n";
+            f << std::setprecision(12);
+            for (idx_t i = 0; i < result.dynamics_residuals.rows(); ++i) {
+                for (int c = 0; c < StateResIdx::STATE_RES_COUNT; ++c) {
+                    if (c > 0) f << ',';
+                    f << result.dynamics_residuals(i, c);
+                }
+                f << '\n';
+            }
+        }
+    }
+
+    {
+        std::ofstream f(results_dir + "/landmark_residuals.csv");
+        if (f.is_open()) {
+            f << "res_x,res_y,res_z\n" << std::setprecision(12);
+            for (idx_t i = 0; i < result.landmark_residuals.rows(); ++i) {
+                f << result.landmark_residuals(i, LandmarkResIdx::LANDMARK_RES_X) << ','
+                  << result.landmark_residuals(i, LandmarkResIdx::LANDMARK_RES_Y) << ','
+                  << result.landmark_residuals(i, LandmarkResIdx::LANDMARK_RES_Z) << '\n';
+            }
+        }
+    }
+
+    return true;
+}
+
+ODResult RunODOnDataset(const ODRequest& request)
+{
+    namespace fs = std::filesystem;
+    ODResult out;
+    out.dataset_folder = request.dataset_folder;
+    out.stage = InspectDatasetForOD(request.dataset_folder);
+
+    if (out.stage == ODStage::DATASET_NOT_AVAILABLE ||
+        out.stage == ODStage::DATASET_NOT_PROCESSED) {
+        out.code = ErrorCode::ODMEAS_NOT_VALID;
+        return out;
+    }
+
+    OD_Config od_config = ReadODConfig(request.od_config_path);
+
+    if (out.stage == ODStage::DATASET_PROCESSED) {
+        Configuration config;
+        config.LoadConfiguration(request.system_config_path);
+        OD od(request.od_config_path);
+        if (!od.DatasetPrepare(request.dataset_folder, config.GetCameraCalibration())) {
+            out.code = ErrorCode::ODMEAS_NOT_VALID;
+            out.stage = ODStage::FAILED;
+            return out;
+        }
+        out.stage = ODStage::MEASUREMENTS_READY;
+    }
+
+    ODMeasurements measurements;
+    try {
+        measurements = LoadODMeasurementsFromDataset(request.dataset_folder);
+    } catch (const std::exception& e) {
+        SPDLOG_ERROR("RunODOnDataset: failed to load OD measurements: {}", e.what());
+        out.code = ErrorCode::ODMEAS_NOT_VALID;
+        out.stage = ODStage::FAILED;
+        return out;
+    }
+    out.stage = ODStage::MEASUREMENTS_READY;
+
+    const int64_t run_unix_ms = std::chrono::duration_cast<std::chrono::milliseconds>(
+        std::chrono::system_clock::now().time_since_epoch()).count();
+    const std::string dataset_name = fs::path(request.dataset_folder).filename().string();
+    out.results_dir = std::string("data/results/") + dataset_name + "_" + std::to_string(run_unix_ms);
+
+    const int num_groups = static_cast<int>(
+        std::count(measurements.group_starts.data(),
+                   measurements.group_starts.data() + measurements.group_starts.size(),
+                   true));
+
+    BatchOptResult result = solve_batch_opt(measurements, od_config.batch_opt);
+    out.stage = result.initial_trajectory.rows() > 0 ? ODStage::INITIAL_GUESS_CREATED : out.stage;
+    const int64_t run_end_ms = std::chrono::duration_cast<std::chrono::milliseconds>(
+        std::chrono::system_clock::now().time_since_epoch()).count();
+
+    if (!WriteBatchODResults(request.dataset_folder, out.results_dir, result, od_config,
+                             run_unix_ms, run_end_ms,
+                             static_cast<int>(measurements.landmark_measurements.rows()),
+                             num_groups,
+                             static_cast<int>(measurements.gyro_measurements.rows()))) {
+        SPDLOG_ERROR("RunODOnDataset: failed to write OD results to {}", out.results_dir);
+        out.code = ErrorCode::BATCH_OPT_INVALID_OUTPUT;
+        out.stage = ODStage::FAILED;
+        return out;
+    }
+
+    out.code = result.code;
+    out.stage = result.code == ErrorCode::OK ? ODStage::OD_COMPLETED : ODStage::FAILED;
+    return out;
+}
+
+ODResult RunODPipeline(const ODRequest& request,
+                       CameraManager& cam_manager,
+                       IMUManager& imu_manager,
+                       InferenceManager& inference_manager)
+{
+    ODRequest run_request = request;
+    ODResult out;
+
+    try {
+        if (run_request.dataset_config.capture_start_time == 0) {
+            run_request.dataset_config.capture_start_time = timing::GetCurrentTimeMs();
+        }
+        auto dataset = DatasetManager::Create(run_request.dataset_config, DATASET_KEY_OD,
+                                              cam_manager, imu_manager, inference_manager);
+        if (!dataset->StartCollection()) {
+            out.code = ErrorCode::ODMEAS_NOT_VALID;
+            out.stage = ODStage::FAILED;
+            return out;
+        }
+        while (dataset->Running()) {
+            std::this_thread::sleep_for(std::chrono::milliseconds(100));
+        }
+        run_request.dataset_folder = dataset->GetDatasetFolder();
+        DatasetManager::StopDatasetManager(DATASET_KEY_OD);
+    } catch (const std::exception& e) {
+        SPDLOG_ERROR("RunODPipeline: failed to capture dataset: {}", e.what());
+        out.code = ErrorCode::ODMEAS_NOT_VALID;
+        out.stage = ODStage::FAILED;
+        return out;
+    }
+
+    return RunODOnDataset(run_request);
 }

@@ -1,103 +1,150 @@
 """
-Data loading and state timestamp generation for the batch orbit determination problem.
-Mirrors the C++ get_state_timestamps() logic in src/navigation/batch_optimization.cpp.
+CSV loading and state timestamp generation for the batch orbit determination problem.
 """
 from pathlib import Path
 import math
 
-import h5py
 import numpy as np
 
+# Unix timestamp of the J2000 epoch (2000-01-01 12:00:00 TT ≈ UTC)
+J2000_EPOCH_UNIX_S: float = 946727936.0
+DPS_TO_RADPS: float = math.pi / 180.0
 
-def load_h5(path: Path) -> dict:
-    """Load all datasets from an HDF5 file into a dict {dataset_name: ndarray}."""
+
+def load_landmark_csv(path: Path) -> tuple[np.ndarray, np.ndarray, np.ndarray]:
+    """
+    Read landmark_measurements.csv.
+
+    Columns: timestamp_ms, bearing_x, bearing_y, bearing_z,
+             eci_x_km, eci_y_km, eci_z_km, group, sigma
+
+    Returns
+    -------
+    landmark_measurements : (N, 7) float64
+        [t_j2000, bx, by, bz, ex, ey, ez]
+    group_starts : (N,) bool
+        True at the first row of each new landmark group.
+    uncertainties : (N,) float64
+        Per-measurement sigma values.
+    """
     path = Path(path)
-    if not path.exists():
-        raise FileNotFoundError(f"File not found: {path}")
-    data = {}
-    with h5py.File(path, "r") as f:
-        def visitor(name, obj):
-            if isinstance(obj, h5py.Dataset):
-                data[name] = obj[()]
-        f.visititems(visitor)
-    return data
+    rows: list[list[float]] = []
+    group_starts: list[bool] = []
+    uncertainties: list[float] = []
+    prev_group = -1
+
+    with open(path, "r") as f:
+        next(f)  # skip header
+        for line in f:
+            line = line.strip()
+            if not line:
+                continue
+            tok = line.split(",")
+            if len(tok) < 9:
+                continue
+            try:
+                t_j2000 = float(tok[0]) / 1000.0 - J2000_EPOCH_UNIX_S
+                bx, by, bz = float(tok[1]), float(tok[2]), float(tok[3])
+                ex, ey, ez = float(tok[4]), float(tok[5]), float(tok[6])
+                group      = int(tok[7])
+                sigma      = float(tok[8])
+            except (ValueError, IndexError):
+                continue
+            rows.append([t_j2000, bx, by, bz, ex, ey, ez])
+            group_starts.append(group != prev_group)
+            uncertainties.append(sigma)
+            prev_group = group
+
+    return (
+        np.array(rows,         dtype=np.float64),
+        np.array(group_starts, dtype=bool),
+        np.array(uncertainties, dtype=np.float64),
+    )
+
+
+def load_imu_csv(path: Path) -> np.ndarray:
+    """
+    Read imu_data.csv.
+
+    Columns: Timestamp_ms, Gyro_X_dps, Gyro_Y_dps, Gyro_Z_dps
+
+    Returns
+    -------
+    gyro_measurements : (M, 4) float64
+        [t_j2000, wx_rad_s, wy_rad_s, wz_rad_s]
+    """
+    path = Path(path)
+    rows: list[list[float]] = []
+
+    with open(path, "r") as f:
+        next(f)  # skip header
+        for line in f:
+            line = line.strip()
+            if not line:
+                continue
+            tok = line.split(",")
+            if len(tok) < 4:
+                continue
+            try:
+                t_j2000 = float(tok[0]) / 1000.0 - J2000_EPOCH_UNIX_S
+                wx = float(tok[1]) * DPS_TO_RADPS
+                wy = float(tok[2]) * DPS_TO_RADPS
+                wz = float(tok[3]) * DPS_TO_RADPS
+            except (ValueError, IndexError):
+                continue
+            rows.append([t_j2000, wx, wy, wz])
+
+    return np.array(rows, dtype=np.float64)
 
 
 def get_state_timestamps(
-    landmark_measurements: np.ndarray,   # (N_lmk, 7): [t, bx, by, bz, lx, ly, lz]
-    landmark_group_starts: np.ndarray,   # (N_lmk,) bool — True at the start of each group
-    gyro_measurements: np.ndarray,       # (N_gyro, 4): [t, wx, wy, wz]
-    max_dt: float,
-) -> tuple[list[float], list[int], list[int]]:
+    landmark_measurements: np.ndarray,  # (N, 7): [t_j2000, ...]
+    landmark_group_starts: np.ndarray,  # (N,) bool
+    gyro_measurements:     np.ndarray,  # (M, 4): [t_j2000, ...]
+) -> tuple[list[float], list[int]]:
     """
-    Merge landmark group and gyro timestamps into a unified state timeline.
-    Intermediate states are inserted wherever the gap between consecutive
-    timestamps exceeds max_dt, equally spaced so every sub-interval <= max_dt.
+    Mirrors C++ get_state_timestamps() in src/navigation/batch_optimization.cpp.
 
-    Returns:
-        state_timestamps:       list[float]  — unified state timeline
-        landmark_group_indices: list[int]    — index into state_timestamps for each landmark group
-        gyro_indices:           list[int]    — index into state_timestamps for each gyro measurement
+    State timestamps = exactly the gyro measurement timestamps.
+    Each landmark group is snapped to the nearest gyro timestamp index.
+
+    Returns
+    -------
+    state_timestamps       : list[float]  — one entry per gyro measurement
+    landmark_group_indices : list[int]    — index into state_timestamps per group
     """
-    state_timestamps: list[float] = []
+    state_timestamps = [float(gyro_measurements[k, 0])
+                        for k in range(len(gyro_measurements))]
+
     landmark_group_indices: list[int] = []
-    gyro_indices: list[int] = []
+    M = len(state_timestamps)
+    n_lmk = len(landmark_measurements)
 
-    n_lmk  = len(landmark_measurements)
-    n_gyro = len(gyro_measurements)
+    for i in range(n_lmk):
+        if not landmark_group_starts[i]:
+            continue
+        t_lmk = float(landmark_measurements[i, 0])
 
-    # Pointers into the measurement arrays
-    next_lmk  = 0   # always points at a group-start row (or past end)
-    next_gyro = 0
-
-    def _append(t: float) -> None:
-        """Append t, inserting evenly-spaced intermediates if dt > max_dt."""
-        if not state_timestamps:
-            state_timestamps.append(t)
-            return
-        last = state_timestamps[-1]
-        dt = t - last
-        if dt <= max_dt:
-            if dt > 1e-9:
-                state_timestamps.append(t)
-            # dt <= 1e-9: near-duplicate timestamp — skip
-        else:
-            n_steps = math.ceil(dt / max_dt)
-            for step in range(1, n_steps + 1):
-                state_timestamps.append(last + (step / n_steps) * dt)
-
-    def _consume_landmark() -> None:
-        nonlocal next_lmk
-        _append(float(landmark_measurements[next_lmk, 0]))
-        landmark_group_indices.append(len(state_timestamps) - 1)
-        # Advance to next group-start row
-        next_lmk += 1
-        while next_lmk < n_lmk and not landmark_group_starts[next_lmk]:
-            next_lmk += 1
-
-    def _consume_gyro() -> None:
-        nonlocal next_gyro
-        _append(float(gyro_measurements[next_gyro, 0]))
-        gyro_indices.append(len(state_timestamps) - 1)
-        next_gyro += 1
-
-    while True:
-        lmk_valid  = next_lmk  < n_lmk
-        gyro_valid = next_gyro < n_gyro
-
-        if not lmk_valid and not gyro_valid:
-            break
-
-        if lmk_valid and gyro_valid:
-            t_lmk  = float(landmark_measurements[next_lmk,  0])
-            t_gyro = float(gyro_measurements[next_gyro, 0])
-            if t_lmk <= t_gyro:
-                _consume_landmark()
+        # Binary search for nearest gyro timestamp
+        lo, hi = 0, M - 1
+        while lo < hi:
+            mid = (lo + hi) // 2
+            if state_timestamps[mid] < t_lmk:
+                lo = mid + 1
             else:
-                _consume_gyro()
-        elif lmk_valid:
-            _consume_landmark()
-        else:
-            _consume_gyro()
+                hi = mid
 
-    return state_timestamps, landmark_group_indices, gyro_indices
+        # lo is the first index >= t_lmk; compare with lo-1
+        if lo == 0:
+            best_k = 0
+        elif lo == M:
+            best_k = M - 1
+        else:
+            if state_timestamps[lo] - t_lmk < t_lmk - state_timestamps[lo - 1]:
+                best_k = lo
+            else:
+                best_k = lo - 1
+
+        landmark_group_indices.append(best_k)
+
+    return state_timestamps, landmark_group_indices

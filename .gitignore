@@ -236,10 +236,12 @@ data/
 bin/
 logs/
 
-# ignore build artifacts inside dep submodules (source trees are tracked as submodules)
+# ignore build artifacts inside dep submodules
 deps/spdlog/build/
 deps/googletest/build/
-# populated by install_deps.sh from system packages; not committed
+deps/Ipopt/ipopt_build/
+deps/casadi/casadi_build/
+deps/install/
 deps/mumps/
 
 workspace/

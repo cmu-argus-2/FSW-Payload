@@ -23,7 +23,15 @@ max_iterations = 10000 # iterations
 bias_mode = 1 # 0: no gyro bias; 1: fixed/constant gyro bias; 2: time-varying bias
 # INT or floating
 max_dt = 60.0 # largest time interval between states
-
-
-# TODO
-
+# BOOL
+compute_covariance = true # set true to compute covariance.csv; expensive for large batches
+# BOOL
+use_j2 = true # include J2 zonal harmonic gravity perturbation in batch dynamics
+# BOOL
+use_drag = true # include atmospheric drag in batch dynamics (Vallado Table 8-4, 300-700 km)
+# FLOAT — ballistic coefficient inverse Cd*A/m nominal [km²/kg]
+bc_inv_nominal = 0.0
+# FLOAT — bc_inv prior std dev [km²/kg]
+bc_inv_std = 1 # 1e-8
+# INT — integrator for orbital dynamics: 0 = forward-Euler, 1 = RK4
+integrator = 1

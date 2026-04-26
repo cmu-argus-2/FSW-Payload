@@ -141,9 +141,6 @@ void Payload::Run()
     // Launch IMU system
     StartIMUThread();
 
-    // Launch OD system
-    StartODThread();
-
     // Launch telemetry service
     StartTelemetryService();
 
@@ -184,9 +181,6 @@ void Payload::Stop()
 
     // Stop the telemetry service
     StopTelemetryService();
-
-    // Stop OD system
-    StopODThread();
 
     // Stop camera system
     StopCameraThread();
@@ -333,34 +327,6 @@ const Telemetry& Payload::GetTelemetry() const
 Telemetry& Payload::GetTelemetry()
 {
     return telemetry;
-}
-
-void Payload::StartODThread()
-{
-    // Launch OD thread
-    od_thread = std::thread(&OD::RunLoop, &od);
-    SPDLOG_INFO("OD thread started");
-}
-
-void Payload::StopODThread()
-{
-    od.StopLoop();
-    if (od_thread.joinable())
-    {
-        SPDLOG_INFO("Joining OD thread...");
-        od_thread.join();
-    }
-    SPDLOG_INFO("OD thread stopped");
-}
-
-const OD& Payload::GetOD() const
-{
-    return od;
-}
-
-OD& Payload::GetOD()
-{
-    return od;
 }
 
 const InferenceManager& Payload::GetInferenceManager() const

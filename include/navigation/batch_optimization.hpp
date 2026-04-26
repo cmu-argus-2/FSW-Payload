@@ -4,6 +4,7 @@
 #include "navigation/od_measurements.hpp"
 #include "navigation/od.hpp"
 #include "navigation/pose_dynamics.hpp"
+#include <array>
 #include <cstdint>
 #include <string>
 #include <utility>
@@ -78,10 +79,9 @@ struct StateTimestampsResult {
 };
 
 struct SolverSummaryInfo {
-    int    termination_type = 0;  // ceres::TerminationType: 0=CONVERGENCE, 1=NO_CONVERGENCE, 2=FAILURE, 3=USER_SUCCESS, 4=USER_FAILURE
-    int    num_iterations   = 0;
-    double initial_cost     = 0.0;
-    double final_cost       = 0.0;
+    std::string return_status = "not_solved";  // IPOPT return status string
+    int    iter_count  = 0;
+    double final_cost  = 0.0;
 };
 
 struct BatchOptResult {
@@ -92,6 +92,13 @@ struct BatchOptResult {
     DynamicsResiduals      dynamics_residuals;  // (N-1)x13 per StateResIdx
     LandmarkResiduals      landmark_residuals;  // Mx3 per LandmarkResIdx
     SolverSummaryInfo      solver_summary;
+    std::array<double, 3>  gyro_bias_fixed = {0.0, 0.0, 0.0};  // [rad/s], valid when FIX_BIAS
+    double                 bc_inv          = 0.0;               // [km²/kg], valid when use_drag
+    bool                   bc_inv_estimated = false;
+    bool                   covariance_computed = false;
+    double                 covariance_time_ms = -1.0;            // valid when covariance was requested
+    std::array<double, 3>  gyro_bias_var = {0.0, 0.0, 0.0};   // variance [rad/s]², valid when covariance_computed
+    double                 bc_inv_var = 0.0;                    // variance [km²/kg]², valid when bc_inv_estimated && covariance_computed
 };
 
 StateTimestampsResult
@@ -103,7 +110,8 @@ get_state_timestamps(const LandmarkMeasurements& landmark_measurements,
 // Runs the batch NLP orbit determination optimizer (IPOPT).
 // Returns BatchOptResult::code == ErrorCode::OK on success. On failure the code
 // is set to ODMEAS_NOT_VALID, BATCH_OPT_NO_CONVERGENCE, BATCH_OPT_SOLVER_FAILED,
-// or BATCH_OPT_INVALID_OUTPUT. The covariance field is always empty (0 rows).
+// or BATCH_OPT_INVALID_OUTPUT. If enabled in config, covariance contains the
+// diagonal tangent-space covariance per StateResIdx.
 BatchOptResult solve_batch_opt(const ODMeasurements& measurements,
                                BATCH_OPT_config bo_config);
 

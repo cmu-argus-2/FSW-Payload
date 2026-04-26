@@ -62,74 +62,28 @@ if(CUDA_ENABLED)
 endif()
 find_package(nlohmann_json REQUIRED)
 
-# IPOPT — built from source via deps/Ipopt submodule.
-# MUMPS is statically linked into libipopt.so using the PIC static libs in
-# deps/mumps/lib/, so no MUMPS .so files are needed at runtime.
-include(ExternalProject)
-include(ProcessorCount)
-ProcessorCount(NPROC)
-if(NOT NPROC OR NPROC EQUAL 0)
-    set(NPROC 4)
+# CasADi (with IPOPT backend) — built from source by install_deps.sh into deps/install/.
+set(CASADI_INSTALL_PREFIX "${CMAKE_SOURCE_DIR}/deps/install")
+list(APPEND CMAKE_PREFIX_PATH "${CASADI_INSTALL_PREFIX}")
+find_package(casadi REQUIRED)
+
+# CasADi cmake configs (both the source-built and pip-wheel variants) may propagate
+# _GLIBCXX_USE_CXX11_ABI=0 to consumers.  The library itself is always compiled with
+# the new ABI, so force the override here regardless of which casadi was found.
+if(TARGET casadi::casadi)
+    set_property(TARGET casadi::casadi PROPERTY
+        INTERFACE_COMPILE_DEFINITIONS "_GLIBCXX_USE_CXX11_ABI=1")
 endif()
 
-set(MUMPS_INCLUDE_DIR   "${CMAKE_SOURCE_DIR}/deps/mumps/include")
-set(MUMPS_LIB_DIR       "${CMAKE_SOURCE_DIR}/deps/mumps/lib")
-set(IPOPT_INSTALL_DIR   "${CMAKE_BINARY_DIR}/ipopt_install")
-set(IPOPT_INCLUDE_DIR   "${IPOPT_INSTALL_DIR}/include/coin-or")
-set(IPOPT_LIBRARY       "${IPOPT_INSTALL_DIR}/lib/libipopt.so")
+# Determine where libcasadi.so actually lives so we can embed it in RPATH.
+get_target_property(_casadi_lib casadi::casadi IMPORTED_LOCATION)
+if(NOT _casadi_lib)
+    get_target_property(_casadi_lib casadi::casadi IMPORTED_LOCATION_RELEASE)
+endif()
+get_filename_component(CASADI_LIB_DIR "${_casadi_lib}" DIRECTORY)
 
-# Build-time flags passed to Ipopt's Autotools configure. Using full paths
-# to the .a files forces static (PIC) MUMPS linkage into libipopt.so.
-set(_MUMPS_LFLAGS
-    "${MUMPS_LIB_DIR}/libdmumps_seq.a \
-${MUMPS_LIB_DIR}/libmumps_common_seq.a \
-${MUMPS_LIB_DIR}/libpord_seq.a \
-${MUMPS_LIB_DIR}/libmpiseq_seq.a \
-${MUMPS_LIB_DIR}/libesmumps.a \
-${MUMPS_LIB_DIR}/libscotch.a \
-${MUMPS_LIB_DIR}/libscotcherr.a \
--lgfortran -llapack -lblas")
-
-# Write a shell wrapper so the configure flags are passed as one shell word
-# each, avoiding CMake list-tokenisation issues with spaces in flag strings.
-file(WRITE "${CMAKE_BINARY_DIR}/configure_ipopt.sh"
-    "#!/bin/sh\n"
-    "exec \"${CMAKE_SOURCE_DIR}/deps/Ipopt/configure\" \\\n"
-    "  --prefix=\"${IPOPT_INSTALL_DIR}\" \\\n"
-    "  --disable-java \\\n"
-    "  --with-mumps \\\n"
-    "  \"--with-mumps-cflags=-I${MUMPS_INCLUDE_DIR} -I${MUMPS_INCLUDE_DIR}/mumps_seq\" \\\n"
-    "  \"--with-mumps-lflags=${_MUMPS_LFLAGS}\" \\\n"
-    "  \"$@\"\n"
-)
-file(CHMOD "${CMAKE_BINARY_DIR}/configure_ipopt.sh"
-     PERMISSIONS OWNER_READ OWNER_WRITE OWNER_EXECUTE
-                 GROUP_READ GROUP_EXECUTE WORLD_READ WORLD_EXECUTE)
-
-ExternalProject_Add(ipopt_ext
-    SOURCE_DIR  "${CMAKE_SOURCE_DIR}/deps/Ipopt"
-    BINARY_DIR  "${CMAKE_BINARY_DIR}/ipopt_build"
-    INSTALL_DIR "${IPOPT_INSTALL_DIR}"
-    CONFIGURE_COMMAND sh "${CMAKE_BINARY_DIR}/configure_ipopt.sh"
-    BUILD_COMMAND     make -j${NPROC}
-    INSTALL_COMMAND   make install
-    BUILD_BYPRODUCTS  "${IPOPT_LIBRARY}"
-)
-
-# Create the include dir now so CMake doesn't warn about a non-existent path
-# on an imported target before the ExternalProject has run.
-file(MAKE_DIRECTORY "${IPOPT_INCLUDE_DIR}")
-
-add_library(Ipopt::Ipopt SHARED IMPORTED GLOBAL)
-set_target_properties(Ipopt::Ipopt PROPERTIES
-    IMPORTED_LOCATION             "${IPOPT_LIBRARY}"
-    INTERFACE_INCLUDE_DIRECTORIES "${IPOPT_INCLUDE_DIR}")
-add_dependencies(Ipopt::Ipopt ipopt_ext)
-
-include_directories(SYSTEM "${IPOPT_INCLUDE_DIR}")
-# libipopt.so is in the build tree; embed its path as RPATH in every target.
-list(APPEND CMAKE_BUILD_RPATH   "${IPOPT_INSTALL_DIR}/lib")
-list(APPEND CMAKE_INSTALL_RPATH "${IPOPT_INSTALL_DIR}/lib")
+list(APPEND CMAKE_BUILD_RPATH   "${CASADI_LIB_DIR}")
+list(APPEND CMAKE_INSTALL_RPATH "${CASADI_LIB_DIR}")
 
 
 # Include OpenCV directories

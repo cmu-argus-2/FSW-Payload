@@ -34,6 +34,10 @@ inline std::string LDFolderPath(int version) {
     return "./models/trained-ld/V" + std::to_string(version);
 }
 
+inline std::string LDBoundingBoxesPath(int version, const std::string& region) {
+    return LDFolderPath(version) + "/" + region + "/bounding_boxes.csv";
+}
+
 // Parameters used to define the LD model file name (from region + config)
 struct LDNetConfig {
     NET_QUANTIZATION weight_quant;

@@ -80,8 +80,63 @@ cp /usr/include/mumps_seq/mpi.h \
    /usr/include/mumps_seq/elapse.h \
    deps/mumps/include/mumps_seq/
 
-# Ipopt (deps/Ipopt submodule) is built from source automatically by CMake's
-# ExternalProject_Add during the main build — no manual build step needed here.
+REPO_ROOT=$(cd "$(dirname "$0")" && pwd)
+INSTALL_PREFIX="$REPO_ROOT/deps/install"
+BUILD_NPROC=$(nproc)
+mkdir -p "$INSTALL_PREFIX"
+
+# ── Ensure CasADi source is present ──────────────────────────────────────────
+# Try submodule first; fall back to a direct clone if not yet registered.
+if [ ! -f "$REPO_ROOT/deps/casadi/CMakeLists.txt" ]; then
+  echo "CasADi source not found — cloning …"
+  git -C "$REPO_ROOT" submodule add https://github.com/casadi/casadi.git deps/casadi 2>/dev/null || true
+  git -C "$REPO_ROOT" submodule update --init deps/casadi 2>/dev/null || \
+    git clone --depth 1 --branch 3.6.5 https://github.com/casadi/casadi.git \
+              "$REPO_ROOT/deps/casadi"
+fi
+
+# ── Build IPOPT (deps/Ipopt submodule → deps/install/) ───────────────────────
+echo "Building IPOPT …"
+
+MUMPS_INC="$REPO_ROOT/deps/mumps/include"
+MUMPS_LFLAGS="\
+$REPO_ROOT/deps/mumps/lib/libdmumps_seq.a \
+$REPO_ROOT/deps/mumps/lib/libmumps_common_seq.a \
+$REPO_ROOT/deps/mumps/lib/libpord_seq.a \
+$REPO_ROOT/deps/mumps/lib/libmpiseq_seq.a \
+$REPO_ROOT/deps/mumps/lib/libesmumps.a \
+$REPO_ROOT/deps/mumps/lib/libscotch.a \
+$REPO_ROOT/deps/mumps/lib/libscotcherr.a \
+-lgfortran -llapack -lblas"
+
+mkdir -p "$REPO_ROOT/deps/Ipopt/ipopt_build"
+cd "$REPO_ROOT/deps/Ipopt/ipopt_build"
+"$REPO_ROOT/deps/Ipopt/configure" \
+  --prefix="$INSTALL_PREFIX" \
+  --disable-java \
+  --with-mumps \
+  "--with-mumps-cflags=-I${MUMPS_INC} -I${MUMPS_INC}/mumps_seq" \
+  "--with-mumps-lflags=${MUMPS_LFLAGS}"
+make -j"$BUILD_NPROC"
+make install
+cd "$REPO_ROOT"
+
+# ── Build CasADi with IPOPT support (deps/casadi → deps/install/) ────────────
+echo "Building CasADi with IPOPT …"
+
+mkdir -p "$REPO_ROOT/deps/casadi/casadi_build"
+cd "$REPO_ROOT/deps/casadi/casadi_build"
+PKG_CONFIG_PATH="$INSTALL_PREFIX/lib/pkgconfig${PKG_CONFIG_PATH:+:$PKG_CONFIG_PATH}" \
+cmake .. \
+  -DCMAKE_INSTALL_PREFIX="$INSTALL_PREFIX" \
+  -DCMAKE_BUILD_TYPE=Release \
+  -DWITH_IPOPT=ON \
+  -DWITH_PYTHON=OFF \
+  -DWITH_MATLAB=OFF \
+  -DWITH_OCTAVE=OFF
+make -j"$BUILD_NPROC"
+make install
+cd "$REPO_ROOT"
 
 # Install spdlog from source (pinned via submodule)
 cd deps/spdlog

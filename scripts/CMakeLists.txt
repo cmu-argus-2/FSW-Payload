@@ -10,12 +10,19 @@ endif()
 
 ##### BATCH OPTIMIZATION
 
-add_executable(RUN_BATCH_OPT run_batch_opt.cpp)
-target_link_libraries(RUN_BATCH_OPT
+add_executable(RUN_OD_ON_DATASET run_od_on_dataset.cpp)
+target_link_libraries(RUN_OD_ON_DATASET
     PRIVATE
     spdlog::spdlog
     PAYLOAD_LIB
     Eigen3::Eigen
+)
+
+add_executable(RUN_OD_PIPELINE run_od_pipeline.cpp)
+target_link_libraries(RUN_OD_PIPELINE
+    PRIVATE
+    spdlog::spdlog
+    PAYLOAD_LIB
 )
 
 ##### DATASETS

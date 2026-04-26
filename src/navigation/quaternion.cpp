@@ -1,5 +1,10 @@
 #include "navigation/quaternion.hpp"
 
+#include <eigen3/Eigen/QR>
+#include <vector>
+
+using casadi::MX;
+
 // Skew-symmetric matrix for cross-product equivalent.
 Matrix3x3 SkewSymmetric(const Vector& omega) {
     Matrix3x3 skew;
@@ -86,4 +91,62 @@ Quaternion Slerp(const Quaternion& q1, const Quaternion& q2, double t) {
 // Quaternion kinematics for angular velocity integration.
 Quaternion QuaternionKinematics(const Quaternion& q, const Vector& angvel) {
     return 0.5 * L(q) * Quaternion(0, angvel[0], angvel[1], angvel[2]);
+}
+
+MX quat_product_xyzw(const MX& p, const MX& q) {
+    MX px = p(0, 0), py = p(1, 0), pz = p(2, 0), pw = p(3, 0);
+    MX qx = q(0, 0), qy = q(1, 0), qz = q(2, 0), qw = q(3, 0);
+    return MX::vertcat(std::vector<MX>{
+        pw*qx + px*qw + py*qz - pz*qy,
+        pw*qy - px*qz + py*qw + pz*qx,
+        pw*qz + px*qy - py*qx + pz*qw,
+        pw*qw - px*qx - py*qy - pz*qz
+    });
+}
+
+MX quat_conjugate_xyzw(const MX& q) {
+    return MX::vertcat(std::vector<MX>{-q(0, 0), -q(1, 0), -q(2, 0), q(3, 0)});
+}
+
+MX angle_axis_to_quat_xyzw(const MX& angle_axis) {
+    MX safe_norm = sqrt(dot(angle_axis, angle_axis) + 1e-20);
+    MX half      = safe_norm / 2.0;
+    MX sinc_half = sin(half) / safe_norm;
+    return MX::vertcat(std::vector<MX>{
+        angle_axis(0, 0) * sinc_half,
+        angle_axis(1, 0) * sinc_half,
+        angle_axis(2, 0) * sinc_half,
+        cos(half)
+    });
+}
+
+MX quat_inv_rotate_xyzw(const MX& q, const MX& v) {
+    MX x = q(0, 0), y = q(1, 0), z = q(2, 0), w = q(3, 0);
+    MX vx = v(0, 0), vy = v(1, 0), vz = v(2, 0);
+    return MX::vertcat(std::vector<MX>{
+        (1.0 - 2.0*(y*y + z*z))*vx + 2.0*(x*y + w*z)*vy + 2.0*(x*z - w*y)*vz,
+        2.0*(x*y - w*z)*vx + (1.0 - 2.0*(x*x + z*z))*vy + 2.0*(y*z + w*x)*vz,
+        2.0*(x*z + w*y)*vx + 2.0*(y*z - w*x)*vy + (1.0 - 2.0*(x*x + y*y))*vz
+    });
+}
+
+Eigen::Matrix<double, 4, 3> quat_tangent_basis_xyzw(double qx, double qy,
+                                                    double qz, double qw) {
+    Eigen::Vector4d q(qx, qy, qz, qw);
+    const double q_norm = q.norm();
+    if (q_norm > 0.0) {
+        q /= q_norm;
+    } else {
+        q = Eigen::Vector4d(0.0, 0.0, 0.0, 1.0);
+    }
+
+    Eigen::Matrix4d A;
+    A.col(0) = q;
+    A.col(1) = Eigen::Vector4d::UnitX();
+    A.col(2) = Eigen::Vector4d::UnitY();
+    A.col(3) = Eigen::Vector4d::UnitZ();
+
+    const Eigen::HouseholderQR<Eigen::Matrix4d> qr(A);
+    const Eigen::Matrix4d Q = qr.householderQ() * Eigen::Matrix4d::Identity();
+    return Q.block<4, 3>(0, 1);
 }

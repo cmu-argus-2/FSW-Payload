@@ -16,3 +16,8 @@
 [submodule "deps/Ipopt"]
 	path = deps/Ipopt
 	url = https://github.com/coin-or/Ipopt
+	ignore = untracked
+[submodule "deps/casadi"]
+	path = deps/casadi
+	url = https://github.com/casadi/casadi.git
+	ignore = untracked

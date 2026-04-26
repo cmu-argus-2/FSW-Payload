@@ -191,6 +191,19 @@ target_processing_stage(target_processing_stage)
     imu_log_file_path = folder_path + "imu_data.csv";
 }
 
+Dataset::Dataset(const DatasetConfig& config)
+:
+Dataset(config.maximum_period,
+        config.target_frame_nb,
+        config.capture_mode,
+        config.imu_collection_mode,
+        config.image_capture_rate,
+        config.imu_sample_rate_hz,
+        config.target_processing_stage,
+        config.capture_start_time)
+{
+}
+
 void Dataset::InitializeOnDisk()
 {
     bool res = DH::MakeNewDirectory(folder_path);

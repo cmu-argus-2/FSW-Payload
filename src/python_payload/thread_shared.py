@@ -80,3 +80,20 @@ class StateManager:
 
 # Global state manager instance
 state_manager = StateManager(PayloadState.IDLE)
+
+
+_inference_return_code_lock = threading.Lock()
+_inference_return_code = 0
+
+
+def set_inference_return_code(value: int) -> None:
+    """Store latest inference process return code in a thread-safe way."""
+    global _inference_return_code
+    with _inference_return_code_lock:
+        _inference_return_code = int(value)
+
+
+def get_inference_return_code() -> int:
+    """Read latest inference process return code in a thread-safe way."""
+    with _inference_return_code_lock:
+        return int(_inference_return_code)

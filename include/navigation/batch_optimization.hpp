@@ -82,6 +82,7 @@ struct SolverSummaryInfo {
     std::string return_status = "not_solved";  // IPOPT return status string
     int    iter_count  = 0;
     double final_cost  = 0.0;
+    double solve_time_ms = -1.0;
 };
 
 struct BatchOptResult {
@@ -96,6 +97,7 @@ struct BatchOptResult {
     double                 bc_inv          = 0.0;               // [km²/kg], valid when use_drag
     bool                   bc_inv_estimated = false;
     bool                   covariance_computed = false;
+    bool                   covariance_timed_out = false;
     double                 covariance_time_ms = -1.0;            // valid when covariance was requested
     std::array<double, 3>  gyro_bias_var = {0.0, 0.0, 0.0};   // variance [rad/s]², valid when covariance_computed
     double                 bc_inv_var = 0.0;                    // variance [km²/kg]², valid when bc_inv_estimated && covariance_computed

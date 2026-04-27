@@ -19,8 +19,8 @@ BATCH_OPT_config::BATCH_OPT_config()
 solver_function_tolerance(1e-6),
 solver_parameter_tolerance(1e-10),
 max_iterations(10000),
+max_run_time_sec(120.0),
 bias_mode(BIAS_MODE::FIX_BIAS),
-max_dt(60.0),
 compute_covariance(false),
 use_j2(false),
 use_drag(false),
@@ -93,7 +93,7 @@ ErrorCode OD::ReadConfig(const std::string& config_path)
     config.batch_opt.solver_function_tolerance = get_param_as_double(BATCH_OPT_params, "solver_function_tolerance", config.batch_opt.solver_function_tolerance);
     config.batch_opt.solver_parameter_tolerance = get_param_as_double(BATCH_OPT_params, "solver_parameter_tolerance", config.batch_opt.solver_parameter_tolerance);
     config.batch_opt.max_iterations = BATCH_OPT_params->get_as<int64_t>("max_iterations")->value_or(config.batch_opt.max_iterations);
-    config.batch_opt.max_dt = get_param_as_double(BATCH_OPT_params, "max_dt", config.batch_opt.max_dt);
+    config.batch_opt.max_run_time_sec = get_param_as_double(BATCH_OPT_params, "max_run_time_sec", config.batch_opt.max_run_time_sec);
     config.batch_opt.bias_mode = static_cast<BIAS_MODE>(BATCH_OPT_params->get_as<int64_t>("bias_mode")->value_or(static_cast<int64_t>(config.batch_opt.bias_mode)));
     config.batch_opt.compute_covariance = BATCH_OPT_params->get_as<bool>("compute_covariance")->value_or(config.batch_opt.compute_covariance);
     config.batch_opt.use_j2   = BATCH_OPT_params->get_as<bool>("use_j2")->value_or(config.batch_opt.use_j2);
@@ -122,7 +122,7 @@ void OD::LogConfig()
     SPDLOG_INFO("  solver_function_tolerance: {}", config.batch_opt.solver_function_tolerance);
     SPDLOG_INFO("  solver_parameter_tolerance: {}", config.batch_opt.solver_parameter_tolerance);
     SPDLOG_INFO("  max_iterations: {}", config.batch_opt.max_iterations);
-    SPDLOG_INFO("  max_dt: {}", config.batch_opt.max_dt);
+    SPDLOG_INFO("  max_run_time_sec: {}", config.batch_opt.max_run_time_sec);
     SPDLOG_INFO("  bias_mode: {}", static_cast<int>(config.batch_opt.bias_mode));
     SPDLOG_INFO("  compute_covariance: {}", config.batch_opt.compute_covariance);
     SPDLOG_INFO("  use_j2: {}", config.batch_opt.use_j2);
@@ -186,7 +186,7 @@ ODConfigResult ReadODConfig(const std::string& config_path)
     od_config.batch_opt.solver_parameter_tolerance = get_param_as_double(BATCH_OPT_params, "solver_parameter_tolerance", od_config.batch_opt.solver_parameter_tolerance);
     od_config.batch_opt.solver_function_tolerance = get_param_as_double(BATCH_OPT_params, "solver_function_tolerance", od_config.batch_opt.solver_function_tolerance);
     od_config.batch_opt.max_iterations = BATCH_OPT_params->get_as<int64_t>("max_iterations")->value_or(od_config.batch_opt.max_iterations);
-    od_config.batch_opt.max_dt = get_param_as_double(BATCH_OPT_params, "max_dt", od_config.batch_opt.max_dt);
+    od_config.batch_opt.max_run_time_sec = get_param_as_double(BATCH_OPT_params, "max_run_time_sec", od_config.batch_opt.max_run_time_sec);
     od_config.batch_opt.bias_mode = static_cast<BIAS_MODE>(BATCH_OPT_params->get_as<int64_t>("bias_mode")->value_or(static_cast<int64_t>(od_config.batch_opt.bias_mode)));
     od_config.batch_opt.compute_covariance = BATCH_OPT_params->get_as<bool>("compute_covariance")->value_or(od_config.batch_opt.compute_covariance);
     od_config.batch_opt.use_j2   = BATCH_OPT_params->get_as<bool>("use_j2")->value_or(od_config.batch_opt.use_j2);

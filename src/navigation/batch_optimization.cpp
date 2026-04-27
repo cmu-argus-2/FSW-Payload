@@ -22,6 +22,8 @@ using casadi::Function;
 using casadi::Opti;
 using casadi::OptiSol;
 
+using SteadyClock = std::chrono::steady_clock;
+
 // ── Constants (mirrors python_od/optimizer.py) ────────────────────────────────
 static constexpr double CASADI_GYRO_WN_STD_DEV  = 0.0008726;       // rad/s
 static constexpr double CASADI_UMA_STD_DEV      = 1e-5;            // km/s²
@@ -89,7 +91,9 @@ static ResidualsOrCovariances compute_covariance(
     const DM& d_val,
     bool use_drag,
     const std::vector<double>& state_timestamps,
-    double* bc_inv_var_out = nullptr)
+    double* bc_inv_var_out = nullptr,
+    const SteadyClock::time_point* deadline = nullptr,
+    bool* covariance_timed_out = nullptr)
 {
     const int N = static_cast<int>(state_timestamps.size());
     const int N_uma = N - 1;
@@ -97,10 +101,20 @@ static ResidualsOrCovariances compute_covariance(
         return ResidualsOrCovariances(0, StateResIdx::STATE_RES_COUNT);
     }
 
-    using Clock = std::chrono::steady_clock;
-    auto stage_start = Clock::now();
+    auto mark_timed_out = [&covariance_timed_out](const char* stage) {
+        if (covariance_timed_out) *covariance_timed_out = true;
+        spdlog::warn("solve_batch_opt: covariance timed out during {}.", stage);
+    };
+    auto deadline_expired = [&deadline, &mark_timed_out](const char* stage) {
+        if (!deadline) return false;
+        if (SteadyClock::now() <= *deadline) return false;
+        mark_timed_out(stage);
+        return true;
+    };
+
+    auto stage_start = SteadyClock::now();
     auto log_stage = [&stage_start](const char* stage) {
-        const auto now = Clock::now();
+        const auto now = SteadyClock::now();
         const double elapsed_ms = std::chrono::duration<double, std::milli>(now - stage_start).count();
         spdlog::debug("solve_batch_opt: covariance stage '{}' took {:.1f} ms.", stage, elapsed_ms);
         stage_start = now;
@@ -122,6 +136,9 @@ static ResidualsOrCovariances compute_covariance(
 
     MX residual_sym = MX::vertcat(residual_terms);
     log_stage("residual assembly");
+    if (deadline_expired("residual assembly")) {
+        return ResidualsOrCovariances(0, StateResIdx::STATE_RES_COUNT);
+    }
 
     MX x_sym;
     Function J_fn;
@@ -130,22 +147,40 @@ static ResidualsOrCovariances compute_covariance(
         x_sym = MX::vertcat(std::vector<MX>{vec(r), vec(v), vec(q), vec(a), b, d});
         MX J_sym = jacobian(residual_sym, x_sym);
         log_stage("symbolic jacobian");
+        if (deadline_expired("symbolic jacobian")) {
+            return ResidualsOrCovariances(0, StateResIdx::STATE_RES_COUNT);
+        }
         J_fn = Function("batch_covariance_jacobian", {r, v, q, a, b, d}, {J_sym});
         log_stage("function construction");
+        if (deadline_expired("function construction")) {
+            return ResidualsOrCovariances(0, StateResIdx::STATE_RES_COUNT);
+        }
         jac_inputs = {r_val, v_val, q_val, a_val, b_val, d_val};
     } else {
         x_sym = MX::vertcat(std::vector<MX>{vec(r), vec(v), vec(q), vec(a), b});
         MX J_sym = jacobian(residual_sym, x_sym);
         log_stage("symbolic jacobian");
+        if (deadline_expired("symbolic jacobian")) {
+            return ResidualsOrCovariances(0, StateResIdx::STATE_RES_COUNT);
+        }
         J_fn = Function("batch_covariance_jacobian", {r, v, q, a, b}, {J_sym});
         log_stage("function construction");
+        if (deadline_expired("function construction")) {
+            return ResidualsOrCovariances(0, StateResIdx::STATE_RES_COUNT);
+        }
         jac_inputs = {r_val, v_val, q_val, a_val, b_val};
     }
 
     const std::vector<DM> jac_outputs = J_fn(jac_inputs);
     log_stage("jacobian evaluation");
+    if (deadline_expired("jacobian evaluation")) {
+        return ResidualsOrCovariances(0, StateResIdx::STATE_RES_COUNT);
+    }
     Eigen::SparseMatrix<double> J = dm_to_sparse_eigen(jac_outputs.at(0));
     log_stage("dm to sparse eigen");
+    if (deadline_expired("dm to sparse eigen")) {
+        return ResidualsOrCovariances(0, StateResIdx::STATE_RES_COUNT);
+    }
 
     const int n_drag    = use_drag ? 1 : 0;
     const int n_full    = 10 * N + 3 * N_uma + 3 + n_drag;
@@ -188,13 +223,22 @@ static ResidualsOrCovariances compute_covariance(
     T.setFromTriplets(t_triplets.begin(), t_triplets.end());
     T.makeCompressed();
     log_stage("sparse tangent projection build");
+    if (deadline_expired("sparse tangent projection build")) {
+        return ResidualsOrCovariances(0, StateResIdx::STATE_RES_COUNT);
+    }
 
     spdlog::info("solve_batch_opt: solving covariance normal equations ({}x{} reduced Jacobian).",
                  J.rows(), n_reduced);
     const Eigen::SparseMatrix<double> J_reduced = J * T;
     log_stage("sparse projection multiply");
+    if (deadline_expired("sparse projection multiply")) {
+        return ResidualsOrCovariances(0, StateResIdx::STATE_RES_COUNT);
+    }
     Eigen::SparseMatrix<double> normal_sparse = J_reduced.transpose() * J_reduced;
     log_stage("sparse normal matrix");
+    if (deadline_expired("sparse normal matrix")) {
+        return ResidualsOrCovariances(0, StateResIdx::STATE_RES_COUNT);
+    }
     const double damping = 1e-18;
     normal_sparse.makeCompressed();
     for (int k = 0; k < normal_sparse.outerSize(); ++k) {
@@ -209,6 +253,9 @@ static ResidualsOrCovariances compute_covariance(
     Eigen::SimplicialLDLT<Eigen::SparseMatrix<double>> ldlt;
     ldlt.compute(normal_sparse);
     log_stage("ldlt factorization");
+    if (deadline_expired("ldlt factorization")) {
+        return ResidualsOrCovariances(0, StateResIdx::STATE_RES_COUNT);
+    }
     if (ldlt.info() != Eigen::Success) {
         spdlog::warn("solve_batch_opt: covariance LDLT factorization failed.");
         return ResidualsOrCovariances(0, StateResIdx::STATE_RES_COUNT);
@@ -229,6 +276,9 @@ static ResidualsOrCovariances compute_covariance(
     Eigen::VectorXd cov_diag = Eigen::VectorXd::Zero(n_reduced);
     Eigen::VectorXd rhs = Eigen::VectorXd::Zero(n_reduced);
     for (const int idx : covariance_indices) {
+        if (deadline_expired("selected inverse diagonal solve")) {
+            return ResidualsOrCovariances(0, StateResIdx::STATE_RES_COUNT);
+        }
         rhs(idx) = 1.0;
         const Eigen::VectorXd column = ldlt.solve(rhs);
         if (ldlt.info() != Eigen::Success) {
@@ -499,6 +549,7 @@ BatchOptResult solve_batch_opt(const ODMeasurements& measurements,
     // ── IPOPT ─────────────────────────────────────────────────────────────────
     Dict ipopt_opts;
     ipopt_opts["max_iter"]       = static_cast<int>(bo_config.max_iterations);
+    ipopt_opts["max_cpu_time"]   = bo_config.max_run_time_sec;
     ipopt_opts["tol"]            = bo_config.solver_function_tolerance;
     ipopt_opts["acceptable_tol"] = bo_config.solver_function_tolerance * 100.0;
     ipopt_opts["print_level"]    = 5;
@@ -509,7 +560,11 @@ BatchOptResult solve_batch_opt(const ODMeasurements& measurements,
     // Solve — IPOPT failure raises std::exception; "Solved_To_Acceptable_Level"
     // does not throw and is treated as success.
     try {
+        const auto solve_start = SteadyClock::now();
         OptiSol sol = opti.solve();
+        const auto solve_end = SteadyClock::now();
+        const double solve_time_sec =
+            std::chrono::duration<double>(solve_end - solve_start).count();
 
         // ── Solver summary ──────────────────────────────────────────────────
         {
@@ -520,6 +575,7 @@ BatchOptResult solve_batch_opt(const ODMeasurements& measurements,
                 static_cast<int>(stats.at("iter_count"));
             result.solver_summary.final_cost =
                 static_cast<double>(sol.value(obj));
+            result.solver_summary.solve_time_ms = solve_time_sec * 1000.0;
         }
 
         // ── Extract solution ────────────────────────────────────────────────
@@ -610,27 +666,45 @@ BatchOptResult solve_batch_opt(const ODMeasurements& measurements,
         }
 
         if (bo_config.compute_covariance) {
-            const auto cov_start = std::chrono::steady_clock::now();
-            double bc_inv_var_out = 0.0;
-            result.covariance = compute_covariance(
-                uma_residuals, ang_residuals, lmk_residuals, dyn_constraints,
-                drag_residuals,
-                sol, r, v, q, a, b, d,
-                r_val, v_val, q_val, a_val, b_val, d_val,
-                use_drag, ts.state_timestamps, &bc_inv_var_out);
-            const auto cov_end = std::chrono::steady_clock::now();
-            result.covariance_time_ms =
-                std::chrono::duration<double, std::milli>(cov_end - cov_start).count();
-            spdlog::info("solve_batch_opt: covariance computation took {:.1f} ms.",
-                         result.covariance_time_ms);
-            if (result.covariance.rows() > 0) {
-                result.covariance_computed = true;
-                result.gyro_bias_var = {
-                    result.covariance(0, RES_GYRO_BIAS_X),
-                    result.covariance(0, RES_GYRO_BIAS_Y),
-                    result.covariance(0, RES_GYRO_BIAS_Z)
-                };
-                result.bc_inv_var = bc_inv_var_out;
+            const double remaining_covariance_time_sec =
+                bo_config.max_run_time_sec - solve_time_sec;
+            if (remaining_covariance_time_sec <= 0.0) {
+                result.covariance_timed_out = true;
+                result.covariance_time_ms = 0.0;
+                result.covariance = ResidualsOrCovariances(0, StateResIdx::STATE_RES_COUNT);
+                spdlog::warn(
+                    "solve_batch_opt: skipping covariance because IPOPT used {:.3f}s of the {:.3f}s OD budget.",
+                    solve_time_sec, bo_config.max_run_time_sec);
+            } else {
+                spdlog::info(
+                    "solve_batch_opt: covariance has {:.3f}s remaining from {:.3f}s OD budget.",
+                    remaining_covariance_time_sec, bo_config.max_run_time_sec);
+                const auto cov_start = SteadyClock::now();
+                const auto cov_deadline = cov_start +
+                    std::chrono::duration_cast<SteadyClock::duration>(
+                        std::chrono::duration<double>(remaining_covariance_time_sec));
+                double bc_inv_var_out = 0.0;
+                result.covariance = compute_covariance(
+                    uma_residuals, ang_residuals, lmk_residuals, dyn_constraints,
+                    drag_residuals,
+                    sol, r, v, q, a, b, d,
+                    r_val, v_val, q_val, a_val, b_val, d_val,
+                    use_drag, ts.state_timestamps, &bc_inv_var_out,
+                    &cov_deadline, &result.covariance_timed_out);
+                const auto cov_end = SteadyClock::now();
+                result.covariance_time_ms =
+                    std::chrono::duration<double, std::milli>(cov_end - cov_start).count();
+                spdlog::info("solve_batch_opt: covariance computation took {:.1f} ms.",
+                             result.covariance_time_ms);
+                if (result.covariance.rows() > 0) {
+                    result.covariance_computed = true;
+                    result.gyro_bias_var = {
+                        result.covariance(0, RES_GYRO_BIAS_X),
+                        result.covariance(0, RES_GYRO_BIAS_Y),
+                        result.covariance(0, RES_GYRO_BIAS_Z)
+                    };
+                    result.bc_inv_var = bc_inv_var_out;
+                }
             }
         } else {
             result.covariance = ResidualsOrCovariances(0, StateResIdx::STATE_RES_COUNT);

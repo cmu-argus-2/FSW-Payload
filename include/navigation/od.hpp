@@ -66,8 +66,8 @@ struct BATCH_OPT_config
     double solver_function_tolerance;
     double solver_parameter_tolerance;
     uint32_t max_iterations;
+    double max_run_time_sec;
     BIAS_MODE bias_mode;
-    double max_dt;
     bool compute_covariance;
     bool use_j2;
     bool use_drag;

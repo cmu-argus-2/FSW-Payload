@@ -19,10 +19,10 @@ solver_parameter_tolerance = 1e-10
 solver_gradient_check_relative_precision = 1e-6 # TODO: implement parsing
 # INT
 max_iterations = 10000 # iterations
+# INT or floating
+max_run_time_sec = 120.0 # seconds
 # INT
 bias_mode = 1 # 0: no gyro bias; 1: fixed/constant gyro bias; 2: time-varying bias
-# INT or floating
-max_dt = 60.0 # largest time interval between states
 # BOOL
 compute_covariance = true # set true to compute covariance.csv; expensive for large batches
 # BOOL

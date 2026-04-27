@@ -25,6 +25,17 @@
 #include <chrono>
 #include <thread>
 
+namespace {
+
+std::string DatasetNameFromPath(const std::string& dataset_folder)
+{
+    std::filesystem::path p(dataset_folder);
+    return p.filename().empty() ? p.parent_path().filename().string()
+                                : p.filename().string();
+}
+
+} // namespace
+
 bool OD::IsODPossible(const std::string& dataset_folder) const
 {
     namespace fs = std::filesystem;
@@ -628,15 +639,19 @@ static bool WriteBatchODResults(const std::string& dataset_folder,
     meta["solver"]["return_status"] = result.solver_summary.return_status;
     meta["solver"]["iter_count"] = result.solver_summary.iter_count;
     meta["solver"]["final_cost"] = result.solver_summary.final_cost;
+    meta["solver"]["solve_time_ms"] =
+        result.solver_summary.solve_time_ms >= 0.0 ? nlohmann::json(result.solver_summary.solve_time_ms) : nlohmann::json(nullptr);
     meta["inputs"]["num_landmark_rows"] = num_landmark_rows;
     meta["inputs"]["num_landmark_groups"] = num_landmark_groups;
     meta["inputs"]["num_gyro_rows"] = num_gyro_rows;
     meta["outputs"]["num_state_estimates"] = result.state_estimates.rows();
     meta["outputs"]["covariance_available"] = result.covariance.rows() > 0;
     meta["outputs"]["covariance_computed"] = result.covariance_computed;
+    meta["outputs"]["covariance_timed_out"] = result.covariance_timed_out;
     meta["config"]["use_j2"] = od_config.batch_opt.use_j2;
     meta["config"]["use_drag"] = od_config.batch_opt.use_drag;
     meta["config"]["compute_covariance"] = od_config.batch_opt.compute_covariance;
+    meta["config"]["max_run_time_sec"] = od_config.batch_opt.max_run_time_sec;
     meta["config"]["integrator"] = static_cast<int>(od_config.batch_opt.integrator);
     if (od_config.batch_opt.bias_mode == BIAS_MODE::FIX_BIAS) {
         meta["estimates"]["gyro_bias_x_rads"] = result.gyro_bias_fixed[0];
@@ -763,7 +778,7 @@ ODResult RunODOnDataset(const ODRequest& request)
 
     const int64_t run_unix_ms = std::chrono::duration_cast<std::chrono::milliseconds>(
         std::chrono::system_clock::now().time_since_epoch()).count();
-    const std::string dataset_name = fs::path(request.dataset_folder).filename().string();
+    const std::string dataset_name = DatasetNameFromPath(request.dataset_folder);
     out.results_dir = std::string("data/results/") + dataset_name + "_" + std::to_string(run_unix_ms);
 
     const int num_groups = static_cast<int>(

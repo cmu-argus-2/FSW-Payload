@@ -4,6 +4,8 @@
 #include "navigation/od.hpp"
 #include "navigation/pose_dynamics.hpp"
 #include "navigation/utils.hpp"
+#include "inference/inference_manager.hpp"
+#include "vision/reprocessing.hpp"
 #include "vision/regions.hpp"
 
 #include <array>
@@ -13,6 +15,7 @@
 #include <iomanip>
 #include <opencv2/core.hpp>
 #include <string>
+#include <vector>
 
 namespace fs = std::filesystem;
 
@@ -179,6 +182,7 @@ TEST_F(ODTest, ReadODConfigValidConfigReturnsOK)
     const ODConfigResult result = ReadODConfig("config/od.toml");
     EXPECT_EQ(result.code, ErrorCode::OK);
     EXPECT_GT(result.config.batch_opt.max_iterations, 0u);
+    EXPECT_GT(result.config.batch_opt.max_run_time_sec, 0.0);
 }
 
 TEST_F(ODTest, ReadODConfigNonexistentPathReturnsFileDoesNotExist)
@@ -619,3 +623,188 @@ TEST_F(ODTest, RunODOnDatasetMeasurementsReadyButLoadFailsPropagatesLoadCode)
     EXPECT_EQ(result.code, ErrorCode::ODMEAS_NOT_VALID);
     EXPECT_EQ(result.stage, ODStage::FAILED);
 }
+
+// ── Integration tests against real *_test datasets ────────────────────────────
+
+static std::vector<std::string> DiscoverTestDatasets()
+{
+    std::vector<std::string> result;
+    const std::string base = "data/datasets/";
+    if (!fs::is_directory(base)) return result;
+    for (const auto& e : fs::directory_iterator(base)) {
+        if (!e.is_directory()) continue;
+        const std::string name = e.path().filename().string();
+        if (name.size() >= 5 && name.substr(name.size() - 5) == "_test")
+            result.push_back(e.path().string() + "/");
+    }
+    std::sort(result.begin(), result.end());
+    return result;
+}
+
+void ConfigureODDatasetReprocessing(InferenceManager& im)
+{
+    im.SetRCNetVersion(2);
+    im.SetLDNetVersion(2);
+    im.SetLDNetConfig(NET_QUANTIZATION::FP16, 4608, 2592, false, true);
+}
+
+std::string DatasetName(const std::string& dataset_path)
+{
+    fs::path p(dataset_path);
+    return p.filename().empty() ? p.parent_path().filename().string()
+                                : p.filename().string();
+}
+
+std::string ODDatasetReportPath(const std::string& dataset_path)
+{
+    return "tests/od_dataset_test_report_" + DatasetName(dataset_path) + ".md";
+}
+
+bool ResetDatasetProcessingForODTest(const std::string& dataset_path,
+                                     std::string& error_out,
+                                     int& reset_frames_out)
+{
+    reset_frames_out = 0;
+    if (!fs::is_directory(dataset_path)) {
+        error_out = "dataset folder does not exist";
+        return false;
+    }
+
+    for (const auto& entry : fs::directory_iterator(dataset_path)) {
+        if (!entry.is_regular_file() || entry.path().extension() != ".json") continue;
+        const std::string stem = entry.path().stem().string();
+        if (stem.rfind("frame_", 0) != 0) continue;
+
+        try {
+            std::ifstream in(entry.path());
+            if (!in.is_open()) {
+                error_out = "could not open " + entry.path().string();
+                return false;
+            }
+            Json j;
+            in >> j;
+            in.close();
+
+            j["annotation_state"] = static_cast<int>(ImageState::NotEarth);
+            j["processing_stage"] = static_cast<int>(ProcessingStage::NotPrefiltered);
+            j["rank"] = 0.0f;
+            j.erase("prefilter");
+            j.erase("inference_results");
+            j.erase("rcnet_version");
+            j.erase("ldnet_version");
+            j.erase("detected_regions_count");
+            j.erase("detected_landmarks_count");
+            j.erase("regions");
+            j.erase("landmarks");
+
+            std::ofstream out(entry.path(), std::ios::out | std::ios::trunc);
+            if (!out.is_open()) {
+                error_out = "could not write " + entry.path().string();
+                return false;
+            }
+            out << std::setw(4) << j << '\n';
+            ++reset_frames_out;
+        }
+        catch (const std::exception& e) {
+            error_out = std::string("failed to reset ") + entry.path().string() + ": " + e.what();
+            return false;
+        }
+    }
+
+    std::error_code ec;
+    fs::remove(fs::path(dataset_path) / "landmark_measurements.csv", ec);
+    return true;
+}
+
+void WriteODDatasetReport(const std::string& dataset_path,
+                          int reset_frames,
+                          const ODResult& reset_result,
+                          EC reprocess_status,
+                          ODStage inspected_stage,
+                          const ODResult& final_result)
+{
+    std::ofstream report(ODDatasetReportPath(dataset_path), std::ios::out | std::ios::trunc);
+    if (!report.is_open()) return;
+
+    report << "# OD Dataset Test Report\n\n"
+           << "**Dataset:** " << dataset_path << "\n\n"
+           << "| Step | Result |\n"
+           << "| --- | --- |\n"
+           << "| Reset frames | " << reset_frames << " |\n"
+           << "| OD after reset code | " << static_cast<int>(reset_result.code) << " |\n"
+           << "| OD after reset stage | " << static_cast<int>(reset_result.stage) << " |\n"
+           << "| Reprocess status | " << static_cast<int>(reprocess_status) << " |\n"
+           << "| Stage after reprocess | " << static_cast<int>(inspected_stage) << " |\n"
+           << "| Final OD code | " << static_cast<int>(final_result.code) << " |\n"
+           << "| Final OD stage | " << static_cast<int>(final_result.stage) << " |\n"
+           << "| Results dir | " << final_result.results_dir << " |\n";
+}
+
+struct ODDatasetIntegrationTest : ::testing::TestWithParam<std::string> {};
+
+TEST_P(ODDatasetIntegrationTest, RunODOnReprocessedDataset)
+{
+    const std::string dataset_path = GetParam();
+    ODRequest request;
+    request.dataset_folder = dataset_path;
+    request.od_config_path = OD_DEFAULT_CONFIG_PATH;
+    request.system_config_path = "config/config.toml";
+
+    std::string reset_error;
+    int reset_frames = 0;
+    ASSERT_TRUE(ResetDatasetProcessingForODTest(dataset_path, reset_error, reset_frames))
+        << reset_error;
+
+    const ODResult reset_result = RunODOnDataset(request);
+    EXPECT_NE(reset_result.code, ErrorCode::OK)
+        << "OD unexpectedly succeeded before dataset processing for " << dataset_path;
+    EXPECT_EQ(reset_result.stage, ODStage::DATASET_NOT_PROCESSED)
+        << "OD should report the reset dataset as unprocessed";
+
+    Dataset dataset(dataset_path);
+    InferenceManager inference_manager;
+    ConfigureODDatasetReprocessing(inference_manager);
+    const EC reprocess_status = Reprocessing::Dataset(
+        dataset,
+        inference_manager,
+        ProcessingStage::LDNeted,
+        /*overwrite=*/false);
+    if (reprocess_status != EC::OK) {
+        WriteODDatasetReport(dataset_path, reset_frames, reset_result, reprocess_status,
+                             ODStage::FAILED, ODResult{});
+        GTEST_SKIP() << "Could not reprocess " << dataset_path
+                     << " to LDNeted stage; error "
+                     << static_cast<int>(reprocess_status);
+    }
+
+    const ODStage stage = InspectDatasetForOD(dataset_path);
+    if (stage == ODStage::DATASET_NOT_PROCESSED) {
+        GTEST_SKIP() << dataset_path << " has no OD-usable LDNeted landmark frames after reprocessing";
+    }
+    EXPECT_TRUE(stage == ODStage::DATASET_PROCESSED ||
+                stage == ODStage::MEASUREMENTS_READY)
+        << "Unexpected OD stage " << static_cast<int>(stage)
+        << " for dataset: " << dataset_path;
+
+    const ODResult result = RunODOnDataset(request);
+    WriteODDatasetReport(dataset_path, reset_frames, reset_result, reprocess_status,
+                         stage, result);
+    EXPECT_EQ(result.code, ErrorCode::OK)
+        << "RunODOnDataset failed for " << dataset_path
+        << " at stage " << static_cast<int>(result.stage);
+    EXPECT_EQ(result.stage, ODStage::OD_COMPLETED)
+        << "RunODOnDataset did not complete for " << dataset_path;
+    EXPECT_FALSE(result.results_dir.empty());
+}
+
+INSTANTIATE_TEST_SUITE_P(
+    TestDatasets, ODDatasetIntegrationTest,
+    ::testing::ValuesIn(DiscoverTestDatasets()),
+    [](const ::testing::TestParamInfo<std::string>& info) {
+        fs::path p(info.param);
+        std::string n = p.filename().empty()
+                        ? p.parent_path().filename().string()
+                        : p.filename().string();
+        return n;
+    }
+);

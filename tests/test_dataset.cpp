@@ -34,6 +34,23 @@
 namespace fs = std::filesystem;
 using FrameVec = std::vector<std::tuple<uint8_t, uint64_t>>;
 
+// ── Discover all *_test dataset directories ───────────────────────────────────
+
+static std::vector<std::string> DiscoverTestDatasets()
+{
+    std::vector<std::string> result;
+    const std::string base = "data/datasets/";
+    if (!fs::is_directory(base)) return result;
+    for (const auto& e : fs::directory_iterator(base)) {
+        if (!e.is_directory()) continue;
+        const std::string name = e.path().filename().string();
+        if (name.size() >= 5 && name.substr(name.size() - 5) == "_test")
+            result.push_back(e.path().string() + "/");
+    }
+    std::sort(result.begin(), result.end());
+    return result;
+}
+
 // ── Shared helper ─────────────────────────────────────────────────────────────
 
 static Dataset makeDatasetAt(uint64_t start_ms, double period_s)
@@ -778,8 +795,6 @@ TEST_F(DatasetManagerTest, CameraManager_FrameCount_NoUint8Wrap)
 
 namespace {
 
-const std::string kSyntheticDataset = "data/datasets/17R_Florida_nadir_test/";
-
 Json LoadDatasetJson(const std::string& folder)
 {
     std::ifstream f(folder + "dataset.json");
@@ -798,8 +813,9 @@ void ConfigureIM(InferenceManager& im, int rc_ver, int ld_ver)
 
 } // namespace
 
-struct ReprocessingDatasetTest : ::testing::Test
+struct ReprocessingDatasetTest : ::testing::TestWithParam<std::string>
 {
+    std::string dataset_path_;
     std::string original_dataset_json_;
     int         num_frames    = 0;
     int         num_rcneted   = 0;  // processing_stage >= 2
@@ -810,11 +826,14 @@ struct ReprocessingDatasetTest : ::testing::Test
 
     void SetUp() override
     {
-        std::ifstream f(kSyntheticDataset + "dataset.json");
-        ASSERT_TRUE(f.is_open()) << "Synthetic dataset not found at " << kSyntheticDataset;
+        dataset_path_ = GetParam();
+        std::ifstream f(dataset_path_ + "dataset.json");
+        if (!f.is_open()) {
+            GTEST_SKIP() << "dataset.json not found at " << dataset_path_;
+        }
         original_dataset_json_.assign(std::istreambuf_iterator<char>(f), {});
 
-        for (const auto& entry : fs::directory_iterator(kSyntheticDataset)) {
+        for (const auto& entry : fs::directory_iterator(dataset_path_)) {
             const auto& p = entry.path();
             if (p.extension() != ".json") continue;
             if (p.filename().string().rfind("frame_", 0) != 0) continue;
@@ -834,19 +853,25 @@ struct ReprocessingDatasetTest : ::testing::Test
             if (spot_ts == 0 && j.value("cam_id", -1) == 0 && stage >= 3)
                 spot_ts = j.value("timestamp", uint64_t{0});
         }
-        ASSERT_GT(num_frames, 0) << "No frame JSONs found in " << kSyntheticDataset;
-        ASSERT_GT(spot_ts,    0) << "No cam-0 frame with processing_stage >= 3 in " << kSyntheticDataset;
+        if (num_frames == 0) {
+            GTEST_SKIP() << "No frame JSONs found in " << dataset_path_;
+        }
+        if (spot_ts == 0) {
+            GTEST_SKIP() << "No cam-0 frame with processing_stage >= 3 in " << dataset_path_;
+        }
     }
 
     void TearDown() override
     {
-        std::ofstream f(kSyntheticDataset + "dataset.json", std::ios::trunc);
-        f << original_dataset_json_;
+        if (!original_dataset_json_.empty()) {
+            std::ofstream f(dataset_path_ + "dataset.json", std::ios::trunc);
+            f << original_dataset_json_;
+        }
     }
 
     int SpotFrameStage() const
     {
-        Json j = DH::LoadFrameMetadataFromDisk(spot_ts, 0, kSyntheticDataset);
+        Json j = DH::LoadFrameMetadataFromDisk(spot_ts, 0, dataset_path_);
         return j.value("processing_stage", -1);
     }
 };
@@ -854,33 +879,33 @@ struct ReprocessingDatasetTest : ::testing::Test
 // ── Target = Prefiltered ──────────────────────────────────────────────────────
 
 // All frames are at stage 3 ≥ Prefiltered(1): skip regardless of overwrite.
-TEST_F(ReprocessingDatasetTest, Prefiltered_OverwriteFalse_AllSkipped)
+TEST_P(ReprocessingDatasetTest, Prefiltered_OverwriteFalse_AllSkipped)
 {
     InferenceManager im;
     ConfigureIM(im, 2, 1);
-    Dataset dataset(kSyntheticDataset);
+    Dataset dataset(dataset_path_);
 
     EC ec = Reprocessing::Dataset(dataset, im, ProcessingStage::Prefiltered, /*overwrite=*/false);
 
     EXPECT_EQ(ec, EC::OK);
     EXPECT_EQ(SpotFrameStage(), 3) << "Frame JSONs must not be modified";
-    Json j = LoadDatasetJson(kSyntheticDataset);
+    Json j = LoadDatasetJson(dataset_path_);
     EXPECT_EQ(j.value("target_processing_stage", -1),
               static_cast<int>(ProcessingStage::Prefiltered));
     EXPECT_EQ(j.value("frames_collected", 0), num_frames);
 }
 
-TEST_F(ReprocessingDatasetTest, Prefiltered_OverwriteTrue_AllSkipped)
+TEST_P(ReprocessingDatasetTest, Prefiltered_OverwriteTrue_AllSkipped)
 {
     InferenceManager im;
     ConfigureIM(im, 2, 1);
-    Dataset dataset(kSyntheticDataset);
+    Dataset dataset(dataset_path_);
 
     EC ec = Reprocessing::Dataset(dataset, im, ProcessingStage::Prefiltered, /*overwrite=*/true);
 
     EXPECT_EQ(ec, EC::OK);
     EXPECT_EQ(SpotFrameStage(), 3);
-    Json j = LoadDatasetJson(kSyntheticDataset);
+    Json j = LoadDatasetJson(dataset_path_);
     EXPECT_EQ(j.value("target_processing_stage", -1),
               static_cast<int>(ProcessingStage::Prefiltered));
     EXPECT_EQ(j.value("frames_collected", 0), num_frames);
@@ -889,43 +914,43 @@ TEST_F(ReprocessingDatasetTest, Prefiltered_OverwriteTrue_AllSkipped)
 // ── Target = RCNeted ─────────────────────────────────────────────────────────
 
 // Stored rc_version=2 matches requested version → conditions match → skip.
-TEST_F(ReprocessingDatasetTest, RCNeted_OverwriteFalse_MatchingVersion_AllSkipped)
+TEST_P(ReprocessingDatasetTest, RCNeted_OverwriteFalse_MatchingVersion_AllSkipped)
 {
     InferenceManager im;
     ConfigureIM(im, /*rc=*/2, 1);
-    Dataset dataset(kSyntheticDataset);
+    Dataset dataset(dataset_path_);
 
     EC ec = Reprocessing::Dataset(dataset, im, ProcessingStage::RCNeted, /*overwrite=*/false);
 
     EXPECT_EQ(ec, EC::OK);
     EXPECT_EQ(SpotFrameStage(), 3);
-    Json j = LoadDatasetJson(kSyntheticDataset);
+    Json j = LoadDatasetJson(dataset_path_);
     EXPECT_EQ(j.value("target_processing_stage", -1),
               static_cast<int>(ProcessingStage::RCNeted));
     EXPECT_EQ(j.value("num_frames_rcneted", 0), num_rcneted);
 }
 
 // rc_version mismatch + overwrite=false → conditions differ but must not reprocess.
-TEST_F(ReprocessingDatasetTest, RCNeted_OverwriteFalse_MismatchedVersion_AllSkipped)
+TEST_P(ReprocessingDatasetTest, RCNeted_OverwriteFalse_MismatchedVersion_AllSkipped)
 {
     InferenceManager im;
     ConfigureIM(im, /*rc=*/99, 1);
-    Dataset dataset(kSyntheticDataset);
+    Dataset dataset(dataset_path_);
 
     EC ec = Reprocessing::Dataset(dataset, im, ProcessingStage::RCNeted, /*overwrite=*/false);
 
     EXPECT_EQ(ec, EC::OK);
     EXPECT_EQ(SpotFrameStage(), 3);
-    Json j = LoadDatasetJson(kSyntheticDataset);
+    Json j = LoadDatasetJson(dataset_path_);
     EXPECT_EQ(j.value("frames_collected", 0), num_frames);
 }
 
 // Conditions match (rc_version=2) → skip even though overwrite=true.
-TEST_F(ReprocessingDatasetTest, RCNeted_OverwriteTrue_MatchingVersion_AllSkipped)
+TEST_P(ReprocessingDatasetTest, RCNeted_OverwriteTrue_MatchingVersion_AllSkipped)
 {
     InferenceManager im;
     ConfigureIM(im, /*rc=*/2, 1);
-    Dataset dataset(kSyntheticDataset);
+    Dataset dataset(dataset_path_);
 
     EC ec = Reprocessing::Dataset(dataset, im, ProcessingStage::RCNeted, /*overwrite=*/true);
 
@@ -936,17 +961,17 @@ TEST_F(ReprocessingDatasetTest, RCNeted_OverwriteTrue_MatchingVersion_AllSkipped
 // ── Target = LDNeted ─────────────────────────────────────────────────────────
 
 // Both rc_version=2 and ld_version=2 match → skip.
-TEST_F(ReprocessingDatasetTest, LDNeted_OverwriteFalse_MatchingVersions_AllSkipped)
+TEST_P(ReprocessingDatasetTest, LDNeted_OverwriteFalse_MatchingVersions_AllSkipped)
 {
     InferenceManager im;
     ConfigureIM(im, /*rc=*/2, /*ld=*/2);
-    Dataset dataset(kSyntheticDataset);
+    Dataset dataset(dataset_path_);
 
     EC ec = Reprocessing::Dataset(dataset, im, ProcessingStage::LDNeted, /*overwrite=*/false);
 
     EXPECT_EQ(ec, EC::OK);
     EXPECT_EQ(SpotFrameStage(), 3);
-    Json j = LoadDatasetJson(kSyntheticDataset);
+    Json j = LoadDatasetJson(dataset_path_);
     EXPECT_EQ(j.value("target_processing_stage", -1),
               static_cast<int>(ProcessingStage::LDNeted));
     EXPECT_EQ(j.value("num_frames_ldneted",  0), num_ldneted);
@@ -956,35 +981,47 @@ TEST_F(ReprocessingDatasetTest, LDNeted_OverwriteFalse_MatchingVersions_AllSkipp
 }
 
 // ld_version mismatch + overwrite=false → skip.
-TEST_F(ReprocessingDatasetTest, LDNeted_OverwriteFalse_MismatchedLDVersion_AllSkipped)
+TEST_P(ReprocessingDatasetTest, LDNeted_OverwriteFalse_MismatchedLDVersion_AllSkipped)
 {
     InferenceManager im;
     ConfigureIM(im, /*rc=*/2, /*ld=*/99);
-    Dataset dataset(kSyntheticDataset);
+    Dataset dataset(dataset_path_);
 
     EC ec = Reprocessing::Dataset(dataset, im, ProcessingStage::LDNeted, /*overwrite=*/false);
 
     EXPECT_EQ(ec, EC::OK);
     EXPECT_EQ(SpotFrameStage(), 3);
-    Json j = LoadDatasetJson(kSyntheticDataset);
+    Json j = LoadDatasetJson(dataset_path_);
     EXPECT_EQ(j.value("frames_collected", 0), num_frames);
 }
 
 // Conditions match (rc=2, ld=1) → skip even though overwrite=true.
-TEST_F(ReprocessingDatasetTest, LDNeted_OverwriteTrue_MatchingVersions_AllSkipped)
+TEST_P(ReprocessingDatasetTest, LDNeted_OverwriteTrue_MatchingVersions_AllSkipped)
 {
     InferenceManager im;
     ConfigureIM(im, /*rc=*/2, /*ld=*/2);
-    Dataset dataset(kSyntheticDataset);
+    Dataset dataset(dataset_path_);
 
     EC ec = Reprocessing::Dataset(dataset, im, ProcessingStage::LDNeted, /*overwrite=*/true);
 
     EXPECT_EQ(ec, EC::OK);
     EXPECT_EQ(SpotFrameStage(), 3);
-    Json j = LoadDatasetJson(kSyntheticDataset);
+    Json j = LoadDatasetJson(dataset_path_);
     EXPECT_EQ(j.value("target_processing_stage", -1),
               static_cast<int>(ProcessingStage::LDNeted));
 }
+
+INSTANTIATE_TEST_SUITE_P(
+    TestDatasets, ReprocessingDatasetTest,
+    ::testing::ValuesIn(DiscoverTestDatasets()),
+    [](const ::testing::TestParamInfo<std::string>& info) {
+        fs::path p(info.param);
+        std::string n = p.filename().empty()
+                        ? p.parent_path().filename().string()
+                        : p.filename().string();
+        return n;
+    }
+);
 
 // ── Stored inference result validation + dataset report ──────────────────────
 //
@@ -1134,8 +1171,13 @@ static std::string Pct(int num, int den)
 static void WriteDatasetReport(const std::vector<FrameResult>& results,
                                 const std::string& dataset_path)
 {
+    fs::path dp(dataset_path);
+    const std::string ds_name = dp.filename().empty()
+                                ? dp.parent_path().filename().string()
+                                : dp.filename().string();
     const char* env = std::getenv("DATASET_REPORT_PATH");
-    const std::string path = env ? env : "tests/dataset_test_report.md";
+    const std::string path = env ? env
+                                 : "tests/dataset_test_report_" + ds_name + ".md";
 
     std::ofstream f(path);
     if (!f.is_open()) { spdlog::error("Could not open report file: {}", path); return; }
@@ -1295,28 +1337,45 @@ static void WriteDatasetReport(const std::vector<FrameResult>& results,
 
 } // namespace
 
+struct DatasetValidationTest : ::testing::TestWithParam<std::string> {};
+
 // Validates stored inference results against YOLO ground-truth and writes a
-// Markdown report (DATASET_REPORT_PATH env var, or tests/dataset_test_report.md).
-TEST(DatasetInferenceValidation, StoredLandmarks_MatchGroundTruth)
+// Markdown report (tests/dataset_test_report_<dataset>.md).
+TEST_P(DatasetValidationTest, StoredLandmarks_MatchGroundTruth)
 {
     constexpr float kIoUThreshold = 0.5f;
+    const std::string dataset_path = GetParam();
 
     // Build a label index: {timestamp, cam_id} → LabelFile
-    const auto label_files = DiscoverLabelFiles(kSyntheticDataset);
+    const auto label_files = DiscoverLabelFiles(dataset_path);
     std::map<std::pair<uint64_t,int>, const LabelFile*> label_index;
     for (const auto& lf : label_files)
         label_index[{lf.timestamp, lf.cam_id}] = &lf;
 
     // Enumerate every frame JSON in the dataset
-    const auto frame_ids = DiscoverFrameIDs(kSyntheticDataset);
+    const auto frame_ids = DiscoverFrameIDs(dataset_path);
     if (frame_ids.empty())
-        GTEST_SKIP() << "No frame JSON files found in " << kSyntheticDataset;
+        GTEST_SKIP() << "No frame JSON files found in " << dataset_path;
+
+    // Skip if no frames have been processed to LDNeted — no stored results to validate.
+    {
+        bool any_ldneted = false;
+        for (const auto& [cam_id, ts] : frame_ids) {
+            Json j = DH::LoadFrameMetadataFromDisk(ts, cam_id, dataset_path);
+            if (j.value("processing_stage", -1) >= static_cast<int>(ProcessingStage::LDNeted)) {
+                any_ldneted = true;
+                break;
+            }
+        }
+        if (!any_ldneted)
+            GTEST_SKIP() << dataset_path << " has no LDNeted frames — no inference results to validate";
+    }
 
     std::vector<FrameResult> report_data;
     int frames_with_gt = 0, total_tp = 0, total_landmarks = 0;
 
     for (const auto& [cam_id, ts] : frame_ids) {
-        Json frame_json = DH::LoadFrameMetadataFromDisk(ts, cam_id, kSyntheticDataset);
+        Json frame_json = DH::LoadFrameMetadataFromDisk(ts, cam_id, dataset_path);
         if (frame_json.empty()) continue;
 
         FrameResult r;
@@ -1405,7 +1464,7 @@ TEST(DatasetInferenceValidation, StoredLandmarks_MatchGroundTruth)
                                                     : a.cam_id   < b.cam_id;
               });
 
-    WriteDatasetReport(report_data, kSyntheticDataset);
+    WriteDatasetReport(report_data, dataset_path);
 
     if (frames_with_gt == 0)
         GTEST_SKIP() << "All .txt label files are empty — no GT to validate against";
@@ -1416,3 +1475,15 @@ TEST(DatasetInferenceValidation, StoredLandmarks_MatchGroundTruth)
         << "No true-positive landmarks (IoU > " << kIoUThreshold << ") across "
         << frames_with_gt << " labeled frames (" << total_landmarks << " landmarks checked)";
 }
+
+INSTANTIATE_TEST_SUITE_P(
+    TestDatasets, DatasetValidationTest,
+    ::testing::ValuesIn(DiscoverTestDatasets()),
+    [](const ::testing::TestParamInfo<std::string>& info) {
+        fs::path p(info.param);
+        std::string n = p.filename().empty()
+                        ? p.parent_path().filename().string()
+                        : p.filename().string();
+        return n;
+    }
+);

@@ -110,6 +110,18 @@ struct ODResult
     std::string results_dir;
 };
 
+struct ODConfigResult
+{
+    ErrorCode code = ErrorCode::OK;
+    OD_Config config;
+};
+
+struct ODMeasurementsResult
+{
+    ErrorCode code = ErrorCode::OK;
+    ODMeasurements measurements;
+};
+
 class OD
 {
 
@@ -126,25 +138,25 @@ public:
     // Convert a completed dataset folder into the measurement matrices required by the
     // batch optimizer. Infers the LD model version from the dataset frame metadata.
     // calibration  — shared intrinsics + per-camera cam_to_body rotation matrices
-    // Returns true on success; false if conversion fails (logged).
-    bool DatasetPrepare(const std::string& dataset_folder,
-                        const CameraCalibration& calibration);
+    // Returns ErrorCode::OK on success; otherwise returns a diagnostic error code.
+    ErrorCode DatasetPrepare(const std::string& dataset_folder,
+                             const CameraCalibration& calibration);
 
 private:
     // Configurations
     OD_Config config;
 
     // Read the config yaml file 
-    void ReadConfig(const std::string& config_path);
+    ErrorCode ReadConfig(const std::string& config_path);
     void LogConfig();
 
     ODMeasurements measurements_;
     bool measurements_ready_ = false;
 };
 
-OD_Config ReadODConfig(const std::string& config_path);
+ODConfigResult ReadODConfig(const std::string& config_path);
 ODStage InspectDatasetForOD(const std::string& dataset_folder);
-ODMeasurements LoadODMeasurementsFromDataset(const std::string& dataset_folder);
+ODMeasurementsResult LoadODMeasurementsFromDataset(const std::string& dataset_folder);
 ODResult RunODOnDataset(const ODRequest& request);
 ODResult RunODPipeline(const ODRequest& request,
                        CameraManager& cam_manager,

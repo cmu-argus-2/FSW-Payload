@@ -8,6 +8,7 @@ set(PAYLOAD_TEST_SOURCES
     test_data_handling.cpp
     test_imu.cpp
     test_dataset.cpp
+    test_od.cpp
     test_commands.cpp
     test_camera.cpp
 )

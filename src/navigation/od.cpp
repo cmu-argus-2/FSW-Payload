@@ -1,6 +1,7 @@
 #include "navigation/od.hpp"
 #include "spdlog/spdlog.h"
 #include "toml.hpp"
+#include <filesystem>
 #include <stdexcept>
 
 
@@ -38,7 +39,7 @@ OD_Config::OD_Config()
 OD::OD(const std::string& config_path)
 {
     SPDLOG_INFO("Will read OD configuration file...");
-    ReadConfig(config_path);
+    (void)ReadConfig(config_path);
 }
 
 OD::~OD()
@@ -46,9 +47,14 @@ OD::~OD()
 }
 
 
-void OD::ReadConfig(const std::string& config_path)
+ErrorCode OD::ReadConfig(const std::string& config_path)
 {
     toml::table params;
+    if (!std::filesystem::exists(config_path)) {
+        SPDLOG_ERROR("OD config file does not exist: {}", config_path);
+        return ErrorCode::FILE_DOES_NOT_EXIST;
+    }
+
     try
     {
         params = toml::parse_file(config_path);
@@ -56,7 +62,7 @@ void OD::ReadConfig(const std::string& config_path)
     catch (const toml::parse_error& err)
     { 
         SPDLOG_ERROR("Failed to parse config file: {}", err.what());
-        return;
+        return ErrorCode::FILE_NOT_AVAILABLE;
     }
 
     // Helper to get parameter as double (supports int64_t and double)
@@ -72,13 +78,18 @@ void OD::ReadConfig(const std::string& config_path)
     
     // INIT
     auto INIT_params = params["INIT"].as_table();
+    auto BATCH_OPT_params = params["BATCH_OPT"].as_table();
+    if (!INIT_params || !BATCH_OPT_params) {
+        SPDLOG_ERROR("OD config file missing required [INIT] or [BATCH_OPT] section: {}",
+                     config_path);
+        return ErrorCode::FILE_NOT_AVAILABLE;
+    }
     config.init.collection_period = INIT_params->get_as<int64_t>("collection_period")->value_or(config.init.collection_period);
     config.init.target_samples = INIT_params->get_as<int64_t>("target_samples")->value_or(config.init.target_samples);
     config.init.max_collection_time = INIT_params->get_as<int64_t>("max_collection_time")->value_or(config.init.max_collection_time);
     config.init.max_downtime_for_restart = INIT_params->get_as<int64_t>("max_downtime_for_restart_in_minutes")->value_or(config.init.max_downtime_for_restart);
 
     // BATCH_OPT
-    auto BATCH_OPT_params = params["BATCH_OPT"].as_table();
     config.batch_opt.solver_function_tolerance = get_param_as_double(BATCH_OPT_params, "solver_function_tolerance", config.batch_opt.solver_function_tolerance);
     config.batch_opt.solver_parameter_tolerance = get_param_as_double(BATCH_OPT_params, "solver_parameter_tolerance", config.batch_opt.solver_parameter_tolerance);
     config.batch_opt.max_iterations = BATCH_OPT_params->get_as<int64_t>("max_iterations")->value_or(config.batch_opt.max_iterations);
@@ -93,6 +104,7 @@ void OD::ReadConfig(const std::string& config_path)
     // TODO: safe value checking on each params
     
     LogConfig();
+    return ErrorCode::OK;
 
 }
 
@@ -122,10 +134,16 @@ void OD::LogConfig()
 
 }
 
-// TODO: To be removed once run batch opt is updated to use the OD class
-OD_Config ReadODConfig(const std::string& config_path)
+ODConfigResult ReadODConfig(const std::string& config_path)
 {
+    ODConfigResult result;
     toml::table params;
+    if (!std::filesystem::exists(config_path)) {
+        SPDLOG_ERROR("OD config file does not exist: {}", config_path);
+        result.code = ErrorCode::FILE_DOES_NOT_EXIST;
+        return result;
+    }
+
     try
     {
         params = toml::parse_file(config_path);
@@ -133,7 +151,8 @@ OD_Config ReadODConfig(const std::string& config_path)
     catch (const toml::parse_error& err)
     { 
         SPDLOG_ERROR("Failed to parse config file: {}", err.what());
-        return OD_Config{};
+        result.code = ErrorCode::FILE_NOT_AVAILABLE;
+        return result;
     }
 
     // Helper to get parameter as double (supports int64_t and double)
@@ -147,17 +166,23 @@ OD_Config ReadODConfig(const std::string& config_path)
         return default_value;
     };
     
-    OD_Config od_config;
+    OD_Config& od_config = result.config;
 
     // INIT
     auto INIT_params = params["INIT"].as_table();
+    auto BATCH_OPT_params = params["BATCH_OPT"].as_table();
+    if (!INIT_params || !BATCH_OPT_params) {
+        SPDLOG_ERROR("OD config file missing required [INIT] or [BATCH_OPT] section: {}",
+                     config_path);
+        result.code = ErrorCode::FILE_NOT_AVAILABLE;
+        return result;
+    }
     od_config.init.collection_period = INIT_params->get_as<int64_t>("collection_period")->value_or(od_config.init.collection_period);
     od_config.init.target_samples = INIT_params->get_as<int64_t>("target_samples")->value_or(od_config.init.target_samples);
     od_config.init.max_collection_time = INIT_params->get_as<int64_t>("max_collection_time")->value_or(od_config.init.max_collection_time);
     od_config.init.max_downtime_for_restart = INIT_params->get_as<int64_t>("max_downtime_for_restart_in_minutes")->value_or(od_config.init.max_downtime_for_restart);
 
     // BATCH_OPT
-    auto BATCH_OPT_params = params["BATCH_OPT"].as_table();
     od_config.batch_opt.solver_parameter_tolerance = get_param_as_double(BATCH_OPT_params, "solver_parameter_tolerance", od_config.batch_opt.solver_parameter_tolerance);
     od_config.batch_opt.solver_function_tolerance = get_param_as_double(BATCH_OPT_params, "solver_function_tolerance", od_config.batch_opt.solver_function_tolerance);
     od_config.batch_opt.max_iterations = BATCH_OPT_params->get_as<int64_t>("max_iterations")->value_or(od_config.batch_opt.max_iterations);
@@ -173,5 +198,6 @@ OD_Config ReadODConfig(const std::string& config_path)
     // Print the configuration
     SPDLOG_INFO("OD Configuration parameters set");
 
-    return od_config;
+    result.code = ErrorCode::OK;
+    return result;
 }

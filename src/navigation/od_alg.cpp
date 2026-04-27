@@ -118,8 +118,8 @@ bool OD::IsODPossible(const std::string& dataset_folder) const
     return true;
 }
 
-bool OD::DatasetPrepare(const std::string& dataset_folder,
-                        const CameraCalibration& calibration)
+ErrorCode OD::DatasetPrepare(const std::string& dataset_folder,
+                             const CameraCalibration& calibration)
 {
     namespace fs = std::filesystem;
     measurements_ready_ = false;
@@ -139,7 +139,7 @@ bool OD::DatasetPrepare(const std::string& dataset_folder,
     std::vector<fs::path> frame_files;
     if (!fs::is_directory(dataset_folder)) {
         SPDLOG_ERROR("DatasetPrepare: dataset folder does not exist: {}", dataset_folder);
-        return false;
+        return ErrorCode::FILE_DOES_NOT_EXIST;
     }
     for (const auto& entry : fs::directory_iterator(dataset_folder)) {
         const std::string fname = entry.path().filename().string();
@@ -166,14 +166,14 @@ bool OD::DatasetPrepare(const std::string& dataset_folder,
             const int ld_version = j_inf.value("ldnet_version", -1);
             if (ld_version <= 0) {
                 SPDLOG_ERROR("DatasetPrepare: invalid or missing ldnet_version in {}", fpath.string());
-                return false;
+                return ErrorCode::ODMEAS_NOT_VALID;
             }
             if (inferred_ld_version < 0) {
                 inferred_ld_version = ld_version;
             } else if (inferred_ld_version != ld_version) {
                 SPDLOG_ERROR("DatasetPrepare: mixed LD model versions in dataset: {} and {}",
                              inferred_ld_version, ld_version);
-                return false;
+                return ErrorCode::ODMEAS_NOT_VALID;
             }
         } catch (const std::exception& e) {
             SPDLOG_WARN("DatasetPrepare: failed to inspect {}: {}", fpath.string(), e.what());
@@ -181,7 +181,7 @@ bool OD::DatasetPrepare(const std::string& dataset_folder,
     }
     if (inferred_ld_version <= 0) {
         SPDLOG_ERROR("DatasetPrepare: could not infer LD model version from {}", dataset_folder);
-        return false;
+        return ErrorCode::ODMEAS_NOT_VALID;
     }
     SPDLOG_INFO("DatasetPrepare: inferred LD model version V{} from {}",
                 inferred_ld_version, dataset_folder);
@@ -324,7 +324,7 @@ bool OD::DatasetPrepare(const std::string& dataset_folder,
 
     if (lm_rows.empty()) {
         SPDLOG_ERROR("DatasetPrepare: no landmark measurements extracted from {}", dataset_folder);
-        return false;
+        return ErrorCode::ODMEAS_NOT_VALID;
     }
 
     // Write landmark_measurements.csv
@@ -332,6 +332,7 @@ bool OD::DatasetPrepare(const std::string& dataset_folder,
     std::ofstream lm_csv(lm_csv_path);
     if (!lm_csv.is_open()) {
         SPDLOG_WARN("DatasetPrepare: cannot write landmark_measurements.csv to {}", lm_csv_path);
+        return ErrorCode::FILE_NOT_AVAILABLE;
     } else {
         lm_csv << "timestamp_ms,bearing_x,bearing_y,bearing_z,eci_x_km,eci_y_km,eci_z_km,group,sigma\n";
         lm_csv << std::fixed << std::setprecision(9);
@@ -355,7 +356,7 @@ bool OD::DatasetPrepare(const std::string& dataset_folder,
     std::ifstream imu_f(imu_csv);
     if (!imu_f.is_open()) {
         SPDLOG_ERROR("DatasetPrepare: cannot open imu_data.csv: {}", imu_csv);
-        return false;
+        return ErrorCode::FILE_DOES_NOT_EXIST;
     }
 
     std::vector<std::array<double, 4>> gyro_rows;  // [t_j2000, wx, wy, wz] in rad/s
@@ -385,7 +386,7 @@ bool OD::DatasetPrepare(const std::string& dataset_folder,
 
     if (gyro_rows.empty()) {
         SPDLOG_ERROR("DatasetPrepare: no IMU data parsed from {}", imu_csv);
-        return false;
+        return ErrorCode::ODMEAS_NOT_VALID;
     }
 
     // Fill ODMeasurements struct
@@ -413,7 +414,7 @@ bool OD::DatasetPrepare(const std::string& dataset_folder,
     measurements_ready_ = true;
     SPDLOG_INFO("DatasetPrepare: {} landmark rows, {} gyro rows extracted from {}",
                 N, M, dataset_folder);
-    return true;
+    return ErrorCode::OK;
 }
 
 ODStage InspectDatasetForOD(const std::string& dataset_folder)
@@ -461,10 +462,11 @@ ODStage InspectDatasetForOD(const std::string& dataset_folder)
     return ODStage::DATASET_PROCESSED;
 }
 
-ODMeasurements LoadODMeasurementsFromDataset(const std::string& dataset_folder)
+ODMeasurementsResult LoadODMeasurementsFromDataset(const std::string& dataset_folder)
 {
     constexpr double DPS_TO_RADPS = M_PI / 180.0;
     namespace fs = std::filesystem;
+    ODMeasurementsResult result;
 
     const fs::path lm_csv_path = fs::path(dataset_folder) / "landmark_measurements.csv";
     const fs::path imu_csv_path = fs::path(dataset_folder) / "imu_data.csv";
@@ -476,7 +478,9 @@ ODMeasurements LoadODMeasurementsFromDataset(const std::string& dataset_folder)
     {
         std::ifstream f(lm_csv_path);
         if (!f.is_open()) {
-            throw std::runtime_error("cannot open " + lm_csv_path.string());
+            SPDLOG_ERROR("LoadODMeasurementsFromDataset: cannot open {}", lm_csv_path.string());
+            result.code = ErrorCode::FILE_DOES_NOT_EXIST;
+            return result;
         }
 
         std::string line;
@@ -511,14 +515,19 @@ ODMeasurements LoadODMeasurementsFromDataset(const std::string& dataset_folder)
         }
     }
     if (lm_rows.empty()) {
-        throw std::runtime_error("no landmark measurements loaded from " + lm_csv_path.string());
+        SPDLOG_ERROR("LoadODMeasurementsFromDataset: no landmark measurements loaded from {}",
+                     lm_csv_path.string());
+        result.code = ErrorCode::ODMEAS_NOT_VALID;
+        return result;
     }
 
     std::vector<std::array<double, 4>> gyro_rows;
     {
         std::ifstream f(imu_csv_path);
         if (!f.is_open()) {
-            throw std::runtime_error("cannot open " + imu_csv_path.string());
+            SPDLOG_ERROR("LoadODMeasurementsFromDataset: cannot open {}", imu_csv_path.string());
+            result.code = ErrorCode::FILE_DOES_NOT_EXIST;
+            return result;
         }
 
         std::string line;
@@ -543,13 +552,16 @@ ODMeasurements LoadODMeasurementsFromDataset(const std::string& dataset_folder)
         }
     }
     if (gyro_rows.empty()) {
-        throw std::runtime_error("no IMU data loaded from " + imu_csv_path.string());
+        SPDLOG_ERROR("LoadODMeasurementsFromDataset: no IMU data loaded from {}",
+                     imu_csv_path.string());
+        result.code = ErrorCode::ODMEAS_NOT_VALID;
+        return result;
     }
 
     const idx_t N = static_cast<idx_t>(lm_rows.size());
     const idx_t M = static_cast<idx_t>(gyro_rows.size());
 
-    ODMeasurements meas;
+    ODMeasurements& meas = result.measurements;
     meas.landmark_measurements.resize(N, LandmarkMeasurementIdx::LANDMARK_COUNT);
     meas.group_starts.resize(N);
     meas.landmark_uncertainties.resize(N);
@@ -570,7 +582,8 @@ ODMeasurements LoadODMeasurementsFromDataset(const std::string& dataset_folder)
 
     SPDLOG_INFO("LoadODMeasurementsFromDataset: loaded {} landmark rows and {} gyro rows from {}",
                 N, M, dataset_folder);
-    return meas;
+    result.code = ErrorCode::OK;
+    return result;
 }
 
 static bool write_state_csv(const std::string& path, const StateEstimates& states)
@@ -716,29 +729,36 @@ ODResult RunODOnDataset(const ODRequest& request)
         return out;
     }
 
-    OD_Config od_config = ReadODConfig(request.od_config_path);
+    const ODConfigResult config_result = ReadODConfig(request.od_config_path);
+    if (config_result.code != ErrorCode::OK) {
+        out.code = config_result.code;
+        out.stage = ODStage::FAILED;
+        return out;
+    }
+    const OD_Config& od_config = config_result.config;
 
     if (out.stage == ODStage::DATASET_PROCESSED) {
         Configuration config;
         config.LoadConfiguration(request.system_config_path);
         OD od(request.od_config_path);
-        if (!od.DatasetPrepare(request.dataset_folder, config.GetCameraCalibration())) {
-            out.code = ErrorCode::ODMEAS_NOT_VALID;
+        const ErrorCode prepare_code =
+            od.DatasetPrepare(request.dataset_folder, config.GetCameraCalibration());
+        if (prepare_code != ErrorCode::OK) {
+            out.code = prepare_code;
             out.stage = ODStage::FAILED;
             return out;
         }
         out.stage = ODStage::MEASUREMENTS_READY;
     }
 
-    ODMeasurements measurements;
-    try {
-        measurements = LoadODMeasurementsFromDataset(request.dataset_folder);
-    } catch (const std::exception& e) {
-        SPDLOG_ERROR("RunODOnDataset: failed to load OD measurements: {}", e.what());
-        out.code = ErrorCode::ODMEAS_NOT_VALID;
+    const ODMeasurementsResult measurements_result =
+        LoadODMeasurementsFromDataset(request.dataset_folder);
+    if (measurements_result.code != ErrorCode::OK) {
+        out.code = measurements_result.code;
         out.stage = ODStage::FAILED;
         return out;
     }
+    const ODMeasurements& measurements = measurements_result.measurements;
     out.stage = ODStage::MEASUREMENTS_READY;
 
     const int64_t run_unix_ms = std::chrono::duration_cast<std::chrono::milliseconds>(

@@ -55,9 +55,11 @@ int main(int argc, char** argv)
     OD od;
     try
     {
-        if (!od.DatasetPrepare(dataset_folder, calibration))
+        const ErrorCode code = od.DatasetPrepare(dataset_folder, calibration);
+        if (code != ErrorCode::OK)
         {
-            spdlog::error("prepare_ldmeas: DatasetPrepare failed for {}", dataset_folder);
+            spdlog::error("prepare_ldmeas: DatasetPrepare failed for {} with error code {}",
+                          dataset_folder, static_cast<int>(code));
             return 1;
         }
     }

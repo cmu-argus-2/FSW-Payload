@@ -112,8 +112,9 @@ Vector3d LAT2ECEF(Vector3d v_lat, bool geoc) {
     f   =  ( re - rp ) / re;
     
     if (geoc) { // geocentric
-        // input v_lat(0) must be radius
-        latrec_c(v_lat(0)+radii[0], v_lat(1), v_lat(2), ecef); // r [input units], longitude [rad], latitude [rad]
+        // v_lat(0) is altitude in metres; add mean spherical radius (km → m)
+        double r_mean_m = (2.0 * radii[0] + radii[2]) / 3.0 * 1000.0;
+        latrec_c(v_lat(0) + r_mean_m, v_lat(1), v_lat(2), ecef);
     } else {
 
         // input v_lat(0) must be altitude, not radius if !geoc / geodetic coordinates

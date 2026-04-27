@@ -30,7 +30,6 @@
 
 #undef private
 
-#define ERASE_TEST_FILES false
 
 namespace fs = std::filesystem;
 using FrameVec = std::vector<std::tuple<uint8_t, uint64_t>>;
@@ -56,6 +55,11 @@ struct DatasetTest : ::testing::Test
     float               imu_sample_rate_hz      = 1.0f;
     ProcessingStage     target_processing_stage = ProcessingStage::NotPrefiltered;
     uint64_t            capture_start_time      = timing::GetCurrentTimeMs();
+
+    void TearDown() override
+    {
+        fs::remove_all("data/datasets/" + std::to_string(capture_start_time) + "/");
+    }
 
     bool isValid() const {
         return Dataset::isValidConfiguration(max_period, nb_frames, capture_mode,
@@ -168,7 +172,6 @@ TEST_F(DatasetTest, DatasetConfigurationCheck)
         config.erase(field);  insert_good(config);
     }
 
-    if (ERASE_TEST_FILES) fs::remove_all(folder);
 }
 
 // ── DatasetStorageAndRetrieval ────────────────────────────────────────────────
@@ -245,8 +248,6 @@ TEST_F(DatasetTest, IsValidConfigurationFile_RejectsUpperBoundViolations)
     expectBad("imu_sample_rate_hz",      30.0,     1.0);    // > 25 Hz
     expectBad("target_processing_stage", 99,       0);      // > LDNeted
 
-    if (ERASE_TEST_FILES)
-        fs::remove_all("data/datasets/" + std::to_string(capture_start_time) + "/");
 }
 
 // ── validateRawParams: exercised via fromJson ─────────────────────────────────
@@ -288,8 +289,6 @@ TEST_F(DatasetTest, FromJson_RejectsInvalidParams)
     EXPECT_EQ(dataset.GetMaximumPeriod(),   60.0);
     EXPECT_EQ(dataset.GetTargetFrameNb(),   100);
 
-    if (ERASE_TEST_FILES)
-        fs::remove_all("data/datasets/" + std::to_string(capture_start_time) + "/");
 }
 
 TEST_F(DatasetTest, FromJson_RejectsWrongTypes)
@@ -329,8 +328,6 @@ TEST_F(DatasetTest, FromJson_RejectsWrongTypes)
     // Valid JSON must still succeed after all the failed attempts
     EXPECT_TRUE(dataset.fromJson(valid_j));
 
-    if (ERASE_TEST_FILES)
-        fs::remove_all("data/datasets/" + std::to_string(capture_start_time) + "/");
 }
 
 // ── Dataset::AddStoredFrameIDs ────────────────────────────────────────────────
@@ -353,7 +350,6 @@ TEST_F(DatasetTest, AddStoredFrameIDs_Deduplication)
     dataset.AddStoredFrameID(std::make_tuple(uint8_t(0), uint64_t(300)));
     EXPECT_EQ(dataset.GetStoredFrameIDs().size(), 3u);
 
-    if (ERASE_TEST_FILES) fs::remove_all(dataset.GetFolderPath());
 }
 
 // ── Dataset::OverlapsWith — parameterized ─────────────────────────────────────
@@ -782,14 +778,7 @@ TEST_F(DatasetManagerTest, CameraManager_FrameCount_NoUint8Wrap)
 
 namespace {
 
-const std::string kSyntheticDataset    = "data/datasets/17R_Florida_nadir_test/";
-constexpr int     kSyntheticFrameCount = 36;
-constexpr int     kNumFramesRCNeted    = 19;  // stage >= 2: cam_id=0(9) + cam_id=1(1) + cam_id=2(9)
-constexpr int     kNumFramesLDNeted    = 19;  // stage >= 3: same breakdown
-constexpr int     kNumFramesEarth      = 19;  // annotation_state >= 1
-constexpr int     kNumFramesLandmarks  = 8;   // annotation_state >= 3: cam_id=0 only
-constexpr uint64_t kSpotTs  = 1714490526000ULL;
-constexpr int      kSpotCam = 0;
+const std::string kSyntheticDataset = "data/datasets/17R_Florida_nadir_test/";
 
 Json LoadDatasetJson(const std::string& folder)
 {
@@ -812,12 +801,41 @@ void ConfigureIM(InferenceManager& im, int rc_ver, int ld_ver)
 struct ReprocessingDatasetTest : ::testing::Test
 {
     std::string original_dataset_json_;
+    int         num_frames    = 0;
+    int         num_rcneted   = 0;  // processing_stage >= 2
+    int         num_ldneted   = 0;  // processing_stage >= 3
+    int         num_earth     = 0;  // annotation_state >= 1
+    int         num_landmarks = 0;  // annotation_state >= 3
+    uint64_t    spot_ts       = 0;  // first cam-0 frame with processing_stage >= 3
 
     void SetUp() override
     {
         std::ifstream f(kSyntheticDataset + "dataset.json");
         ASSERT_TRUE(f.is_open()) << "Synthetic dataset not found at " << kSyntheticDataset;
         original_dataset_json_.assign(std::istreambuf_iterator<char>(f), {});
+
+        for (const auto& entry : fs::directory_iterator(kSyntheticDataset)) {
+            const auto& p = entry.path();
+            if (p.extension() != ".json") continue;
+            if (p.filename().string().rfind("frame_", 0) != 0) continue;
+
+            Json j;
+            std::ifstream jf(p);
+            if (!(jf >> j)) continue;
+
+            ++num_frames;
+            const int stage = j.value("processing_stage", -1);
+            const int ann   = j.value("annotation_state",  -1);
+            if (stage >= 2) ++num_rcneted;
+            if (stage >= 3) ++num_ldneted;
+            if (ann   >= 1) ++num_earth;
+            if (ann   >= 3) ++num_landmarks;
+
+            if (spot_ts == 0 && j.value("cam_id", -1) == 0 && stage >= 3)
+                spot_ts = j.value("timestamp", uint64_t{0});
+        }
+        ASSERT_GT(num_frames, 0) << "No frame JSONs found in " << kSyntheticDataset;
+        ASSERT_GT(spot_ts,    0) << "No cam-0 frame with processing_stage >= 3 in " << kSyntheticDataset;
     }
 
     void TearDown() override
@@ -828,7 +846,7 @@ struct ReprocessingDatasetTest : ::testing::Test
 
     int SpotFrameStage() const
     {
-        Json j = DH::LoadFrameMetadataFromDisk(kSpotTs, kSpotCam, kSyntheticDataset);
+        Json j = DH::LoadFrameMetadataFromDisk(spot_ts, 0, kSyntheticDataset);
         return j.value("processing_stage", -1);
     }
 };
@@ -849,7 +867,7 @@ TEST_F(ReprocessingDatasetTest, Prefiltered_OverwriteFalse_AllSkipped)
     Json j = LoadDatasetJson(kSyntheticDataset);
     EXPECT_EQ(j.value("target_processing_stage", -1),
               static_cast<int>(ProcessingStage::Prefiltered));
-    EXPECT_EQ(j.value("frames_collected", 0), kSyntheticFrameCount);
+    EXPECT_EQ(j.value("frames_collected", 0), num_frames);
 }
 
 TEST_F(ReprocessingDatasetTest, Prefiltered_OverwriteTrue_AllSkipped)
@@ -865,7 +883,7 @@ TEST_F(ReprocessingDatasetTest, Prefiltered_OverwriteTrue_AllSkipped)
     Json j = LoadDatasetJson(kSyntheticDataset);
     EXPECT_EQ(j.value("target_processing_stage", -1),
               static_cast<int>(ProcessingStage::Prefiltered));
-    EXPECT_EQ(j.value("frames_collected", 0), kSyntheticFrameCount);
+    EXPECT_EQ(j.value("frames_collected", 0), num_frames);
 }
 
 // ── Target = RCNeted ─────────────────────────────────────────────────────────
@@ -884,7 +902,7 @@ TEST_F(ReprocessingDatasetTest, RCNeted_OverwriteFalse_MatchingVersion_AllSkippe
     Json j = LoadDatasetJson(kSyntheticDataset);
     EXPECT_EQ(j.value("target_processing_stage", -1),
               static_cast<int>(ProcessingStage::RCNeted));
-    EXPECT_EQ(j.value("num_frames_rcneted", 0), kNumFramesRCNeted);
+    EXPECT_EQ(j.value("num_frames_rcneted", 0), num_rcneted);
 }
 
 // rc_version mismatch + overwrite=false → conditions differ but must not reprocess.
@@ -899,7 +917,7 @@ TEST_F(ReprocessingDatasetTest, RCNeted_OverwriteFalse_MismatchedVersion_AllSkip
     EXPECT_EQ(ec, EC::OK);
     EXPECT_EQ(SpotFrameStage(), 3);
     Json j = LoadDatasetJson(kSyntheticDataset);
-    EXPECT_EQ(j.value("frames_collected", 0), kSyntheticFrameCount);
+    EXPECT_EQ(j.value("frames_collected", 0), num_frames);
 }
 
 // Conditions match (rc_version=2) → skip even though overwrite=true.
@@ -931,10 +949,10 @@ TEST_F(ReprocessingDatasetTest, LDNeted_OverwriteFalse_MatchingVersions_AllSkipp
     Json j = LoadDatasetJson(kSyntheticDataset);
     EXPECT_EQ(j.value("target_processing_stage", -1),
               static_cast<int>(ProcessingStage::LDNeted));
-    EXPECT_EQ(j.value("num_frames_ldneted",  0), kNumFramesLDNeted);
-    EXPECT_EQ(j.value("num_frames_earth",    0), kNumFramesEarth);
-    EXPECT_EQ(j.value("num_frames_landmarks",0), kNumFramesLandmarks);
-    EXPECT_EQ(j.value("frames_collected",    0), kSyntheticFrameCount);
+    EXPECT_EQ(j.value("num_frames_ldneted",  0), num_ldneted);
+    EXPECT_EQ(j.value("num_frames_earth",    0), num_earth);
+    EXPECT_EQ(j.value("num_frames_landmarks",0), num_landmarks);
+    EXPECT_EQ(j.value("frames_collected",    0), num_frames);
 }
 
 // ld_version mismatch + overwrite=false → skip.
@@ -949,7 +967,7 @@ TEST_F(ReprocessingDatasetTest, LDNeted_OverwriteFalse_MismatchedLDVersion_AllSk
     EXPECT_EQ(ec, EC::OK);
     EXPECT_EQ(SpotFrameStage(), 3);
     Json j = LoadDatasetJson(kSyntheticDataset);
-    EXPECT_EQ(j.value("frames_collected", 0), kSyntheticFrameCount);
+    EXPECT_EQ(j.value("frames_collected", 0), num_frames);
 }
 
 // Conditions match (rc=2, ld=1) → skip even though overwrite=true.

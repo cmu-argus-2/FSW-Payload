@@ -102,41 +102,37 @@ static double JsonTimestampJ2000()
     return static_cast<double>(unixToJ2000(t_unix_s));
 }
 
-// LAT2ECI takes v_lat = (r [m], longitude [rad], latitude [rad]) in SPICE convention.
-static constexpr double EARTH_RADIUS_M = 6378137.0; // WGS84 equatorial radius
+// LAT2ECI takes v_lat = (alt [m], longitude [rad], latitude [rad]).
+// v_lat(0) is altitude above the spherical Earth in both geocentric and geodetic modes.
+// Mean spherical radius from pck00011.tpc: (2*6378.1366 + 6356.7519)/3 * 1000 = 6371008.4 m
+static constexpr double EARTH_MEAN_RADIUS_M = 6371008.4;
 
 TEST(LAT2ECITest, EquatorialMagnitudeEqualsEarthRadius)
 {
     const double t_j2000 = JsonTimestampJ2000();
-    // lon=0, lat=0 → equatorial prime-meridian point at Earth's surface
-    bool geoc = true; // geocentric coordinates
-    Eigen::Vector3d v_lat(EARTH_RADIUS_M, 0.0, 0.0);
+    // alt=0, lon=0, lat=0 → equatorial surface point
+    bool geoc = true;
+    Eigen::Vector3d v_lat(0.0, 0.0, 0.0);
     Eigen::Vector3d r = LAT2ECI(v_lat, t_j2000, geoc);
-    EXPECT_NEAR(r.norm(), EARTH_RADIUS_M, 1.0);
+    EXPECT_NEAR(r.norm(), EARTH_MEAN_RADIUS_M, 1.0);
 }
 
 
 // Helper: geographic lat/lon (degrees) + altitude (m) → ECI using existing LAT2ECI.
-// LAT2ECI expects (r [m], lon [rad], lat [rad]) in SPICE latitudinal convention.
 static Eigen::Vector3d LatLonAltToECI(double t_j2000, double lat_deg, double lon_deg, double alt_m)
 {
-    double r = EARTH_RADIUS_M + alt_m;
-    Eigen::Vector3d v_lat(r, lon_deg * M_PI / 180.0, lat_deg * M_PI / 180.0);
-    bool geoc = true; // geocentric coordinates
-    return LAT2ECI(v_lat, t_j2000, geoc);
+    Eigen::Vector3d v_lat(alt_m, lon_deg * M_PI / 180.0, lat_deg * M_PI / 180.0);
+    return LAT2ECI(v_lat, t_j2000, /*geoc=*/true);
 }
 
 TEST(LAT2ECITest, PolarZComponentEqualsPolarRadius)
 {
-    // The full ECEF→ECI transformation (ITRF93→J2000) includes precession and
-    // nutation, so individual components shift by up to ~14 km.
-    // The one guarantee is that the orthogonal rotation preserves the magnitude.
+    // With a spherical Earth model the rotation preserves magnitude; at any surface
+    // point (alt=0) that magnitude equals the mean spherical radius.
     const double t = JsonTimestampJ2000();
-    const double b = 6378137.0 * std::sqrt(1.0 - 0.00669437999014);
-    Eigen::Vector3d v_lat(b, 0.0, M_PI / 2.0);  // r=b, lon=0, lat=90°
-    bool geoc = true; // geocentric coordinates
-    Eigen::Vector3d r = LAT2ECI(v_lat, t, geoc);
-    EXPECT_NEAR(r.norm(), b, 1.0);
+    Eigen::Vector3d v_lat(0.0, 0.0, M_PI / 2.0);  // alt=0, lon=0, lat=90°
+    Eigen::Vector3d r = LAT2ECI(v_lat, t, /*geoc=*/true);
+    EXPECT_NEAR(r.norm(), EARTH_MEAN_RADIUS_M, 1.0);
 }
 
 TEST(LAT2ECITest, AltitudeIncreasesRadius)

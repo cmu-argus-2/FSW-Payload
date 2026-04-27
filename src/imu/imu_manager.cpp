@@ -95,7 +95,13 @@ void IMUManager::RunLoop() {
             case IMU_STATE::COLLECT:
             {
                 timestamp = timing::GetCurrentTimeMs();
-                ret = ReadSensorData(gyroData, magData, &temperature);
+                {
+                    std::lock_guard<std::mutex> lock(i2c_mutex);
+                    // Re-check under the lock: Suspend() stores IDLE under this same
+                    // lock, so if it fired first this iteration must not read.
+                    if (state.load() != IMU_STATE::COLLECT) break;
+                    ret = ReadSensorData(gyroData, magData, &temperature);
+                }
                 if (ret != BMI160::RTN_NO_ERROR) {
                     SPDLOG_ERROR("Failed to read sensor data during collection, code {}", ret);
                     {
@@ -226,56 +232,49 @@ int IMUManager::Suspend() {
         // StartCollection() transitions out of IDLE). Skip hardware calls.
         return 0;
     }
-    // Set all sensors to suspend mode but gyro to still have access to temperature data
-    // gyro fast start up mode saves power and still allows for power consumption
+    // Store IDLE under i2c_mutex before touching hardware.
+    // RunLoop re-checks state under the same lock, so it will not start a new
+    // ReadSensorData() call after we release — no concurrent I2C access possible.
+    {
+        std::lock_guard<std::mutex> lock(i2c_mutex);
+        state.store(IMU_STATE::IDLE);
+    }
+    SPDLOG_INFO("IMU Manager status set to: {}", GetIMUState(state.load()));
+
+    // Safe to change hardware state: RunLoop will not call ReadSensorData() anymore.
     bmi160.setSensorPowerMode(BMI160::GYRO, BMI160::FAST_START_UP);
     bmi160.setSensorPowerMode(BMI160::ACC, BMI160::SUSPEND);
     bmi160.setSensorPowerMode(BMI160::MAG, BMI160::SUSPEND);
 
-    // Set state first so RunLoop stops entering COLLECT before we close the file
-    state.store(IMU_STATE::IDLE);
-    SPDLOG_INFO("IMU Manager status set to: {}", GetIMUState(state.load()));
-
-    // Close file logging stream if open
     {
         std::lock_guard<std::mutex> lock(ofs_mutex);
         ofs.close();
     }
 
-    // if there is data to be read
+    // Drain any samples latched before or during the power-mode transition.
+    // The sensor can produce one last sample while transitioning NORMAL → FAST_START_UP,
+    // so retry up to 3 times before declaring failure.
     int32_t ret;
     bool gyrSelfTestOk, magManOp, focRdy, nvmRdy, drdyMag, drdyGyr, drdyAcc;
-    ret = ReadSensorStatus(&gyrSelfTestOk, &magManOp, &focRdy, &nvmRdy, &drdyMag, &drdyGyr, &drdyAcc);
-    if (ret != BMI160::RTN_NO_ERROR) {
-        SPDLOG_ERROR("Failed to read sensor status during suspend, code {}", ret);
-        return 1; // Error reading sensor status
-    } 
-    
-    if (drdyMag) {
-        BMI160::SensorData magData;
-        ReadMagnetometerData(magData); // Clear mag data if available
-    }
-
-    if (drdyGyr) {
-        BMI160::SensorData gyroData;
-        ReadGyroData(gyroData); // Clear gyro data if available
-    }
-    // check again if it worked
-    ret = ReadSensorStatus(&gyrSelfTestOk, &magManOp, &focRdy, &nvmRdy, &drdyMag, &drdyGyr, &drdyAcc);
-
-    if (ret != BMI160::RTN_NO_ERROR) {
-        SPDLOG_ERROR("Failed to read sensor status during suspend verification, code {}", ret);
-        return 1; // Error reading sensor status
+    BMI160::SensorData drainData;
+    for (int tries = 0; tries < 3; ++tries) {
+        ret = ReadSensorStatus(&gyrSelfTestOk, &magManOp, &focRdy, &nvmRdy, &drdyMag, &drdyGyr, &drdyAcc);
+        if (ret != BMI160::RTN_NO_ERROR) {
+            SPDLOG_ERROR("Failed to read sensor status during suspend, code {}", ret);
+            return 1;
+        }
+        if (!drdyMag && !drdyGyr) break;
+        if (drdyMag) ReadMagnetometerData(drainData);
+        if (drdyGyr) ReadGyroData(drainData);
     }
 
     if (drdyMag || drdyGyr) {
-        SPDLOG_ERROR("Failed to suspend sensors, data still ready - Mag DRDY: {}, Gyro DRDY: {}", drdyMag, drdyGyr);
-        return 1; // Error, sensors not properly suspended
-    } else {
-        SPDLOG_INFO("IMU successfully suspended, no data ready");
+        SPDLOG_ERROR("Failed to suspend sensors, data still ready after drain - Mag DRDY: {}, Gyro DRDY: {}", drdyMag, drdyGyr);
+        return 1;
     }
+    SPDLOG_INFO("IMU successfully suspended, no data ready");
 
-    return 0; // Success
+    return 0;
 }
 
 int32_t IMUManager::ReadSensorData(BMI160::SensorData &gyroData, BMI160::SensorData &magData, float *temperature) {

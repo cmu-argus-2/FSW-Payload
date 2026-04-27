@@ -107,7 +107,8 @@ class IMUManager
         // TODO: Error handling, protection for file writing, etc.
         std::string log_file = "imu_log.csv"; // default log file path
         std::ofstream ofs; // output file stream for logging
-        std::mutex ofs_mutex; // protects ofs across RunLoop and control threads
+        std::mutex ofs_mutex;  // protects ofs across RunLoop and control threads
+        std::mutex i2c_mutex;  // serialises I2C access between RunLoop reads and Suspend()
 
 };
 

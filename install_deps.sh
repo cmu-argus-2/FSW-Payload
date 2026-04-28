@@ -19,6 +19,9 @@ sudo apt install -y \
   cmake \
   git \
   git-lfs \
+  python3-pip \
+  python3-venv \
+  pipx \
   nano \
   v4l-utils \
   clang \

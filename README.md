@@ -12,10 +12,38 @@ This repository contains the Argus Payload Flight Software for the Jetson Orin N
 - [GTest](https://github.com/google/googletest) - testing framework
 - TODO
 
+The `models` submodule now tracks the DVC-based workflow on its `dvc` branch. A normal submodule checkout gives you the Git metadata, but the large model artifacts still need to be fetched with `dvc pull`.
+
+Then install the project dependencies:
+
 ```bash
 sudo chmod +x install_deps.sh build.sh run.sh 
 ./install_deps.sh
 ```
+
+The install script installs the system dependencies needed for the project, including `pipx` so the build step can bootstrap `dvc` if needed.
+
+The build script now:
+
+- syncs and initializes the submodules
+- installs `dvc[ssh]` if `dvc` is not already available
+- runs `dvc pull` inside `models` before compiling
+
+If you want to move `models` to the latest commit on its tracked `dvc` branch instead of the commit pinned by the parent repo, run:
+
+```bash
+git submodule update --init --recursive --remote models
+```
+
+If you ever need to refresh the model artifacts manually after updating the submodule, run:
+
+```bash
+cd models
+dvc pull
+cd ..
+```
+
+If `dvc` is installed but not found in a new shell, run `pipx ensurepath` and restart the terminal.
 
 #### OpenCV
 
@@ -62,4 +90,3 @@ Under the hood, both processes communicates through 2 distinct named pipes (FIFO
 ## Command-based paradigm 
 
 The Payload communicates through its host machine via UART (transition from SPI in progress) with a set of predefined commands available at TODO (internal README).
-

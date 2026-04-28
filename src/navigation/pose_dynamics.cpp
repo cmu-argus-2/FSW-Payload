@@ -1,4 +1,5 @@
 #include "navigation/pose_dynamics.hpp"
+#include "navigation/quaternion.hpp"
 
 #include <vector>
 
@@ -106,4 +107,16 @@ MX linear_dynamics_constraint(
         MX x1 = MX::vertcat(std::vector<MX>{r1, v1});
         return x1 - x1_pred;
     }
+}
+
+MX angular_dynamics_residual_fix_bias(
+    const MX& q0, const MX& q1,
+    const casadi::DM& gyro_w, const MX& bias,
+    double dt, double quat_std)
+{
+    MX omega  = MX(gyro_w) - bias;
+    MX dq     = angle_axis_to_quat_xyzw(omega * dt);
+    MX q_pred = quat_product_xyzw(q0, dq);
+    MX q_err  = quat_product_xyzw(quat_conjugate_xyzw(q_pred), q1);
+    return MX::vertcat(std::vector<MX>{q_err(0, 0), q_err(1, 0), q_err(2, 0)}) / quat_std;
 }

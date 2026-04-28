@@ -24,5 +24,9 @@ casadi::MX linear_dynamics_constraint(
     const casadi::MX& uma, double dt, Integrator integrator,
     bool use_j2, bool use_drag = false,
     const casadi::MX& cd = casadi::MX(2.2));
+casadi::MX angular_dynamics_residual_fix_bias(
+    const casadi::MX& q0, const casadi::MX& q1,
+    const casadi::DM& gyro_w, const casadi::MX& bias,
+    double dt, double quat_std);
 
 #endif // POSE_DYNAMICS_HPP

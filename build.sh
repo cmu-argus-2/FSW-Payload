@@ -49,7 +49,13 @@ if [ -d "models/.dvc" ]; then
   fi
 
   echo "Pulling DVC-managed model artifacts from the models submodule..."
-  (cd models && "$DVC_BIN" pull)
+  cd models 
+  if "$DVC_BIN" pull; then
+    echo "Model artifacts pulled successfully."
+  else
+    echo "Error: Failed to pull model artifacts with DVC." >&2
+  fi
+  cd ..
 fi
 
 # Ensure IPOPT and CasADi submodules are present (built by install_deps.sh)

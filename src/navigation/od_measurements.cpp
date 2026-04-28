@@ -41,6 +41,12 @@ ErrorCode ODMeasurements::Validate() const
         return ErrorCode::ODMEAS_NOT_VALID;
     }
 
+    if (N < OD_MIN_LANDMARK_MEASUREMENTS) {
+        spdlog::error("ODMeasurements::Validate: only {} landmark measurement row(s); need at least {}.",
+                      N, OD_MIN_LANDMARK_MEASUREMENTS);
+        return ErrorCode::ODMEAS_NOT_VALID;
+    }
+
     // ── Column counts ──────────────────────────────────────────────────────────
     if (landmark_measurements.cols() != LandmarkMeasurementIdx::LANDMARK_COUNT) {
         spdlog::error("ODMeasurements::Validate: landmark_measurements has {} columns, expected {}.",

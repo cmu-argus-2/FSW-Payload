@@ -4,6 +4,8 @@
 #include "core/errors.hpp"
 #include <eigen3/Eigen/Dense>
 
+inline constexpr int OD_MIN_LANDMARK_MEASUREMENTS = 4;
+
 namespace casadi {
 template<typename Scalar>
 class Matrix;

@@ -53,6 +53,7 @@ bool OD::IsODPossible(const std::string& dataset_folder) const
 
     // Count LDNeted frames with at least one landmark; track their timestamp range
     int ldneted_frame_count = 0;
+    int total_landmark_count = 0;
     double t_min = std::numeric_limits<double>::max();
     double t_max = std::numeric_limits<double>::lowest();
 
@@ -68,9 +69,14 @@ bool OD::IsODPossible(const std::string& dataset_folder) const
         try {
             nlohmann::json j = nlohmann::json::parse(f);
             const int stage    = j.value("processing_stage",       0);
-            const int lm_count = j.value("detected_landmarks_count", 0);
+            const nlohmann::json* inf = j.contains("inference_results") && j.at("inference_results").is_object()
+                                      ? &j.at("inference_results")
+                                      : nullptr;
+            const int lm_count = inf ? inf->value("detected_landmarks_count", 0)
+                                     : j.value("detected_landmarks_count", 0);
             if (stage >= 3 && lm_count > 0) {
                 ++ldneted_frame_count;
+                total_landmark_count += lm_count;
                 const uint64_t ts_ms = j.value("timestamp", uint64_t(0));
                 const double t_j2000 = static_cast<double>(ts_ms) / 1000.0
                                        - static_cast<double>(J2000_EPOCH_UNIX_S);
@@ -85,6 +91,12 @@ bool OD::IsODPossible(const std::string& dataset_folder) const
     if (ldneted_frame_count < 2) {
         SPDLOG_WARN("IsODPossible: only {} LDNeted frame(s) with landmarks (need >= 2)",
                     ldneted_frame_count);
+        return false;
+    }
+
+    if (total_landmark_count < OD_MIN_LANDMARK_MEASUREMENTS) {
+        SPDLOG_WARN("IsODPossible: only {} total detected landmark(s) (need >= {})",
+                    total_landmark_count, OD_MIN_LANDMARK_MEASUREMENTS);
         return false;
     }
 
@@ -442,6 +454,7 @@ ODStage InspectDatasetForOD(const std::string& dataset_folder)
 
     bool saw_frame = false;
     bool saw_ldneted_landmark_frame = false;
+    int total_landmark_count = 0;
     for (const auto& entry : fs::directory_iterator(dataset_folder)) {
         const std::string fname = entry.path().filename().string();
         if (fname.rfind("frame_", 0) != 0 || entry.path().extension() != ".json") {
@@ -460,7 +473,7 @@ ODStage InspectDatasetForOD(const std::string& dataset_folder)
                                      : j.value("detected_landmarks_count", 0);
             if (stage >= static_cast<int>(ProcessingStage::LDNeted) && lm_count > 0) {
                 saw_ldneted_landmark_frame = true;
-                break;
+                total_landmark_count += lm_count;
             }
         } catch (const std::exception& e) {
             SPDLOG_WARN("InspectDatasetForOD: failed to parse {}: {}", entry.path().string(), e.what());
@@ -468,6 +481,11 @@ ODStage InspectDatasetForOD(const std::string& dataset_folder)
     }
 
     if (!saw_frame || !saw_ldneted_landmark_frame) {
+        return ODStage::DATASET_NOT_PROCESSED;
+    }
+    if (total_landmark_count < OD_MIN_LANDMARK_MEASUREMENTS) {
+        SPDLOG_WARN("InspectDatasetForOD: only {} total detected landmark(s) (need >= {})",
+                    total_landmark_count, OD_MIN_LANDMARK_MEASUREMENTS);
         return ODStage::DATASET_NOT_PROCESSED;
     }
     return ODStage::DATASET_PROCESSED;
@@ -658,15 +676,15 @@ static bool WriteBatchODResults(const std::string& dataset_folder,
         meta["estimates"]["gyro_bias_y_rads"] = result.gyro_bias_fixed[1];
         meta["estimates"]["gyro_bias_z_rads"] = result.gyro_bias_fixed[2];
     }
-    if (result.bc_inv_estimated) {
-        meta["estimates"]["bc_inv_km2_kg"] = result.bc_inv;
+    if (result.cd_estimated) {
+        meta["estimates"]["cd"] = result.cd;
     }
     if (result.covariance_computed) {
         meta["estimates"]["gyro_bias_cov_x_rads2"] = result.gyro_bias_var[0];
         meta["estimates"]["gyro_bias_cov_y_rads2"] = result.gyro_bias_var[1];
         meta["estimates"]["gyro_bias_cov_z_rads2"] = result.gyro_bias_var[2];
-        if (result.bc_inv_estimated) {
-            meta["estimates"]["bc_inv_var_km4_kg2"] = result.bc_inv_var;
+        if (result.cd_estimated) {
+            meta["estimates"]["cd_var"] = result.cd_var;
         }
     }
 

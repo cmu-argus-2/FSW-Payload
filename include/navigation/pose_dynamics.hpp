@@ -15,14 +15,14 @@ enum GyroMeasurementIdx {
 
 casadi::MX keplerian_accel(const casadi::MX& r);
 casadi::MX j2_accel(const casadi::MX& r);
-casadi::MX drag_accel(const casadi::MX& r, const casadi::MX& v, const casadi::MX& bc_inv);
+casadi::MX drag_accel(const casadi::MX& r, const casadi::MX& v, const casadi::MX& cd);
 casadi::MX linear_dynamics(const casadi::MX& r, const casadi::MX& v, const casadi::MX& uma,
-                            bool use_j2, bool use_drag, const casadi::MX& bc_inv);
+                            bool use_j2, bool use_drag, const casadi::MX& cd);
 casadi::MX linear_dynamics_constraint(
     const casadi::MX& r0, const casadi::MX& v0,
     const casadi::MX& r1, const casadi::MX& v1,
     const casadi::MX& uma, double dt, Integrator integrator,
     bool use_j2, bool use_drag = false,
-    const casadi::MX& bc_inv = casadi::MX(0.0));
+    const casadi::MX& cd = casadi::MX(2.2));
 
 #endif // POSE_DYNAMICS_HPP

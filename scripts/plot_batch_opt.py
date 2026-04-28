@@ -592,13 +592,13 @@ if __name__ == "__main__":
                 print(f"  gyro_bias_{axis} : {bias_fixed[i]:.6e} ± {sigma_bias[i]:.2e} rad/s")
             else:
                 print(f"  gyro_bias_{axis} : {bias_fixed[i]:.6e} rad/s")
-    bc_inv = estimates.get("bc_inv_km2_kg")
-    if bc_inv is not None:
-        bc_inv_var = estimates.get("bc_inv_var_km4_kg2")
-        if bc_inv_var is not None:
-            print(f"  bc_inv     : {bc_inv:.4e} ± {bc_inv_var**0.5:.2e} km²/kg")
+    cd = estimates.get("cd")
+    if cd is not None:
+        cd_var = estimates.get("cd_var")
+        if cd_var is not None:
+            print(f"  Cd         : {cd:.4e} ± {cd_var**0.5:.2e}")
         else:
-            print(f"  bc_inv     : {bc_inv:.4e} km²/kg")
+            print(f"  Cd         : {cd:.4e}")
 
     # Resolve dataset folder
     dataset_dir = args.dataset or Path(meta.get("dataset_folder", ""))

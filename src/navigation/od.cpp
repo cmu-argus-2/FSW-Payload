@@ -24,8 +24,8 @@ bias_mode(BIAS_MODE::FIX_BIAS),
 compute_covariance(false),
 use_j2(false),
 use_drag(false),
-bc_inv_nominal(0.0),
-bc_inv_std(1e-8),
+cd_nominal(2.2),
+cd_std(1.0),
 integrator(Integrator::EULER)
 {
 }
@@ -98,8 +98,8 @@ ErrorCode OD::ReadConfig(const std::string& config_path)
     config.batch_opt.compute_covariance = BATCH_OPT_params->get_as<bool>("compute_covariance")->value_or(config.batch_opt.compute_covariance);
     config.batch_opt.use_j2   = BATCH_OPT_params->get_as<bool>("use_j2")->value_or(config.batch_opt.use_j2);
     config.batch_opt.use_drag = BATCH_OPT_params->get_as<bool>("use_drag")->value_or(config.batch_opt.use_drag);
-    config.batch_opt.bc_inv_nominal = get_param_as_double(BATCH_OPT_params, "bc_inv_nominal", config.batch_opt.bc_inv_nominal);
-    config.batch_opt.bc_inv_std     = get_param_as_double(BATCH_OPT_params, "bc_inv_std",     config.batch_opt.bc_inv_std);
+    config.batch_opt.cd_nominal = get_param_as_double(BATCH_OPT_params, "cd_nominal", config.batch_opt.cd_nominal);
+    config.batch_opt.cd_std     = get_param_as_double(BATCH_OPT_params, "cd_std",     config.batch_opt.cd_std);
     config.batch_opt.integrator     = static_cast<Integrator>(BATCH_OPT_params->get_as<int64_t>("integrator")->value_or(static_cast<int64_t>(config.batch_opt.integrator)));
     // TODO: safe value checking on each params
     
@@ -127,8 +127,8 @@ void OD::LogConfig()
     SPDLOG_INFO("  compute_covariance: {}", config.batch_opt.compute_covariance);
     SPDLOG_INFO("  use_j2: {}", config.batch_opt.use_j2);
     SPDLOG_INFO("  use_drag: {}", config.batch_opt.use_drag);
-    SPDLOG_INFO("  bc_inv_nominal: {}", config.batch_opt.bc_inv_nominal);
-    SPDLOG_INFO("  bc_inv_std: {}", config.batch_opt.bc_inv_std);
+    SPDLOG_INFO("  cd_nominal: {}", config.batch_opt.cd_nominal);
+    SPDLOG_INFO("  cd_std: {}", config.batch_opt.cd_std);
     SPDLOG_INFO("  integrator: {} ({})", static_cast<int>(config.batch_opt.integrator),
                 config.batch_opt.integrator == Integrator::RK4 ? "RK4" : "Euler");
 
@@ -191,8 +191,8 @@ ODConfigResult ReadODConfig(const std::string& config_path)
     od_config.batch_opt.compute_covariance = BATCH_OPT_params->get_as<bool>("compute_covariance")->value_or(od_config.batch_opt.compute_covariance);
     od_config.batch_opt.use_j2   = BATCH_OPT_params->get_as<bool>("use_j2")->value_or(od_config.batch_opt.use_j2);
     od_config.batch_opt.use_drag = BATCH_OPT_params->get_as<bool>("use_drag")->value_or(od_config.batch_opt.use_drag);
-    od_config.batch_opt.bc_inv_nominal = get_param_as_double(BATCH_OPT_params, "bc_inv_nominal", od_config.batch_opt.bc_inv_nominal);
-    od_config.batch_opt.bc_inv_std     = get_param_as_double(BATCH_OPT_params, "bc_inv_std",     od_config.batch_opt.bc_inv_std);
+    od_config.batch_opt.cd_nominal = get_param_as_double(BATCH_OPT_params, "cd_nominal", od_config.batch_opt.cd_nominal);
+    od_config.batch_opt.cd_std     = get_param_as_double(BATCH_OPT_params, "cd_std",     od_config.batch_opt.cd_std);
     od_config.batch_opt.integrator     = static_cast<Integrator>(BATCH_OPT_params->get_as<int64_t>("integrator")->value_or(static_cast<int64_t>(od_config.batch_opt.integrator)));
 
     // Print the configuration

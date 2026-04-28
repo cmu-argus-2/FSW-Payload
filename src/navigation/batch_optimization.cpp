@@ -91,7 +91,7 @@ static ResidualsOrCovariances compute_covariance(
     const DM& d_val,
     bool use_drag,
     const std::vector<double>& state_timestamps,
-    double* bc_inv_var_out = nullptr,
+    double* cd_var_out = nullptr,
     const SteadyClock::time_point* deadline = nullptr,
     bool* covariance_timed_out = nullptr)
 {
@@ -290,6 +290,25 @@ static ResidualsOrCovariances compute_covariance(
     }
     log_stage("selected inverse diagonal solve");
 
+    constexpr double kCovarianceNegativeTolerance = -1e-10;
+    for (const int idx : covariance_indices) {
+        const double value = cov_diag(idx);
+        if (!std::isfinite(value)) {
+            spdlog::warn("solve_batch_opt: covariance diagonal {} is not finite ({}).",
+                         idx, value);
+            return ResidualsOrCovariances(0, StateResIdx::STATE_RES_COUNT);
+        }
+        if (value < kCovarianceNegativeTolerance) {
+            spdlog::warn("solve_batch_opt: covariance diagonal {} is negative ({}); "
+                         "covariance is not numerically valid.",
+                         idx, value);
+            return ResidualsOrCovariances(0, StateResIdx::STATE_RES_COUNT);
+        }
+        if (value < 0.0) {
+            cov_diag(idx) = 0.0;
+        }
+    }
+
     ResidualsOrCovariances covariance(N, StateResIdx::STATE_RES_COUNT);
     covariance.setZero();
     for (int i = 0; i < N; ++i) {
@@ -304,9 +323,9 @@ static ResidualsOrCovariances compute_covariance(
         covariance(0, RES_GYRO_BIAS_X + c) = cov_diag(9 * N + 3 * N_uma + c);
     }
     if (use_drag) {
-        double bc_inv_var = cov_diag(9 * N + 3 * N_uma + 3);
-        spdlog::info("solve_batch_opt: bc_inv variance = {:.4e}", bc_inv_var);
-        if (bc_inv_var_out) *bc_inv_var_out = bc_inv_var;
+        double cd_var = cov_diag(9 * N + 3 * N_uma + 3);
+        spdlog::info("solve_batch_opt: Cd variance = {:.4e}", cd_var);
+        if (cd_var_out) *cd_var_out = cd_var;
     }
     log_stage("output pack");
 
@@ -398,8 +417,8 @@ BatchOptResult solve_batch_opt(const ODMeasurements& measurements,
     const BIAS_MODE bias_mode    = bo_config.bias_mode;
     const bool use_j2            = bo_config.use_j2;
     const bool use_drag            = bo_config.use_drag;
-    const double bc_inv_nominal    = bo_config.bc_inv_nominal;
-    const double bc_inv_std        = bo_config.bc_inv_std;
+    const double cd_nominal        = bo_config.cd_nominal;
+    const double cd_std            = bo_config.cd_std;
     const Integrator integrator    = bo_config.integrator;
 
     if (bias_mode != BIAS_MODE::FIX_BIAS) {
@@ -437,7 +456,7 @@ BatchOptResult solve_batch_opt(const ODMeasurements& measurements,
     MX q = opti.variable(4, N);      // quaternions     [x,y,z,w]
     MX a = opti.variable(3, N_uma);  // unmodelled accel [km/s²]
     MX b = opti.variable(3);         // fixed gyro bias  [rad/s]
-    MX d = use_drag ? opti.variable(1) : MX(bc_inv_nominal);  // bc_inv [km²/kg]
+    MX d = use_drag ? opti.variable(1) : MX(cd_nominal);  // Cd [-]
 
     // ── Quaternion unit-norm constraints ──────────────────────────────────────
     for (int i = 0; i < N; ++i) {
@@ -454,7 +473,7 @@ BatchOptResult solve_batch_opt(const ODMeasurements& measurements,
     uma_residuals.reserve(static_cast<size_t>(N_uma));
 
     if (use_drag) {
-        MX drag_res = (d - bc_inv_nominal) / bc_inv_std;
+        MX drag_res = (d - cd_nominal) / cd_std;
         drag_residuals.push_back(drag_res);
         obj = obj + drag_res * drag_res;
     }
@@ -542,7 +561,7 @@ BatchOptResult solve_batch_opt(const ODMeasurements& measurements,
                                 init_se(0, GYRO_BIAS_Y),
                                 init_se(0, GYRO_BIAS_Z)));
         if (use_drag) {
-            opti.set_initial(d, DM(bc_inv_nominal));
+            opti.set_initial(d, DM(cd_nominal));
         }
     }
 
@@ -584,18 +603,18 @@ BatchOptResult solve_batch_opt(const ODMeasurements& measurements,
         DM q_val = sol.value(q);   // (4, N)
         DM a_val = sol.value(a);   // (3, N_uma)
         DM b_val = sol.value(b);   // (3, 1)
-        DM d_val = use_drag ? sol.value(d) : DM(bc_inv_nominal);
+        DM d_val = use_drag ? sol.value(d) : DM(cd_nominal);
 
         result.gyro_bias_fixed = {
             static_cast<double>(b_val(0, 0)),
             static_cast<double>(b_val(1, 0)),
             static_cast<double>(b_val(2, 0))
         };
-        result.bc_inv           = static_cast<double>(d_val(0, 0));
-        result.bc_inv_estimated = use_drag;
+        result.cd           = static_cast<double>(d_val(0, 0));
+        result.cd_estimated = use_drag;
 
         if (use_drag) {
-            spdlog::info("solve_batch_opt: bc_inv = {:.4e} km²/kg", result.bc_inv);
+            spdlog::info("solve_batch_opt: Cd = {:.4e}", result.cd);
         }
         spdlog::info("solve_batch_opt: gyro_bias = [{:.4e}, {:.4e}, {:.4e}] rad/s",
                      result.gyro_bias_fixed[0], result.gyro_bias_fixed[1], result.gyro_bias_fixed[2]);
@@ -683,13 +702,13 @@ BatchOptResult solve_batch_opt(const ODMeasurements& measurements,
                 const auto cov_deadline = cov_start +
                     std::chrono::duration_cast<SteadyClock::duration>(
                         std::chrono::duration<double>(remaining_covariance_time_sec));
-                double bc_inv_var_out = 0.0;
+                double cd_var_out = 0.0;
                 result.covariance = compute_covariance(
                     uma_residuals, ang_residuals, lmk_residuals, dyn_constraints,
                     drag_residuals,
                     sol, r, v, q, a, b, d,
                     r_val, v_val, q_val, a_val, b_val, d_val,
-                    use_drag, ts.state_timestamps, &bc_inv_var_out,
+                    use_drag, ts.state_timestamps, &cd_var_out,
                     &cov_deadline, &result.covariance_timed_out);
                 const auto cov_end = SteadyClock::now();
                 result.covariance_time_ms =
@@ -703,7 +722,7 @@ BatchOptResult solve_batch_opt(const ODMeasurements& measurements,
                         result.covariance(0, RES_GYRO_BIAS_Y),
                         result.covariance(0, RES_GYRO_BIAS_Z)
                     };
-                    result.bc_inv_var = bc_inv_var_out;
+                    result.cd_var = cd_var_out;
                 }
             }
         } else {

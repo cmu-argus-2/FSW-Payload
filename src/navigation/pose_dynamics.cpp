@@ -51,23 +51,25 @@ static MX atmospheric_density(const MX& r) {
     return density;
 }
 
-MX drag_accel(const MX& r, const MX& v, const MX& bc_inv) {
+MX drag_accel(const MX& r, const MX& v, const MX& cd) {
     MX v_atm = MX::vertcat(std::vector<MX>{
         -OMEGA_E * r(1, 0), OMEGA_E * r(0, 0), MX(0.0)
     });
     MX v_rel      = v - v_atm;
     MX rho        = atmospheric_density(r);
+    MX A          = 1.0e-8; // km^2
+    MX m          = 1.3;    // kg
     MX v_rel_norm = sqrt(dot(v_rel, v_rel) + 1e-20);
-    return -0.5 * (1.0 + bc_inv) * rho * v_rel_norm * v_rel;
+    return -0.5 * cd * (A / m) * rho * v_rel_norm * v_rel;
 }
 
-MX linear_dynamics(const MX& r, const MX& v, const MX& uma, bool use_j2, bool use_drag, const MX& bc_inv) {
+MX linear_dynamics(const MX& r, const MX& v, const MX& uma, bool use_j2, bool use_drag, const MX& cd) {
     MX accel = keplerian_accel(r) + uma;
     if (use_j2) {
         accel = accel + j2_accel(r);
     }
     if (use_drag) {
-        accel = accel + drag_accel(r, v, bc_inv);
+        accel = accel + drag_accel(r, v, cd);
     }
     return MX::vertcat(std::vector<MX>{v, accel});
 }
@@ -77,15 +79,15 @@ MX linear_dynamics_constraint(
     const MX& r1, const MX& v1,
     const MX& uma, double dt, Integrator integrator,
     bool use_j2, bool use_drag,
-    const MX& bc_inv)
+    const MX& cd)
 {
 
     if (integrator == Integrator::RK4) {
         // ADL: RK4 integration
-        MX k1 = linear_dynamics(r0, v0, uma, use_j2, use_drag, bc_inv);
-        MX k2 = linear_dynamics(r0 + 0.5 * dt * k1(Slice(0, 3), Slice()), v0 + 0.5 * dt * k1(Slice(3, 6), Slice()), uma, use_j2, use_drag, bc_inv);
-        MX k3 = linear_dynamics(r0 + 0.5 * dt * k2(Slice(0, 3), Slice()), v0 + 0.5 * dt * k2(Slice(3, 6), Slice()), uma, use_j2, use_drag, bc_inv);
-        MX k4 = linear_dynamics(r0 + dt * k3(Slice(0, 3), Slice()), v0 + dt * k3(Slice(3, 6), Slice()), uma, use_j2, use_drag, bc_inv);
+        MX k1 = linear_dynamics(r0, v0, uma, use_j2, use_drag, cd);
+        MX k2 = linear_dynamics(r0 + 0.5 * dt * k1(Slice(0, 3), Slice()), v0 + 0.5 * dt * k1(Slice(3, 6), Slice()), uma, use_j2, use_drag, cd);
+        MX k3 = linear_dynamics(r0 + 0.5 * dt * k2(Slice(0, 3), Slice()), v0 + 0.5 * dt * k2(Slice(3, 6), Slice()), uma, use_j2, use_drag, cd);
+        MX k4 = linear_dynamics(r0 + dt * k3(Slice(0, 3), Slice()), v0 + dt * k3(Slice(3, 6), Slice()), uma, use_j2, use_drag, cd);
         
         MX x1_pred = MX::vertcat(std::vector<MX>{
             r0 + (dt / 6.0) * (k1(Slice(0, 3), Slice()) + 2*k2(Slice(0, 3), Slice()) + 2*k3(Slice(0, 3), Slice()) + k4(Slice(0, 3), Slice())),
@@ -95,7 +97,7 @@ MX linear_dynamics_constraint(
         return x1 - x1_pred;
     } else {
         // ADL: Euler integration
-        MX k1 = linear_dynamics(r0, v0, uma, use_j2, use_drag, bc_inv);
+        MX k1 = linear_dynamics(r0, v0, uma, use_j2, use_drag, cd);
         
         MX x1_pred = MX::vertcat(std::vector<MX>{
             r0 + dt * k1(Slice(0, 3), Slice()),

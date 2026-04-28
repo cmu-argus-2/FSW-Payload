@@ -71,8 +71,8 @@ struct BATCH_OPT_config
     bool compute_covariance;
     bool use_j2;
     bool use_drag;
-    double bc_inv_nominal;
-    double bc_inv_std;
+    double cd_nominal;
+    double cd_std;
     Integrator integrator;
     BATCH_OPT_config();
 };

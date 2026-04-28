@@ -52,22 +52,22 @@ class OrbitalDynamics:
         Include the J2 zonal harmonic gravity perturbation.
     use_drag : bool
         Include exponential-density atmospheric drag.
-    bc_inv : float
-        Ballistic coefficient inverse  Cd·A/m  [km²/kg].  Only used when
+    cd : float
+        Drag coefficient  Cd  [-].  Only used when
         use_drag=True.
         Unit conversion: 1 m²/kg = 1×10⁻⁶ km²/kg.
-        Typical 3U CubeSat (Cd=2.2, A=0.03 m², m=4 kg): bc_inv ≈ 1.65×10⁻⁸ km²/kg.
+        Argus CubeSat (Cd=2.2, A=0.01 m², m=1.3 kg)
     """
 
     def __init__(
         self,
         use_j2:   bool          = True,
         use_drag: bool          = False,
-        bc_inv:   ca.MX | float = 0.0,
+        cd:   ca.MX | float = 0.0,
     ) -> None:
         self.use_j2   = use_j2
         self.use_drag = use_drag
-        self.bc_inv   = bc_inv   # may be a CasADi MX decision variable
+        self.cd   = cd   # may be a CasADi MX decision variable
 
     def f(self, t: float, r: ca.MX, v: ca.MX, uma: ca.MX) -> tuple[ca.MX, ca.MX]:
         """Return (rdot, vdot) for the configured continuous-time dynamics at time t [s]."""
@@ -76,7 +76,7 @@ class OrbitalDynamics:
         if self.use_j2:
             vdot = vdot + j2_accel(r)
         if self.use_drag:
-            vdot = vdot + drag_accel(r, v, self.bc_inv)
+            vdot = vdot + drag_accel(r, v, self.cd)
         return rdot, vdot
 
 
@@ -188,11 +188,11 @@ def _atmospheric_density(r: ca.MX) -> ca.MX:
     return density
 
 
-def drag_accel(r: ca.MX, v: ca.MX, bc_inv: ca.MX | float) -> ca.MX:
+def drag_accel(r: ca.MX, v: ca.MX, cd: ca.MX | float) -> ca.MX:
     """
     Atmospheric drag acceleration in ECI  [km/s²].
 
-        a_drag = −½ · bc_inv · ρ(h) · ||v_rel|| · v_rel
+        a_drag = −½ · cd · ρ(h) · ||v_rel|| · v_rel
 
     where v_rel is the satellite velocity relative to the co-rotating atmosphere:
 
@@ -203,7 +203,7 @@ def drag_accel(r: ca.MX, v: ca.MX, bc_inv: ca.MX | float) -> ca.MX:
     ----------
     r      : ECI position  [km]
     v      : ECI velocity  [km/s]
-    bc_inv : Cd·A/m  [km²/kg]
+    cd     : Drag coeff    [-]
              Unit note: 1 m²/kg = 1×10⁻⁶ km²/kg
     """
     # Atmosphere velocity at satellite position (ECI): ω_E × r
@@ -211,24 +211,26 @@ def drag_accel(r: ca.MX, v: ca.MX, bc_inv: ca.MX | float) -> ca.MX:
     v_atm = ca.vertcat(-OMEGA_E * r[1], OMEGA_E * r[0], ca.MX(0.0))
     v_rel = v - v_atm                                   # [km/s]
 
+    A           = 1.0e-8  # km²
+    m           = 1.3     # kg
     rho         = _atmospheric_density(r)               # [kg/km³]
     v_rel_norm  = ca.sqrt(ca.dot(v_rel, v_rel) + 1e-20) # [km/s]  (safe)
 
-    return -0.5 * (1.0 + bc_inv) * rho * v_rel_norm * v_rel
+    return -0.5 * cd * (A / m) * rho * v_rel_norm * v_rel
 
 
 def drag_prior_residual(
-    bc_inv:          ca.MX,
-    bc_inv_nominal:  float,
-    bc_inv_std:      float,
+    cd:              ca.MX,
+    cd_nominal:      float,
+    cd_std:          float,
 ) -> ca.MX:
     """
     Gaussian prior on the drag ballistic coefficient inverse (scalar).
 
-    Penalises deviation from bc_inv_nominal with standard deviation bc_inv_std,
+    Penalises deviation from cd_nominal with standard deviation cd_std,
     both in km²/kg.  Analogous to uma_prior_residual.
     """
-    return (bc_inv - bc_inv_nominal) / bc_inv_std
+    return (cd - cd_nominal) / cd_std
 
 
 # ── Orbital dynamics constraint ─────────────────────────────────────────────────

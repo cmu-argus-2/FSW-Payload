@@ -31,9 +31,9 @@ def main() -> None:
     parser.add_argument("dataset_folder", type=Path,
                         help="Path to dataset folder containing "
                              "landmark_measurements.csv and imu_data.csv")
-    parser.add_argument("--j2",   action="store_true", help="Enable J2 perturbation")
-    parser.add_argument("--drag", action="store_true", help="Enable atmospheric drag")
-    parser.add_argument("--rk4",  action="store_true", help="Use RK4 integrator (default: Euler)")
+    parser.add_argument("--j2",   action="store_true", default=True, help="Enable J2 perturbation")
+    parser.add_argument("--drag", action="store_true", default=True, help="Enable atmospheric drag")
+    parser.add_argument("--rk4",  action="store_true", default=True, help="Use RK4 integrator (default: Euler)")
     args = parser.parse_args()
 
     dataset_folder = Path(args.dataset_folder)
@@ -71,8 +71,8 @@ def main() -> None:
         integrator_type = integrator,
         use_j2          = args.j2,
         use_drag        = args.drag,
-        bc_inv_nominal  = 0.0,
-        bc_inv_std      = 1.0 if args.drag else None,
+        cd_nominal      = 2.2,
+        cd_std          = 1.0 if args.drag else None,
     )
     run_time_ms = int((time.time() - t0) * 1000)
 

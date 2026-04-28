@@ -243,8 +243,16 @@ TEST_F(ODTest, InspectDatasetForODLDNetedNoLandmarksReturnsDatasetNotProcessed)
 TEST_F(ODTest, InspectDatasetForODLDNetedWithLandmarksReturnsDatasetProcessed)
 {
     const fs::path dir = makeDir("processed");
-    WriteFrameJson(dir, 0, kLDNetedStage, 1);
+    WriteFrameJson(dir, 0, kLDNetedStage, OD_MIN_LANDMARK_MEASUREMENTS);
     EXPECT_EQ(InspectDatasetForOD(dir.string()), ODStage::DATASET_PROCESSED);
+}
+
+TEST_F(ODTest, InspectDatasetForODTooFewTotalLandmarksReturnsDatasetNotProcessed)
+{
+    const fs::path dir = makeDir("too_few_landmarks");
+    WriteFrameJson(dir, 0, kLDNetedStage, 1);
+    WriteFrameJson(dir, 1, kLDNetedStage, 2);
+    EXPECT_EQ(InspectDatasetForOD(dir.string()), ODStage::DATASET_NOT_PROCESSED);
 }
 
 TEST_F(ODTest, InspectDatasetForODLandmarkMeasurementsCsvExistsReturnsMeasurementsReady)
@@ -290,8 +298,8 @@ TEST_F(ODTest, IsODPossibleTwoFramesNoImuSpanReturnsFalse)
 {
     OD od;
     const fs::path dir = makeDir("bad_span");
-    WriteFrameJson(dir, 0, kLDNetedStage, 1);
-    WriteFrameJson(dir, 1, kLDNetedStage, 1);
+    WriteFrameJson(dir, 0, kLDNetedStage, 2);
+    WriteFrameJson(dir, 1, kLDNetedStage, 2);
     WriteImuCsv(dir, {{{static_cast<double>(kBaseUnixMs - 10000), 0.0, 0.0, 0.0}}});
     EXPECT_FALSE(od.IsODPossible(dir.string()));
 }
@@ -300,10 +308,20 @@ TEST_F(ODTest, IsODPossibleTwoFramesWithImuSpanReturnsTrue)
 {
     OD od;
     const fs::path dir = makeDir("valid_possible");
-    WriteFrameJson(dir, 0, kLDNetedStage, 1);
-    WriteFrameJson(dir, 1, kLDNetedStage, 1);
+    WriteFrameJson(dir, 0, kLDNetedStage, 2);
+    WriteFrameJson(dir, 1, kLDNetedStage, 2);
     WriteImuCsv(dir, ValidImuRows());
     EXPECT_TRUE(od.IsODPossible(dir.string()));
+}
+
+TEST_F(ODTest, IsODPossibleTooFewTotalLandmarksReturnsFalse)
+{
+    OD od;
+    const fs::path dir = makeDir("too_few_landmarks_possible");
+    WriteFrameJson(dir, 0, kLDNetedStage, 1);
+    WriteFrameJson(dir, 1, kLDNetedStage, 2);
+    WriteImuCsv(dir, ValidImuRows());
+    EXPECT_FALSE(od.IsODPossible(dir.string()));
 }
 
 TEST_F(ODTest, DatasetPrepareMissingFolderReturnsFileDoesNotExist)
@@ -603,7 +621,8 @@ TEST_F(ODTest, RunODOnDatasetInvalidConfigPathReturnsFileDoesNotExistAndFailed)
 TEST_F(ODTest, RunODOnDatasetProcessedDatasetPrepareFailsPropagatesPrepareCode)
 {
     const fs::path dir = makeDir("run_prepare_fails");
-    WriteFrameJson(dir, 0, kLDNetedStage, 1, 2, kRegion17R, 0, true, false);
+    WriteFrameJson(dir, 0, kLDNetedStage, OD_MIN_LANDMARK_MEASUREMENTS,
+                   2, kRegion17R, 0, true, false);
 
     ODRequest request;
     request.dataset_folder = dir.string();

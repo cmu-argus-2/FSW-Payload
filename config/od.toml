@@ -29,9 +29,9 @@ compute_covariance = true # set true to compute covariance.csv; expensive for la
 use_j2 = true # include J2 zonal harmonic gravity perturbation in batch dynamics
 # BOOL
 use_drag = true # include atmospheric drag in batch dynamics (Vallado Table 8-4, 300-700 km)
-# FLOAT — ballistic coefficient inverse Cd*A/m nominal [km²/kg]
-bc_inv_nominal = 0.0
-# FLOAT — bc_inv prior std dev [km²/kg]
-bc_inv_std = 1 # 1e-8
+# FLOAT - drag coefficient nominal [-]
+cd_nominal = 2.2
+# FLOAT - Cd prior std dev [-]
+cd_std = 1.0
 # INT — integrator for orbital dynamics: 0 = forward-Euler, 1 = RK4
 integrator = 1

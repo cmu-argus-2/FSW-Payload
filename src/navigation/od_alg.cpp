@@ -440,10 +440,10 @@ ODStage InspectDatasetForOD(const std::string& dataset_folder)
         return ODStage::DATASET_NOT_AVAILABLE;
     }
 
-    const bool has_measurements = fs::exists(fs::path(dataset_folder) / "landmark_measurements.csv");
-    if (has_measurements) {
-        return ODStage::MEASUREMENTS_READY;
-    }
+    // const bool has_measurements = fs::exists(fs::path(dataset_folder) / "landmark_measurements.csv");
+    // if (has_measurements) {
+    //     return ODStage::MEASUREMENTS_READY;
+    // }
 
     bool saw_frame = false;
     bool saw_ldneted_landmark_frame = false;
@@ -639,6 +639,14 @@ static bool WriteBatchODResults(const std::string& dataset_folder,
     namespace fs = std::filesystem;
     fs::create_directories(results_dir);
 
+    const fs::path src_lm = fs::path(dataset_folder) / "landmark_measurements.csv";
+    const fs::path dst_lm = fs::path(results_dir)    / "landmark_measurements.csv";
+    if (fs::exists(src_lm)) {
+        std::error_code ec;
+        fs::copy_file(src_lm, dst_lm, fs::copy_options::overwrite_existing, ec);
+        if (ec) SPDLOG_WARN("WriteBatchODResults: could not copy landmark_measurements.csv: {}", ec.message());
+    }
+
     nlohmann::json meta;
     meta["dataset_folder"] = dataset_folder;
     meta["run_unix_ms"] = run_unix_ms;
@@ -755,13 +763,18 @@ ODResult RunODOnDataset(const ODRequest& request)
         return out;
     }
 
-    const ODConfigResult config_result = ReadODConfig(request.od_config_path);
-    if (config_result.code != ErrorCode::OK) {
-        out.code = config_result.code;
-        out.stage = ODStage::FAILED;
-        return out;
+    OD_Config od_config;
+    if (request.od_config_override.has_value()) {
+        od_config = request.od_config_override.value();
+    } else {
+        const ODConfigResult config_result = ReadODConfig(request.od_config_path);
+        if (config_result.code != ErrorCode::OK) {
+            out.code = config_result.code;
+            out.stage = ODStage::FAILED;
+            return out;
+        }
+        od_config = config_result.config;
     }
-    const OD_Config& od_config = config_result.config;
 
     if (out.stage == ODStage::DATASET_PROCESSED) {
         Configuration config;

@@ -16,6 +16,7 @@ target_link_libraries(RUN_OD_ON_DATASET
     spdlog::spdlog
     PAYLOAD_LIB
     Eigen3::Eigen
+    CLI11::CLI11
 )
 
 add_executable(RUN_OD_PIPELINE run_od_pipeline.cpp)

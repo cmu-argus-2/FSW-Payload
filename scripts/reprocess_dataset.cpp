@@ -24,9 +24,16 @@
 #include "vision/dataset.hpp"
 #include "vision/frame.hpp"
 #include "vision/reprocessing.hpp"
-
+#include "core/data_handling.hpp"
 
 static constexpr const char* kDefaultOutPath      = "path.out";
+
+static void WriteResult(const std::string& out_file, const std::string& content)
+{
+    std::ofstream f(out_file, std::ios::trunc);
+    if (!f.is_open()) { spdlog::error("Failed to write result to '{}'", out_file); return; }
+    f << content << '\n';
+}
 
 int main(int argc, char** argv)
 {
@@ -72,6 +79,10 @@ int main(int argc, char** argv)
         return to_uint8(ec);
     }
 
-    SPDLOG_INFO("Dataset collection completed. Dataset stored in folder: {}. Dataset Folder Path stored in {}", dataset_folder, out_path);
+    std::string processing_file_path = DH::StoreProcessingMetadataToDisk(dataset);
+
+    SPDLOG_INFO("Dataset collection completed. Dataset stored in folder: {}. Processing File Path {}stored in {}", dataset_folder, processing_file_path, kDefaultOutPath);
+    WriteResult(kDefaultOutPath, dataset_folder + "/processing.json");
+    SPDLOG_INFO("reprocess_dataset: complete");
     return 0;
 }

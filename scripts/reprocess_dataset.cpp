@@ -25,6 +25,9 @@
 #include "vision/frame.hpp"
 #include "vision/reprocessing.hpp"
 
+
+static constexpr const char* kDefaultOutPath      = "path.out";
+
 int main(int argc, char** argv)
 {
     if (argc < 4)
@@ -69,6 +72,6 @@ int main(int argc, char** argv)
         return to_uint8(ec);
     }
 
-    spdlog::info("reprocess_dataset: complete");
+    SPDLOG_INFO("Dataset collection completed. Dataset stored in folder: {}. Dataset Folder Path stored in {}", dataset_folder, out_path);
     return 0;
 }

@@ -152,6 +152,50 @@ std::string StoreDatasetToDisk(Dataset& dataset)
     return dataset_file_path;
 }
 
+// Store a separate processing.json that is a copy of dataset.json minus
+// the frame IDs, plus a list of the frame jsonfiles that were reprocessed in this run. 
+// For easier downloading
+// Write a processing.json file with all the dataset and frame metadata for downloading
+std::string StoreProcessingMetadataToDisk(Dataset& dataset) {
+    std::string processing_file_path = dataset.GetFolderPath() + "processing.json";
+
+    Json j = dataset.toJson();
+    j.erase("frame_id_list"); // remove the frame IDs for the processing file
+
+    // Add a list of the frame jsonfiles that were reprocessed in this run
+    std::vector<Json> processed_frames;
+    for (const auto& frame_id : dataset.GetStoredFrameIDs())
+    {
+        uint8_t cam_id;
+        uint64_t timestamp;
+        std::tie(cam_id, timestamp) = frame_id;
+
+        Json frame_metadata = LoadFrameMetadataFromDisk(timestamp, static_cast<int>(cam_id), dataset.GetFolderPath());
+        if (frame_metadata.is_null())
+        {
+            SPDLOG_ERROR("Failed to load metadata for frame ({}, {})", cam_id, timestamp);
+            continue;
+        }
+        processed_frames.push_back(frame_metadata);
+    }
+    j["processed_frames"] = processed_frames;
+
+    std::ofstream ofs(processing_file_path, std::ios::out | std::ios::trunc);
+    if (!ofs.is_open())
+    {
+        SPDLOG_ERROR("Failed to write processing metadata to disk: {}", processing_file_path);
+        return "";
+    }
+
+    ofs << j.dump(1,'\t');
+    ofs.close();
+    SPDLOG_INFO("Saved processing metadata to disk: {}", processing_file_path);
+    SPDLOG_DEBUG("Processing metadata file size: {} bytes", GetFileSize(processing_file_path));
+
+    return processing_file_path;
+
+}
+
 bool readDatasetFromDisk(const std::string& dataset_file_path, Dataset& dataset_out)
 {
     if (!fs::exists(dataset_file_path)) 

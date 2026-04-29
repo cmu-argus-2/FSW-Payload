@@ -29,6 +29,7 @@ struct DatasetConfig
     uint8_t image_capture_rate = 60;
     float imu_sample_rate_hz = 1.0f;
     ProcessingStage target_processing_stage = ProcessingStage::NotPrefiltered;
+    std::array<bool, NUM_CAMERAS> active_cameras = {true, true, true, true};
 };
 
 inline bool IsValidCaptureMode(CAPTURE_MODE value)
@@ -58,6 +59,7 @@ public:
     float GetIMUSampleRateHz() const { return imu_sample_rate_hz; }
     ProcessingStage GetTargetProcessingStage() const { return target_processing_stage; }
     void SetTargetProcessingStage(ProcessingStage stage) { target_processing_stage = stage; }
+    std::array<bool, NUM_CAMERAS> GetActiveCameras() const { return active_cameras; }
     std::string GetFolderPath() const { return folder_path; }
     std::string GetIMUFilePath() const { return imu_log_file_path; }
     std::vector<std::tuple<uint8_t, uint64_t>> GetStoredFrameIDs() const { return stored_frame_ids; }
@@ -94,6 +96,7 @@ private:
     float imu_sample_rate_hz; // [hz]
     ProcessingStage target_processing_stage;
 
+    std::array<bool, NUM_CAMERAS> active_cameras = {true, true, true, true};
     std::vector<std::tuple<uint8_t, uint64_t>> stored_frame_ids; // for statistics, not intended to be used for loading frames (too heavy)
 
     bool CreateConfigurationFile();

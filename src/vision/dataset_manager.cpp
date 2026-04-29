@@ -206,6 +206,7 @@ void DatasetManager::StopCollection()
 
     cameraManager.SetCaptureMode(CAPTURE_MODE::IDLE);
     cameraManager.ResetCaptureState();
+    cameraManager.ClearDatasetCamerasMask();
     cameraManager.SetStorageFolder(IMAGES_FOLDER);
     imuManager.Suspend();
 }
@@ -344,6 +345,8 @@ void DatasetManager::CollectionLoop()
         SPDLOG_ERROR("Failed to enable cameras for dataset collection.");
         return;
     }
+
+    cameraManager.SetDatasetCamerasMask(current_dataset.GetActiveCameras());
 
     cameraManager.SetStorageFolder(current_dataset.GetFolderPath());
     cameraManager.SetTargetProcessingStage(current_dataset.GetTargetProcessingStage());

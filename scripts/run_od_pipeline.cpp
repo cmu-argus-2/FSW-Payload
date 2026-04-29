@@ -1,8 +1,11 @@
 /*
-  run_od_pipeline <dataset_config_folder> [od_config_path] [system_config_path]
+  run_od_pipeline <dataset_config_folder> [od_config_path] [system_config_path] [--out <out_path>]
 
   Captures a dataset from the dataset config, processes it to the requested
   stage, prepares OD measurements if needed, runs batch OD, and writes results.
+
+    --out  File to write the generated results directory path into. Falls back
+           to path.out if not provided or not writable.
 */
 
 #include "configuration.hpp"
@@ -11,15 +14,56 @@
 #include "navigation/od.hpp"
 #include "vision/dataset.hpp"
 
+#include <fstream>
 #include <iostream>
 #include <memory>
+#include <string>
 #include <thread>
+#include <vector>
 
 #include <spdlog/spdlog.h>
 #include "toml.hpp"
 
-static constexpr const char* kDefaultODConfigPath = "config/od.toml";
+static constexpr const char* kDefaultODConfigPath     = "config/od.toml";
 static constexpr const char* kDefaultSystemConfigPath = "config/config.toml";
+static constexpr const char* kDefaultOutPath          = "path.out";
+
+// Returns the value of --flag, or default_val if not present.
+static std::string GetFlag(int argc, char** argv, const char* flag, const char* default_val = "")
+{
+    for (int i = 1; i < argc - 1; ++i)
+        if (std::string(argv[i]) == flag) return argv[i + 1];
+    return default_val;
+}
+
+// Returns positional args, skipping any --flag <value> pairs.
+static std::vector<std::string> GetPositional(int argc, char** argv)
+{
+    std::vector<std::string> result;
+    for (int i = 1; i < argc; ++i) {
+        std::string a = argv[i];
+        if (a.size() > 2 && a[0] == '-' && a[1] == '-') { ++i; continue; }
+        result.push_back(a);
+    }
+    return result;
+}
+
+// Returns the provided path if writable, otherwise falls back to kDefaultOutPath.
+static std::string ResolveOutPath(const std::string& path)
+{
+    if (path == kDefaultOutPath) return path;
+    std::ofstream f(path, std::ios::app);
+    if (f.is_open()) return path;
+    spdlog::warn("Cannot write to '{}', using default output '{}'", path, kDefaultOutPath);
+    return kDefaultOutPath;
+}
+
+static void WriteResult(const std::string& out_file, const std::string& content)
+{
+    std::ofstream f(out_file, std::ios::trunc);
+    if (!f.is_open()) { spdlog::error("Failed to write result to '{}'", out_file); return; }
+    f << content << '\n';
+}
 
 static bool LoadDatasetConfig(const std::string& folder_path, DatasetConfig& out)
 {
@@ -44,6 +88,9 @@ static bool LoadDatasetConfig(const std::string& folder_path, DatasetConfig& out
             cfg["imu_sample_rate_hz"].value_or(double(out.imu_sample_rate_hz)));
         out.target_processing_stage = static_cast<ProcessingStage>(
             cfg["target_processing_stage"].value_or(uint64_t(out.target_processing_stage)));
+        if (const auto* arr = cfg["active_cameras"].as_array())
+            for (size_t i = 0; i < NUM_CAMERAS && i < arr->size(); ++i)
+                if (auto val = (*arr)[i].value<bool>()) out.active_cameras[i] = *val;
     } catch (const std::exception& e) {
         spdlog::error("Failed to parse dataset config {}: {}", path, e.what());
         return false;
@@ -64,19 +111,23 @@ static bool LoadDatasetConfig(const std::string& folder_path, DatasetConfig& out
 
 int main(int argc, char** argv)
 {
-    if (argc < 2) {
+    const auto positional = GetPositional(argc, argv);
+    if (positional.empty()) {
         std::cerr << "Usage: run_od_pipeline <dataset_config_folder> "
-                     "[od_config_path] [system_config_path]\n";
+                     "[od_config_path] [system_config_path] [--out <out_path>]\n";
         return 1;
     }
     spdlog::set_level(spdlog::level::info);
 
+    const std::string out_path = ResolveOutPath(
+        GetFlag(argc, argv, "--out", kDefaultOutPath));
+
     ODRequest request;
-    if (!LoadDatasetConfig(argv[1], request.dataset_config)) {
+    if (!LoadDatasetConfig(positional[0], request.dataset_config)) {
         return 1;
     }
-    request.od_config_path = (argc > 2) ? argv[2] : kDefaultODConfigPath;
-    request.system_config_path = (argc > 3) ? argv[3] : kDefaultSystemConfigPath;
+    request.od_config_path     = positional.size() > 1 ? positional[1] : kDefaultODConfigPath;
+    request.system_config_path = positional.size() > 2 ? positional[2] : kDefaultSystemConfigPath;
 
     auto config = std::make_unique<Configuration>();
     try {
@@ -115,5 +166,6 @@ int main(int argc, char** argv)
 
     spdlog::info("OD complete. Dataset {} results in {}",
                  result.dataset_folder, result.results_dir);
+    WriteResult(out_path, result.results_dir);
     return 0;
 }

@@ -104,6 +104,12 @@ public:
     bool EnableCamera(int cam_id);
     bool DisableCamera(int cam_id);
 
+    // Set which cameras EnableCameras() may activate. Cameras absent from the mask
+    // are disabled immediately and skipped by EnableCameras() until the mask is cleared.
+    // Call at dataset collection start; call ClearDatasetCamerasMask at stop.
+    void SetDatasetCamerasMask(const std::array<bool, NUM_CAMERAS>& mask);
+    void ClearDatasetCamerasMask();
+
     CAPTURE_MODE GetCaptureMode() const;
     int CountActiveCameras() const;
     int CountConfiguredCameras() const; // cameras with enabled=true in config
@@ -141,6 +147,9 @@ private:
 
 
     std::array<CAM_STATUS, NUM_CAMERAS> cam_status;
+
+    std::array<bool, NUM_CAMERAS> dataset_camera_mask = {true, true, true, true};
+    std::mutex dataset_camera_mask_m;
 
 
     void _PerformCameraHealthCheck(); // background watchdog for the cameras

@@ -89,8 +89,8 @@ class CommandThread(threading.Thread):
         self._send_ack(command)
 
     def _handle_experiment(self, command: Command):
-        log.info("EXPERIMENT  args=%s", command.arguments)
-        experiment_queue.put(dict(command.arguments))
+        log.info(f"Name: {command.name}  args={command.arguments}")
+        experiment_queue.put(command)
         self._send_ack(command)
     
     def _handle_request_tm_payload(self, command: Command):
@@ -223,6 +223,14 @@ class CommandThread(threading.Thread):
     _handlers = {
         "PING_EXP": _handle_ping,
         "EXPERIMENT": _handle_experiment,
+
+        # these are the commands for the orbit determination experiment
+        # They are similar to experiment command
+        # command thread will be responsible for distinguishing them
+        "DATASET_COLLECTION": _handle_experiment, 
+        "DATASET_PROCESSING": _handle_experiment,
+        "DATASET_OD": _handle_experiment,
+        
         "REQUEST_TM_PAYLOAD": _handle_request_tm_payload,
         "CONFIRM_LAST_BATCH": _handle_update_last_batch,
         "TURN_OFF_PAYLOAD": _handle_turn_off_payload

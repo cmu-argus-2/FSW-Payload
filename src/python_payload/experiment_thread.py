@@ -40,11 +40,16 @@ class ExperimentThread(threading.Thread):
         log.info("Experiment thread started")
         while not self.stop_event.is_set():
             try:
-                request = experiment_queue.get(timeout=0.1)
+                experiment_command = experiment_queue.get(timeout=0.1)
             except queue.Empty:
                 continue
-
-            self._run_experiment(request)
+            
+            if not isinstance(experiment_command, Command):
+                log.warning("Received non-Command in experiment_queue: %s", experiment_command)
+                continue
+            
+            if experiment_command.name == "EXPERIMENT":
+                self._run_experiment(dict(experiment_command.arguments))
 
     def _run_experiment(self, request: dict):
         ts = int(request.get("ts", 0))

@@ -13,3 +13,5 @@ image_capture_rate = 10
 imu_sample_rate_hz = 1.0
 
 target_processing_stage = 0
+
+active_cameras = [true, true, true, true] # cam0..cam3; omit to use all cameras

@@ -549,10 +549,20 @@ int CameraManager::EnableCameras()
 {
     int count = 0;
 
+    std::array<bool, NUM_CAMERAS> mask;
+    {
+        std::lock_guard<std::mutex> lk(dataset_camera_mask_m);
+        mask = dataset_camera_mask;
+    }
+
     for (size_t i = 0; i < NUM_CAMERAS; ++i)
     {
         if (!camera_configs[i].enabled) {
             SPDLOG_INFO("CAM{}: disabled in config, skipping", camera_configs[i].id);
+            continue;
+        }
+        if (!mask[i]) {
+            SPDLOG_INFO("CAM{}: excluded by dataset mask, skipping", camera_configs[i].id);
             continue;
         }
 
@@ -564,6 +574,28 @@ int CameraManager::EnableCameras()
     }
     _UpdateCamStatus();
     return count;
+}
+
+void CameraManager::SetDatasetCamerasMask(const std::array<bool, NUM_CAMERAS>& mask)
+{
+    {
+        std::lock_guard<std::mutex> lk(dataset_camera_mask_m);
+        dataset_camera_mask = mask;
+    }
+    for (size_t i = 0; i < NUM_CAMERAS; ++i)
+    {
+        if (!mask[i])
+            DisableCamera(static_cast<int>(camera_configs[i].id));
+    }
+}
+
+void CameraManager::ClearDatasetCamerasMask()
+{
+    {
+        std::lock_guard<std::mutex> lk(dataset_camera_mask_m);
+        dataset_camera_mask.fill(true);
+    }
+    EnableCameras();
 }
 
 

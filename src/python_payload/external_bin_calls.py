@@ -36,7 +36,13 @@ def run_inference(img_path, output_folder_path):
         text=True
     )
     
-    # TODO check if it has completed successfully
+    # capture result code
+    try:
+        return_code = result.returncode
+        print(f"Return code: {return_code}")
+    except Exception as e:
+        print(f"Error capturing return code: {e}")
+        return_code = -1
     
-    return True
+    return return_code
     

@@ -69,7 +69,8 @@ def run_dataset_collection(imu_hz, capture_rate, duration):
     toml_dict = {
         "imu_sample_rate_hz": imu_hz,
         "image_capture_rate": capture_rate,
-        "maximum_period": duration
+        "maximum_period": duration,
+        "active_cameras": ["true", "false", "false", "false"]  
     }
     
     with open(os.path.join("config", "dataset_config.toml"), 'w') as f:

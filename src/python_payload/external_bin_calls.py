@@ -49,10 +49,10 @@ def run_inference(img_path, output_folder_path):
     return return_code
 
 
-def run_dataset_collection(imu_hz, capture_rate, duration):
+def run_dataset_collection(camera_bit_flag, capture_rate, imu_hz, duration):
     """
     This will call the binary to perform the dataset collection
-    The binary should return the path to the dataset.json file
+    it will generate a dataset.json file that will be send to the mainboard
     this file will be sent to the ground
 
     it will have a timeout of duration + 20 seconds to make sure it does not run indefinitely
@@ -70,7 +70,7 @@ def run_dataset_collection(imu_hz, capture_rate, duration):
         "imu_sample_rate_hz": imu_hz,
         "image_capture_rate": capture_rate,
         "maximum_period": duration,
-        "active_cameras": [True, False, False, False]  
+        "active_cameras": [bool(camera_bit_flag & (1 << i)) for i in range(4)]
     }
     
     with open(os.path.join("config", "dataset_config.toml"), 'w') as f:

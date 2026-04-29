@@ -5,7 +5,9 @@ like record a dataset, or run inference...
 
 import os
 import subprocess
-
+import sys
+from pathlib import Path
+import toml
 
 
 
@@ -47,27 +49,44 @@ def run_inference(img_path, output_folder_path):
     return return_code
 
 
-def run_dataset_collection(imu_hz, camera_hz, duration):
+def run_dataset_collection(imu_hz, capture_rate, duration):
     """
     This will call the binary to perform the dataset collection
     The binary should return the path to the dataset.json file
     this file will be sent to the ground
 
     it will have a timeout of duration + 20 seconds to make sure it does not run indefinitely
+
+    to pass the parameters I will be writting to the dataset_config.toml    
     """
     
-    timeout = duration + 5
+    timeout = duration + 10
     run_path = "."
     bin_name = "./bin/DATASET_COLLECTION"
-    bin_name = "wait 15"   # will use this to test the timeout feature
+    
+    
+    # write the config file
+    toml_dict = {
+        "imu_sample_rate_hz": imu_hz,
+        "image_capture_rate": capture_rate,
+        "maximum_period": duration
+    }
+    
+    with open(os.path.join("config", "dataset_config.toml"), 'w') as f:
+        toml.dump(toml_dict, f)
+    
     
     # TODO: do I need to cast to string?
-    result = subprocess.run([bin_name], #str(imu_hz), str(camera_hz), str(duration)],
-        cwd=run_path,
-        # capture_output=True,
-        timeout=timeout,
-        text=True
-    )
+    try:
+        result = subprocess.run([bin_name, str(imu_hz), str(capture_rate), str(duration)],
+            cwd=run_path,
+            # capture_output=True,
+            timeout=timeout,
+            text=True
+        )
+    except subprocess.TimeoutExpired:
+        print(f"Dataset collection timed out after {timeout} seconds")
+        return -1
     
     try:
         return_code = result.returncode

@@ -7,6 +7,7 @@ not sure if I will make a different file for the other od commands or not
 import threading
 from file_downlink_manager import FileDownlinkManager
 from external_bin_calls import run_dataset_collection
+from splat.splat.telemetry_codec import Command, pack
 from thread_shared import (
     PayloadState,
     log,
@@ -29,11 +30,11 @@ class DatasetCollectionRunner:
         
         # call the binary to perform the dataset collection
         imu_hz = args.get("imu_hz", 100)
-        camera_hz = args.get("camera_hz", 10)
+        capture_rate = args.get("capture_rate", 10)
         duration = args.get("duration", 60)
         
         state_manager.set(PayloadState.CAPTURING)
-        dataset_json_path = run_dataset_collection(imu_hz, camera_hz, duration)
+        dataset_json_path = run_dataset_collection(imu_hz, capture_rate, duration)
         
         # check teh return value
         if dataset_json_path is None or dataset_json_path == -1:

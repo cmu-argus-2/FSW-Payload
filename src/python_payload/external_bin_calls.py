@@ -70,7 +70,7 @@ def run_dataset_collection(imu_hz, capture_rate, duration):
         "imu_sample_rate_hz": imu_hz,
         "image_capture_rate": capture_rate,
         "maximum_period": duration,
-        "active_cameras": ["true", "false", "false", "false"]  
+        "active_cameras": [True, False, False, False]  
     }
     
     with open(os.path.join("config", "dataset_config.toml"), 'w') as f:
@@ -79,7 +79,7 @@ def run_dataset_collection(imu_hz, capture_rate, duration):
     
     # TODO: do I need to cast to string?
     try:
-        result = subprocess.run([bin_name, str(imu_hz), str(capture_rate), str(duration)],
+        result = subprocess.run([bin_name],
             cwd=run_path,
             # capture_output=True,
             timeout=timeout,
@@ -102,6 +102,6 @@ def run_dataset_collection(imu_hz, capture_rate, duration):
         print("Error: path.out file not created")
         return None
     
-    dataset_path = path_out_file.read_text().strip()
+    dataset_path = path_out_file.read_text().strip() + "dataset.json"
     print(f"Test dataset generated at: {dataset_path}")
     return dataset_path

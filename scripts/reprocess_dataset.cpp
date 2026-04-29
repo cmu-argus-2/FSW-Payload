@@ -25,6 +25,9 @@
 #include "vision/frame.hpp"
 #include "vision/reprocessing.hpp"
 
+
+static constexpr const char* kDefaultOutPath      = "path.out";
+
 int main(int argc, char** argv)
 {
     if (argc < 4)

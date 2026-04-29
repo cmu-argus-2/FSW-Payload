@@ -74,6 +74,8 @@ namespace DH // Data Handling
 
     // Store a dataset on disk
     std::string StoreDatasetToDisk(Dataset& dataset);
+    // Store entire dataset metadata with all frame data for downloading
+    std::string StoreProcessingMetadataToDisk(Dataset& dataset);
     // Load a dataset from disk by its .json file path
     bool readDatasetFromDisk(const std::string& dataset_file_path, Dataset& dataset_out);
     

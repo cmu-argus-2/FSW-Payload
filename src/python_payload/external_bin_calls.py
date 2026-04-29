@@ -62,7 +62,7 @@ def run_dataset_collection(imu_hz, capture_rate, duration):
     
     timeout = duration + 10
     run_path = "."
-    bin_name = "./bin/DATASET_COLLECTION"
+    bin_name = "./bin/run_dataset"
     
     
     # write the config file
@@ -86,13 +86,21 @@ def run_dataset_collection(imu_hz, capture_rate, duration):
         )
     except subprocess.TimeoutExpired:
         print(f"Dataset collection timed out after {timeout} seconds")
-        return -1
+        return None
     
     try:
         return_code = result.returncode
         print(f"Return code: {return_code}")
     except Exception as e:
         print(f"Error capturing return code: {e}")
-        return_code = -1
-
-    return return_code
+        return None
+    
+    # lets read the json path from the output file
+    path_out_file = Path("path.out")
+    if not path_out_file.exists():
+        print("Error: path.out file not created")
+        return None
+    
+    dataset_path = path_out_file.read_text().strip()
+    print(f"Test dataset generated at: {dataset_path}")
+    return dataset_path

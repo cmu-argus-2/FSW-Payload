@@ -44,6 +44,10 @@ sudo apt install -y \
 # Uncomment this line if you get ccache related issues
 # sudo apt-get install --reinstall -y ccache
 
+# Install DVC with SSH support for model artifact pulls
+python3 -m pipx ensurepath > /dev/null || true
+python3 -m pipx install --force "dvc[ssh]"
+
 # Create deps folder
 mkdir -p deps && cd deps
 

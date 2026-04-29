@@ -32,28 +32,19 @@ if [ -d "models/.dvc" ]; then
     DVC_BIN="$HOME/.local/bin/dvc"
   fi
 
-  if [ -z "$DVC_BIN" ]; then
-    if ! python3 -m pipx --help > /dev/null 2>&1; then
-      echo "Warning: pipx is required to install DVC. Run ./install_deps.sh to enable automatic model artifact pulls." >&2
-    else
-      python3 -m pipx ensurepath > /dev/null || true
-      if python3 -m pipx install --force "dvc[ssh]"; then
-        DVC_BIN="$HOME/.local/bin/dvc"
-      else
-        echo "Warning: Failed to install DVC. Continuing build without refreshing model artifacts." >&2
-      fi
-    fi
-  fi
-
   if [ -n "$DVC_BIN" ] && [ -x "$DVC_BIN" ]; then
     echo "Pulling DVC-managed model artifacts from the models submodule..."
-    if (cd models && "$DVC_BIN" pull); then
+    cd models
+    if "$DVC_BIN" pull; then
       echo "Model artifacts pulled successfully."
     else
-      echo "Warning: Failed to pull model artifacts with DVC. Continuing build without refreshing them." >&2
+      echo "Error: Failed to pull model artifacts with DVC." >&2
     fi
+    cd ..
   elif [ -n "$DVC_BIN" ]; then
     echo "Warning: DVC was not installed correctly at $DVC_BIN. Continuing build without refreshing model artifacts." >&2
+  else
+    echo "Warning: DVC is not installed. Run ./install_deps.sh to enable automatic model artifact pulls." >&2
   fi
 fi
 

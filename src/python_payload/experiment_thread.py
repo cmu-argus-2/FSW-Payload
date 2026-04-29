@@ -44,4 +44,8 @@ class ExperimentThread(threading.Thread):
                 continue
 
             handler(dict(experiment_command.arguments))
+            
+            # experiment has finished
+            # if it failed before download it will not quit the program
+            self.stop_event.set()
 

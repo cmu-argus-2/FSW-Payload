@@ -41,7 +41,11 @@ class DatasetCollectionRunner:
             state_manager.set(PayloadState.FAIL)
             return
         
+        # Send the command finished command
         log.info("Dataset collection completed, dataset path: %s", dataset_json_path)
+        command = Command("EXPERIMENT_FINISHED")
+        tx_queue.put(pack(command))
+        log.info("Sending EXPERIMENT_FINISHED command (experiment finished)")
         
         # send the files to the mainboard for downlink
         state_manager.set(PayloadState.DOWNLOAD)

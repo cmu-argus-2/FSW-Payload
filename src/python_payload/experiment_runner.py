@@ -29,15 +29,6 @@ class ExperimentRunner:
     def run_experiment(self, request: dict):
         return self.run(request)
 
-    def run_dataset_collection(self, request: dict):
-        return self.run(request)
-
-    def run_dataset_processing(self, request: dict):
-        return self.run(request)
-
-    def run_dataset_od(self, request: dict):
-        return self.run(request)
-
     def run(self, request: dict):
         ts = int(request.get("ts", 0))
         camera_bit_flag = int(request.get("camera_bit_flag", 0))

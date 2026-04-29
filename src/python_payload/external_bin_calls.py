@@ -45,4 +45,35 @@ def run_inference(img_path, output_folder_path):
         return_code = -1
     
     return return_code
+
+
+def run_dataset_collection(imu_hz, camera_hz, duration):
+    """
+    This will call the binary to perform the dataset collection
+    The binary should return the path to the dataset.json file
+    this file will be sent to the ground
+
+    it will have a timeout of duration + 20 seconds to make sure it does not run indefinitely
+    """
     
+    timeout = duration + 5
+    run_path = "."
+    bin_name = "./bin/DATASET_COLLECTION"
+    bin_name = "wait 15"   # will use this to test the timeout feature
+    
+    # TODO: do I need to cast to string?
+    result = subprocess.run([bin_name], #str(imu_hz), str(camera_hz), str(duration)],
+        cwd=run_path,
+        # capture_output=True,
+        timeout=timeout,
+        text=True
+    )
+    
+    try:
+        return_code = result.returncode
+        print(f"Return code: {return_code}")
+    except Exception as e:
+        print(f"Error capturing return code: {e}")
+        return_code = -1
+
+    return return_code

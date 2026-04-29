@@ -6,7 +6,7 @@ not sure if I will make a different file for the other od commands or not
 
 import threading
 from file_downlink_manager import FileDownlinkManager
-from external_bin_calls import run_dataset_collection
+from external_bin_calls import run_dataset_collection, run_dataset_processing
 from splat.splat.telemetry_codec import Command, pack
 from thread_shared import (
     PayloadState,
@@ -29,12 +29,13 @@ class DatasetCollectionRunner:
         state_manager.set(PayloadState.TURNING_ON)
         
         # call the binary to perform the dataset collection
+        camera_bit_flag = args.get("camera_bit_flag", 0b0001)
         imu_hz = args.get("imu_hz", 100)
         capture_rate = args.get("capture_rate", 10)
         duration = args.get("duration", 60)
         
         state_manager.set(PayloadState.CAPTURING)
-        dataset_json_path = run_dataset_collection(imu_hz, capture_rate, duration)
+        dataset_json_path = run_dataset_collection(camera_bit_flag, capture_rate, imu_hz, duration)
         
         # check teh return value
         if dataset_json_path is None or dataset_json_path == -1:
@@ -44,6 +45,49 @@ class DatasetCollectionRunner:
         
         # Send the command finished command
         log.info("Dataset collection completed, dataset path: %s", dataset_json_path)
+        command = Command("EXPERIMENT_FINISHED")
+        tx_queue.put(pack(command))
+        log.info("Sending EXPERIMENT_FINISHED command (experiment finished)")
+        
+        # send the files to the mainboard for downlink
+        state_manager.set(PayloadState.DOWNLOAD)
+        
+        ok = self.downlink_manager.send_files([dataset_json_path])
+        if not ok:
+            log.error("Downlink sequence failed")
+            state_manager.set(PayloadState.FAIL)
+        else:
+            log.info(f"Downlink sequence completed for {dataset_json_path}")
+            
+            
+class DatasetProcessingRunner:
+    
+    def __init__(self, stop_event: threading.Event):
+        self.stop_event = stop_event
+        self.downlink_manager = FileDownlinkManager(stop_event=stop_event)
+
+    def run(self, args: dict):
+        
+        log.info("Running dataset processing with args: %s", args)
+        state_manager.set(PayloadState.TURNING_ON)
+        
+        # call the binary to perform the dataset processing
+        dataset_json_path = args.get("dataset_json_path")
+        level_processing = args.get("level_processing", 1)
+        rc_version = args.get("rc_version", 1)
+        ld_version = args.get("ld_version", 1)
+        
+        state_manager.set(PayloadState.CAPTURING)
+        dataset_json_path = run_dataset_processing(dataset_json_path, level_processing, rc_version, ld_version)
+        
+        # check teh return value
+        if dataset_json_path is None or dataset_json_path == -1:
+            log.error("Dataset processing failed")
+            state_manager.set(PayloadState.FAIL)
+            return
+        
+        # Send the command finished command
+        log.info("Dataset processing completed, dataset path: %s", dataset_json_path)
         command = Command("EXPERIMENT_FINISHED")
         tx_queue.put(pack(command))
         log.info("Sending EXPERIMENT_FINISHED command (experiment finished)")

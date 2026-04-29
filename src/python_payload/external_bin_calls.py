@@ -105,3 +105,44 @@ def run_dataset_collection(camera_bit_flag, capture_rate, imu_hz, duration):
     dataset_path = path_out_file.read_text().strip() + "dataset.json"
     print(f"Test dataset generated at: {dataset_path}")
     return dataset_path
+
+def run_dataset_processing(dataset_json_path, level_processing, rc_version, ld_version):
+    """
+    This will call the binary to perform the dataset processing
+    it will generate a processing.json that will be send to the mainboard
+
+    for now this will just be a placeholder that will return the same path
+
+    here we do not need to write the toml file because they are read arguments
+    
+    TODO: it should have a timeout as well 
+    """
+
+    run_path = "."
+    bin_name = "./bin/reprocess_dataset"
+    
+    print(f"Running dataset processing on {dataset_json_path}")
+    print(f"Level of processing: {level_processing}")
+    print(f"RC version: {rc_version}")
+    print(f"LD version: {ld_version}")
+    
+    result = subprocess.run([bin_name, dataset_json_path, str(level_processing), "1", str(rc_version), str(ld_version)],
+        cwd=run_path,
+        # capture_output=True,
+        text=True
+    )
+    
+    try:
+        return_code = result.returncode
+        print(f"Return code: {return_code}")
+    except Exception as e:
+        print(f"Error capturing return code: {e}")
+        return None
+    
+    # TODO: it is writing to path.out, but  I am actually not going to use it
+    # i will be assuming the dataset_json_path that was sent as argument
+    
+    json_path = os.path.join(dataset_json_path, "processing.json")
+    
+    # for now we will just return the same path
+    return json_path

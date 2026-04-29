@@ -112,7 +112,7 @@ public:
 
     CAPTURE_MODE GetCaptureMode() const;
     int CountActiveCameras() const;
-    int CountConfiguredCameras() const; // cameras with enabled=true in config
+    int CountConfiguredCameras() const; // cameras with enabled=true in config and dataset mask
     void FillCameraStatus(uint8_t* status);
 
     bool PrepareForCapture();
@@ -149,7 +149,7 @@ private:
     std::array<CAM_STATUS, NUM_CAMERAS> cam_status;
 
     std::array<bool, NUM_CAMERAS> dataset_camera_mask = {true, true, true, true};
-    std::mutex dataset_camera_mask_m;
+    mutable std::mutex dataset_camera_mask_m;
 
 
     void _PerformCameraHealthCheck(); // background watchdog for the cameras

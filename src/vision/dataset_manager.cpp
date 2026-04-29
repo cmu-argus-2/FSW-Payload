@@ -338,15 +338,18 @@ void DatasetManager::CollectionLoop()
 
     cameraManager.ResetCaptureState();
 
+    // Apply dataset mask before PrepareForCapture so the check only considers
+    // cameras that are actually needed for this dataset.
+    cameraManager.SetDatasetCamerasMask(current_dataset.GetActiveCameras());
+
     // configure the camera manager for the dataset collection
     if (!cameraManager.PrepareForCapture())
     {
         loop_flag.store(false);
+        cameraManager.ClearDatasetCamerasMask();
         SPDLOG_ERROR("Failed to enable cameras for dataset collection.");
         return;
     }
-
-    cameraManager.SetDatasetCamerasMask(current_dataset.GetActiveCameras());
 
     cameraManager.SetStorageFolder(current_dataset.GetFolderPath());
     cameraManager.SetTargetProcessingStage(current_dataset.GetTargetProcessingStage());

@@ -463,8 +463,8 @@ ProcessingStage CameraManager::GetTargetProcessingStage() const
 
 bool CameraManager::PrepareForCapture()
 {
-    const int configured_count = CountConfiguredCameras();
-    if (configured_count == 0)
+    const int expected_count = CountConfiguredCameras();
+    if (expected_count == 0)
     {
         SPDLOG_ERROR("No cameras are enabled in configuration; cannot prepare for capture.");
         auto_disable_after_capture.store(false);
@@ -472,7 +472,7 @@ bool CameraManager::PrepareForCapture()
     }
 
     const int active_before = CountActiveCameras();
-    if (active_before == configured_count)
+    if (active_before == expected_count)
     {
         auto_disable_after_capture.store(false);
         return true;
@@ -487,10 +487,10 @@ bool CameraManager::PrepareForCapture()
         return false;
     }
 
-    if (active_after != configured_count)
+    if (active_after != expected_count)
     {
         SPDLOG_ERROR("Only {}/{} configured camera(s) are active; aborting capture.",
-                     active_after, configured_count);
+                     active_after, expected_count);
         if (active_before == 0)
             DisableCameras();
         auto_disable_after_capture.store(false);
@@ -622,9 +622,14 @@ int CameraManager::DisableCameras()
 
 int CameraManager::CountConfiguredCameras() const
 {
+    std::array<bool, NUM_CAMERAS> mask;
+    {
+        std::lock_guard<std::mutex> lk(dataset_camera_mask_m);
+        mask = dataset_camera_mask;
+    }
     int count = 0;
-    for (const auto& cfg : camera_configs)
-        if (cfg.enabled) count++;
+    for (size_t i = 0; i < NUM_CAMERAS; ++i)
+        if (camera_configs[i].enabled && mask[i]) count++;
     return count;
 }
 

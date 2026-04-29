@@ -27,13 +27,6 @@
 
 namespace {
 
-std::string DatasetNameFromPath(const std::string& dataset_folder)
-{
-    std::filesystem::path p(dataset_folder);
-    return p.filename().empty() ? p.parent_path().filename().string()
-                                : p.filename().string();
-}
-
 } // namespace
 
 bool OD::IsODPossible(const std::string& dataset_folder) const
@@ -796,8 +789,7 @@ ODResult RunODOnDataset(const ODRequest& request)
 
     const int64_t run_unix_ms = std::chrono::duration_cast<std::chrono::milliseconds>(
         std::chrono::system_clock::now().time_since_epoch()).count();
-    const std::string dataset_name = DatasetNameFromPath(request.dataset_folder);
-    out.results_dir = std::string("data/results/") + dataset_name + "_" + std::to_string(run_unix_ms);
+    out.results_dir = std::string("data/results/") + std::to_string(run_unix_ms);
 
     const int num_groups = static_cast<int>(
         std::count(measurements.group_starts.data(),

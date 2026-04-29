@@ -257,31 +257,37 @@ def write_dataset_config(
     image_capture_rate: int = 1,
     imu_sample_rate_hz: float = 1.0,
     target_processing_stage: str = "LDNeted",
+    active_cameras: Sequence[bool] | None = None,
 ) -> Path:
     """
     Write the dataset_config.toml consumed by run_dataset and run_od_pipeline.
 
     Enum values are intentionally passed by readable names here, then converted
     to the numeric values expected by the C++ TOML parser.
+
+    active_cameras: sequence of 4 bools selecting which cameras to use (default: all enabled).
     """
+
+    if active_cameras is not None and len(active_cameras) != 4:
+        raise ValueError("active_cameras must have exactly 4 elements")
 
     folder = Path(folder)
     folder.mkdir(parents=True, exist_ok=True)
     path = folder / "dataset_config.toml"
-    path.write_text(
-        "\n".join(
-            [
-                f"maximum_period = {maximum_period}",
-                f"target_frame_nb = {target_frame_nb}",
-                f"dataset_capture_mode = {CAPTURE_MODES[dataset_capture_mode]}",
-                f"imu_collection_mode = {IMU_COLLECTION_MODES[imu_collection_mode]}",
-                f"image_capture_rate = {image_capture_rate}",
-                f"imu_sample_rate_hz = {imu_sample_rate_hz}",
-                f"target_processing_stage = {PROCESSING_STAGES[target_processing_stage]}",
-                "",
-            ]
-        )
-    )
+    lines = [
+        f"maximum_period = {maximum_period}",
+        f"target_frame_nb = {target_frame_nb}",
+        f"dataset_capture_mode = {CAPTURE_MODES[dataset_capture_mode]}",
+        f"imu_collection_mode = {IMU_COLLECTION_MODES[imu_collection_mode]}",
+        f"image_capture_rate = {image_capture_rate}",
+        f"imu_sample_rate_hz = {imu_sample_rate_hz}",
+        f"target_processing_stage = {PROCESSING_STAGES[target_processing_stage]}",
+    ]
+    if active_cameras is not None:
+        bool_strs = ", ".join("true" if b else "false" for b in active_cameras)
+        lines.append(f"active_cameras = [{bool_strs}]")
+    lines.append("")
+    path.write_text("\n".join(lines))
     return path
 
 
@@ -429,18 +435,27 @@ def update_camera_calibration_config(
     return _update_toml_section(system_config_path, "camera-calibration", updates)
 
 
-def run_dataset(*, config_folder: str | Path = "config", check: bool = False) -> ScriptResult:
+def run_dataset(
+    *,
+    config_path: str | Path | None = None,
+    out_path: str | Path | None = None,
+    check: bool = False,
+) -> ScriptResult:
     """
     Run scripts/run_dataset.cpp via bin/run_dataset.
 
-    Note: the current C++ script always reads config/config.toml and
-    config/dataset_config.toml internally. The config_folder argument documents
-    that limitation and is kept here so this wrapper mirrors run_od_pipeline.
+    config_path: path to a dataset_config.toml (--config flag). Defaults to
+                 config/dataset_config.toml when omitted.
+    out_path:    file that will receive the generated dataset folder path
+                 (--out flag). Defaults to path.out when omitted.
     """
 
-    if _repo_relative(config_folder) != "config":
-        raise ValueError("bin/run_dataset currently reads only config/dataset_config.toml")
-    return run_binary([BIN_DIR / "run_dataset"], check=check)
+    cmd: list[str | Path] = [BIN_DIR / "run_dataset"]
+    if config_path is not None:
+        cmd += ["--config", _repo_relative(config_path)]
+    if out_path is not None:
+        cmd += ["--out", str(out_path)]
+    return run_binary(cmd, check=check)
 
 
 def reprocess_dataset(
@@ -472,19 +487,24 @@ def run_od_on_dataset(
     *,
     od_config_path: str | Path = "config/od.toml",
     system_config_path: str | Path = "config/config.toml",
+    out_path: str | Path | None = None,
     check: bool = False,
 ) -> ScriptResult:
-    """Run scripts/run_od_on_dataset.cpp via bin/RUN_OD_ON_DATASET."""
+    """Run scripts/run_od_on_dataset.cpp via bin/RUN_OD_ON_DATASET.
 
-    return run_binary(
-        [
-            BIN_DIR / "RUN_OD_ON_DATASET",
-            _repo_relative(dataset_folder),
-            _repo_relative(od_config_path),
-            _repo_relative(system_config_path),
-        ],
-        check=check,
-    )
+    out_path: file that will receive the generated results directory path
+              (--out flag). Defaults to path.out when omitted.
+    """
+
+    cmd: list[str | Path] = [
+        BIN_DIR / "RUN_OD_ON_DATASET",
+        _repo_relative(dataset_folder),
+        _repo_relative(od_config_path),
+        _repo_relative(system_config_path),
+    ]
+    if out_path is not None:
+        cmd += ["--out", str(out_path)]
+    return run_binary(cmd, check=check)
 
 
 def run_od_pipeline(
@@ -492,19 +512,24 @@ def run_od_pipeline(
     *,
     od_config_path: str | Path = "config/od.toml",
     system_config_path: str | Path = "config/config.toml",
+    out_path: str | Path | None = None,
     check: bool = False,
 ) -> ScriptResult:
-    """Run scripts/run_od_pipeline.cpp via bin/RUN_OD_PIPELINE."""
+    """Run scripts/run_od_pipeline.cpp via bin/RUN_OD_PIPELINE.
 
-    return run_binary(
-        [
-            BIN_DIR / "RUN_OD_PIPELINE",
-            _repo_relative(dataset_config_folder),
-            _repo_relative(od_config_path),
-            _repo_relative(system_config_path),
-        ],
-        check=check,
-    )
+    out_path: file that will receive the generated results directory path
+              (--out flag). Defaults to path.out when omitted.
+    """
+
+    cmd: list[str | Path] = [
+        BIN_DIR / "RUN_OD_PIPELINE",
+        _repo_relative(dataset_config_folder),
+        _repo_relative(od_config_path),
+        _repo_relative(system_config_path),
+    ]
+    if out_path is not None:
+        cmd += ["--out", str(out_path)]
+    return run_binary(cmd, check=check)
 
 
 def print_result(result: ScriptResult) -> None:

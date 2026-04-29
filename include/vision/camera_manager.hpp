@@ -112,7 +112,7 @@ public:
 
     CAPTURE_MODE GetCaptureMode() const;
     int CountActiveCameras() const;
-    int CountConfiguredCameras() const; // cameras with enabled=true in config
+    int CountConfiguredCameras() const; // cameras with enabled=true in config and dataset mask
     void FillCameraStatus(uint8_t* status);
 
     bool PrepareForCapture();

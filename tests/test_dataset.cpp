@@ -182,11 +182,33 @@ TEST_F(DatasetTest, DatasetConfigurationCheck)
             [](toml::table& c){ /* last field — no restore needed */ }},
     };
 
+    // Missing fields now use DatasetConfig defaults and are valid — only wrong
+    // types or out-of-range values are rejected.
     for (const auto& [field, insert_bad, insert_good] : field_tests)
     {
-        config.erase(field);  writeConfig(); expectBad();
         insert_bad(config);   writeConfig(); expectBad();
         config.erase(field);  insert_good(config);
+    }
+
+    // Verify that a config missing every optional field is still valid and
+    // that the loaded Dataset falls back to DatasetConfig defaults.
+    {
+        toml::table empty_cfg;
+        empty_cfg.insert("capture_start_time", static_cast<int64_t>(capture_start_time));
+        std::ofstream f(config_path, std::ofstream::out | std::ofstream::trunc);
+        f << empty_cfg;
+        f.close();
+        EXPECT_TRUE(Dataset::isValidConfigurationFile(config_path));
+        Dataset defaults_dataset(folder);
+        const DatasetConfig defaults;
+        EXPECT_DOUBLE_EQ(defaults_dataset.GetMaximumPeriod(),    defaults.maximum_period);
+        EXPECT_EQ(defaults_dataset.GetTargetFrameNb(),           defaults.target_frame_nb);
+        EXPECT_EQ(defaults_dataset.GetDatasetCaptureMode(),      defaults.capture_mode);
+        EXPECT_EQ(defaults_dataset.GetIMUCollectionMode(),        defaults.imu_collection_mode);
+        EXPECT_EQ(defaults_dataset.GetImageCaptureRate(),         defaults.image_capture_rate);
+        EXPECT_FLOAT_EQ(defaults_dataset.GetIMUSampleRateHz(),    defaults.imu_sample_rate_hz);
+        EXPECT_EQ(defaults_dataset.GetTargetProcessingStage(),   defaults.target_processing_stage);
+        EXPECT_EQ(defaults_dataset.GetActiveCameras(),           defaults.active_cameras);
     }
 
 }
@@ -210,13 +232,16 @@ TEST_F(DatasetTest, DatasetStorageAndRetrieval)
     EXPECT_EQ(retrieved.GetImageCaptureRate(),      60);
     EXPECT_EQ(retrieved.GetIMUSampleRateHz(),       1.0f);
     EXPECT_EQ(retrieved.GetTargetProcessingStage(), ProcessingStage::NotPrefiltered);
+    // active_cameras defaults to all-enabled and must survive the TOML round-trip
+    const std::array<bool, NUM_CAMERAS> all_enabled = {true, true, true, true};
+    EXPECT_EQ(retrieved.GetActiveCameras(), all_enabled);
     ASSERT_THROW(Dataset{"data/datasets/bogus_dataset_path/"}, std::invalid_argument);
 
     Json j = dataset.toJson();
     for (const char* key : {"folder_path", "capture_start_time", "maximum_period",
                              "target_frame_nb", "dataset_capture_mode", "imu_collection_mode",
                              "image_capture_rate", "imu_sample_rate_hz", "target_processing_stage",
-                             "imu_log_file_path", "frame_id_list"})
+                             "active_cameras", "imu_log_file_path", "frame_id_list"})
         EXPECT_TRUE(j.contains(key)) << "missing JSON key: " << key;
 
     EXPECT_EQ(j["capture_start_time"], capture_start_time);
@@ -265,6 +290,47 @@ TEST_F(DatasetTest, IsValidConfigurationFile_RejectsUpperBoundViolations)
     expectBad("imu_sample_rate_hz",      30.0,     1.0);    // > 25 Hz
     expectBad("target_processing_stage", 99,       0);      // > LDNeted
 
+}
+
+// ── active_cameras: TOML round-trip and validation ───────────────────────────
+
+TEST_F(DatasetTest, ActiveCameras_TomlRoundTrip)
+{
+    Dataset dataset = makeDataset();
+    const std::string config_path =
+        "data/datasets/" + std::to_string(capture_start_time) + "/dataset_config.toml";
+
+    // Write a partial mask and verify it is read back correctly.
+    {
+        toml::table cfg = toml::parse_file(config_path);
+        cfg.erase("active_cameras");
+        cfg.insert("active_cameras", toml::array{true, false, false, true});
+        std::ofstream f(config_path, std::ofstream::out | std::ofstream::trunc);
+        f << cfg;
+    }
+    EXPECT_TRUE(Dataset::isValidConfigurationFile(config_path));
+    Dataset loaded("data/datasets/" + std::to_string(capture_start_time) + "/");
+    const std::array<bool, NUM_CAMERAS> expected = {true, false, false, true};
+    EXPECT_EQ(loaded.GetActiveCameras(), expected);
+
+    // Wrong array size must be rejected.
+    {
+        toml::table cfg = toml::parse_file(config_path);
+        cfg.erase("active_cameras");
+        cfg.insert("active_cameras", toml::array{true, false});  // only 2 elements
+        std::ofstream f(config_path, std::ofstream::out | std::ofstream::trunc);
+        f << cfg;
+    }
+    EXPECT_FALSE(Dataset::isValidConfigurationFile(config_path));
+
+    // Absent key must be accepted (defaults to all-enabled).
+    {
+        toml::table cfg = toml::parse_file(config_path);
+        cfg.erase("active_cameras");
+        std::ofstream f(config_path, std::ofstream::out | std::ofstream::trunc);
+        f << cfg;
+    }
+    EXPECT_TRUE(Dataset::isValidConfigurationFile(config_path));
 }
 
 // ── validateRawParams: exercised via fromJson ─────────────────────────────────

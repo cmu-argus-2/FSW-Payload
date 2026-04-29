@@ -4,7 +4,7 @@ Batch orbit determination using CasADi + IPOPT.
 
   • Reads landmark_measurements.csv and imu_data.csv from a dataset folder
   • Runs the fixed-bias batch OD optimizer
-  • Writes CSV results to data/results/<dataset_name>_<unix_ms>/
+  • Writes CSV results to data/results/<unix_ms>/
 
 Usage (from the repository root):
     python python_od/ipopt_od.py <dataset_folder> [--j2] [--drag]
@@ -54,9 +54,8 @@ def main() -> None:
     print(f"Landmark groups : {landmark_group_starts.sum()}")
     print(f"Gyro rows       : {len(gyro_measurements)}")
 
-    # ── Results folder: data/results/<dataset_name>_<unix_ms> ──────────────────
-    dataset_name = dataset_folder.resolve().name
-    results_dir  = Path("data/results") / f"{dataset_name}_{run_unix_ms}"
+    # ── Results folder: data/results/<unix_ms> ─────────────────────────────────
+    results_dir = Path("data/results") / str(run_unix_ms)
 
     # ── Solve ───────────────────────────────────────────────────────────────────
     integrator = IntegratorType.RK4 if args.rk4 else IntegratorType.FORWARD_EULER

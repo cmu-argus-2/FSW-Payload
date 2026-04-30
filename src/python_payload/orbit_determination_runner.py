@@ -72,7 +72,7 @@ class DatasetProcessingRunner:
         state_manager.set(PayloadState.TURNING_ON)
         
         # call the binary to perform the dataset processing
-        dataset_json_path = args.get("dataset_json_path")
+        dataset_json_path = args.get("string_command", "").rstrip("\x00")  # remove trailing 0s
         level_processing = args.get("level_processing", 1)
         rc_version = args.get("rc_version", 1)
         ld_version = args.get("ld_version", 1)

@@ -1,7 +1,7 @@
 import queue
 import threading
 from experiment_runner import ExperimentRunner
-from orbit_determination_runner import DatasetCollectionRunner, DatasetProcessingRunner
+from orbit_determination_runner import DatasetCollectionRunner, DatasetProcessingRunner, OrbitDeterminationRunner
 from thread_shared import (
     experiment_queue,
     log,
@@ -19,12 +19,13 @@ class ExperimentThread(threading.Thread):
         self.experiment_runner = ExperimentRunner(stop_event=stop_event)
         self.dataset_collection_runner = DatasetCollectionRunner(stop_event=stop_event)
         self.dataset_processing_runner = DatasetProcessingRunner(stop_event=stop_event)
+        self.orbit_determination_runner = OrbitDeterminationRunner(stop_event=stop_event)
         
         self._experiment_handlers = {
             "EXPERIMENT": self.experiment_runner.run_experiment,
             "DATASET_COLLECTION": self.dataset_collection_runner.run,
             "DATASET_PROCESSING": self.dataset_processing_runner.run,
-            "DATASET_OD": self.dataset_collection_runner.run,
+            "DATASET_OD": self.orbit_determination_runner.run,
         }
 
     def run(self):

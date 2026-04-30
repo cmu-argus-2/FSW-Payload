@@ -106,12 +106,10 @@ def run_dataset_collection(camera_bit_flag, capture_rate, imu_hz, duration):
     print(f"Test dataset generated at: {dataset_path}")
     return dataset_path
 
-def run_dataset_processing(dataset_json_path, level_processing, rc_version, ld_version):
+def run_dataset_processing(dataset_path, level_processing, rc_version, ld_version):
     """
     This will call the binary to perform the dataset processing
     it will generate a processing.json that will be send to the mainboard
-
-    for now this will just be a placeholder that will return the same path
 
     here we do not need to write the toml file because they are read arguments
     
@@ -121,12 +119,12 @@ def run_dataset_processing(dataset_json_path, level_processing, rc_version, ld_v
     run_path = "."
     bin_name = "./bin/reprocess_dataset"
     
-    print(f"Running dataset processing on {dataset_json_path}")
+    print(f"Running dataset processing on {dataset_path}")
     print(f"Level of processing: {level_processing}")
     print(f"RC version: {rc_version}")
     print(f"LD version: {ld_version}")
     
-    result = subprocess.run([bin_name, dataset_json_path, str(level_processing), "1", str(rc_version), str(ld_version)],
+    result = subprocess.run([bin_name, dataset_path, str(level_processing), "1", str(rc_version), str(ld_version)],
         cwd=run_path,
         # capture_output=True,
         text=True
@@ -140,9 +138,51 @@ def run_dataset_processing(dataset_json_path, level_processing, rc_version, ld_v
         return None
     
     # TODO: it is writing to path.out, but  I am actually not going to use it
-    # i will be assuming the dataset_json_path that was sent as argument
+    # i will be assuming the dataset_path that was sent as argument
     
-    json_path = os.path.join(dataset_json_path, "processing.json")
+    json_path = os.path.join(dataset_path, "processing.json")
+    
+    # for now we will just return the same path
+    return json_path
+
+
+def run_orbit_determination(dataset_path, max_iter, max_runtime):
+    """
+    This will call the binary to perform the orbit determination
+    it will generate a results.json that will be send to the mainboard
+
+    for now this will just be a placeholder that will return the same path
+
+    here we do not need to write the toml file because they are read arguments
+    """
+    
+    timeout = max_runtime + 10
+    run_path = "."
+    bin_name = "./bin/run_dataset"
+    
+    
+    try:
+        result = subprocess.run([bin_name, "--dataset_path", dataset_path, "--max_iterations", str(max_iter), "--max_runtime", str(max_runtime)],
+            cwd=run_path,
+            # capture_output=True,
+            timeout=timeout,
+            text=True
+        )
+    except subprocess.TimeoutExpired:
+        print(f"Dataset collection timed out after {timeout} seconds")
+        return None
+    
+    try:
+        return_code = result.returncode
+        print(f"Return code: {return_code}")
+    except Exception as e:
+        print(f"Error capturing return code: {e}")
+        return None
+    
+    # TODO: it is writing to path.out, but  I am actually not going to use it
+    # i will be assuming the dataset_path that was sent as argument
+    
+    json_path = os.path.join(dataset_path, "results.json")
     
     # for now we will just return the same path
     return json_path

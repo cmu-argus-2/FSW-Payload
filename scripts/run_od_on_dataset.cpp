@@ -66,9 +66,9 @@ int main(int argc, char** argv)
     std::string system_config_path = "config/config.toml";
     std::string out_path           = kDefaultOutPath;
 
-    app.add_option("--od-config",     od_config_path,     "OD config TOML (default: " + std::string(OD_DEFAULT_CONFIG_PATH) + ")");
-    app.add_option("--system-config", system_config_path, "System config TOML (default: config/config.toml)");
-    app.add_option("--out",           out_path,           "File to write the results directory path into");
+    CLI::Option* opt_config_path = app.add_option("--od-config",     od_config_path,     "OD config TOML (default: " + std::string(OD_DEFAULT_CONFIG_PATH) + ")");
+    CLI::Option* opt_system_config_path = app.add_option("--system-config", system_config_path, "System config TOML (default: config/config.toml)");
+    CLI::Option* opt_out_path = app.add_option("--out",           out_path,           "File to write the results directory path into");
 
     // ── batch_opt overrides (all optional) ───────────────────────────────────
     // std::optional lets us distinguish "not provided" from "explicitly set".
@@ -79,20 +79,20 @@ int main(int argc, char** argv)
     std::optional<int>    integrator_int;
     std::optional<double> max_run_time_sec;
 
-    app.add_flag("--use-j2,--no-use-j2",
+    CLI::Option* opt_use_j2 = app.add_flag("--use-j2,!--no-use-j2",
                  use_j2,
                  "Enable J2 gravity perturbation (default: on)");
-    app.add_flag("--use-drag,--no-use-drag",
+    CLI::Option* opt_use_drag = app.add_flag("--use-drag,--no-use-drag",
                  use_drag,
                  "Enable atmospheric drag (default: off)");
-    app.add_flag("--compute-covariance,--no-compute-covariance",
+    CLI::Option* opt_compute_covariance = app.add_flag("--compute-covariance,--no-compute-covariance",
                  compute_covariance,
                  "Compute output covariance (default: off)");
-    app.add_option("--bias-mode",    bias_mode_int,    "Gyro bias mode: 0=none 1=fixed 2=time-varying")
+    CLI::Option* opt_bias_mode = app.add_option("--bias-mode",    bias_mode_int,    "Gyro bias mode: 0=none 1=fixed 2=time-varying")
         ->check(CLI::Range(0, 2));
-    app.add_option("--integrator",   integrator_int,   "Orbit integrator: 0=Euler 1=RK4")
+    CLI::Option* opt_integrator = app.add_option("--integrator",   integrator_int,   "Orbit integrator: 0=Euler 1=RK4")
         ->check(CLI::Range(0, 1));
-    app.add_option("--max-run-time", max_run_time_sec, "Solver wall-clock time cap (seconds)");
+    CLI::Option* opt_max_run_time = app.add_option("--max-run-time", max_run_time_sec, "Solver wall-clock time cap (seconds)");
 
     CLI11_PARSE(app, argc, argv);
 
@@ -104,13 +104,37 @@ int main(int argc, char** argv)
     }
     OD_Config od_config = file_result.config;
 
-    if (use_j2.has_value())             od_config.batch_opt.use_j2             = *use_j2;
-    if (use_drag.has_value())           od_config.batch_opt.use_drag           = *use_drag;
-    if (compute_covariance.has_value()) od_config.batch_opt.compute_covariance = *compute_covariance;
-    if (bias_mode_int.has_value())      od_config.batch_opt.bias_mode          = static_cast<BIAS_MODE>(*bias_mode_int);
-    if (integrator_int.has_value())     od_config.batch_opt.integrator         = static_cast<Integrator>(*integrator_int);
-    if (max_run_time_sec.has_value())   od_config.batch_opt.max_run_time_sec   = *max_run_time_sec;
+    use_j2 = od_config.batch_opt.use_j2;
+    use_drag = od_config.batch_opt.use_drag;
+    compute_covariance = od_config.batch_opt.compute_covariance;
+    bias_mode_int = static_cast<int>(od_config.batch_opt.bias_mode);
+    integrator_int = static_cast<int>(od_config.batch_opt.integrator);
+    max_run_time_sec = od_config.batch_opt.max_run_time_sec;
 
+    if (opt_use_j2->count() > 0) {
+        if (use_j2.has_value())             od_config.batch_opt.use_j2             = *use_j2;
+    }
+
+    if (opt_use_drag->count() > 0) {
+        if (use_drag.has_value())           od_config.batch_opt.use_drag           = *use_drag;
+    }
+
+    if (opt_compute_covariance->count() > 0) {
+        if (compute_covariance.has_value()) od_config.batch_opt.compute_covariance = *compute_covariance;
+    }
+
+    if (opt_bias_mode->count() > 0) {
+        if (bias_mode_int.has_value())      od_config.batch_opt.bias_mode          = static_cast<BIAS_MODE>(*bias_mode_int);
+    }
+
+    if (opt_integrator->count() > 0) {
+        if (integrator_int.has_value())     od_config.batch_opt.integrator         = static_cast<Integrator>(*integrator_int);
+    }
+
+    if (opt_max_run_time->count() > 0) {
+        if (max_run_time_sec.has_value())   od_config.batch_opt.max_run_time_sec   = *max_run_time_sec;
+    }
+    
     // ── Run ───────────────────────────────────────────────────────────────────
     ODRequest request;
     request.dataset_folder     = dataset_folder;

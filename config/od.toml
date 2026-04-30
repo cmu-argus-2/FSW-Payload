@@ -28,7 +28,7 @@ compute_covariance = true # set true to compute covariance.csv; expensive for la
 # BOOL
 use_j2 = true # include J2 zonal harmonic gravity perturbation in batch dynamics
 # BOOL
-use_drag = true # include atmospheric drag in batch dynamics (Vallado Table 8-4, 300-700 km)
+use_drag = false # include atmospheric drag in batch dynamics (Vallado Table 8-4, 300-700 km)
 # FLOAT - drag coefficient nominal [-]
 cd_nominal = 2.2
 # FLOAT - Cd prior std dev [-]

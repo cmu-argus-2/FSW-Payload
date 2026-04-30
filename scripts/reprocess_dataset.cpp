@@ -26,7 +26,6 @@
 #include "vision/reprocessing.hpp"
 #include "core/data_handling.hpp"
 
-
 static constexpr const char* kDefaultOutPath      = "path.out";
 
 static void WriteResult(const std::string& out_file, const std::string& content)

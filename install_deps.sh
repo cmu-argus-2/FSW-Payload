@@ -43,11 +43,17 @@ sudo apt install -y \
   libblas-dev \
   libmumps-seq-dev \
   libmumps-headers-dev \
-  libscotch-dev
+  libscotch-dev \
+  libcli11-dev \
+  ninja-build
 #  libopencv-dev \
 
 # Uncomment this line if you get ccache related issues
 # sudo apt-get install --reinstall -y ccache
+
+# Configure ccache for faster builds
+ccache --set-config max_size=15G
+ccache --set-config sloppiness=include_file_mtime,include_file_ctime
 
 # Initialise all submodules (source deps + Spice + models + Ipopt)
 git submodule update --init --recursive

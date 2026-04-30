@@ -2,6 +2,7 @@
 #define OD_HPP
 
 #include <cstdint>
+#include <optional>
 #include <string>
 #include "navigation/od_measurements.hpp"
 #include "vision/dataset.hpp"
@@ -90,6 +91,8 @@ struct ODRequest
     std::string dataset_folder;
     std::string od_config_path = OD_DEFAULT_CONFIG_PATH;
     std::string system_config_path = "config/config.toml";
+    // When set, takes precedence over od_config_path entirely.
+    std::optional<OD_Config> od_config_override;
     DatasetConfig dataset_config = {
         OD_DEFAULT_COLLECTION_PERIOD,
         OD_DEFAULT_COLLECTION_SAMPLES,

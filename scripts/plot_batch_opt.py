@@ -6,12 +6,13 @@ Plots OD batch optimization results.
 
   results_dir   path to an od results folder, e.g. data/results/dataset_foo_1714000000000/
                 od_result.json, state_estimates.csv, covariance.csv, residuals.csv
-                are expected there.
+                are expected there.  landmark_measurements.csv is also read from here
+                if present (copied there automatically by the OD pipeline).
 
-  --dataset     override the dataset folder (default: read from od_result.json).
-                Ground truth (ground_truth_states.h5) and measurements
-                (orbit_measurements.h5) are looked for there; comparison plots
-                are skipped if they are absent.
+  --dataset     override the dataset folder for simulation ground truth files
+                (ground_truth_states.h5, orbit_measurements.h5); defaults to
+                dataset_folder in od_result.json.  Comparison plots are skipped
+                if those files are absent.
 
 Plots are saved into <results_dir>/plots/.
 """
@@ -79,15 +80,19 @@ def load_h5(path: Path) -> dict:
 J2000_EPOCH_UNIX_S = 946727936.0
 
 
-def load_landmark_timestamps(dataset_dir: Path):
-    """Return landmark timestamps in J2000 seconds from landmark_measurements.csv, or None."""
-    csv = Path(dataset_dir) / "landmark_measurements.csv"
-    if not csv.exists():
-        return None
-    data = np.genfromtxt(csv, delimiter=",", skip_header=1)
-    if data.ndim < 2:
-        return None
-    return data[:, 0] / 1000.0 - J2000_EPOCH_UNIX_S
+def load_landmark_timestamps(results_dir: Path, dataset_dir: Path):
+    """Return landmark timestamps in J2000 seconds from landmark_measurements.csv, or None.
+
+    Checks results_dir first (copied there by the OD pipeline), then falls back
+    to dataset_dir.
+    """
+    for base in (results_dir, dataset_dir):
+        csv = Path(base) / "landmark_measurements.csv"
+        if csv.exists():
+            data = np.genfromtxt(csv, delimiter=",", skip_header=1)
+            if data.ndim >= 2:
+                return data[:, 0] / 1000.0 - J2000_EPOCH_UNIX_S
+    return None
 
 
 # ── Processing helpers ─────────────────────────────────────────────────────────
@@ -631,7 +636,7 @@ if __name__ == "__main__":
     # Covariance is Nx10 (timestamp + pos + vel + rot; gyro_bias_cov in od_result.json)
     est_covars = covariance
 
-    ldmk_t = load_landmark_timestamps(dataset_dir)
+    ldmk_t = load_landmark_timestamps(results_dir, dataset_dir)
 
     # ── State estimate plots (always; overlaid with GT when available) ───────────
     plot_states(est_states, out_dir,

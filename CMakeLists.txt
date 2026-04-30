@@ -61,6 +61,7 @@ if(CUDA_ENABLED)
     find_library(NVINFER_PLUGIN_LIBRARY nvinfer_plugin REQUIRED)
 endif()
 find_package(nlohmann_json REQUIRED)
+find_package(CLI11 REQUIRED)
 
 # CasADi (with IPOPT backend) — built from source by install_deps.sh into deps/install/.
 set(CASADI_INSTALL_PREFIX "${CMAKE_SOURCE_DIR}/deps/install")

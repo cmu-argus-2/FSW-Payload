@@ -158,7 +158,7 @@ def run_orbit_determination(dataset_path, max_iter, max_runtime):
     
     timeout = max_runtime + 10
     run_path = "."
-    bin_name = "./bin/run_dataset"
+    bin_name = "./bin/RUN_OD_ON_DATASET"
     
     
     try:
@@ -169,7 +169,7 @@ def run_orbit_determination(dataset_path, max_iter, max_runtime):
             text=True
         )
     except subprocess.TimeoutExpired:
-        print(f"Dataset collection timed out after {timeout} seconds")
+        print(f"Orbit determination timed out after {timeout} seconds")
         return None
     
     try:

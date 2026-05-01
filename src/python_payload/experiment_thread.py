@@ -47,7 +47,6 @@ class ExperimentThread(threading.Thread):
 
             handler(dict(experiment_command.arguments))
             
-            # experiment has finished
-            # if it failed before download it will not quit the program
-            self.stop_event.set()
+            # now experiment is finished, do not need to do anything
+            # command thread will receive the shutdown command, will ack it and will shut things down
 

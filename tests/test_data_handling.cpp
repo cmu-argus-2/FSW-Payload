@@ -116,10 +116,3 @@ TEST_F(DataHandlingPathTest, GetCommsFilePathReturnsLatestFileFromCommsFolder)
     ASSERT_EQ(DH::GetCommsFilePath(comms_path), EC::OK);
     EXPECT_EQ(fs::weakly_canonical(comms_path), fs::weakly_canonical(stored_path));
 }
-
-/*
-TODO
-- Check public methods of data handling class
-- Check data handling class error handling (e.g. invalid paths, disk full, etc.)
-
-*/

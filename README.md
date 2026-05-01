@@ -21,13 +21,12 @@ sudo chmod +x install_deps.sh build.sh run.sh
 ./install_deps.sh
 ```
 
-The install script installs the system dependencies needed for the project, including `pipx` so the build step can bootstrap `dvc` if needed.
+The install script installs the system dependencies needed for the project, including `pipx` and `dvc[ssh]` for model artifact pulls.
 
 The build script now:
 
 - syncs and initializes the submodules
-- installs `dvc[ssh]` if `dvc` is not already available
-- runs `dvc pull` inside `models` before compiling
+- runs `dvc pull` inside `models` before compiling if `dvc` is available
 
 If you want to move `models` to the latest commit on its tracked `dvc` branch instead of the commit pinned by the parent repo, run:
 

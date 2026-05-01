@@ -7,7 +7,7 @@
 [submodule "models"]
 	path = models
 	url = https://github.com/cmu-argus-2/Vision-Models.git
-	branch = dvc
+	branch = main
 [submodule "deps/spdlog"]
 	path = deps/spdlog
 	url = https://github.com/gabime/spdlog.git

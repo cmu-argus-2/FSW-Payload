@@ -51,6 +51,10 @@ sudo apt install -y \
 # Uncomment this line if you get ccache related issues
 # sudo apt-get install --reinstall -y ccache
 
+# Install DVC with SSH support for model artifact pulls
+python3 -m pipx ensurepath > /dev/null || true
+python3 -m pipx install --force "dvc[ssh]"
+
 # Configure ccache for faster builds
 ccache --set-config max_size=15G
 ccache --set-config sloppiness=include_file_mtime,include_file_ctime

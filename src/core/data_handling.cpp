@@ -4,6 +4,7 @@
 #include <cstdlib>  
 #include <fstream>
 #include <array>
+#include <optional>
 #include <sys/stat.h>
 #include <nlohmann/json.hpp>
 using Json = nlohmann::json;
@@ -11,7 +12,6 @@ using Json = nlohmann::json;
 
 namespace DH // Data Handling
 {
-
 
 bool INIT_DATA_FOLDER_TREE = false;
 
@@ -180,7 +180,8 @@ bool readDatasetFromDisk(const std::string& dataset_file_path, Dataset& dataset_
     return true;
 }
 
-std::string StoreFrameToDisk(Frame& frame, std::string_view target_folder)
+std::string StoreFrameToDisk(Frame& frame, std::string_view target_folder,
+                              ImageFormat fmt, int jpg_quality)
 {
     std::filesystem::path folder_path(target_folder);
     if (!std::filesystem::is_directory(folder_path))
@@ -193,7 +194,11 @@ std::string StoreFrameToDisk(Frame& frame, std::string_view target_folder)
     if (folder.back() != '/')
         folder += '/';
 
-    std::string img_path = StoreRawImgToDisk(frame.GetTimestamp(), frame.GetCamID(), frame.GetImg(), folder);
+    std::string img_path = StoreRawImgToDisk(frame.GetTimestamp(), frame.GetCamID(),
+                                              frame.GetImg(), folder, fmt, jpg_quality);
+    if (img_path.empty())
+        return "";
+
     StoreFrameMetadataToDisk(frame, folder);
     return img_path;
 }
@@ -216,6 +221,29 @@ void StoreFrameMetadataToDisk(Frame& frame, std::string_view target_folder)
 
     nlohmann::ordered_json j = frame.toOrderedJson();
 
+    // Inject raw_image block: probe for the stored image file (PNG or JPG)
+    for (ImageFormat fmt : {ImageFormat::JPG, ImageFormat::PNG})
+    {
+        std::ostringstream img_oss;
+        img_oss << folder << "raw" << DELIMITER
+                << frame.GetTimestamp() << DELIMITER
+                << frame.GetCamID() << ImageFormatExtension(fmt);
+        std::string raw_path = img_oss.str();
+
+        if (std::filesystem::exists(raw_path))
+        {
+            const cv::Size img_size = frame.GetImgSize();
+            nlohmann::ordered_json raw_image_j;
+            raw_image_j["path"]       = raw_path;
+            raw_image_j["format"]     = ImageFormatToString(fmt);
+            raw_image_j["width"]      = img_size.width;
+            raw_image_j["height"]     = img_size.height;
+            raw_image_j["size_bytes"] = GetFileSize(raw_path);
+            j["raw_image"] = raw_image_j;
+            break;
+        }
+    }
+
     std::ofstream ofs(file_path, std::ios::out | std::ios::trunc);
     if (!ofs.is_open())
     {
@@ -229,7 +257,9 @@ void StoreFrameMetadataToDisk(Frame& frame, std::string_view target_folder)
     SPDLOG_DEBUG("Metadata file size: {} bytes", GetFileSize(file_path));
 }
 
-std::string StoreRawImgToDisk(std::uint64_t timestamp, int cam_id, const cv::Mat& img, std::string_view target_folder)
+std::string StoreRawImgToDisk(std::uint64_t timestamp, int cam_id, const cv::Mat& img,
+                               std::string_view target_folder,
+                               ImageFormat fmt, int jpg_quality)
 {
     std::filesystem::path folder_path(target_folder);
     if (!std::filesystem::is_directory(folder_path))
@@ -242,10 +272,21 @@ std::string StoreRawImgToDisk(std::uint64_t timestamp, int cam_id, const cv::Mat
         folder += '/';
 
     std::ostringstream oss;
-    oss << folder << "raw" << DELIMITER << timestamp << DELIMITER << cam_id << ".png";
+    oss << folder << "raw" << DELIMITER << timestamp << DELIMITER << cam_id
+        << ImageFormatExtension(fmt);
     std::string file_path = oss.str();
-    cv::imwrite(file_path, img);
-    SPDLOG_INFO("Saved img to disk: {}", file_path);
+
+    std::vector<int> params;
+    if (fmt == ImageFormat::JPG)
+        params = {cv::IMWRITE_JPEG_QUALITY, jpg_quality};
+
+    if (!cv::imwrite(file_path, img, params))
+    {
+        SPDLOG_ERROR("Failed to write image to disk: {}", file_path);
+        return "";
+    }
+
+    SPDLOG_INFO("Saved img to disk: {} ({})", file_path, ImageFormatToString(fmt));
     SPDLOG_INFO("File size: {} bytes", GetFileSize(file_path));
     SPDLOG_DEBUG("Total size of folder {}: {} bytes", folder, GetDirectorySize(folder));
     SPDLOG_DEBUG("Number of files in folder {}: {}", folder, CountFilesInDirectory(folder));
@@ -253,26 +294,113 @@ std::string StoreRawImgToDisk(std::uint64_t timestamp, int cam_id, const cv::Mat
     return file_path; // return value optimized 
 }
 
+namespace
+{
+std::string NormalizeFolder(std::string_view folder)
+{
+    std::filesystem::path folder_path(folder);
+    std::string normalized = folder_path.string();
+    if (!normalized.empty() && normalized.back() != '/')
+        normalized += '/';
+    return normalized;
+}
+
+bool IsRawImageFile(const fs::path& path)
+{
+    if (!path.has_filename())
+        return false;
+
+    const std::string filename = path.filename().string();
+    if (filename.rfind("raw" DELIMITER, 0) != 0)
+        return false;
+
+    const std::string ext = path.extension().string();
+    return ext == ImageFormatExtension(ImageFormat::JPG)
+        || ext == ImageFormatExtension(ImageFormat::PNG);
+}
+
+std::optional<fs::path> FindRawImagePath(std::uint64_t timestamp, int cam_id, std::string_view folder)
+{
+    const std::string normalized_folder = NormalizeFolder(folder);
+    for (ImageFormat fmt : {ImageFormat::JPG, ImageFormat::PNG})
+    {
+        fs::path candidate = normalized_folder + "raw" + DELIMITER
+                           + std::to_string(timestamp) + DELIMITER
+                           + std::to_string(cam_id) + ImageFormatExtension(fmt);
+        if (fs::exists(candidate))
+            return candidate;
+    }
+
+    return std::nullopt;
+}
+
+std::optional<fs::path> ResolveRawImagePath(const Json& j, const Frame& frame, std::string_view folder)
+{
+    if (auto raw_image_it = j.find("raw_image"); raw_image_it != j.end() && raw_image_it->is_object())
+    {
+        if (auto path_it = raw_image_it->find("path"); path_it != raw_image_it->end() && path_it->is_string())
+        {
+            fs::path raw_path = path_it->get<std::string>();
+            if (fs::exists(raw_path))
+                return raw_path;
+        }
+    }
+
+    return FindRawImagePath(frame.GetTimestamp(), frame.GetCamID(), folder);
+}
+
+bool GetLatestRawFilePathInFolder(std::filesystem::directory_entry& latest_file, std::string_view folder)
+{
+    const fs::path folder_path(folder);
+    if (!fs::exists(folder_path))
+        return false;
+
+    bool found = false;
+    for (const auto& entry : fs::directory_iterator(folder_path))
+    {
+        if (!entry.is_regular_file() || !IsRawImageFile(entry.path()))
+            continue;
+
+        if (!found || entry.last_write_time() > latest_file.last_write_time())
+        {
+            latest_file = entry;
+            found = true;
+        }
+    }
+
+    return found;
+}
+
+bool GetLatestRegularFilePathInFolder(std::filesystem::directory_entry& latest_file, std::string_view folder)
+{
+    const fs::path folder_path(folder);
+    if (!fs::exists(folder_path))
+        return false;
+
+    bool found = false;
+    for (const auto& entry : fs::directory_iterator(folder_path))
+    {
+        if (!entry.is_regular_file())
+            continue;
+
+        if (!found || entry.last_write_time() > latest_file.last_write_time())
+        {
+            latest_file = entry;
+            found = true;
+        }
+    }
+
+    return found;
+}
+}
+
 
 // Returns true if the latest file is found, false otherwise
 bool GetLatestRawFilePath(std::filesystem::directory_entry& latest_file)
 {
-
-    bool found = false;    
-    for (const auto& entry : std::filesystem::directory_iterator(IMAGES_FOLDER)) 
-    {
-        if (entry.is_regular_file()) 
-        {
-
-            if (!found || entry.last_write_time() > latest_file.last_write_time()) 
-            {
-                latest_file = entry;
-                found = true;
-            }
-        }
-    }
-
-    SPDLOG_INFO("Latest file: {}", latest_file.path().string());
+    const bool found = GetLatestRawFilePathInFolder(latest_file, IMAGES_FOLDER);
+    if (found)
+        SPDLOG_INFO("Latest raw image file: {}", latest_file.path().string());
     return found;
 }
 
@@ -312,15 +440,16 @@ bool GetHighestValueRawFilePath(std::filesystem::directory_entry& highest_value_
 
                 if (!found || cur_frame > best_frame)
                 {
+                    auto raw_path = ResolveRawImagePath(j, cur_frame, IMAGES_FOLDER);
+                    if (!raw_path)
+                    {
+                        SPDLOG_WARN("No raw image found for metadata file {}", entry.path().string());
+                        continue;
+                    }
 
                     best_frame = cur_frame;
-
-                    auto img_path = entry.path();
-                    img_path.replace_extension(".png"); // get the corresponding image path from the JSON file
-
-                    highest_value_file = std::filesystem::directory_entry(img_path);
+                    highest_value_file = std::filesystem::directory_entry(*raw_path);
                     found = true;
-
                 }
             }
         }
@@ -511,9 +640,18 @@ bool ReadImageFromDisk(std::uint64_t timestamp, int cam_id, Frame& frame_out, st
     if (folder.back() != '/')
         folder += '/';
 
-    std::ostringstream oss;
-    oss << folder << "raw" << DELIMITER << timestamp << DELIMITER << cam_id << ".png";
-    return ReadImageFromDisk(oss.str(), frame_out, cam_id, timestamp);
+    // Try both formats
+    for (ImageFormat fmt : {ImageFormat::JPG, ImageFormat::PNG})
+    {
+        std::ostringstream oss;
+        oss << folder << "raw" << DELIMITER << timestamp << DELIMITER << cam_id
+            << ImageFormatExtension(fmt);
+        if (std::filesystem::exists(oss.str()))
+            return ReadImageFromDisk(oss.str(), frame_out, cam_id, timestamp);
+    }
+    SPDLOG_ERROR("ReadImageFromDisk: no raw image found for timestamp={} cam_id={} in {}",
+                 timestamp, cam_id, target_folder);
+    return false;
 }
 
 Json LoadFrameMetadataFromDisk(std::uint64_t timestamp, int cam_id, std::string_view target_folder)
@@ -743,7 +881,7 @@ std::string CopyFrameToCommsFolder(Frame& frame)
 EC GetCommsFilePath(std::string& path_out) 
 {
     std::filesystem::directory_entry latest_file;
-    if (!GetLatestRawFilePath(latest_file)) {
+    if (!GetLatestRegularFilePathInFolder(latest_file, COMMS_FOLDER)) {
         SPDLOG_WARN("No files found in the comms folder.");
         LogError(EC::FILE_NOT_FOUND);
         return EC::FILE_NOT_FOUND;

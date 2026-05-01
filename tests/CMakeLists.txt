@@ -4,9 +4,11 @@ set(PAYLOAD_TEST_SOURCES
     test_errors.cpp
     navigation/test_quaternion.cpp
     test_tilepack_dh.cpp
+    test_data_handling.cpp
     test_imu.cpp
     test_dataset.cpp
     test_commands.cpp
+    test_camera.cpp
 )
 
 if(CUDA_ENABLED)

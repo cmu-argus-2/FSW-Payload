@@ -450,7 +450,7 @@ struct DatasetManagerTest : ::testing::Test
 
     InferenceManager                      im;
     std::array<CameraConfig, NUM_CAMERAS> cam_configs { makeDummyCamConfigs() };
-    CameraManager                         cam_mgr { cam_configs, im };
+    CameraManager                         cam_mgr { cam_configs, CameraISPConfig{}, im };
     IMUManager                            imu_mgr { IMUConfig{0x00, 0x68, "/dev/null"} };
     std::vector<std::string>              test_folders;
 
@@ -660,6 +660,27 @@ TEST_F(DatasetManagerTest, ProcessFrames_BlackImageRejectedByPrefilter)
     const std::string img_path = dm->current_dataset.GetFolderPath()
                                  + "raw_" + std::to_string(timestamp)
                                  + "_"   + std::to_string(cam_id) + ".png";
+
+    cv::Mat black(32, 32, CV_8UC3, cv::Scalar(0, 0, 0));
+    ASSERT_TRUE(cv::imwrite(img_path, black)) << "cv::imwrite failed: " << img_path;
+
+    auto id = std::make_tuple(cam_id, timestamp);
+    FrameVec processed;
+    dm->ProcessFrames({id}, processed);
+    ASSERT_EQ(processed.size(), 1u);
+    EXPECT_EQ(processed[0], id);
+}
+
+TEST_F(DatasetManagerTest, ProcessFrames_BlackJpgImageRejectedByPrefilter)
+{
+    // Same as the PNG variant above but with a JPG-stored image, verifying that
+    // ProcessFrames correctly discovers and loads JPG files.
+    auto dm = createDM(971000, 60.0, "prefilter_jpg", ProcessingStage::Prefiltered);
+    const uint8_t  cam_id    = 0;
+    const uint64_t timestamp = 55556;
+    const std::string img_path = dm->current_dataset.GetFolderPath()
+                                 + "raw_" + std::to_string(timestamp)
+                                 + "_"   + std::to_string(cam_id) + ".jpg";
 
     cv::Mat black(32, 32, CV_8UC3, cv::Scalar(0, 0, 0));
     ASSERT_TRUE(cv::imwrite(img_path, black)) << "cv::imwrite failed: " << img_path;

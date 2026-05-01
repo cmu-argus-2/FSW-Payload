@@ -68,12 +68,12 @@ int run(int argc, char** argv)
     InferenceManager inference_manager;
 
     const auto& cam_configs = config->GetCameraConfigs();
-    CameraManager camera_manager(cam_configs, inference_manager);
+    const auto& isp_config  = config->GetCameraISPConfig();
+    CameraManager camera_manager(cam_configs, isp_config, inference_manager);
 
     std::thread imu_thread = std::thread(&IMUManager::RunLoop, &imu_manager);
 
-    std::array<bool, NUM_CAMERAS> temp;
-    [[maybe_unused]] int nb_enabled_cams = camera_manager.EnableCameras(temp);
+    [[maybe_unused]] int nb_enabled_cams = camera_manager.EnableCameras();
     std::thread camera_thread = std::thread(&CameraManager::RunLoop, &camera_manager);
 
     // Helper to stop threads before any early return below this point.

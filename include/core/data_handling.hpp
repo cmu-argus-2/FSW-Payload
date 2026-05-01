@@ -30,6 +30,18 @@ This file contains classes and functions providing file services and data handli
 
 #define DELIMITER "_"
 
+enum class ImageFormat : uint8_t { PNG = 0, JPG = 1 };
+
+inline const char* ImageFormatToString(ImageFormat fmt)
+{
+    return fmt == ImageFormat::JPG ? "JPG" : "PNG";
+}
+
+inline const char* ImageFormatExtension(ImageFormat fmt)
+{
+    return fmt == ImageFormat::JPG ? ".jpg" : ".png";
+}
+
 namespace DH // Data Handling
 {
     namespace fs = std::filesystem;
@@ -66,10 +78,16 @@ namespace DH // Data Handling
     bool readDatasetFromDisk(const std::string& dataset_file_path, Dataset& dataset_out);
     
     // Store a raw image and frame class information to disk
-    std::string StoreFrameToDisk(Frame& frame, std::string_view target_folder = IMAGES_FOLDER);
-    // raw_timestamp_camid.png 
-    std::string StoreRawImgToDisk(std::uint64_t timestamp, int cam_id, const cv::Mat& img, std::string_view target_folder = IMAGES_FOLDER);
-    // frame_timestamp_camid.json
+    std::string StoreFrameToDisk(Frame& frame,
+                                  std::string_view target_folder = IMAGES_FOLDER,
+                                  ImageFormat fmt = ImageFormat::JPG,
+                                  int jpg_quality = 100);
+    // raw_timestamp_camid.{png|jpg}
+    std::string StoreRawImgToDisk(std::uint64_t timestamp, int cam_id, const cv::Mat& img,
+                                   std::string_view target_folder = IMAGES_FOLDER,
+                                   ImageFormat fmt = ImageFormat::JPG,
+                                   int jpg_quality = 100);
+    // frame_timestamp_camid.json  — auto-discovers the corresponding raw image file
     void StoreFrameMetadataToDisk(Frame& frame, std::string_view target_folder = IMAGES_FOLDER);
 
     // Load frames in memory

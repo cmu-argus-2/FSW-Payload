@@ -102,7 +102,7 @@ def run_dataset_collection(camera_bit_flag, capture_rate, imu_hz, duration):
         print("Error: path.out file not created")
         return None
     
-    dataset_path = path_out_file.read_text().strip() + "dataset.json"
+    dataset_path = path_out_file.read_text().strip()
     print(f"Test dataset generated at: {dataset_path}")
     return dataset_path
 

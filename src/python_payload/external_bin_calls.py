@@ -162,7 +162,7 @@ def run_orbit_determination(dataset_path, max_iter, max_runtime):
     
     
     try:
-        result = subprocess.run([bin_name, dataset_path, "--max_iterations", str(max_iter), "--max_runtime", str(max_runtime)],
+        result = subprocess.run([bin_name, dataset_path, "--max_iterations", str(max_iter), "--max-run-time", str(max_runtime)],
             cwd=run_path,
             # capture_output=True,
             timeout=timeout,

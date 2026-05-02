@@ -74,6 +74,8 @@ def run_prefiltering(img_path, output_folder_path):
 
     return parsed
 
+
+
 def run_inference(img_path, output_folder_path):
     """
     will run the inference on a given image
@@ -82,11 +84,12 @@ def run_inference(img_path, output_folder_path):
     will move to the run path and run the binary from there 
     """
     
-    run_path = "/home/argus/Documents/FSW-Payload"
+    # run_path = "/home/argus-payload/Documents/FSW-Payload"
+    run_path = "."
     bin_name = "./bin/RUN_INFERENCE"
     
-    rc_model = "models/V1/trained-rc/effnet_0997acc.trt"
-    ld_model = "models/V1/trained-ld"
+    rc_model = "models/trained-rc/V2/rc_model_weights.trt"
+    ld_model = "models/trained-ld/V2"
     
     print(f"Running inference on {img_path}")
     print(f"Output folder: {output_folder_path}")
@@ -99,7 +102,12 @@ def run_inference(img_path, output_folder_path):
         text=True
     )
     
-    # TODO check if it has completed successfully
+    # capture result code
+    try:
+        return_code = result.returncode
+        print(f"Return code: {return_code}")
+    except Exception as e:
+        print(f"Error capturing return code: {e}")
+        return_code = -1
     
-    return True
-    
+    return return_code

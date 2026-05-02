@@ -14,6 +14,7 @@ public:
     Configuration();
     void LoadConfiguration(std::string config_path);
     const std::array<CameraConfig, NUM_CAMERAS>& GetCameraConfigs() const;
+    const CameraISPConfig& GetCameraISPConfig() const;
     const IMUConfig& GetIMUConfig() const;
 
 private:
@@ -23,8 +24,10 @@ private:
     toml::table* camera_devices_config;
     toml::table* imu_config_table;
     std::array<CameraConfig, NUM_CAMERAS> camera_configs;
+    CameraISPConfig camera_isp_config;
     IMUConfig imu_config;
     void ParseCameraDevicesConfig();
+    void ParseCameraISPConfig();
     void ParseIMUConfig();
 };
 

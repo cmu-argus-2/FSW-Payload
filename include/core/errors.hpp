@@ -18,6 +18,8 @@ enum class ErrorCode // Error codes
     PLACEHOLDER = 1,
     
     // Commands 2-7
+    
+    // Commands 2-7
     INVALID_COMMAND_ID,
     INVALID_COMMAND_ARGUMENTS,
     NO_FILE_READY,
@@ -71,6 +73,7 @@ enum class ErrorCode // Error codes
     NN_INFERENCE_FAILED,
     NN_NO_FRAME_AVAILABLE, // No frame available for inference
     NN_INSUFFICIENT_GPU_MEMORY, // Not enough free GPU memory to safely proceed
+    NN_INVALID_VERSION,          // Version number is out of valid range (must be > 0)
 
 
 

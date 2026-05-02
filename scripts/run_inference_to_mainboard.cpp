@@ -2,9 +2,9 @@
 #include "spdlog/spdlog.h"
 #include "vision/frame.hpp"
 #include "vision/camera_manager.hpp"
+#include "inference/inference_manager.hpp"
 #include "core/data_handling.hpp"
 #include "core/timing.hpp"
-#include "inference/orchestrator.hpp"
 #include "vision/regions.hpp"
 #include "configuration.hpp"
 #include "communication/comms.hpp"
@@ -27,11 +27,12 @@ int main(int argc, char** argv)
     auto config = std::make_unique<Configuration>();
     config->LoadConfiguration("config/config.toml");
     const auto& cam_configs = config->GetCameraConfigs();
-    CameraManager cam_manager(cam_configs);
+    const auto& isp_config  = config->GetCameraISPConfig();
+    InferenceManager inference_manager;
+    CameraManager cam_manager(cam_configs, isp_config, inference_manager);
 
     spdlog::info("Enabling cameras...");
-    std::array<bool, NUM_CAMERAS> activated;
-    int count = cam_manager.EnableCameras(activated);
+    int count = cam_manager.EnableCameras();
     spdlog::info("Cameras enabled: {}", count);
 
     spdlog::info("Waiting for cameras to stabilize...");
@@ -55,12 +56,11 @@ int main(int argc, char** argv)
 
     // Disable cameras before inference to free memory
     spdlog::info("Disabling cameras before inference...");
-    std::array<bool, NUM_CAMERAS> disabled;
-    cam_manager.DisableCameras(disabled);
+    cam_manager.DisableCameras();
 
-    // Initialize orchestrator
-    Inference::Orchestrator orchestrator;
-    orchestrator.Initialize(rc_trt_file_path, ld_trt_folder_path);
+    // Configure inference manager
+    inference_manager.SetRCNetEnginePath(rc_trt_file_path);
+    inference_manager.SetLDNetEngineFolderPath(ld_trt_folder_path);
 
     // Run inference on each frame
     for (auto& frame : frames)
@@ -74,10 +74,9 @@ int main(int argc, char** argv)
         DH::StoreFrameToDisk(frame, IMAGES_FOLDER);
 
         std::shared_ptr<Frame> frame_ptr = std::make_shared<Frame>(frame);
-        orchestrator.GrabNewImage(frame_ptr);
         spdlog::info("Running inference on frame from camera {}...", frame.GetCamID());
 
-        EC status = orchestrator.ExecFullInference();
+        EC status = inference_manager.ProcessFrame(frame_ptr, ProcessingStage::LDNeted);
         if (status != EC::OK)
         {
             spdlog::error("Inference failed with error code: {}", to_uint8(status));
@@ -96,8 +95,8 @@ int main(int argc, char** argv)
         spdlog::info("Frame metadata JSON saved.");
 
         // Build JSON path (same naming convention as StoreFrameMetadataToDisk)
-        std::string json_path = std::string(IMAGES_FOLDER) + "raw_" + 
-                                std::to_string(frame_ptr->GetTimestamp()) + "_" + 
+        std::string json_path = std::string(IMAGES_FOLDER) + "frame_" +
+                                std::to_string(frame_ptr->GetTimestamp()) + "_" +
                                 std::to_string(frame_ptr->GetCamID()) + ".json";
 
         // Packetize JSON to binary in comms folder

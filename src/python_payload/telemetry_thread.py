@@ -9,7 +9,7 @@ import time
 import zlib
 from datetime import datetime
 
-from thread_shared import log, state_manager
+from thread_shared import get_inference_return_code, log, state_manager
 
 
 class TelemetryThread(threading.Thread):
@@ -21,7 +21,7 @@ class TelemetryThread(threading.Thread):
         self,
         stop_event: threading.Event,
         interval_s: float = 1.0,
-        output_path: str = "telemetry_logs",
+        output_path: str = "data/telemetry",
         compression_level: int = 3,
     ):
         super().__init__(name="TelemetryThread", daemon=True)
@@ -129,6 +129,7 @@ class TelemetryThread(threading.Thread):
         gpu_freq = self._read_gpu_freq_mhz(fallback=tegra_values.get("GPU_FREQ", 0))
 
         payload_state = state_manager.get()
+        inference_return_code = get_inference_return_code()
 
         return {
             "SYSTEM_TIME": system_time,
@@ -151,6 +152,7 @@ class TelemetryThread(threading.Thread):
             "VDD_CPU_GPU_CV": tegra_values.get("VDD_CPU_GPU_CV", 0),
             "VDD_SOC": tegra_values.get("VDD_SOC", 0),
             "PD_STATE_JETSON": payload_state,
+            "INFERENCE_RETURN_CODE": inference_return_code,
         }
 
     def _read_system_uptime_s(self) -> int:

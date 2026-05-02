@@ -1,12 +1,13 @@
 #include "spdlog/spdlog.h"
 #include "vision/frame.hpp"
-#include "vision/prefiltering.hpp"
 #include <opencv2/opencv.hpp>
 #include <nlohmann/json.hpp>
+#include <algorithm>
+#include <numeric>
 using Json = nlohmann::json;
 
 
-Frame::Frame()  
+Frame::Frame()
     :
     _cam_id(-1),
     _img(DEFAULT_FRAME_WIDTH, DEFAULT_FRAME_HEIGHT, CV_8UC3),
@@ -14,22 +15,18 @@ Frame::Frame()
     _img_mtx(std::make_shared<std::mutex>()),
     _annotation_state(ImageState::NotEarth),
     _rank(static_cast<float>(ImageState::NotEarth)),
-    _processing_stage(ProcessingStage::NotPrefiltered),
-    _regions({}),
-    _landmarks({})
+    _processing_stage(ProcessingStage::NotPrefiltered)
 {}
 
 
 Frame::Frame(int cam_id, const cv::Mat& img, std::uint64_t timestamp)
     : _cam_id(cam_id),
-      _img(img),  
+      _img(img),
       _timestamp(timestamp),
       _img_mtx(std::make_shared<std::mutex>()),
       _annotation_state(ImageState::NotEarth),
-    _rank(static_cast<float>(ImageState::NotEarth)),
-      _processing_stage(ProcessingStage::NotPrefiltered),
-      _regions({}),
-      _landmarks({})
+      _rank(static_cast<float>(ImageState::NotEarth)),
+      _processing_stage(ProcessingStage::NotPrefiltered)
 {}
 
 // For rvalue reference
@@ -41,32 +38,30 @@ _timestamp(timestamp),
 _img_mtx(std::make_shared<std::mutex>()),
 _annotation_state(ImageState::NotEarth),
 _rank(static_cast<float>(ImageState::NotEarth)),
-_processing_stage(ProcessingStage::NotPrefiltered),
-_regions({}),
-_landmarks({})
+_processing_stage(ProcessingStage::NotPrefiltered)
 {}
 
 Frame::Frame(const Frame& other)
     : _cam_id(other._cam_id),
-      _img(other._img.clone()), 
+      _img(other._img.clone()),
       _timestamp(other._timestamp),
       _img_mtx(std::make_shared<std::mutex>()),  // creating a new mutex per instance to avoid intercopy locking
       _annotation_state(other._annotation_state),
       _rank(other._rank),
       _processing_stage(other._processing_stage),
-      _regions(other._regions),
-      _landmarks(other._landmarks)
+      _inference_results(other._inference_results),
+      _prefilter_result(other._prefilter_result)
 {}
 
 
 Frame& Frame::operator=(const Frame& other)
 {
     if (this != &other) {
-        _img = other._img.clone(); 
+        _img = other._img.clone();
         _cam_id = other._cam_id;
         _timestamp = other._timestamp;
-        _regions = other._regions;
-        _landmarks = other._landmarks;
+        _inference_results = other._inference_results;
+        _prefilter_result = other._prefilter_result;
         _img_mtx = std::make_shared<std::mutex>(); // new mutex per instance
         _annotation_state = other._annotation_state;
         _rank = other._rank;
@@ -123,34 +118,51 @@ std::uint64_t Frame::GetTimestamp() const
     return _timestamp;
 }
 
+const std::optional<InferenceResults>& Frame::GetInferenceResults() const
+{
+    return _inference_results;
+}
+
+void Frame::SetInferenceResults(InferenceResults results)
+{
+    _inference_results = std::move(results);
+    UpdateAnnotationState();
+    UpdateRank();
+}
+
+void Frame::ClearInferenceResults()
+{
+    _inference_results.reset();
+    UpdateAnnotationState();
+    UpdateRank();
+}
+
 const std::vector<Region>& Frame::GetRegions() const
 {
-    return _regions;
+    static const std::vector<Region> empty{};
+    return _inference_results.has_value() ? _inference_results->regions : empty;
 }
 
 const std::vector<RegionID> Frame::GetRegionIDs() const
 {
-    std::vector<RegionID> region_ids;
-    for (const auto& region : _regions)
-    {
-        region_ids.push_back(region.id);
-    }
-    return region_ids;
+    if (!_inference_results.has_value()) return {};
+    std::vector<RegionID> ids;
+    for (const auto& r : _inference_results->regions) ids.push_back(r.id);
+    return ids;
 }
 
 const std::vector<float> Frame::GetRegionConfidences() const
 {
-    std::vector<float> region_confidences;
-    for (const auto& region : _regions)
-    {
-        region_confidences.push_back(region.confidence);
-    }
-    return region_confidences;
+    if (!_inference_results.has_value()) return {};
+    std::vector<float> confs;
+    for (const auto& r : _inference_results->regions) confs.push_back(r.confidence);
+    return confs;
 }
 
 const std::vector<Landmark>& Frame::GetLandmarks() const
 {
-    return _landmarks;
+    static const std::vector<Landmark> empty{};
+    return _inference_results.has_value() ? _inference_results->landmarks : empty;
 }
 
 const ImageState Frame::GetImageState() const
@@ -173,6 +185,11 @@ const float Frame::GetRank() const
     return _rank;
 }
 
+const std::optional<PrefilterResult>& Frame::GetPrefilterResult() const
+{
+    return _prefilter_result;
+}
+
 Json Frame::toJson() const
 {
     return Json(toOrderedJson());
@@ -188,39 +205,13 @@ nlohmann::ordered_json Frame::toOrderedJson() const // Order the Json keys
         j["annotation_state"] = static_cast<int>(_annotation_state);
         j["processing_stage"] = static_cast<int>(_processing_stage);
         j["rank"] = _rank;
-        j["detected_regions_count"] = _regions.size();
-        j["detected_landmarks_count"] = _landmarks.size();
-        // Possibly add more information from the prefiltering results to the header
-        // 2. Inference results
-        // 2.1. List of regions
-        j["regions"] = nlohmann::ordered_json::array();
-        for (size_t i = 0; i < _regions.size(); ++i)
-        {            
-            const auto& region = _regions[i];
-            nlohmann::ordered_json region_json;
-            region_json["region_" + std::to_string(i)] = {
-                {"id", region.id},
-                {"confidence", region.confidence}
-            };
-            j["regions"].push_back(region_json);
+        // Prefiltering results (omitted if not yet run)
+        if (_prefilter_result.has_value()) {
+            j["prefilter"] = PrefilterResultToJson(*_prefilter_result);
         }
-        // 2.2. List of landmarks
-        j["landmarks"] = nlohmann::ordered_json::array();
-        for (size_t i = 0; i < _landmarks.size(); ++i)
-        {            
-            const auto& landmark = _landmarks[i];
-            nlohmann::ordered_json landmark_json;
-            landmark_json["landmark_" + std::to_string(i)] = {
-                {"x", landmark.x},
-                {"y", landmark.y},
-                {"height", landmark.height},
-                {"width", landmark.width},
-                {"confidence", landmark.confidence},
-                {"class_id", landmark.class_id},
-                {"region_id", landmark.region_id}
-            };
-            j["landmarks"].push_back(landmark_json);
-        }
+        // 2. Inference results (omitted if inference has not been run)
+        if (_inference_results.has_value())
+            j["inference_results"] = _inference_results->toJson();
         
     } catch (const std::exception& e) {
         SPDLOG_ERROR("Failed to convert Frame to JSON: {}", e.what());
@@ -237,99 +228,26 @@ void Frame::fromJson(const Json& j) // Write values to JSON
         _annotation_state = static_cast<ImageState>(j.at("annotation_state").get<int>());
         _processing_stage = static_cast<ProcessingStage>(j.at("processing_stage").get<int>());
         _rank = j.at("rank").get<float>();
-        int detected_regions_count = j.at("detected_regions_count").get<int>();
-        int detected_landmarks_count = j.at("detected_landmarks_count").get<int>();
-        // 2. Inference results
-        // 2.1. List of regions
-        _regions.clear();
-        if (j.contains("regions") && j.at("regions").is_array())
+        // Prefiltering results
+        _prefilter_result.reset();
+        if (j.contains("prefilter") && j.at("prefilter").is_object())
         {
-            for (const auto& region_item : j.at("regions"))
-            {
-                for (const auto& [key, value] : region_item.items())
-                {
-                    RegionID region_id = static_cast<RegionID>(value.at("id").get<int>());
-                    float confidence = value.at("confidence").get<float>();
-                    _regions.emplace_back(region_id, confidence);
-                }
-            }
+            _prefilter_result = PrefilterResultFromJson(j.at("prefilter"));
         }
-        // 2.2. List of landmarks
-        _landmarks.clear();
-        if (j.contains("landmarks") && j.at("landmarks").is_array())
+        // 2. Inference results — nested under "inference_results";
+        //    fall back to flat top-level keys for frames written before this format.
+        _inference_results.reset();
         {
-            for (const auto& landmark_item : j.at("landmarks"))
-            {
-                for (const auto& [key, value] : landmark_item.items())
-                {
-                    float x = value.at("x").get<float>();
-                    float y = value.at("y").get<float>();
-                    float height = value.at("height").get<float>();
-                    float width = value.at("width").get<float>();
-                    float confidence = value.at("confidence").get<float>();
-                    uint16_t class_id = value.at("class_id").get<uint16_t>();
-                    RegionID region_id = static_cast<RegionID>(value.at("region_id").get<int>());
-                    _landmarks.emplace_back(x, y, class_id, region_id, height, width, confidence);
-                }
-            }
+            const bool has_nested = j.contains("inference_results") && j.at("inference_results").is_object();
+            const Json& inf = has_nested ? j.at("inference_results") : j;
+            InferenceResults ir = InferenceResults::fromJson(inf);
+            if (ir.rc_version != -1 || !ir.regions.empty() || !ir.landmarks.empty())
+                _inference_results = std::move(ir);
         }
     }
     catch (const std::exception& e) {
         SPDLOG_ERROR("Failed to parse Frame from JSON: {}", e.what());
     }
-}
-
-void Frame::AddRegion(RegionID region_id, float confidence)
-{
-    _regions.emplace_back(region_id, confidence);
-    if (_rank < static_cast<float>(ImageState::HasRegion))
-    {
-        _rank = 2.0f; // TODO: make a rank regions function for the frame
-        // Something like average or max region confidence
-    }
-    if (_annotation_state < ImageState::HasRegion)
-    {
-        _annotation_state = ImageState::HasRegion; // if it has a region, it must be earth
-    }
-}
-
-void Frame::ClearRegions()
-{
-    _regions.clear();
-    // TODO: potentially readjust rank and annotation state here
-}
-
-void Frame::AddLandmark(const Landmark& landmark)
-{
-    if (_rank < static_cast<float>(ImageState::HasLandmark))
-    {
-        _rank = 3.0f; // TODO: make a rank landmarks function for the frame.
-        // Maybe weighted sum of confidence and region confidence?
-    }
-    if (_annotation_state < ImageState::HasLandmark)
-    {
-        _annotation_state = ImageState::HasLandmark;
-    }
-    _landmarks.push_back(landmark);
-}
-
-void Frame::AddLandmark(float x, float y, uint16_t class_id, RegionID region_id, float height_, float width_, float confidence_)
-{
-    if (_rank < static_cast<float>(ImageState::HasLandmark))
-    {
-        _rank = 3.0f; // need to rank images with landmarks. Maybe weighted sum of confidence and region confidence?
-    }
-    if (_annotation_state < ImageState::HasLandmark)
-    {
-        _annotation_state = ImageState::HasLandmark;
-    }
-    _landmarks.emplace_back(x, y, class_id, region_id, height_, width_, confidence_);
-}
-
-void Frame::ClearLandmarks()
-{
-    _landmarks.clear();
-    // TODO: potentially readjust rank and annotation state here
 }
 
 void Frame::RunPrefiltering()
@@ -339,19 +257,10 @@ void Frame::RunPrefiltering()
         SPDLOG_WARN("Frame has already been pre-filtered. Skipping pre-filtering step.");
         return;
     }
-    PrefilterResult res = prefilter_image(_img);
-    if (res.passed)
-    {
-        _annotation_state = ImageState::Earth;
-        _rank = 1.0f - (res.cloudiness / 100.0f); // higher cloudiness = lower rank
-    }
-    else
-    {
-        _annotation_state = ImageState::NotEarth;
-        _rank = static_cast<float>(ImageState::NotEarth);
-    }
-    
+    _prefilter_result = prefilter_image(_img);
     _processing_stage = ProcessingStage::Prefiltered;
+    UpdateAnnotationState();
+    UpdateRank();
 }
 
 bool Frame::IsBlurred()
@@ -384,4 +293,55 @@ bool Frame::IsBlurred()
  
     return is_blurred;
 
+}
+
+void Frame::UpdateAnnotationState()
+{
+    const bool has_landmarks = _inference_results.has_value() && !_inference_results->landmarks.empty();
+    const bool has_regions   = _inference_results.has_value() && !_inference_results->regions.empty();
+
+    if (has_landmarks) {
+        _annotation_state = ImageState::HasLandmark;
+    } else if (has_regions) {
+        _annotation_state = ImageState::HasRegion;
+    } else if (_prefilter_result.has_value() && _prefilter_result->passed) {
+        _annotation_state = ImageState::Earth;
+    } else {
+        _annotation_state = ImageState::NotEarth;
+    }
+}
+
+void Frame::UpdateRank()
+{
+    switch (_annotation_state) {
+        case ImageState::NotEarth:
+            _rank = 0.0f;
+            break;
+
+        case ImageState::Earth:
+            // Rank by cloudiness if prefilter result is available
+            if (_prefilter_result.has_value()) {
+                _rank = 1.0f - (_prefilter_result->cloudiness / 100.0f);
+            } else {
+                _rank = 0.5f;
+            }
+            break;
+
+        case ImageState::HasRegion: {
+            if (!_inference_results.has_value()) { _rank = 0.0f; break; }
+            const auto& regions = _inference_results->regions;
+            float sum = 0.0f;
+            for (const auto& r : regions) sum += r.confidence;
+            _rank = regions.empty() ? 0.0f : sum / static_cast<float>(regions.size());
+            break;
+        }
+
+        case ImageState::HasLandmark: {
+            if (!_inference_results.has_value()) { _rank = 0.0f; break; }
+            float sum = 0.0f;
+            for (const auto& l : _inference_results->landmarks) sum += l.confidence;
+            _rank = sum / 100.0f;
+            break;
+        }
+    }
 }

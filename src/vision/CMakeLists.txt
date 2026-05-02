@@ -2,9 +2,11 @@
 
 add_library(vision
     frame.cpp
+    inference_results.cpp
     camera.cpp
     camera_manager.cpp
     dataset.cpp
+    dataset_manager.cpp
     ld.cpp
     prefiltering.cpp
 )

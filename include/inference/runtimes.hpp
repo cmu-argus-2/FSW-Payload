@@ -1,7 +1,7 @@
 #ifndef RUNTIMES_HPP
 #define RUNTIMES_HPP
 
-#include <string> 
+#include <string>
 
 #include <NvInfer.h>
 #include <cuda_runtime_api.h>
@@ -9,6 +9,7 @@
 
 #include "spdlog/spdlog.h"
 
+#include "inference/types.hpp"
 #include "inference/structures.hpp"
 #include "core/errors.hpp"
 #include "vision/regions.hpp"
@@ -107,44 +108,6 @@ private:
 
 };
 
-enum class NET_QUANTIZATION : uint8_t 
-{
-    FP32 = 0,
-    FP16 = 1,
-    INT8 = 2,
-};
-
-inline std::string GetQuantString(NET_QUANTIZATION quant) {
-    switch (quant) {
-        case NET_QUANTIZATION::FP32: return "fp32";
-        case NET_QUANTIZATION::FP16: return "fp16";
-        case NET_QUANTIZATION::INT8: return "int8";
-        default: return "";
-    }
-}
-
-// Parameters used to define the model file name (knowing the region)
-struct LDNetConfig {
-    NET_QUANTIZATION weight_quant;
-    int input_width;
-    int input_height;
-    bool embedded_nms;
-    bool use_trt;
-
-    std::string GetFileNameAppendix() {
-
-        std::string fp16_string = GetQuantString(weight_quant);
-
-        std::string nms_string = "";
-        if (embedded_nms) nms_string = "_nms";
-
-        std::string file_ext = "onnx";
-        if (use_trt) file_ext = "trt";
-
-        return "_weights_" + fp16_string + "_sz_" + std::to_string(input_width) + nms_string + "." + file_ext;
-    }
-};
-
 class LDNet
 {
 public:
@@ -198,7 +161,7 @@ public:
     EC Free();
     EC Infer(const void* input_data, void* output) ;
     EC Infer(cv::Mat input_data, std::vector<cv::Mat>& output);
-    EC PostprocessOutput(cv::Mat outs, std::shared_ptr<Frame> frame);
+    EC PostprocessOutput(cv::Mat outs, std::vector<Landmark>& out_landmarks, cv::Size img_size);
     
     // Engine path is defined by the model parameters
     EC LoadEngine(const std::string& engine_path);

@@ -58,6 +58,7 @@ int main(int argc, char** argv) {
     // Set the logging file path for the IMU manager
     imuManager.SetLogFile(log_file);
     imuManager.SetSampleRate(25.0f);
+    imuManager.SetCollectionMode(IMU_COLLECTION_MODE::GYRO_MAG_TEMP);
 
     // Start the collection loop 
     imuManager.StartCollection();

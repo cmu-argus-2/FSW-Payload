@@ -7,8 +7,8 @@ import threading
 # ---------------------------------------------------------------------------
 PORT = "/dev/ttyTHS1"
 BAUD = 460800
-MAX_PACKET_SIZE = 255
-TIMEOUT = (MAX_PACKET_SIZE * 16) * 8 / BAUD  # seconds
+MAX_PACKET_SIZE = 609
+TIMEOUT = (MAX_PACKET_SIZE * ( 8 + 2 )) / BAUD  # timeout to drop a packet reconstruction. Max packet size plus some margin
 
 logging.basicConfig(
     level=logging.DEBUG,
@@ -80,3 +80,20 @@ class StateManager:
 
 # Global state manager instance
 state_manager = StateManager(PayloadState.IDLE)
+
+
+_inference_return_code_lock = threading.Lock()
+_inference_return_code = 0
+
+
+def set_inference_return_code(value: int) -> None:
+    """Store latest inference process return code in a thread-safe way."""
+    global _inference_return_code
+    with _inference_return_code_lock:
+        _inference_return_code = int(value)
+
+
+def get_inference_return_code() -> int:
+    """Read latest inference process return code in a thread-safe way."""
+    with _inference_return_code_lock:
+        return int(_inference_return_code)

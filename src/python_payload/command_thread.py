@@ -7,6 +7,7 @@ from splat.splat.telemetry_codec import Ack, Command, Report, pack, unpack
 from splat.splat.telemetry_definition import COMMAND_IDS
 from thread_shared import PayloadState, experiment_queue, log, rx_queue, state_manager, tx_queue
 from thread_shared import create_transaction_ack_event, init_transaction_ack_event, update_last_batch_event
+from thread_shared import get_inference_return_code
 from thread_shared import update_last_batch_lock, update_last_batch_shared
 
 
@@ -102,6 +103,9 @@ class CommandThread(threading.Thread):
         telemetry_data = self.telemetry_thread.get_latest_data()
         if not telemetry_data:
             telemetry_data = {"status": "no telemetry collected yet"}
+
+        # Always use live shared inference code to avoid telemetry-cache timing races.
+        telemetry_data["INFERENCE_RETURN_CODE"] = get_inference_return_code()
 
         log.info("REQUEST_TM_PAYLOAD: %s", telemetry_data)
 

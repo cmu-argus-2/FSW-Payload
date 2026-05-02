@@ -18,6 +18,8 @@ enum class ErrorCode // Error codes
     PLACEHOLDER = 1,
     
     // Commands 2-7
+    
+    // Commands 2-7
     INVALID_COMMAND_ID,
     INVALID_COMMAND_ARGUMENTS,
     NO_FILE_READY,

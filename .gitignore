@@ -240,3 +240,7 @@ logs/
 deps/
 
 workspace/
+
+telemetry_logs/
+
+experiments/

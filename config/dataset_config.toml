@@ -1,8 +1,8 @@
 capture_start_time = 0 # if less than curr time, it starts immediately
 
-maximum_period = 60 # sec
+maximum_period = 120 # sec
 
-target_frame_nb = 24 # < 255
+target_frame_nb = 255
 
 dataset_capture_mode = 2 # PERIODIC
 

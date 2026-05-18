@@ -314,6 +314,26 @@ def angular_dynamics_residual_fix_bias(
 
 # ── Landmark bearing measurement ────────────────────────────────────────────────
 
+def pseudo_huber_cost(res: ca.MX, M: float) -> ca.MX:
+    """
+    Pseudo-Huber (smooth Huber) scalar cost for a residual vector.
+
+    Matches L2 quadratically near zero and grows linearly for large ‖res‖,
+    with a smooth C² transition around d = M (no kink):
+
+        φ(d) = 2M²(√(1 + d²/M²) − 1),   d = ‖res‖
+
+    Asymptotic behaviour (res already σ-normalised, so M is in units of σ):
+        d ≪ M  →  φ ≈ d²           identical to L2
+        d ≫ M  →  φ ≈ 2M·d − 2M²  linear, same slope as true Huber at M
+
+    The 2× pre-factor ensures the quadratic regime exactly matches the L2
+    cost ‖res‖² used everywhere else in the objective.
+    """
+    d_sq = ca.dot(res, res)
+    return 2.0 * M**2 * (ca.sqrt(1.0 + d_sq / M**2) - 1.0)
+
+
 def landmark_residual(
     r:            ca.MX,   # satellite ECI position [km]
     q:            ca.MX,   # body-to-ECI quaternion [x,y,z,w]

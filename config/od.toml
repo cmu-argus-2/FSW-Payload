@@ -20,7 +20,7 @@ solver_gradient_check_relative_precision = 1e-6 # TODO: implement parsing
 # INT
 max_iterations = 10000 # iterations
 # INT or floating
-max_run_time_sec = 120.0 # seconds
+max_run_time_sec = 300.0 # seconds
 # INT
 bias_mode = 1 # 0: no gyro bias; 1: fixed/constant gyro bias; 2: time-varying bias
 # BOOL
@@ -35,3 +35,9 @@ cd_nominal = 2.2
 cd_std = 1.0
 # INT — integrator for orbital dynamics: 0 = forward-Euler, 1 = RK4
 integrator = 1
+# FLOAT — Pseudo-Huber transition point for landmark bearing cost [sigma units]
+landmark_huber_delta = 3.0
+# FLOAT — Mahalanobis distance threshold for landmark outlier rejection [sigma units]
+mahal_threshold = 5.0
+# INT — Maximum outlier-rejection loop iterations (excludes covariance solve)
+max_od_iterations = 10

@@ -51,15 +51,23 @@ def load_od_results(results_dir: Path) -> dict:
                           if dyn_res_path.exists() else None)
 
     ldmk_res_path = results_dir / "landmark_residuals.csv"
-    landmark_residuals = (np.genfromtxt(ldmk_res_path, delimiter=",", skip_header=1)
-                          if ldmk_res_path.exists() else None)
+    _lmk_raw = (np.genfromtxt(ldmk_res_path, delimiter=",", skip_header=1)
+                if ldmk_res_path.exists() else None)
+    if _lmk_raw is not None and _lmk_raw.ndim == 2 and _lmk_raw.shape[1] >= 4:
+        landmark_residuals = _lmk_raw[:, :3]
+        landmark_outlier_flags = _lmk_raw[:, 3].astype(bool)
+    else:
+        landmark_residuals = _lmk_raw
+        landmark_outlier_flags = (np.zeros(len(_lmk_raw), dtype=bool)
+                                  if _lmk_raw is not None else None)
 
     return {
         "meta": meta,
-        "state_estimates":    state_estimates,    # Nx11 array
-        "covariance":         covariance,         # Nx10 array (timestamp+pos+vel+rot) or None
-        "dynamics_residuals": dynamics_residuals, # (N-1)x13 array (StateResIdx columns) or None
-        "landmark_residuals": landmark_residuals, # Mx3 array (LandmarkResIdx columns) or None
+        "state_estimates":       state_estimates,       # Nx11 array
+        "covariance":            covariance,            # Nx10 array (timestamp+pos+vel+rot) or None
+        "dynamics_residuals":    dynamics_residuals,    # (N-1)x13 array or None
+        "landmark_residuals":    landmark_residuals,    # Mx3 array or None
+        "landmark_outlier_flags": landmark_outlier_flags,  # (M,) bool or None
     }
 
 
@@ -209,7 +217,7 @@ def plot_states(est_states, out_dir, true_states=None, orbit_measurements=None, 
 
 
 def plot_residuals_standalone(dynamics_residuals, landmark_residuals, bias_mode,
-                              ldmk_t, out_dir):
+                              ldmk_t, out_dir, landmark_outlier_flags=None):
     t_dyn = dynamics_residuals[:, 0] - dynamics_residuals[0, 0]
 
     # Linear dynamics residuals (pos + vel)
@@ -250,12 +258,20 @@ def plot_residuals_standalone(dynamics_residuals, landmark_residuals, bias_mode,
     else:
         t_ldmk = np.arange(landmark_residuals.shape[0])
         xlabel = "measurement index"
+    is_outlier = (landmark_outlier_flags
+                  if landmark_outlier_flags is not None
+                  else np.zeros(len(t_ldmk), dtype=bool))
     fig, axs = plt.subplots(3, 1, sharex=True, figsize=(10, 6))
     for i, ax in enumerate(axs):
-        ax.plot(t_ldmk, landmark_residuals[:, i],
-                linestyle="None", marker=".", color="C0")
+        ax.plot(t_ldmk[~is_outlier], landmark_residuals[~is_outlier, i],
+                linestyle="None", marker=".", color="C0", label="inlier")
+        if is_outlier.any():
+            ax.plot(t_ldmk[is_outlier], landmark_residuals[is_outlier, i],
+                    linestyle="None", marker=".", color="red", label="outlier")
         ax.axhline(0, color="k", linewidth=0.5)
         ax.set_ylabel(["Res X", "Res Y", "Res Z"][i]); ax.grid(True)
+        if i == 0 and is_outlier.any():
+            ax.legend(loc="upper right")
     axs[-1].set_xlabel(xlabel)
     fig.suptitle("Landmark Measurement Residuals")
     plt.tight_layout(); plt.subplots_adjust(top=0.92)
@@ -480,7 +496,7 @@ def plot_measurements(measurements, ground_truth_states, est_states, ldmkmeasres
 
 
 def plot_residuals(lindynres, angdynres, ldmkmeasres, ldmk_t, est_states,
-                   true_states, bias_mode, out_dir):
+                   true_states, bias_mode, out_dir, landmark_outlier_flags=None):
     true_time = true_states["unixtime"]                                # Unix seconds
     t0        = true_time[0] if len(true_time) > 0 else 0
     t_est     = (est_states[:, 0] + J2000_EPOCH_UNIX_S) - t0          # J2000 -> Unix -> relative
@@ -525,10 +541,16 @@ def plot_residuals(lindynres, angdynres, ldmkmeasres, ldmk_t, est_states,
     else:
         t_landmark  = np.arange(ldmkmeasres.shape[0], dtype=float)
         xlabel_ldmk = "measurement index"
+    is_outlier = (landmark_outlier_flags
+                  if landmark_outlier_flags is not None
+                  else np.zeros(len(t_landmark), dtype=bool))
     fig, axs = plt.subplots(3, 1, sharex=True, figsize=(10, 6))
     for i, ax in enumerate(axs):
-        ax.plot(t_landmark, ldmkmeasres[:, i], label="residual",
-                linestyle="None", marker=".", color=colors[0])
+        ax.plot(t_landmark[~is_outlier], ldmkmeasres[~is_outlier, i],
+                linestyle="None", marker=".", color=colors[0], label="inlier")
+        if is_outlier.any():
+            ax.plot(t_landmark[is_outlier], ldmkmeasres[is_outlier, i],
+                    linestyle="None", marker=".", color="red", label="outlier")
         ax.fill_between(t_landmark, -3, 3, color="C0", alpha=0.3, label="3-sigma")
         ax.set_ylabel(["Ldmk Meas Res X", "Ldmk Meas Res Y", "Ldmk Meas Res Z"][i]); ax.grid(True)
         if i == 0: ax.legend(loc="upper right")
@@ -559,8 +581,9 @@ if __name__ == "__main__":
     est_states  = od["state_estimates"]
     covariance         = od["covariance"]
     dynamics_residuals = od["dynamics_residuals"]
-    landmark_residuals = od["landmark_residuals"]
-    bias_mode          = meta.get("bias_mode", "fix_bias")
+    landmark_residuals     = od["landmark_residuals"]
+    landmark_outlier_flags = od["landmark_outlier_flags"]
+    bias_mode              = meta.get("bias_mode", "fix_bias")
     if isinstance(bias_mode, int):
         bias_mode = {0: "no_bias", 1: "fix_bias", 2: "tv_bias"}.get(bias_mode, "fix_bias")
 
@@ -645,7 +668,8 @@ if __name__ == "__main__":
                 bias_fixed=bias_fixed)
     if dynamics_residuals is not None and landmark_residuals is not None:
         plot_residuals_standalone(dynamics_residuals, landmark_residuals,
-                                  bias_mode, ldmk_t, out_dir)
+                                  bias_mode, ldmk_t, out_dir,
+                                  landmark_outlier_flags=landmark_outlier_flags)
 
     # ── Comparison plots (simulation ground truth only) ───────────────────────
     if have_gt:
@@ -654,6 +678,7 @@ if __name__ == "__main__":
         plot_measurements(measurements, ground_truth, est_states, ldmkmeasres, out_dir)
         if ldmkmeasres is not None:
             plot_residuals(lindynres, angdynres, ldmkmeasres,
-                           ldmk_t, est_states, ground_truth, bias_mode, out_dir)
+                           ldmk_t, est_states, ground_truth, bias_mode, out_dir,
+                           landmark_outlier_flags=landmark_outlier_flags)
 
     print("Done.")

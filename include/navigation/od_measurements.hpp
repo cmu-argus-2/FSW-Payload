@@ -32,6 +32,11 @@ casadi::MX landmark_residual_casadi(
     const casadi::DM& bearing_meas,
     double sigma);
 
+// Pseudo-Huber scalar cost for a 3-vector residual (already σ-normalised).
+// φ(d) = 2M²(√(1 + d²/M²) − 1)  where d = ‖res‖
+// Quadratic near zero, linear for d ≫ M.  Matches L2 gradient at d=0.
+casadi::MX pseudo_huber_cost(const casadi::MX& res, double M);
+
 // ── Measurement bundle for solve_batch_opt ────────────────────────────────────
 struct ODMeasurements
 {

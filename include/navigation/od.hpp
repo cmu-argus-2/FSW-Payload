@@ -75,6 +75,9 @@ struct BATCH_OPT_config
     double cd_nominal;
     double cd_std;
     Integrator integrator;
+    double landmark_huber_delta = 3.0;  // Pseudo-Huber M parameter [σ units]
+    double mahal_threshold      = 5.0;  // Mahalanobis rejection threshold [σ units]
+    int    max_od_iterations    = 10;   // Max outlier-rejection loop iterations
     BATCH_OPT_config();
 };
 

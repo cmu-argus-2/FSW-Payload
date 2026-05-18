@@ -72,6 +72,13 @@ using DynamicsResiduals      = Eigen::Matrix<double, Eigen::Dynamic, StateResIdx
 using LandmarkResiduals      = Eigen::Matrix<double, Eigen::Dynamic, LandmarkResIdx::LANDMARK_RES_COUNT, Eigen::RowMajor>;
 using idx_t = Eigen::Index;
 
+// Initial guess seeded from a previous solve result (bypasses TrajectoryInitializer).
+struct WarmStartData {
+    StateEstimates  state_estimates;       // Nx14 (r, v, q, gyro_bias columns)
+    Eigen::MatrixXd uma_accelerations;    // (N-1)x3  [km/s²]
+    double          cd = 2.2;
+};
+
 struct StateTimestampsResult {
     ErrorCode            code = ErrorCode::OK;
     std::vector<double>  state_timestamps;
@@ -83,6 +90,8 @@ struct SolverSummaryInfo {
     int    iter_count  = 0;
     double final_cost  = 0.0;
     double solve_time_ms = -1.0;
+    int    n_active_landmarks = 0;             // landmark rows fed to this IPOPT call
+    int    n_rejected = 0;                     // landmarks rejected after this call
 };
 
 struct BatchOptResult {
@@ -91,16 +100,21 @@ struct BatchOptResult {
     StateEstimates         state_estimates;
     ResidualsOrCovariances covariance;          // Nx13 per StateResIdx; 0 rows if unavailable
     DynamicsResiduals      dynamics_residuals;  // (N-1)x13 per StateResIdx
-    LandmarkResiduals      landmark_residuals;  // Mx3 per LandmarkResIdx
+    LandmarkResiduals      landmark_residuals;  // Mx3 per LandmarkResIdx (M = total input landmarks)
+    Eigen::MatrixXd        uma_accelerations;   // (N-1)x3  [km/s²], used for warm-starting next iteration
     SolverSummaryInfo      solver_summary;
     std::array<double, 3>  gyro_bias_fixed = {0.0, 0.0, 0.0};  // [rad/s], valid when FIX_BIAS
     double                 cd          = 2.2;                   // [-], valid when use_drag
     bool                   cd_estimated = false;
     bool                   covariance_computed = false;
     bool                   covariance_timed_out = false;
-    double                 covariance_time_ms = -1.0;            // valid when covariance was requested
+    double                 covariance_time_ms = -1.0;           // valid when covariance was requested
     std::array<double, 3>  gyro_bias_var = {0.0, 0.0, 0.0};   // variance [rad/s]², valid when covariance_computed
     double                 cd_var = 0.0;                        // variance [-]², valid when cd_estimated && covariance_computed
+    std::vector<int8_t>       lmk_outlier_flags;                // length = N_total input landmarks; 0=inlier, 1=outlier
+    int                       n_od_solver_calls = 1;            // number of IPOPT calls (1 for single-shot)
+    int                       n_lmk_outliers   = 0;            // number of rejected landmark rows
+    std::vector<SolverSummaryInfo> iteration_summaries;        // one entry per outlier-rejection iteration
 };
 
 StateTimestampsResult
@@ -109,12 +123,26 @@ get_state_timestamps(const LandmarkMeasurements& landmark_measurements,
                      const GyroMeasurements& gyro_measurements,
                      const idx_t num_groups);
 
-// Runs the batch NLP orbit determination optimizer (IPOPT).
+// Single-shot batch NLP orbit determination (IPOPT).
 // Returns BatchOptResult::code == ErrorCode::OK on success. On failure the code
 // is set to ODMEAS_NOT_VALID, BATCH_OPT_NO_CONVERGENCE, BATCH_OPT_SOLVER_FAILED,
 // or BATCH_OPT_INVALID_OUTPUT. If enabled in config, covariance contains the
 // diagonal tangent-space covariance per StateResIdx.
+// warm_start: if non-null, seeds IPOPT from a previous solve result instead of
+// running TrajectoryInitializer.
 BatchOptResult solve_batch_opt(const ODMeasurements& measurements,
-                               BATCH_OPT_config bo_config);
+                               BATCH_OPT_config bo_config,
+                               const WarmStartData* warm_start = nullptr);
+
+// Iterative batch OD with per-landmark Mahalanobis-distance outlier rejection.
+// Calls solve_batch_opt in a loop, rejecting landmarks whose ‖residual‖ exceeds
+// bo_config.mahal_threshold, until no outliers remain or bo_config.max_od_iterations
+// is reached. Covariance (if requested) is computed only on the final converged solve.
+// landmark_residuals in the result spans all N_total input landmarks (inlier residuals
+// at their original positions; outlier rows re-evaluated at the final solution).
+// lmk_outlier_flags, n_od_solver_calls, and n_lmk_outliers are populated.
+BatchOptResult solve_batch_opt_with_outlier_rejection(
+    const ODMeasurements& measurements,
+    BATCH_OPT_config bo_config);
 
 #endif // BATCH_OPTIMIZATION_HPP

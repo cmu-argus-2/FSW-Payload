@@ -26,7 +26,6 @@ IPOPT's interior-point solver handles the constraint structure directly.
 from __future__ import annotations
 
 import json
-import csv
 import time
 from pathlib import Path
 
@@ -42,6 +41,7 @@ from residuals import (
     drag_prior_residual,
     landmark_residual,
     linear_dynamics_constraint,
+    pseudo_huber_cost,
     uma_prior_residual,
 )
 
@@ -221,6 +221,15 @@ class TrajectoryInitializer:
                     positions[j] = (1.0 - alpha) * kf_p[idx] + alpha * kf_p[idx + 1]
                     quaternions[j] = _slerp(kf_q[idx], kf_q[idx + 1], alpha)
 
+        # ── Renormalize positions to orbital altitude ─────────────────────────
+        # Linear interpolation between keyframes in very different ECI directions
+        # (e.g. from bad landmark groups) can produce positions inside Earth.
+        # Renormalising to R_ORBIT_KM keeps the initial guess physically valid.
+        for j in range(M):
+            norm = np.linalg.norm(positions[j])
+            if norm > 1e-6:
+                positions[j] = positions[j] / norm * R_ORBIT_KM
+
         # ── Velocity: central finite differences ──────────────────────────────
         velocities = np.zeros((M, 3))
         for j in range(M):
@@ -285,6 +294,36 @@ def _build_landmark_groups(
             group_k += 1
         groups[-1][1].append(row)
     return groups
+
+
+def _filter_landmark_measurements(
+    landmark_measurements:  np.ndarray,
+    landmark_group_starts:  np.ndarray,
+    landmark_uncertainties: np.ndarray | None,
+    keep_mask:              np.ndarray,
+) -> tuple[np.ndarray, np.ndarray, np.ndarray | None]:
+    """
+    Return filtered landmark arrays keeping only rows where keep_mask is True.
+
+    Reconstructs landmark_group_starts so the first surviving row of each
+    original group is marked as a group start.  Groups that lose all rows are
+    removed entirely.
+    """
+    group_ids = np.cumsum(landmark_group_starts).astype(int) - 1  # 0-based group index per row
+
+    filtered_meas      = landmark_measurements[keep_mask]
+    filtered_group_ids = group_ids[keep_mask]
+
+    if len(filtered_meas) == 0:
+        empty_unc = np.array([], dtype=np.float64) if landmark_uncertainties is not None else None
+        return filtered_meas, np.array([], dtype=bool), empty_unc
+
+    new_group_starts     = np.zeros(len(filtered_group_ids), dtype=bool)
+    new_group_starts[0]  = True
+    new_group_starts[1:] = filtered_group_ids[1:] != filtered_group_ids[:-1]
+
+    filtered_unc = landmark_uncertainties[keep_mask] if landmark_uncertainties is not None else None
+    return filtered_meas, new_group_starts, filtered_unc
 
 
 def _quat_tangent_basis(q: np.ndarray) -> np.ndarray:
@@ -360,7 +399,6 @@ def _compute_covariance(
     a: ca.MX,
     b: ca.MX,
     N: int,
-    uma_std: float,
     cd: ca.MX | None = None,
 ) -> dict[str, np.ndarray]:
     """
@@ -455,6 +493,81 @@ def _compute_covariance(
     return result
 
 
+def compute_covariance(context: dict) -> dict:
+    """
+    Compute covariance from a context captured by build_and_solve(return_covariance_context=True).
+
+    Performs the Jacobian evaluation and SVD without re-running IPOPT.
+    """
+    cov_start = time.perf_counter()
+    cov = _compute_covariance(
+        context["cost_residuals"],
+        context["dyn_constraint_syms"],
+        context["sol"],
+        context["r"], context["v"], context["q"], context["a"], context["b"],
+        context["N"],
+        cd=context.get("cd"),
+    )
+    covariance_time_ms = (time.perf_counter() - cov_start) * 1000.0
+    print(f"[covariance] Complete in {covariance_time_ms:.1f} ms")
+    return cov
+
+
+def compute_outlier_residuals(
+    result: dict,
+    landmark_measurements:  np.ndarray,         # full original (N_total, 7)
+    landmark_uncertainties: np.ndarray | None,  # full original (N_total,) or None
+) -> np.ndarray:
+    """
+    Evaluate landmark residuals for rejected measurements against the final solution.
+
+    Uses the CasADi landmark_residual function with the converged positions and
+    quaternions, so the geometry is identical to what was used during the solve.
+
+    Returns
+    -------
+    outlier_res : (N_outliers, 3) float64
+        σ-normalised residual vectors, in the same order as the rejected rows
+        of landmark_measurements (i.e. where lmk_outlier_flags == 1).
+    """
+    flags    = np.asarray(result["lmk_outlier_flags"])
+    outlier_mask = flags == 1
+    if not outlier_mask.any():
+        return np.zeros((0, 3))
+
+    outlier_meas = landmark_measurements[outlier_mask]
+    outlier_unc  = (landmark_uncertainties[outlier_mask]
+                    if landmark_uncertainties is not None
+                    else np.full(outlier_mask.sum(), LANDMARK_STD))
+
+    ts_final   = np.asarray(result["state_timestamps"])
+    pos_final  = result["positions"]    # (N, 3)
+    quat_final = result["quaternions"]  # (N, 4) [x,y,z,w]
+    M = len(ts_final)
+
+    outlier_res = np.zeros((outlier_mask.sum(), 3))
+    for j, (meas, sigma) in enumerate(zip(outlier_meas, outlier_unc)):
+        t_lmk = float(meas[0])
+        lo = int(np.searchsorted(ts_final, t_lmk))
+        if lo == 0:
+            idx = 0
+        elif lo == M:
+            idx = M - 1
+        else:
+            idx = lo if ts_final[lo] - t_lmk < t_lmk - ts_final[lo - 1] else lo - 1
+
+        res = landmark_residual(
+            pos_final[idx],   # (3,) → ca.DM
+            quat_final[idx],  # (4,) → ca.DM
+            meas[4:7],        # landmark ECI position
+            meas[1:4],        # measured bearing
+            float(sigma),
+        )
+        outlier_res[j] = np.asarray(res).ravel()
+
+    return outlier_res
+
+
 # ── Main solver ─────────────────────────────────────────────────────────────────
 
 def build_and_solve(
@@ -469,6 +582,10 @@ def build_and_solve(
     cd_nominal:       float       = 2.2,
     cd_std:       float | None = None,
     ipopt_opts:       dict | None  = None,
+    compute_covariance: bool       = True,
+    warm_start:         dict | None = None,
+    landmark_huber_M:   float      = 3.0,
+    return_covariance_context: bool = False,
 ) -> dict:
     """
     Build and solve the constrained fixed-bias batch OD problem.
@@ -492,6 +609,20 @@ def build_and_solve(
         Assumed for argus CubeSat (Cd=2.2, A=0.01 m², m=1.3 kg): cd ≈ 2.2.
     cd_std : float | None
         Prior standard deviation for cd  [-].  Required when use_drag=True.
+    compute_covariance : bool
+        When True, compute covariance inline after solving (step 8).
+        Mutually exclusive with return_covariance_context.
+    return_covariance_context : bool
+        When True, include a ``_covariance_context`` key in the result dict
+        containing all objects needed to call ``compute_covariance()`` later,
+        without re-running IPOPT.  Use this in the outlier-rejection loop so
+        the caller can defer the (expensive) Jacobian evaluation until
+        convergence is confirmed.
+    warm_start : dict | None
+        If provided, use this result dict (from a previous build_and_solve call)
+        as the initial guess instead of running TrajectoryInitializer.  The dict
+        must contain positions, velocities, quaternions, uma_accelerations, and
+        gyro_bias keys (and cd when drag is enabled).
 
     Returns a dict:
         state_timestamps    : (N,)      float64
@@ -597,28 +728,47 @@ def build_and_solve(
             res = landmark_residual(r[:, state_idx], q[:, state_idx],
                                     lmk_pos, bearing_meas, sigma)
             landmark_res_syms.append(res)
-            obj += ca.dot(res, res)
+            obj += pseudo_huber_cost(res, landmark_huber_M)
 
     opti.minimize(obj)
 
-    # ── 5. Initial guess (trajectory initializer, mirrors C++) ────────────────
-    traj_init = TrajectoryInitializer(
-        ts_list, landmark_measurements, landmark_group_starts,
-        gyro_measurements, estimate_bias=True,
-    )
-    for i in range(N):
-        opti.set_initial(r[:, i], traj_init.positions[i])
-        opti.set_initial(v[:, i], traj_init.velocities[i])
-        opti.set_initial(q[:, i], traj_init.quaternions[i])
-    for i in range(N_uma):
-        opti.set_initial(a[:, i], [0.0, 0.0, 0.0])
-    opti.set_initial(b, traj_init.gyro_bias)
-    if use_drag:
-        opti.set_initial(cd, cd_nominal)
+    # ── 5. Initial guess ──────────────────────────────────────────────────────
+    if warm_start is not None:
+        init_positions   = warm_start["positions"]
+        init_velocities  = warm_start["velocities"]
+        init_quaternions = warm_start["quaternions"]
+        init_gyro_bias   = np.asarray(warm_start["gyro_bias"]).ravel()
+        for i in range(N):
+            opti.set_initial(r[:, i], init_positions[i])
+            opti.set_initial(v[:, i], init_velocities[i])
+            opti.set_initial(q[:, i], init_quaternions[i])
+        for i in range(N_uma):
+            opti.set_initial(a[:, i], warm_start["uma_accelerations"][i])
+        opti.set_initial(b, init_gyro_bias)
+        if use_drag:
+            opti.set_initial(cd, warm_start.get("cd", cd_nominal))
+    else:
+        traj_init = TrajectoryInitializer(
+            ts_list, landmark_measurements, landmark_group_starts,
+            gyro_measurements, estimate_bias=True,
+        )
+        init_positions   = traj_init.positions
+        init_velocities  = traj_init.velocities
+        init_quaternions = traj_init.quaternions
+        init_gyro_bias   = traj_init.gyro_bias
+        for i in range(N):
+            opti.set_initial(r[:, i], init_positions[i])
+            opti.set_initial(v[:, i], init_velocities[i])
+            opti.set_initial(q[:, i], init_quaternions[i])
+        for i in range(N_uma):
+            opti.set_initial(a[:, i], [0.0, 0.0, 0.0])
+        opti.set_initial(b, init_gyro_bias)
+        if use_drag:
+            opti.set_initial(cd, cd_nominal)
 
     # ── 6. IPOPT ───────────────────────────────────────────────────────────────
     opts: dict = {
-        "ipopt.max_iter":    10000,
+        "ipopt.max_iter":    1000,
         "ipopt.tol":         1e-6,
         "ipopt.print_level": 5,
     }
@@ -644,21 +794,21 @@ def build_and_solve(
     lmk_vals = np.concatenate(
         [np.asarray(sol.value(res)).ravel() for res in landmark_res_syms]
     )
-    residuals_flat = np.concatenate([lin_vals, ang_vals, lmk_vals])
-
     # ── 8. Covariance ─────────────────────────────────────────────────────────
+    cov: dict = {}
     cost_residuals = (
         uma_res_syms
         + ([cd_res_sym] if cd_res_sym is not None else [])
         + [res for res in angular_res_syms if res is not None]
         + landmark_res_syms
     )
-    cov_start = time.perf_counter()
-    cov = _compute_covariance(cost_residuals, dyn_constraint_syms, sol,
-                              r, v, q, a, b, N, uma_std,
-                              cd=cd if use_drag else None)
-    covariance_time_ms = (time.perf_counter() - cov_start) * 1000.0
-    print(f"[covariance] Complete in {covariance_time_ms:.1f} ms")
+    if compute_covariance:
+        cov_start = time.perf_counter()
+        cov = _compute_covariance(cost_residuals, dyn_constraint_syms, sol,
+                                  r, v, q, a, b, N,
+                                  cd=cd if use_drag else None)
+        covariance_time_ms = (time.perf_counter() - cov_start) * 1000.0
+        print(f"[covariance] Complete in {covariance_time_ms:.1f} ms")
 
     # ── 9. Extract solution ────────────────────────────────────────────────────
     a_val = np.asarray(sol.value(a))
@@ -672,19 +822,171 @@ def build_and_solve(
         "quaternions":        sol.value(q).T,           # (N, 4)  [x,y,z,w]
         "gyro_bias":          np.asarray(sol.value(b)), # (3,)
         "uma_accelerations":  a_val.T,                  # (N-1, 3)
-        # initial trajectory for CSV output
-        "init_positions":     traj_init.positions,      # (N, 3)
-        "init_velocities":    traj_init.velocities,     # (N, 3)
-        "init_quaternions":   traj_init.quaternions,    # (N, 4)
-        "init_gyro_bias":     traj_init.gyro_bias,      # (3,)
+        # initial trajectory for CSV output (warm_start values or cold-start)
+        "init_positions":     init_positions,           # (N, 3)
+        "init_velocities":    init_velocities,          # (N, 3)
+        "init_quaternions":   init_quaternions,         # (N, 4)
+        "init_gyro_bias":     init_gyro_bias,           # (3,)
         # residuals split by type (for separate CSV files)
         "lin_residuals":      lin_vals.reshape(-1, 6),  # (N-1, 6)
         "ang_residuals":      ang_vals.reshape(-1, 3),  # (N-1, 3)
         "lmk_residuals":      lmk_vals.reshape(-1, 3),  # (N_lmk, 3)
-        **cov,
+        **cov,                                          # empty dict when compute_covariance=False
     }
     if use_drag:
         result["cd"] = float(sol.value(cd))
+
+    if return_covariance_context:
+        result["_covariance_context"] = {
+            "cost_residuals":     cost_residuals,
+            "dyn_constraint_syms": dyn_constraint_syms,
+            "sol":                sol,
+            "r": r, "v": v, "q": q, "a": a, "b": b,
+            "N":                  N,
+            "cd":                 cd if use_drag else None,
+        }
+
+    return result
+
+
+def build_and_solve_with_outlier_rejection(
+    landmark_measurements:  np.ndarray,
+    landmark_group_starts:  np.ndarray,
+    gyro_measurements:      np.ndarray,
+    landmark_uncertainties: np.ndarray | None = None,
+    uma_std:         float          = UMA_STD_DEV,
+    integrator_type: IntegratorType = IntegratorType.FORWARD_EULER,
+    use_j2:           bool        = False,
+    use_drag:         bool        = False,
+    cd_nominal:       float       = 2.2,
+    cd_std:       float | None = None,
+    ipopt_opts:       dict | None  = None,
+    compute_covariance: bool       = True,
+    mahal_threshold:    float      = 5.0,
+    max_iterations:     int        = 10,
+    landmark_huber_M:   float      = 3.0,
+) -> dict:
+    """
+    Iterative batch OD with per-landmark Mahalanobis-distance outlier rejection.
+
+    Algorithm
+    ---------
+    1. Solve with all measurements (cold-start).
+    2. Compute Mahalanobis distance for each landmark row:
+           d_i = ‖lmk_residuals[i]‖₂
+       The residuals are already σ-normalised inside landmark_residual(), so d_i
+       is the Mahalanobis distance directly.
+    3. Reject rows with d_i > mahal_threshold (individual landmarks, not groups).
+    4. Warm-start the next solve from the current solution and repeat from (2).
+    5. Stop when no rows are rejected (converged) or max_iterations is reached.
+    6. If compute_covariance=True, run one final warm-started solve to compute
+       the covariance on the converged, outlier-free measurement set.
+
+    The cold-start initial trajectory (from TrajectoryInitializer) is preserved
+    in the returned result's init_* fields regardless of how many iterations ran,
+    so the output CSV matches what a single-shot solve would have produced.
+
+    Parameters
+    ----------
+    mahal_threshold : float
+        Per-measurement rejection threshold in normalised residual units.
+        Default 5.0 is intentionally conservative — only egregious outliers
+        are rejected on the first pass.
+    max_iterations : int
+        Safety cap on the number of outlier-rejection iterations (excludes the
+        final covariance solve).
+    """
+    active_meas   = landmark_measurements.copy()
+    active_starts = landmark_group_starts.copy()
+    active_unc    = landmark_uncertainties.copy() if landmark_uncertainties is not None else None
+
+    N_total = len(landmark_measurements)
+    outlier_flags           = np.zeros(N_total, dtype=np.int8)
+    active_original_indices = np.arange(N_total)
+
+    warm_start:     dict | None = None
+    preserved_init: dict | None = None   # cold-start init trajectory from iteration 0
+
+    for iteration in range(max_iterations):
+        n_active_groups = int(active_starts.sum())
+        print(f"\n[outlier_rejection] Iteration {iteration + 1} | "
+              f"{n_active_groups} groups | {len(active_meas)} measurements")
+
+        result = build_and_solve(
+            active_meas, active_starts, gyro_measurements,
+            landmark_uncertainties     = active_unc,
+            uma_std                    = uma_std,
+            integrator_type            = integrator_type,
+            use_j2                     = use_j2,
+            use_drag                   = use_drag,
+            cd_nominal                 = cd_nominal,
+            cd_std                     = cd_std,
+            ipopt_opts                 = ipopt_opts,
+            compute_covariance         = False,
+            warm_start                 = warm_start,
+            landmark_huber_M           = landmark_huber_M,
+            return_covariance_context  = compute_covariance,
+        )
+
+        # Preserve the cold-start init trajectory for final result reporting
+        if preserved_init is None:
+            preserved_init = {
+                "init_positions":  result["init_positions"],
+                "init_velocities": result["init_velocities"],
+                "init_quaternions": result["init_quaternions"],
+                "init_gyro_bias":  result["init_gyro_bias"],
+            }
+
+        # Mahalanobis distance: residuals already normalised by σ, so ‖res‖ = d_mahal
+        lmk_res    = result["lmk_residuals"]           # (N_active, 3)
+        mahal_dist = np.linalg.norm(lmk_res, axis=1)   # (N_active,)
+
+        keep_mask  = mahal_dist <= mahal_threshold
+        n_rejected = int((~keep_mask).sum())
+
+        print(f"[outlier_rejection] Mahalanobis distances — "
+              f"max={mahal_dist.max():.3f}  mean={mahal_dist.mean():.3f}  "
+              f"rejected={n_rejected}/{len(active_meas)} (threshold={mahal_threshold:.2f}σ)")
+
+        if n_rejected == 0:
+            print(f"[outlier_rejection] Converged after {iteration + 1} iteration(s).")
+            if compute_covariance:
+                print("[outlier_rejection] Computing covariance from converged solution …")
+                ctx = result.pop("_covariance_context")
+                cov_start = time.perf_counter()
+                cov_dict = _compute_covariance(
+                    ctx["cost_residuals"], ctx["dyn_constraint_syms"],
+                    ctx["sol"], ctx["r"], ctx["v"], ctx["q"], ctx["a"], ctx["b"],
+                    ctx["N"], cd=ctx.get("cd"),
+                )
+                print(f"[covariance] Complete in {(time.perf_counter() - cov_start) * 1000:.1f} ms")
+                result.update(cov_dict)
+            break
+
+        if iteration == max_iterations - 1:
+            print(f"[outlier_rejection] Warning: reached max_iterations={max_iterations}; "
+                  f"{n_rejected} outlier(s) remain.")
+            result.pop("_covariance_context", None)
+            break
+
+        result.pop("_covariance_context", None)
+        outlier_flags[active_original_indices[~keep_mask]] = 1
+        active_original_indices = active_original_indices[keep_mask]
+        active_meas, active_starts, active_unc = _filter_landmark_measurements(
+            active_meas, active_starts, active_unc, keep_mask
+        )
+        warm_start = result
+
+    result["lmk_outlier_flags"] = outlier_flags
+    result["n_od_iterations"]   = iteration + 1
+
+    result["lmk_outlier_residuals"] = compute_outlier_residuals(
+        result, landmark_measurements, landmark_uncertainties
+    )
+
+    # Restore cold-start init trajectory so output CSVs are consistent
+    if preserved_init is not None:
+        result.update(preserved_init)
 
     return result
 
@@ -702,7 +1004,7 @@ _DYN_RES_HEADER = (
     "rot_res_x,rot_res_y,rot_res_z,"
     "gyro_bias_res_x,gyro_bias_res_y,gyro_bias_res_z"
 )
-_LMK_RES_HEADER = "res_x,res_y,res_z"
+_LMK_RES_HEADER = "res_x,res_y,res_z,outlier"
 _COV_HEADER = (
     "timestamp_j2000,pos_cov_x,pos_cov_y,pos_cov_z,"
     "vel_cov_x,vel_cov_y,vel_cov_z,"
@@ -773,11 +1075,28 @@ def save_results(results: dict, results_dir: Path, meta: dict | None = None) -> 
             f.write(",".join(f"{v:.12g}" for v in row) + "\n")
 
     # landmark_residuals.csv
-    lmk_res = np.asarray(results["lmk_residuals"])  # (N_lmk, 3)
+    lmk_res = np.asarray(results["lmk_residuals"])  # (N_active, 3)
+    if "lmk_outlier_flags" in results:
+        flags = np.asarray(results["lmk_outlier_flags"])  # (N_total,)
+        N_total = len(flags)
+        lmk_res_full = np.full((N_total, 3), np.nan)
+        lmk_res_full[flags == 0] = lmk_res
+        if "lmk_outlier_residuals" in results:
+            lmk_res_full[flags == 1] = np.asarray(results["lmk_outlier_residuals"])
+    else:
+        flags = np.zeros(len(lmk_res), dtype=np.int8)
+        lmk_res_full = lmk_res
     with open(results_dir / "landmark_residuals.csv", "w", newline="") as f:
         f.write(_LMK_RES_HEADER + "\n")
-        for i in range(len(lmk_res)):
-            f.write(f"{lmk_res[i,0]:.12g},{lmk_res[i,1]:.12g},{lmk_res[i,2]:.12g}\n")
+        for i in range(len(lmk_res_full)):
+            rx, ry, rz = lmk_res_full[i]
+            flag = int(flags[i])
+            res_str = (
+                f"{rx:.12g},{ry:.12g},{rz:.12g}"
+                if not np.isnan(rx) else
+                "nan,nan,nan"
+            )
+            f.write(f"{res_str},{flag}\n")
 
     # covariance.csv (10 cols; gyro_bias_cov moved to od_result.json estimates)
     if "pos_var" in results:
@@ -798,6 +1117,10 @@ def save_results(results: dict, results_dir: Path, meta: dict | None = None) -> 
         outputs = meta.setdefault("outputs", {})
         outputs["covariance_available"] = "pos_var" in results
         outputs["covariance_computed"] = "pos_var" in results
+        if "n_od_iterations" in results:
+            outputs["od_iterations"] = int(results["n_od_iterations"])
+        if "lmk_outlier_flags" in results:
+            outputs["landmarks_rejected"] = int(np.asarray(results["lmk_outlier_flags"]).sum())
 
         est = meta.setdefault("estimates", {})
         est["gyro_bias_x_rads"] = float(bias[0])

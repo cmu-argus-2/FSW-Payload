@@ -22,7 +22,7 @@ sys.path.insert(0, str(Path(__file__).parent))
 import numpy as np
 
 from data_loader import load_landmark_csv, load_imu_csv
-from optimizer import build_and_solve, save_results
+from optimizer import build_and_solve_with_outlier_rejection, save_results
 from residuals import IntegratorType
 
 
@@ -61,17 +61,21 @@ def main() -> None:
     integrator = IntegratorType.RK4 if args.rk4 else IntegratorType.FORWARD_EULER
 
     t0 = time.time()
-    results = build_and_solve(
+    results = build_and_solve_with_outlier_rejection(
         landmark_measurements,
         landmark_group_starts,
         gyro_measurements,
         landmark_uncertainties = landmark_uncertainties,
         # uma_std         = 1e-5,
-        integrator_type = integrator,
-        use_j2          = args.j2,
-        use_drag        = args.drag,
-        cd_nominal      = 2.2,
-        cd_std          = 1.0 if args.drag else None,
+        integrator_type    = integrator,
+        use_j2             = args.j2,
+        use_drag           = args.drag,
+        cd_nominal         = 2.2,
+        cd_std             = 1.0 if args.drag else None,
+        compute_covariance = True,
+        mahal_threshold    = 5.0,
+        max_iterations     = 10,
+        landmark_huber_M   = 3.0,
     )
     run_time_ms = int((time.time() - t0) * 1000)
 

@@ -2,11 +2,14 @@
 #define CONFIGURATION_HPP
 
 #include "toml.hpp"
+#include "core/errors.hpp"
 #include "vision/camera_manager.hpp"
 #include "imu/imu_manager.hpp"
 #include <opencv2/core.hpp>
 
 #define NUM_CAMERAS 4
+
+class InferenceManager;
 
 // Optical calibration shared across all cameras (same lens).
 // cam_to_body[i] is the rotation matrix from camera i's frame to the
@@ -27,6 +30,7 @@ public:
     const CameraISPConfig& GetCameraISPConfig() const;
     const IMUConfig& GetIMUConfig() const;
     const CameraCalibration& GetCameraCalibration() const;
+    EC ApplyInferenceConfig(InferenceManager& inference_manager) const;
 
 private:
     bool configured;

@@ -24,6 +24,7 @@ target_link_libraries(RUN_OD_PIPELINE
     PRIVATE
     spdlog::spdlog
     PAYLOAD_LIB
+    CLI11::CLI11
 )
 
 ##### DATASETS
@@ -35,6 +36,7 @@ target_link_libraries(run_dataset
     PRIVATE
     spdlog::spdlog
     PAYLOAD_LIB
+    CLI11::CLI11
 )
 
 ##### CAMERAS

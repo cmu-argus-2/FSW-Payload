@@ -4,6 +4,12 @@
                     [--overwrite | --no-overwrite]
                     [--rc-version <n>]
                     [--ld-version <n>]
+                    [--ld-weight-quant <0|1|2>]
+                    [--ld-input-width <px>]
+                    [--ld-input-height <px>]
+                    [--ld-embedded-nms | --no-ld-embedded-nms]
+                    [--ld-use-trt | --no-ld-use-trt]
+                    [--system-config <path>]
                     [--out <out_path>]
 
   Reprocesses all frames in a dataset through the full pipeline
@@ -18,18 +24,20 @@
   After processing, target_processing_stage and frame statistics in
   dataset.json are updated to reflect the current state of all frames.
 
-  Optional rc_version and ld_version default to 2 if not supplied.
-  LDNetConfig defaults match the standard FP16 TRT configuration.
+  RC/LD defaults come from config/config.toml when present, falling back to
+  InferenceManager defaults. CLI version/config flags override both.
 
   --out  File to write the processing metadata path into. Falls back to
          path.out if not provided or not writable.
 */
 
 #include <fstream>
+#include <optional>
 #include <string>
 
 #include <CLI/CLI.hpp>
 #include "spdlog/spdlog.h"
+#include "configuration.hpp"
 #include "inference/inference_manager.hpp"
 #include "inference/types.hpp"
 #include "vision/dataset.hpp"
@@ -38,6 +46,7 @@
 #include "core/data_handling.hpp"
 
 static constexpr const char* kDefaultOutPath      = "path.out";
+static constexpr const char* kDefaultSystemConfigPath = "config/config.toml";
 
 static std::string ResolveOutPath(const std::string& path)
 {
@@ -55,6 +64,60 @@ static void WriteResult(const std::string& out_file, const std::string& content)
     f << content << '\n';
 }
 
+static EC ApplyInferenceCliOverrides(InferenceManager& inference_manager,
+                                     const std::optional<int>& rc_version,
+                                     const std::optional<int>& ld_version,
+                                     const std::optional<int>& ld_weight_quant,
+                                     const std::optional<int>& ld_input_width,
+                                     const std::optional<int>& ld_input_height,
+                                     const std::optional<bool>& ld_embedded_nms,
+                                     const std::optional<bool>& ld_use_trt)
+{
+    if (rc_version) {
+        EC ec = inference_manager.SetRCNetVersion(*rc_version);
+        if (ec != EC::OK) return ec;
+    }
+
+    if (ld_version) {
+        EC ec = inference_manager.SetLDNetVersion(*ld_version);
+        if (ec != EC::OK) return ec;
+    }
+
+    LDNetConfig ldnet_config = inference_manager.GetLDNetConfig();
+    bool ldnet_changed = false;
+
+    if (ld_weight_quant) {
+        ldnet_config.weight_quant = static_cast<NET_QUANTIZATION>(*ld_weight_quant);
+        ldnet_changed = true;
+    }
+    if (ld_input_width) {
+        ldnet_config.input_width = *ld_input_width;
+        ldnet_changed = true;
+    }
+    if (ld_input_height) {
+        ldnet_config.input_height = *ld_input_height;
+        ldnet_changed = true;
+    }
+    if (ld_embedded_nms) {
+        ldnet_config.embedded_nms = *ld_embedded_nms;
+        ldnet_changed = true;
+    }
+    if (ld_use_trt) {
+        ldnet_config.use_trt = *ld_use_trt;
+        ldnet_changed = true;
+    }
+
+    if (ldnet_changed) {
+        inference_manager.SetLDNetConfig(ldnet_config.weight_quant,
+                                         ldnet_config.input_width,
+                                         ldnet_config.input_height,
+                                         ldnet_config.embedded_nms,
+                                         ldnet_config.use_trt);
+    }
+
+    return EC::OK;
+}
+
 int main(int argc, char** argv)
 {
     spdlog::set_level(spdlog::level::info);
@@ -65,8 +128,14 @@ int main(int argc, char** argv)
     std::string dataset_folder;
     int target_stage = 3;
     bool overwrite = false;
-    int rc_version = 2;
-    int ld_version = 2;
+    std::optional<int> rc_version;
+    std::optional<int> ld_version;
+    std::optional<int> ld_weight_quant;
+    std::optional<int> ld_input_width;
+    std::optional<int> ld_input_height;
+    bool ld_embedded_nms = false;
+    bool ld_use_trt = false;
+    std::string system_config_path = kDefaultSystemConfigPath;
     std::string out_path = kDefaultOutPath;
 
     app.add_option("dataset_folder", dataset_folder, "Path to the dataset folder")->required();
@@ -78,6 +147,19 @@ int main(int argc, char** argv)
                  "Reprocess frames whose stored inference results do not match the requested conditions");
     app.add_option("--rc-version", rc_version, "RCNet model version");
     app.add_option("--ld-version", ld_version, "LDNet model version");
+    app.add_option("--ld-weight-quant", ld_weight_quant, "LDNet weight quantization: 0=FP32 1=FP16 2=INT8")
+        ->check(CLI::Range(0, 2));
+    app.add_option("--ld-input-width", ld_input_width, "LDNet input width in pixels")
+        ->check(CLI::PositiveNumber);
+    app.add_option("--ld-input-height", ld_input_height, "LDNet input height in pixels")
+        ->check(CLI::PositiveNumber);
+    CLI::Option* ld_embedded_nms_opt =
+        app.add_flag("--ld-embedded-nms,--no-ld-embedded-nms{false}", ld_embedded_nms,
+                     "Use LDNet engines with embedded NMS");
+    CLI::Option* ld_use_trt_opt =
+        app.add_flag("--ld-use-trt,--no-ld-use-trt{false}", ld_use_trt,
+                     "Use TensorRT LDNet engines instead of ONNX");
+    app.add_option("--system-config", system_config_path, "System config TOML");
     app.add_option("--out", out_path, "File to write the processing metadata path into");
 
     CLI11_PARSE(app, argc, argv);
@@ -85,28 +167,37 @@ int main(int argc, char** argv)
     const ProcessingStage target = ToProcessingStage(static_cast<uint8_t>(target_stage));
     const std::string resolved_out_path = ResolveOutPath(out_path);
 
-    spdlog::info("reprocess_dataset: folder={} target={} overwrite={} rc_version={} ld_version={}",
-                 dataset_folder, ProcessingStageToString(target), overwrite, rc_version, ld_version);
+    spdlog::info("reprocess_dataset: folder={} target={} overwrite={}",
+                 dataset_folder, ProcessingStageToString(target), overwrite);
 
     Dataset dataset(dataset_folder);
 
     InferenceManager im;
-
-    EC ec = im.SetRCNetVersion(rc_version);
-    if (ec != EC::OK)
-    {
-        spdlog::error("Failed to set RC version {}: error {}", rc_version, to_uint8(ec));
-        return to_uint8(ec);
+    Configuration config;
+    try {
+        config.LoadConfiguration(system_config_path);
+    } catch (const std::exception& e) {
+        spdlog::error("Failed to load system configuration {}: {}", system_config_path, e.what());
+        return to_uint8(EC::PLACEHOLDER);
     }
 
-    ec = im.SetLDNetVersion(ld_version);
-    if (ec != EC::OK)
-    {
-        spdlog::error("Failed to set LD version {}: error {}", ld_version, to_uint8(ec));
-        return to_uint8(ec);
-    }
+    EC ec = config.ApplyInferenceConfig(im);
+    if (ec != EC::OK) return to_uint8(ec);
 
-    im.SetLDNetConfig(NET_QUANTIZATION::FP16, 4608, 2592, false, true);
+    const std::optional<bool> ld_embedded_nms_override =
+        ld_embedded_nms_opt->count() > 0 ? std::optional<bool>(ld_embedded_nms) : std::nullopt;
+    const std::optional<bool> ld_use_trt_override =
+        ld_use_trt_opt->count() > 0 ? std::optional<bool>(ld_use_trt) : std::nullopt;
+
+    ec = ApplyInferenceCliOverrides(im,
+                                    rc_version,
+                                    ld_version,
+                                    ld_weight_quant,
+                                    ld_input_width,
+                                    ld_input_height,
+                                    ld_embedded_nms_override,
+                                    ld_use_trt_override);
+    if (ec != EC::OK) return to_uint8(ec);
 
     ec = Reprocessing::Dataset(dataset, im, target, overwrite);
     if (ec != EC::OK)

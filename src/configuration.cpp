@@ -1,4 +1,6 @@
 #include "configuration.hpp"
+#include "inference/inference_manager.hpp"
+#include "inference/types.hpp"
 #include <string>
 #include <iostream>
 #include "spdlog/spdlog.h"
@@ -187,6 +189,96 @@ const IMUConfig& Configuration::GetIMUConfig() const
 const CameraCalibration& Configuration::GetCameraCalibration() const
 {
     return camera_calibration;
+}
+
+EC Configuration::ApplyInferenceConfig(InferenceManager& inference_manager) const
+{
+    const auto* inference_table = config["inference"].as_table();
+    if (!inference_table) {
+        SPDLOG_INFO("No [inference] section found in config — using InferenceManager defaults.");
+        return EC::OK;
+    }
+
+    if (auto v = inference_table->get_as<int64_t>("rc_version")) {
+        const int version = static_cast<int>((*v).get());
+        if (version <= 0) {
+            SPDLOG_ERROR("Invalid inference.rc_version {}; expected > 0.", version);
+            return EC::INVALID_COMMAND_ARGUMENTS;
+        }
+        EC ec = inference_manager.SetRCNetVersion(version);
+        if (ec != EC::OK) return ec;
+    }
+
+    if (auto v = inference_table->get_as<int64_t>("ld_version")) {
+        const int version = static_cast<int>((*v).get());
+        if (version <= 0) {
+            SPDLOG_ERROR("Invalid inference.ld_version {}; expected > 0.", version);
+            return EC::INVALID_COMMAND_ARGUMENTS;
+        }
+        EC ec = inference_manager.SetLDNetVersion(version);
+        if (ec != EC::OK) return ec;
+    }
+
+    const auto* ldnet_table = (*inference_table)["ldnet"].as_table();
+    if (!ldnet_table) return EC::OK;
+
+    LDNetConfig ldnet_config = inference_manager.GetLDNetConfig();
+    bool ldnet_changed = false;
+
+    if (auto v = ldnet_table->get_as<int64_t>("weight_quant")) {
+        const int quant = static_cast<int>((*v).get());
+        if (quant < 0 || quant > 2) {
+            SPDLOG_ERROR("Invalid inference.ldnet.weight_quant {}; expected 0=FP32, 1=FP16, or 2=INT8.", quant);
+            return EC::INVALID_COMMAND_ARGUMENTS;
+        }
+        ldnet_config.weight_quant = static_cast<NET_QUANTIZATION>(quant);
+        ldnet_changed = true;
+    }
+
+    if (auto v = ldnet_table->get_as<int64_t>("input_width")) {
+        const int width = static_cast<int>((*v).get());
+        if (width <= 0) {
+            SPDLOG_ERROR("Invalid inference.ldnet.input_width {}; expected > 0.", width);
+            return EC::INVALID_COMMAND_ARGUMENTS;
+        }
+        ldnet_config.input_width = width;
+        ldnet_changed = true;
+    }
+
+    if (auto v = ldnet_table->get_as<int64_t>("input_height")) {
+        const int height = static_cast<int>((*v).get());
+        if (height <= 0) {
+            SPDLOG_ERROR("Invalid inference.ldnet.input_height {}; expected > 0.", height);
+            return EC::INVALID_COMMAND_ARGUMENTS;
+        }
+        ldnet_config.input_height = height;
+        ldnet_changed = true;
+    }
+
+    if (auto v = ldnet_table->get_as<bool>("embedded_nms")) {
+        ldnet_config.embedded_nms = (*v).get();
+        ldnet_changed = true;
+    }
+
+    if (auto v = ldnet_table->get_as<bool>("use_trt")) {
+        ldnet_config.use_trt = (*v).get();
+        ldnet_changed = true;
+    }
+
+    if (ldnet_changed) {
+        inference_manager.SetLDNetConfig(ldnet_config.weight_quant,
+                                         ldnet_config.input_width,
+                                         ldnet_config.input_height,
+                                         ldnet_config.embedded_nms,
+                                         ldnet_config.use_trt);
+    }
+
+    LDNetConfig active_ldnet_config = inference_manager.GetLDNetConfig();
+    SPDLOG_INFO("Inference config active: rc_version={} ld_version={} ldnet={}",
+                inference_manager.GetRCVersion(),
+                inference_manager.GetLDVersion(),
+                active_ldnet_config.GetFileNameAppendix());
+    return EC::OK;
 }
 
 void Configuration::ParseCameraCalibration()

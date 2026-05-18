@@ -120,3 +120,14 @@ model_path = 'models/rc/rc_net_script.pt' # [UNUSED]
 num_classes = 16
 region_ids = [ '10S', '10T', '11R', '12R', '16T', '17R', '17T', '18S', '32S', '32T', '33S', '33T', '53S', '52S', '54S', '54T' ]
 resolution = 224
+
+[inference]
+rc_version = 2
+ld_version = 2
+
+[inference.ldnet]
+weight_quant = 1 # 0=FP32, 1=FP16, 2=INT8
+input_width = 4608
+input_height = 2592
+embedded_nms = false
+use_trt = true

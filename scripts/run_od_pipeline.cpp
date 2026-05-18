@@ -15,38 +15,18 @@
 #include "vision/dataset.hpp"
 
 #include <fstream>
-#include <iostream>
 #include <memory>
+#include <optional>
 #include <string>
 #include <thread>
-#include <vector>
 
+#include <CLI/CLI.hpp>
 #include <spdlog/spdlog.h>
 #include "toml.hpp"
 
 static constexpr const char* kDefaultODConfigPath     = "config/od.toml";
 static constexpr const char* kDefaultSystemConfigPath = "config/config.toml";
 static constexpr const char* kDefaultOutPath          = "path.out";
-
-// Returns the value of --flag, or default_val if not present.
-static std::string GetFlag(int argc, char** argv, const char* flag, const char* default_val = "")
-{
-    for (int i = 1; i < argc - 1; ++i)
-        if (std::string(argv[i]) == flag) return argv[i + 1];
-    return default_val;
-}
-
-// Returns positional args, skipping any --flag <value> pairs.
-static std::vector<std::string> GetPositional(int argc, char** argv)
-{
-    std::vector<std::string> result;
-    for (int i = 1; i < argc; ++i) {
-        std::string a = argv[i];
-        if (a.size() > 2 && a[0] == '-' && a[1] == '-') { ++i; continue; }
-        result.push_back(a);
-    }
-    return result;
-}
 
 // Returns the provided path if writable, otherwise falls back to kDefaultOutPath.
 static std::string ResolveOutPath(const std::string& path)
@@ -63,6 +43,60 @@ static void WriteResult(const std::string& out_file, const std::string& content)
     std::ofstream f(out_file, std::ios::trunc);
     if (!f.is_open()) { spdlog::error("Failed to write result to '{}'", out_file); return; }
     f << content << '\n';
+}
+
+static EC ApplyInferenceCliOverrides(InferenceManager& inference_manager,
+                                     const std::optional<int>& rc_version,
+                                     const std::optional<int>& ld_version,
+                                     const std::optional<int>& ld_weight_quant,
+                                     const std::optional<int>& ld_input_width,
+                                     const std::optional<int>& ld_input_height,
+                                     const std::optional<bool>& ld_embedded_nms,
+                                     const std::optional<bool>& ld_use_trt)
+{
+    if (rc_version) {
+        EC ec = inference_manager.SetRCNetVersion(*rc_version);
+        if (ec != EC::OK) return ec;
+    }
+
+    if (ld_version) {
+        EC ec = inference_manager.SetLDNetVersion(*ld_version);
+        if (ec != EC::OK) return ec;
+    }
+
+    LDNetConfig ldnet_config = inference_manager.GetLDNetConfig();
+    bool ldnet_changed = false;
+
+    if (ld_weight_quant) {
+        ldnet_config.weight_quant = static_cast<NET_QUANTIZATION>(*ld_weight_quant);
+        ldnet_changed = true;
+    }
+    if (ld_input_width) {
+        ldnet_config.input_width = *ld_input_width;
+        ldnet_changed = true;
+    }
+    if (ld_input_height) {
+        ldnet_config.input_height = *ld_input_height;
+        ldnet_changed = true;
+    }
+    if (ld_embedded_nms) {
+        ldnet_config.embedded_nms = *ld_embedded_nms;
+        ldnet_changed = true;
+    }
+    if (ld_use_trt) {
+        ldnet_config.use_trt = *ld_use_trt;
+        ldnet_changed = true;
+    }
+
+    if (ldnet_changed) {
+        inference_manager.SetLDNetConfig(ldnet_config.weight_quant,
+                                         ldnet_config.input_width,
+                                         ldnet_config.input_height,
+                                         ldnet_config.embedded_nms,
+                                         ldnet_config.use_trt);
+    }
+
+    return EC::OK;
 }
 
 static bool LoadDatasetConfig(const std::string& folder_path, DatasetConfig& out)
@@ -111,23 +145,55 @@ static bool LoadDatasetConfig(const std::string& folder_path, DatasetConfig& out
 
 int main(int argc, char** argv)
 {
-    const auto positional = GetPositional(argc, argv);
-    if (positional.empty()) {
-        std::cerr << "Usage: run_od_pipeline <dataset_config_folder> "
-                     "[od_config_path] [system_config_path] [--out <out_path>]\n";
-        return 1;
-    }
     spdlog::set_level(spdlog::level::info);
 
-    const std::string out_path = ResolveOutPath(
-        GetFlag(argc, argv, "--out", kDefaultOutPath));
+    CLI::App app{"Capture a dataset, prepare measurements, run OD, and write results."};
+    app.allow_extras(false);
+
+    std::string dataset_config_folder;
+    std::string od_config_path = kDefaultODConfigPath;
+    std::string system_config_path = kDefaultSystemConfigPath;
+    std::string out_arg = kDefaultOutPath;
+    std::optional<int> rc_version;
+    std::optional<int> ld_version;
+    std::optional<int> ld_weight_quant;
+    std::optional<int> ld_input_width;
+    std::optional<int> ld_input_height;
+    bool ld_embedded_nms = false;
+    bool ld_use_trt = false;
+
+    app.add_option("dataset_config_folder", dataset_config_folder,
+                   "Folder containing dataset_config.toml")->required();
+    app.add_option("od_config_path", od_config_path,
+                   "OD config TOML (default: config/od.toml)");
+    app.add_option("system_config_path", system_config_path,
+                   "System config TOML (default: config/config.toml)");
+    app.add_option("--out", out_arg, "File to write the generated results path into");
+    app.add_option("--rc-version", rc_version, "RCNet model version");
+    app.add_option("--ld-version", ld_version, "LDNet model version");
+    app.add_option("--ld-weight-quant", ld_weight_quant, "LDNet weight quantization: 0=FP32 1=FP16 2=INT8")
+        ->check(CLI::Range(0, 2));
+    app.add_option("--ld-input-width", ld_input_width, "LDNet input width in pixels")
+        ->check(CLI::PositiveNumber);
+    app.add_option("--ld-input-height", ld_input_height, "LDNet input height in pixels")
+        ->check(CLI::PositiveNumber);
+    CLI::Option* ld_embedded_nms_opt =
+        app.add_flag("--ld-embedded-nms,--no-ld-embedded-nms{false}", ld_embedded_nms,
+                     "Use LDNet engines with embedded NMS");
+    CLI::Option* ld_use_trt_opt =
+        app.add_flag("--ld-use-trt,--no-ld-use-trt{false}", ld_use_trt,
+                     "Use TensorRT LDNet engines instead of ONNX");
+
+    CLI11_PARSE(app, argc, argv);
+
+    const std::string out_path = ResolveOutPath(out_arg);
 
     ODRequest request;
-    if (!LoadDatasetConfig(positional[0], request.dataset_config)) {
+    if (!LoadDatasetConfig(dataset_config_folder, request.dataset_config)) {
         return 1;
     }
-    request.od_config_path     = positional.size() > 1 ? positional[1] : kDefaultODConfigPath;
-    request.system_config_path = positional.size() > 2 ? positional[2] : kDefaultSystemConfigPath;
+    request.od_config_path     = od_config_path;
+    request.system_config_path = system_config_path;
 
     auto config = std::make_unique<Configuration>();
     try {
@@ -139,6 +205,24 @@ int main(int argc, char** argv)
     }
 
     InferenceManager inference_manager;
+    EC ec = config->ApplyInferenceConfig(inference_manager);
+    if (ec != EC::OK) return to_uint8(ec);
+
+    const std::optional<bool> ld_embedded_nms_override =
+        ld_embedded_nms_opt->count() > 0 ? std::optional<bool>(ld_embedded_nms) : std::nullopt;
+    const std::optional<bool> ld_use_trt_override =
+        ld_use_trt_opt->count() > 0 ? std::optional<bool>(ld_use_trt) : std::nullopt;
+
+    ec = ApplyInferenceCliOverrides(inference_manager,
+                                    rc_version,
+                                    ld_version,
+                                    ld_weight_quant,
+                                    ld_input_width,
+                                    ld_input_height,
+                                    ld_embedded_nms_override,
+                                    ld_use_trt_override);
+    if (ec != EC::OK) return to_uint8(ec);
+
     IMUManager imu_manager(config->GetIMUConfig());
     CameraManager camera_manager(config->GetCameraConfigs(),
                                  config->GetCameraISPConfig(),

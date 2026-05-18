@@ -7,6 +7,12 @@
 using casadi::DM;
 using casadi::MX;
 
+MX pseudo_huber_cost(const MX& res, double M)
+{
+    MX d_sq = dot(res, res);
+    return 2.0 * M * M * (sqrt(1.0 + d_sq / (M * M)) - 1.0);
+}
+
 MX landmark_residual_casadi(
     const MX& r,
     const MX& q,

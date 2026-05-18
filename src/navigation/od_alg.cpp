@@ -660,6 +660,20 @@ static bool WriteBatchODResults(const std::string& dataset_folder,
     meta["solver"]["final_cost"] = result.solver_summary.final_cost;
     meta["solver"]["solve_time_ms"] =
         result.solver_summary.solve_time_ms >= 0.0 ? nlohmann::json(result.solver_summary.solve_time_ms) : nlohmann::json(nullptr);
+    if (!result.iteration_summaries.empty()) {
+        nlohmann::json iters = nlohmann::json::array();
+        for (const auto& s : result.iteration_summaries) {
+            nlohmann::json entry;
+            entry["return_status"]      = s.return_status;
+            entry["iter_count"]         = s.iter_count;
+            entry["final_cost"]         = s.final_cost;
+            entry["solve_time_ms"]      = s.solve_time_ms >= 0.0 ? nlohmann::json(s.solve_time_ms) : nlohmann::json(nullptr);
+            entry["n_active_landmarks"] = s.n_active_landmarks;
+            entry["n_rejected"]         = s.n_rejected;
+            iters.push_back(entry);
+        }
+        meta["solver_iterations"] = iters;
+    }
     meta["inputs"]["num_landmark_rows"] = num_landmark_rows;
     meta["inputs"]["num_landmark_groups"] = num_landmark_groups;
     meta["inputs"]["num_gyro_rows"] = num_gyro_rows;
@@ -667,6 +681,8 @@ static bool WriteBatchODResults(const std::string& dataset_folder,
     meta["outputs"]["covariance_available"] = result.covariance.rows() > 0;
     meta["outputs"]["covariance_computed"] = result.covariance_computed;
     meta["outputs"]["covariance_timed_out"] = result.covariance_timed_out;
+    meta["outputs"]["od_solver_calls"] = result.n_od_solver_calls;
+    meta["outputs"]["landmarks_rejected"] = result.n_lmk_outliers;
     meta["config"]["use_j2"] = od_config.batch_opt.use_j2;
     meta["config"]["use_drag"] = od_config.batch_opt.use_drag;
     meta["config"]["compute_covariance"] = od_config.batch_opt.compute_covariance;
@@ -738,11 +754,18 @@ static bool WriteBatchODResults(const std::string& dataset_folder,
     {
         std::ofstream f(results_dir + "/landmark_residuals.csv");
         if (f.is_open()) {
-            f << "res_x,res_y,res_z\n" << std::setprecision(12);
+            f << "res_x,res_y,res_z,outlier\n" << std::setprecision(12);
             for (idx_t i = 0; i < result.landmark_residuals.rows(); ++i) {
-                f << result.landmark_residuals(i, LandmarkResIdx::LANDMARK_RES_X) << ','
-                  << result.landmark_residuals(i, LandmarkResIdx::LANDMARK_RES_Y) << ','
-                  << result.landmark_residuals(i, LandmarkResIdx::LANDMARK_RES_Z) << '\n';
+                const int8_t flag = (i < static_cast<idx_t>(result.lmk_outlier_flags.size()))
+                                    ? result.lmk_outlier_flags[static_cast<size_t>(i)] : 0;
+                const double rx = result.landmark_residuals(i, LandmarkResIdx::LANDMARK_RES_X);
+                const double ry = result.landmark_residuals(i, LandmarkResIdx::LANDMARK_RES_Y);
+                const double rz = result.landmark_residuals(i, LandmarkResIdx::LANDMARK_RES_Z);
+                if (std::isnan(rx) || std::isnan(ry) || std::isnan(rz)) {
+                    f << "nan,nan,nan," << static_cast<int>(flag) << '\n';
+                } else {
+                    f << rx << ',' << ry << ',' << rz << ',' << static_cast<int>(flag) << '\n';
+                }
             }
         }
     }
@@ -809,7 +832,7 @@ ODResult RunODOnDataset(const ODRequest& request)
                    measurements.group_starts.data() + measurements.group_starts.size(),
                    true));
 
-    BatchOptResult result = solve_batch_opt(measurements, od_config.batch_opt);
+    BatchOptResult result = solve_batch_opt_with_outlier_rejection(measurements, od_config.batch_opt);
     out.stage = result.initial_trajectory.rows() > 0 ? ODStage::INITIAL_GUESS_CREATED : out.stage;
     const int64_t run_end_ms = std::chrono::duration_cast<std::chrono::milliseconds>(
         std::chrono::system_clock::now().time_since_epoch()).count();

@@ -100,9 +100,12 @@ ErrorCode OD::ReadConfig(const std::string& config_path)
     config.batch_opt.use_drag = BATCH_OPT_params->get_as<bool>("use_drag")->value_or(config.batch_opt.use_drag);
     config.batch_opt.cd_nominal = get_param_as_double(BATCH_OPT_params, "cd_nominal", config.batch_opt.cd_nominal);
     config.batch_opt.cd_std     = get_param_as_double(BATCH_OPT_params, "cd_std",     config.batch_opt.cd_std);
-    config.batch_opt.integrator     = static_cast<Integrator>(BATCH_OPT_params->get_as<int64_t>("integrator")->value_or(static_cast<int64_t>(config.batch_opt.integrator)));
+    config.batch_opt.integrator          = static_cast<Integrator>(BATCH_OPT_params->get_as<int64_t>("integrator")->value_or(static_cast<int64_t>(config.batch_opt.integrator)));
+    config.batch_opt.landmark_huber_delta = get_param_as_double(BATCH_OPT_params, "landmark_huber_delta", config.batch_opt.landmark_huber_delta);
+    config.batch_opt.mahal_threshold      = get_param_as_double(BATCH_OPT_params, "mahal_threshold",      config.batch_opt.mahal_threshold);
+    config.batch_opt.max_od_iterations    = static_cast<int>(BATCH_OPT_params->get_as<int64_t>("max_od_iterations")->value_or(static_cast<int64_t>(config.batch_opt.max_od_iterations)));
     // TODO: safe value checking on each params
-    
+
     LogConfig();
     return ErrorCode::OK;
 
@@ -131,6 +134,9 @@ void OD::LogConfig()
     SPDLOG_INFO("  cd_std: {}", config.batch_opt.cd_std);
     SPDLOG_INFO("  integrator: {} ({})", static_cast<int>(config.batch_opt.integrator),
                 config.batch_opt.integrator == Integrator::RK4 ? "RK4" : "Euler");
+    SPDLOG_INFO("  landmark_huber_delta: {}", config.batch_opt.landmark_huber_delta);
+    SPDLOG_INFO("  mahal_threshold: {}", config.batch_opt.mahal_threshold);
+    SPDLOG_INFO("  max_od_iterations: {}", config.batch_opt.max_od_iterations);
 
 }
 
@@ -190,7 +196,10 @@ ODConfigResult ReadODConfig(const std::string& config_path)
         od_config.batch_opt.use_drag          = BATCH_OPT_params->get_as<bool>("use_drag")->value_or(od_config.batch_opt.use_drag);
         od_config.batch_opt.cd_nominal        = get_param_as_double(BATCH_OPT_params, "cd_nominal", od_config.batch_opt.cd_nominal);
         od_config.batch_opt.cd_std            = get_param_as_double(BATCH_OPT_params, "cd_std",     od_config.batch_opt.cd_std);
-        od_config.batch_opt.integrator        = static_cast<Integrator>(BATCH_OPT_params->get_as<int64_t>("integrator")->value_or(static_cast<int64_t>(od_config.batch_opt.integrator)));
+        od_config.batch_opt.integrator           = static_cast<Integrator>(BATCH_OPT_params->get_as<int64_t>("integrator")->value_or(static_cast<int64_t>(od_config.batch_opt.integrator)));
+        od_config.batch_opt.landmark_huber_delta = get_param_as_double(BATCH_OPT_params, "landmark_huber_delta", od_config.batch_opt.landmark_huber_delta);
+        od_config.batch_opt.mahal_threshold      = get_param_as_double(BATCH_OPT_params, "mahal_threshold",      od_config.batch_opt.mahal_threshold);
+        od_config.batch_opt.max_od_iterations    = static_cast<int>(BATCH_OPT_params->get_as<int64_t>("max_od_iterations")->value_or(static_cast<int64_t>(od_config.batch_opt.max_od_iterations)));
     }
 
     // Print the configuration

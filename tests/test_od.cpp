@@ -23,8 +23,7 @@ namespace
 {
 constexpr int kLDNetedStage = static_cast<int>(ProcessingStage::LDNeted);
 constexpr int kRegion17R = static_cast<int>(RegionID::R_17R);
-constexpr uint64_t kBaseUnixMs =
-    static_cast<uint64_t>(J2000_EPOCH_UNIX_S + 1000) * 1000ULL;
+constexpr uint64_t kBaseUnixMs = 946728936000ULL;
 
 struct ODTest : ::testing::Test
 {
@@ -537,8 +536,7 @@ TEST_F(ODTest, LoadODMeasurementsConvertsTimestampMsToJ2000)
 
     const ODMeasurementsResult result = LoadODMeasurementsFromDataset(dir.string());
     ASSERT_EQ(result.code, ErrorCode::OK);
-    const double expected = static_cast<double>(kBaseUnixMs) / 1000.0 -
-                            static_cast<double>(J2000_EPOCH_UNIX_S);
+    const double expected = unixToJ2000(static_cast<double>(kBaseUnixMs) / 1000.0);
     EXPECT_DOUBLE_EQ(result.measurements.landmark_measurements(0, LandmarkMeasurementIdx::LANDMARK_TIMESTAMP),
                      expected);
 }

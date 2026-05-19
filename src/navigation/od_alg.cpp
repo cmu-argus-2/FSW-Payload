@@ -71,8 +71,7 @@ bool OD::IsODPossible(const std::string& dataset_folder) const
                 ++ldneted_frame_count;
                 total_landmark_count += lm_count;
                 const uint64_t ts_ms = j.value("timestamp", uint64_t(0));
-                const double t_j2000 = static_cast<double>(ts_ms) / 1000.0
-                                       - static_cast<double>(J2000_EPOCH_UNIX_S);
+                const double t_j2000 = unixToJ2000(static_cast<double>(ts_ms) / 1000.0);
                 t_min = std::min(t_min, t_j2000);
                 t_max = std::max(t_max, t_j2000);
             }
@@ -111,8 +110,7 @@ bool OD::IsODPossible(const std::string& dataset_folder) const
         std::string token;
         if (!std::getline(ss, token, ',')) continue;
         try {
-            const double t_j2000 = std::stod(token) / 1000.0
-                                   - static_cast<double>(J2000_EPOCH_UNIX_S);
+            const double t_j2000 = unixToJ2000(std::stod(token) / 1000.0);
             imu_t_first = std::min(imu_t_first, t_j2000);
             imu_t_last  = std::max(imu_t_last,  t_j2000);
             ++imu_count;
@@ -248,6 +246,7 @@ ErrorCode OD::DatasetPrepare(const std::string& dataset_folder,
     std::vector<std::array<double, 7>> lm_rows;
     std::vector<bool>   group_starts_vec;
     std::vector<double> uncertainties;
+    std::vector<uint64_t> lm_timestamps_ms;
 
     constexpr double DEG_TO_RAD = M_PI / 180.0;
 
@@ -333,6 +332,7 @@ ErrorCode OD::DatasetPrepare(const std::string& dataset_folder,
                                    eci_km.x(),       eci_km.y(),       eci_km.z()});
                 group_starts_vec.push_back(first_in_group);
                 uncertainties.push_back(sigma);
+                lm_timestamps_ms.push_back(ts_ms);
                 first_in_group = false;
             }
         }
@@ -356,9 +356,7 @@ ErrorCode OD::DatasetPrepare(const std::string& dataset_folder,
         for (size_t i = 0; i < lm_rows.size(); ++i) {
             if (group_starts_vec[i]) ++group_idx;
             const auto& row = lm_rows[i];
-            const uint64_t ts_ms_out = static_cast<uint64_t>(
-                (row[0] + static_cast<double>(J2000_EPOCH_UNIX_S)) * 1000.0);
-            lm_csv << ts_ms_out << ','
+            lm_csv << lm_timestamps_ms[i] << ','
                    << row[1] << ',' << row[2] << ',' << row[3] << ','
                    << row[4] << ',' << row[5] << ',' << row[6] << ','
                    << group_idx << ','
@@ -388,8 +386,7 @@ ErrorCode OD::DatasetPrepare(const std::string& dataset_folder,
         }
         if (tokens.size() < 4) continue;
         try {
-            const double t_j2000 = std::stod(tokens[0]) / 1000.0
-                                   - static_cast<double>(J2000_EPOCH_UNIX_S);
+            const double t_j2000 = unixToJ2000(std::stod(tokens[0]) / 1000.0);
             constexpr double DPS_TO_RADPS = M_PI / 180.0;
             const double wx = std::stod(tokens[1]) * DPS_TO_RADPS;
             const double wy = std::stod(tokens[2]) * DPS_TO_RADPS;
@@ -517,7 +514,7 @@ ODMeasurementsResult LoadODMeasurementsFromDataset(const std::string& dataset_fo
             if (tokens.size() < 9) continue;
             try {
                 const double ts_ms = std::stod(tokens[0]);
-                const double t_j2000 = ts_ms / 1000.0 - static_cast<double>(J2000_EPOCH_UNIX_S);
+                const double t_j2000 = unixToJ2000(ts_ms / 1000.0);
                 const double bx = std::stod(tokens[1]);
                 const double by = std::stod(tokens[2]);
                 const double bz = std::stod(tokens[3]);
@@ -563,7 +560,7 @@ ODMeasurementsResult LoadODMeasurementsFromDataset(const std::string& dataset_fo
             if (tokens.size() < 4) continue;
             try {
                 const double ts_ms = std::stod(tokens[0]);
-                const double t_j2000 = ts_ms / 1000.0 - static_cast<double>(J2000_EPOCH_UNIX_S);
+                const double t_j2000 = unixToJ2000(ts_ms / 1000.0);
                 const double wx = std::stod(tokens[1]) * DPS_TO_RADPS;
                 const double wy = std::stod(tokens[2]) * DPS_TO_RADPS;
                 const double wz = std::stod(tokens[3]) * DPS_TO_RADPS;

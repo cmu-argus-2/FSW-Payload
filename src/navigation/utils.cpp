@@ -4,15 +4,37 @@
 #include <filesystem>
 
 #include <cmath>
+#include <cstdio>
+#include <ctime>
 using namespace Eigen;
-// seconds elapsed between the Unix and J2000 epoch
-static constexpr double J2000epochInUnixTime = 946727936.0;
 
 // Astronomical Unit [m]
 static constexpr double ASTRONOMICAL_UNIT = 149597870700;
 
 double unixToJ2000(double unixSeconds) {
-    return unixSeconds - J2000epochInUnixTime;
+    loadAllKernels();
+
+    const double whole_seconds_d = std::floor(unixSeconds);
+    const auto whole_seconds = static_cast<std::time_t>(whole_seconds_d);
+    const double fractional_seconds = unixSeconds - whole_seconds_d;
+
+    std::tm utc_tm{};
+    gmtime_r(&whole_seconds, &utc_tm);
+
+    char utc_string[64];
+    std::snprintf(utc_string,
+                  sizeof(utc_string),
+                  "%04d-%02d-%02dT%02d:%02d:%09.6f",
+                  utc_tm.tm_year + 1900,
+                  utc_tm.tm_mon + 1,
+                  utc_tm.tm_mday,
+                  utc_tm.tm_hour,
+                  utc_tm.tm_min,
+                  static_cast<double>(utc_tm.tm_sec) + fractional_seconds);
+
+    SpiceDouble et = 0.0;
+    utc2et_c(utc_string, &et);
+    return static_cast<double>(et);
 }
 
 // Basic Utility functions

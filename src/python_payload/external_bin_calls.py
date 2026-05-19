@@ -6,6 +6,7 @@ like record a dataset, or run inference...
 import os
 import subprocess
 import sys
+import zipfile
 from pathlib import Path
 import toml
 
@@ -149,6 +150,39 @@ def run_dataset_processing(dataset_path, level_processing, rc_version, ld_versio
     return json_path
 
 
+def package_od_csv_downlink(results_dir):
+    """
+    Create a zip containing only CSV products from an OD results directory.
+
+    The od_result.json is intentionally handled separately and is not included
+    in this archive.
+    """
+
+    results_path = Path(results_dir)
+    if not results_path.exists():
+        print(f"Error: OD results directory does not exist: {results_path}")
+        return None
+
+    csv_paths = sorted(path for path in results_path.glob("*.csv") if path.is_file())
+    if not csv_paths:
+        print(f"Warning: no CSV files found to package in {results_path}")
+        return None
+
+    timestamp = results_path.name
+    zip_path = results_path / f"od_{timestamp}.zip"
+
+    try:
+        with zipfile.ZipFile(zip_path, "w", compression=zipfile.ZIP_DEFLATED) as zf:
+            for csv_path in csv_paths:
+                zf.write(csv_path, arcname=csv_path.name)
+    except Exception as e:
+        print(f"Error creating OD CSV downlink zip: {e}")
+        return None
+
+    print(f"OD CSV downlink zip generated at: {zip_path}")
+    return str(zip_path)
+
+
 def run_orbit_determination(dataset_path, max_iter, max_runtime):
     """
     This will call the binary to perform the orbit determination
@@ -184,8 +218,7 @@ def run_orbit_determination(dataset_path, max_iter, max_runtime):
         print(f"Error capturing return code: {e}")
         return None
     
-    # TODO: it is writing to path.out, but  I am actually not going to use it
-    # i will be assuming the dataset_path that was sent as argument
+    # it is writing to path.out, but  I am actually not going to use it
     path_out_file = Path("path.out")
     if not path_out_file.exists():
         print("Error: path.out file not created")
@@ -194,6 +227,7 @@ def run_orbit_determination(dataset_path, max_iter, max_runtime):
     od_result_path = path_out_file.read_text().strip()
     print(f"Test dataset generated at: {od_result_path}")
     json_path = os.path.join(od_result_path, "od_result.json")
+    package_od_csv_downlink(od_result_path)
     
     # for now we will just return the same path
     return json_path

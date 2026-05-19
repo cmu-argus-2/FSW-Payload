@@ -644,6 +644,14 @@ static bool WriteBatchODResults(const std::string& dataset_folder,
         if (ec) SPDLOG_WARN("WriteBatchODResults: could not copy landmark_measurements.csv: {}", ec.message());
     }
 
+    const fs::path src_imu = fs::path(dataset_folder) / "imu_data.csv";
+    const fs::path dst_imu = fs::path(results_dir)    / "imu_data.csv";
+    if (fs::exists(src_imu)) {
+        std::error_code ec;
+        fs::copy_file(src_imu, dst_imu, fs::copy_options::overwrite_existing, ec);
+        if (ec) SPDLOG_WARN("WriteBatchODResults: could not copy imu_data.csv: {}", ec.message());
+    }
+
     nlohmann::json meta;
     meta["dataset_folder"] = dataset_folder;
     meta["run_unix_ms"] = run_unix_ms;

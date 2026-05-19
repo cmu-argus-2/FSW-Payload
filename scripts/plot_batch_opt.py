@@ -93,9 +93,6 @@ def load_h5(path: Path) -> dict:
     return data
 
 
-J2000_EPOCH_UNIX_S = 946727936.0
-
-
 def measurement_search_dirs(results_dir: Path, dataset_dir: Path):
     dirs = []
     for base in (results_dir, dataset_dir, Path(dataset_dir).parent):
@@ -104,33 +101,35 @@ def measurement_search_dirs(results_dir: Path, dataset_dir: Path):
     return dirs
 
 
-def load_landmark_timestamps(results_dir: Path, dataset_dir: Path):
-    """Return landmark timestamps in J2000 seconds from landmark_measurements.csv, or None.
+def load_landmark_timestamps(results_dir: Path, dataset_dir: Path, kernel_dir: Path):
+    """Return landmark timestamps as SPICE ET seconds past J2000, or None.
 
     Checks results_dir first (copied there by the OD pipeline), then falls back
     to dataset_dir.
     """
+    load_spice_kernels(kernel_dir)
     for base in measurement_search_dirs(results_dir, dataset_dir):
         csv = Path(base) / "landmark_measurements.csv"
         if csv.exists():
             data = np.genfromtxt(csv, delimiter=",", skip_header=1)
             if data.ndim == 1 and data.size > 0:
-                return np.array([data[0] / 1000.0 - J2000_EPOCH_UNIX_S])
+                return unix_to_spice_et(np.array([data[0] / 1000.0]))
             if data.ndim >= 2:
-                return data[:, 0] / 1000.0 - J2000_EPOCH_UNIX_S
+                return unix_to_spice_et(data[:, 0] / 1000.0)
     return None
 
 
-def load_imu_timestamps(results_dir: Path, dataset_dir: Path):
-    """Return IMU timestamps in J2000 seconds from imu_data.csv, or None."""
+def load_imu_timestamps(results_dir: Path, dataset_dir: Path, kernel_dir: Path):
+    """Return IMU timestamps as SPICE ET seconds past J2000, or None."""
+    load_spice_kernels(kernel_dir)
     for base in measurement_search_dirs(results_dir, dataset_dir):
         csv = Path(base) / "imu_data.csv"
         if csv.exists():
             data = np.genfromtxt(csv, delimiter=",", skip_header=1)
             if data.ndim == 1 and data.size > 0:
-                return np.array([data[0] / 1000.0 - J2000_EPOCH_UNIX_S])
+                return unix_to_spice_et(np.array([data[0] / 1000.0]))
             if data.ndim >= 2:
-                return data[:, 0] / 1000.0 - J2000_EPOCH_UNIX_S
+                return unix_to_spice_et(data[:, 0] / 1000.0)
     return None
 
 
@@ -156,7 +155,7 @@ def load_spice_kernels(kernel_dir: Path):
     """Load the kernels needed for J2000 <-> ITRF93 transforms."""
     global SPICE_KERNELS_LOADED
     if spice is None:
-        raise RuntimeError("spiceypy is not installed; install it to generate ECEF plots.")
+        raise RuntimeError("spiceypy is not installed; install it for SPICE time conversion and ECEF plots.")
     if SPICE_KERNELS_LOADED:
         return
 
@@ -180,6 +179,21 @@ def unix_to_spice_et(unix_s):
     return et if np.ndim(unix_s) else et[0]
 
 
+def timestamps_to_spice_et(timestamps):
+    """Return timestamps as SPICE ET seconds past J2000.
+
+    OD result timestamps are already ET.  Raw simulation/measurement HDF5
+    timestamps may still be Unix seconds, which are easily distinguished by
+    their ~1e9 magnitude.
+    """
+    arr = np.asarray(timestamps, dtype=float)
+    if arr.size == 0:
+        return arr
+    if np.nanmedian(arr) > 1e9:
+        return unix_to_spice_et(arr)
+    return arr
+
+
 def _quat_wxyz_to_matrix(q_wxyz):
     return pyqt.Quaternion(*q_wxyz).normalised.rotation_matrix
 
@@ -198,8 +212,7 @@ def transform_estimates_eci_to_ecef(est_states, kernel_dir: Path):
     """
     load_spice_kernels(kernel_dir)
     out = np.array(est_states, copy=True)
-    unix_t = out[:, 0] + J2000_EPOCH_UNIX_S
-    et = unix_to_spice_et(unix_t)
+    et = out[:, 0]
 
     for i, t_et in enumerate(et):
         xform = np.asarray(spice.sxform("J2000", "ITRF93", float(t_et)))
@@ -219,8 +232,7 @@ def transform_truth_eci_to_ecef(true_states, kernel_dir: Path):
     """Return a copy of ground truth states converted from ECI to ECEF."""
     load_spice_kernels(kernel_dir)
     out = {k: np.array(v, copy=True) for k, v in true_states.items()}
-    unix_t = np.asarray(out["unixtime"], dtype=float)
-    et = unix_to_spice_et(unix_t)
+    et = timestamps_to_spice_et(out["unixtime"])
     omega_earth_ecef = np.array([0.0, 0.0, EARTH_RATE_RAD_S])
 
     for i, t_et in enumerate(et):
@@ -247,8 +259,7 @@ def transform_covariance_eci_to_ecef(covariance, est_states_eci, kernel_dir: Pat
 
     load_spice_kernels(kernel_dir)
     out = np.array(covariance, copy=True)
-    unix_t = est_states_eci[:, 0] + J2000_EPOCH_UNIX_S
-    et = unix_to_spice_et(unix_t)
+    et = est_states_eci[:, 0]
 
     for i, t_et in enumerate(et):
         xform = np.asarray(spice.sxform("J2000", "ITRF93", float(t_et)))
@@ -297,9 +308,10 @@ def plot_states(est_states, out_dir, true_states=None, orbit_measurements=None,
     colors  = ["C0", "C1"]
 
     if have_gt:
-        t0     = true_states["unixtime"][0] if len(true_states["unixtime"]) > 0 else 0.0
-        t_true = true_states["unixtime"] - t0
-        t_est  = (est_states[:, 0] + J2000_EPOCH_UNIX_S) - t0
+        true_et = timestamps_to_spice_et(true_states["unixtime"])
+        t0      = true_et[0] if len(true_et) > 0 else 0.0
+        t_true  = true_et - t0
+        t_est   = est_states[:, 0] - t0
     else:
         t_est  = est_states[:, 0] - est_states[0, 0]
 
@@ -381,8 +393,7 @@ def plot_states(est_states, out_dir, true_states=None, orbit_measurements=None,
         true_ang_vel = true_states["states"][:, 10:13]
         gyro         = orbit_measurements["gyro_measurements"]
         gyro_t       = gyro[:, 0]
-        gyro_t_rel   = (gyro_t - t0 if np.nanmedian(gyro_t) > 1e9
-                        else (gyro_t + J2000_EPOCH_UNIX_S) - t0)
+        gyro_t_rel   = timestamps_to_spice_et(gyro_t) - t0
         gyro_meas    = np.zeros((len(t_est), 3))
         for i in range(3):
             gyro_meas[:, i] = np.interp(t_est, gyro_t_rel, gyro[:, i + 1])
@@ -469,10 +480,10 @@ def plot_residuals_standalone(dynamics_residuals, landmark_residuals, bias_mode,
 def plot_errors(true_states, est_states, est_covars, bias_mode, out_dir,
                 bias_fixed=None, bias_cov_fixed=None, frame_label="ECI",
                 filename_prefix="eci", orbit_measurements=None):
-    true_time = true_states["unixtime"]                                # Unix seconds
+    true_time = timestamps_to_spice_et(true_states["unixtime"])
     t0        = true_time[0] if len(true_time) > 0 else 0
     t_true    = true_time - t0
-    t_est     = (est_states[:, 0] + J2000_EPOCH_UNIX_S) - t0          # J2000 → Unix → relative
+    t_est     = est_states[:, 0] - t0
     colors    = ["C0", "C1"]
     have_cov  = est_covars is not None
 
@@ -617,8 +628,7 @@ def plot_errors(true_states, est_states, est_covars, bias_mode, out_dir,
 
         gyro = orbit_measurements["gyro_measurements"]
         gyro_t = gyro[:, 0]
-        gyro_t_rel = (gyro_t - t0 if np.nanmedian(gyro_t) > 1e9
-                      else (gyro_t + J2000_EPOCH_UNIX_S) - t0)
+        gyro_t_rel = timestamps_to_spice_et(gyro_t) - t0
         gyro_at_est = np.zeros((len(t_est), 3))
         for i in range(3):
             gyro_at_est[:, i] = np.interp(t_est, gyro_t_rel, gyro[:, i + 1])
@@ -695,10 +705,10 @@ def plot_errors(true_states, est_states, est_covars, bias_mode, out_dir,
 
 
 def plot_measurements(measurements, ground_truth_states, est_states, ldmkmeasres, out_dir):
-    true_time  = ground_truth_states["unixtime"]
+    true_time  = timestamps_to_spice_et(ground_truth_states["unixtime"])
     t0         = true_time[0] if len(true_time) > 0 else 0
     gyro_meas  = measurements["gyro_measurements"][:, 1:4]
-    t_gyro     = measurements["gyro_measurements"][:, 0] - t0
+    t_gyro     = timestamps_to_spice_et(measurements["gyro_measurements"][:, 0]) - t0
     colors     = ["C0", "C1"]
 
     fig, axs = plt.subplots(3, 1, sharex=True, figsize=(10, 6))
@@ -713,7 +723,7 @@ def plot_measurements(measurements, ground_truth_states, est_states, ldmkmeasres
     plt.close()
 
     landmark_meas = measurements["landmark_measurements"]
-    t_landmark    = landmark_meas[:, 0] - t0
+    t_landmark    = timestamps_to_spice_et(landmark_meas[:, 0]) - t0
     fig, axs = plt.subplots(6, 1, sharex=True, figsize=(10, 6))
     labels = ["Bear X", "Bear Y", "Bear Z", "Ldmk X (km)", "Ldmk Y (km)", "Ldmk Z (km)"]
     for i, ax in enumerate(axs):
@@ -754,9 +764,9 @@ def plot_measurement_time_errors(est_states, ldmk_t, imu_t, out_dir):
 
 def plot_residuals(lindynres, angdynres, ldmkmeasres, ldmk_t, est_states,
                    true_states, bias_mode, out_dir, landmark_outlier_flags=None):
-    true_time = true_states["unixtime"]                                # Unix seconds
+    true_time = timestamps_to_spice_et(true_states["unixtime"])
     t0        = true_time[0] if len(true_time) > 0 else 0
-    t_est     = (est_states[:, 0] + J2000_EPOCH_UNIX_S) - t0          # J2000 -> Unix -> relative
+    t_est     = est_states[:, 0] - t0
     colors    = ["C0", "C1"]
 
     fig, axs = plt.subplots(6, 1, sharex=True, figsize=(10, 6))
@@ -793,7 +803,7 @@ def plot_residuals(lindynres, angdynres, ldmkmeasres, ldmk_t, est_states,
     plt.close()
 
     if ldmk_t is not None:
-        t_landmark = (ldmk_t + J2000_EPOCH_UNIX_S) - t0   # J2000 -> Unix -> relative
+        t_landmark = ldmk_t - t0
         xlabel_ldmk = "time (s) since start"
     else:
         t_landmark  = np.arange(ldmkmeasres.shape[0], dtype=float)
@@ -918,12 +928,11 @@ if __name__ == "__main__":
     # Covariance is Nx10 (timestamp + pos + vel + rot; gyro_bias_cov in od_result.json)
     est_covars = covariance
 
-    ldmk_t = load_landmark_timestamps(results_dir, dataset_dir)
-    imu_t = load_imu_timestamps(results_dir, dataset_dir)
+    ldmk_t = load_landmark_timestamps(results_dir, dataset_dir, args.kernel_dir)
+    imu_t = load_imu_timestamps(results_dir, dataset_dir, args.kernel_dir)
     if imu_t is None and have_gt and "gyro_measurements" in measurements:
         gyro_t = measurements["gyro_measurements"][:, 0]
-        imu_t = (gyro_t - J2000_EPOCH_UNIX_S if np.nanmedian(gyro_t) > 1e9
-                 else gyro_t)
+        imu_t = timestamps_to_spice_et(gyro_t)
 
     # ── State estimate plots (always; overlaid with GT when available) ───────────
     plot_states(est_states, out_dir,

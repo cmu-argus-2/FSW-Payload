@@ -696,6 +696,32 @@ static bool WriteBatchODResults(const std::string& dataset_folder,
     if (result.cd_estimated) {
         meta["estimates"]["cd"] = result.cd;
     }
+    if (result.state_estimates.rows() > 0) {
+        const idx_t i = result.state_estimates.rows() - 1;
+        meta["estimates"]["timestamp_j2000"] = result.state_estimates(i, STATE_ESTIMATE_TIMESTAMP);
+        meta["estimates"]["pos_x_km"]        = result.state_estimates(i, POS_X);
+        meta["estimates"]["pos_y_km"]        = result.state_estimates(i, POS_Y);
+        meta["estimates"]["pos_z_km"]        = result.state_estimates(i, POS_Z);
+        meta["estimates"]["vel_x_kms"]       = result.state_estimates(i, VEL_X);
+        meta["estimates"]["vel_y_kms"]       = result.state_estimates(i, VEL_Y);
+        meta["estimates"]["vel_z_kms"]       = result.state_estimates(i, VEL_Z);
+        meta["estimates"]["quat_x"]          = result.state_estimates(i, QUAT_X);
+        meta["estimates"]["quat_y"]          = result.state_estimates(i, QUAT_Y);
+        meta["estimates"]["quat_z"]          = result.state_estimates(i, QUAT_Z);
+        meta["estimates"]["quat_w"]          = result.state_estimates(i, QUAT_W);
+
+        if (result.covariance_computed && result.covariance.rows() > i) {
+            meta["estimates"]["pos_cov_x_km2"]   = result.covariance(i, RES_POS_X);
+            meta["estimates"]["pos_cov_y_km2"]   = result.covariance(i, RES_POS_Y);
+            meta["estimates"]["pos_cov_z_km2"]   = result.covariance(i, RES_POS_Z);
+            meta["estimates"]["vel_cov_x_km2s2"] = result.covariance(i, RES_VEL_X);
+            meta["estimates"]["vel_cov_y_km2s2"] = result.covariance(i, RES_VEL_Y);
+            meta["estimates"]["vel_cov_z_km2s2"] = result.covariance(i, RES_VEL_Z);
+            meta["estimates"]["rot_cov_x_rad2"]  = result.covariance(i, RES_ROT_X);
+            meta["estimates"]["rot_cov_y_rad2"]  = result.covariance(i, RES_ROT_Y);
+            meta["estimates"]["rot_cov_z_rad2"]  = result.covariance(i, RES_ROT_Z);
+        }
+    }
     if (result.covariance_computed) {
         meta["estimates"]["gyro_bias_cov_x_rads2"] = result.gyro_bias_var[0];
         meta["estimates"]["gyro_bias_cov_y_rads2"] = result.gyro_bias_var[1];

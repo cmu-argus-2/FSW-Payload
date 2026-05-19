@@ -16,10 +16,13 @@ Workflow
                   (min == max) at gain 1×; record luminance, saturation %,
                   and per-channel means.  Pick the candidate whose score is
                   best relative to the target luminance.
-3. WB sweep     – at the chosen exposure, open with each white-balance mode
+3. Gain sweep   – at the chosen exposure, reopen with each candidate gain
+                  pinned; record luminance, saturation %, and per-channel
+                  means. Pick the gain whose score best matches the target.
+4. WB sweep     – at the chosen exposure/gain, open with each white-balance mode
                   and record R/G/B channel means.  Flags the most neutral
                   mode as the recommendation (user should verify visually).
-4. Report       – write calibration/cam{N}/calibration_result.toml with a
+5. Report       – write calibration/cam{N}/calibration_result.toml with a
                   [camera-isp] block ready to paste into config/config.toml,
                   and save a reference JPEG for each sweep step.
 
@@ -78,6 +81,12 @@ CONVERGENCE_THRESHOLD = 3.0  # max luminance std-dev (out of 255) to call "stabl
 SWEEP_FRAMES  = 8   # frames captured per candidate; median-closest one is kept
 WARMUP_FRAMES = 6   # frames discarded after opening the pipeline (sensor settling)
 
+WB_SETTLE_MIN_SECONDS = 2.0    # wait at least this long after a WB config change
+WB_SETTLE_TIMEOUT_SECONDS = 8.0 # keep checking until this deadline
+WB_SETTLE_STABILITY_FRAMES = 5  # consecutive frames used for the stability test
+WB_SETTLE_RATIO_THRESHOLD = 0.015  # max std-dev for R/G and B/G ratios
+WB_SETTLE_LUM_THRESHOLD = 3.0      # max luminance std-dev (out of 255)
+
 # Exposure candidates in nanoseconds — covers ~0.5 ms to 32 ms
 EXPOSURE_CANDIDATES_NS: list[int] = [
     500_000,
@@ -87,6 +96,19 @@ EXPOSURE_CANDIDATES_NS: list[int] = [
     8_000_000,
     16_000_000,
     32_000_000,
+]
+
+# Gain candidates — nvarguscamerasrc supports 1.0 to 16.0 analog gain.
+GAIN_CANDIDATES: list[float] = [
+    1.0,
+    1.5,
+    2.0,
+    3.0,
+    4.0,
+    6.0,
+    8.0,
+    12.0,
+    16.0,
 ]
 
 # White-balance modes to compare (display name, integer value)
@@ -122,6 +144,19 @@ def _channel_means(frame: np.ndarray) -> tuple[float, float, float]:
     return float(r.mean()), float(g.mean()), float(b.mean())
 
 
+def _wb_metrics(frame: np.ndarray) -> dict:
+    r, g, b = _channel_means(frame)
+    return dict(
+        frame=frame,
+        lum=_mean_luminance(frame),
+        r=r,
+        g=g,
+        b=b,
+        rg_ratio=r / g if g > 0 else 0.0,
+        bg_ratio=b / g if g > 0 else 0.0,
+    )
+
+
 def _exposure_score(lum: float, sat_pct: float, dark_pct: float, target: float) -> float:
     """Lower is better.  Heavy penalty for blown highlights; lighter for shadow crush."""
     lum_penalty  = abs(lum - target)
@@ -153,6 +188,105 @@ def _median_frame(cam: JetsonCamera, n: int = SWEEP_FRAMES) -> np.ndarray:
     med = float(np.median(lums))
     best = int(np.argmin([abs(l - med) for l in lums]))
     return frames[best]
+
+
+def _wait_for_wb_settle(
+    cam: JetsonCamera,
+    wb_name: str,
+    *,
+    min_seconds: float = WB_SETTLE_MIN_SECONDS,
+    timeout_seconds: float = WB_SETTLE_TIMEOUT_SECONDS,
+    stability_frames: int = WB_SETTLE_STABILITY_FRAMES,
+    ratio_threshold: float = WB_SETTLE_RATIO_THRESHOLD,
+    lum_threshold: float = WB_SETTLE_LUM_THRESHOLD,
+) -> tuple[np.ndarray, dict]:
+    """
+    Capture frames until the active WB mode appears stable.
+
+    WB settling is judged from the frame stream itself: R/G, B/G, and mean
+    luminance must all have low variation over the most recent frames.  The
+    minimum wait avoids accepting the first few buffered/partially-updated
+    frames as "settled" when a new nvarguscamerasrc config is applied.
+    """
+    if stability_frames <= 0:
+        raise ValueError("stability_frames must be positive")
+    if min_seconds < 0:
+        raise ValueError("min_seconds must be non-negative")
+    if timeout_seconds <= 0:
+        raise ValueError("timeout_seconds must be positive")
+    if timeout_seconds < min_seconds:
+        raise ValueError("timeout_seconds must be >= min_seconds")
+
+    history: list[dict] = []
+    start = time.monotonic()
+    settled = False
+    settle_reason = "timeout"
+
+    while True:
+        metric = _wb_metrics(cam.capture())
+        metric["elapsed_s"] = time.monotonic() - start
+        history.append(metric)
+
+        if len(history) >= stability_frames:
+            window = history[-stability_frames:]
+            rg_std = float(np.std([m["rg_ratio"] for m in window]))
+            bg_std = float(np.std([m["bg_ratio"] for m in window]))
+            lum_std = float(np.std([m["lum"] for m in window]))
+            waited_long_enough = metric["elapsed_s"] >= min_seconds
+
+            if (
+                waited_long_enough
+                and rg_std <= ratio_threshold
+                and bg_std <= ratio_threshold
+                and lum_std <= lum_threshold
+            ):
+                settled = True
+                settle_reason = "stable"
+                break
+
+        if metric["elapsed_s"] >= timeout_seconds:
+            break
+
+    final_window = history[-min(stability_frames, len(history)):]
+    lums = [m["lum"] for m in final_window]
+    med = float(np.median(lums))
+    best_idx = int(np.argmin([abs(l - med) for l in lums]))
+    selected = final_window[best_idx]
+
+    settle_info = dict(
+        settled=settled,
+        settle_reason=settle_reason,
+        settle_s=history[-1]["elapsed_s"],
+        settle_frames=len(history),
+        rg_std=float(np.std([m["rg_ratio"] for m in final_window])),
+        bg_std=float(np.std([m["bg_ratio"] for m in final_window])),
+        lum_std=float(np.std([m["lum"] for m in final_window])),
+    )
+
+    if settled:
+        log.info(
+            "    WBMode.%s settled after %.2fs / %d frames "
+            "(std R/G=%.4f, B/G=%.4f, lum=%.2f)",
+            wb_name,
+            settle_info["settle_s"],
+            settle_info["settle_frames"],
+            settle_info["rg_std"],
+            settle_info["bg_std"],
+            settle_info["lum_std"],
+        )
+    else:
+        log.warning(
+            "    WBMode.%s did not settle by %.2fs / %d frames; using median frame "
+            "(std R/G=%.4f, B/G=%.4f, lum=%.2f)",
+            wb_name,
+            settle_info["settle_s"],
+            settle_info["settle_frames"],
+            settle_info["rg_std"],
+            settle_info["bg_std"],
+            settle_info["lum_std"],
+        )
+
+    return selected["frame"], settle_info
 
 
 # ---------------------------------------------------------------------------
@@ -415,7 +549,92 @@ def exposure_sweep(
 
 
 # ---------------------------------------------------------------------------
-# Phase 3 – White-balance mode sweep
+# Phase 3 – Gain sweep
+# ---------------------------------------------------------------------------
+
+def gain_sweep(
+    sensor_id: int,
+    width: int,
+    height: int,
+    fps: int,
+    exp_ns: int,
+    output_dir: Path,
+    target_lum: float,
+) -> tuple[dict, list[dict]]:
+    """Test candidate analog gains at the pinned exposure; return best result."""
+    log.info(
+        "Phase 3 — Gain sweep  (sensor %d, exposure %d µs)",
+        sensor_id, exp_ns // 1000,
+    )
+    output_dir.mkdir(parents=True, exist_ok=True)
+
+    results: list[dict] = []
+
+    for gain in GAIN_CANDIDATES:
+        log.info("  gain %.1fx …", gain)
+
+        cam = JetsonCamera(
+            sensor_id=sensor_id,
+            width=width,
+            height=height,
+            fps=fps,
+            wbmode=WBMode.OFF,     # isolate gain; color balance is evaluated next
+            aelock=True,
+            awblock=True,
+            exposuretimerange=(exp_ns, exp_ns),
+            gainrange=(gain, gain),
+            ispdigitalgainrange=(1.0, 1.0),
+        )
+
+        try:
+            cam.open()
+        except RuntimeError as exc:
+            log.warning("  Skipped gain %.1fx — could not open camera: %s", gain, exc)
+            continue
+
+        try:
+            _warmup(cam)
+            frame = _median_frame(cam)
+        finally:
+            cam.close()
+
+        lum   = _mean_luminance(frame)
+        sat   = _saturation_pct(frame)
+        dark  = _dark_pct(frame)
+        r, g, b = _channel_means(frame)
+        score = _exposure_score(lum, sat, dark, target_lum)
+
+        log.info(
+            "    lum=%5.1f  sat=%5.2f%%  dark=%5.2f%%  score=%6.1f",
+            lum, sat, dark, score,
+        )
+
+        gain_tag = str(gain).replace(".", "p")
+        cv2.imwrite(str(output_dir / f"gain_{gain_tag}x.jpg"), frame)
+
+        results.append(
+            dict(
+                gain=gain, lum=lum, sat_pct=sat,
+                dark_pct=dark, r=r, g=g, b=b, score=score,
+            )
+        )
+
+    if not results:
+        raise RuntimeError(
+            "Gain sweep produced no results.  "
+            "Is the camera connected and nvarguscamerasrc available?"
+        )
+
+    best = min(results, key=lambda r: r["score"])
+    log.info(
+        "Best gain: %.1fx  lum=%.1f  sat=%.2f%%  score=%.1f",
+        best["gain"], best["lum"], best["sat_pct"], best["score"],
+    )
+    return best, results
+
+
+# ---------------------------------------------------------------------------
+# Phase 4 – White-balance mode sweep
 # ---------------------------------------------------------------------------
 
 def wb_sweep(
@@ -424,12 +643,15 @@ def wb_sweep(
     height: int,
     fps: int,
     exp_ns: int,
+    gain: float,
     output_dir: Path,
+    wb_settle_min_seconds: float = WB_SETTLE_MIN_SECONDS,
+    wb_settle_timeout_seconds: float = WB_SETTLE_TIMEOUT_SECONDS,
 ) -> tuple[str, int, list[dict]]:
     """Compare WB modes at the pinned exposure; return (name, val, all_results)."""
     log.info(
-        "Phase 3 — WB sweep  (sensor %d, exposure %d µs)",
-        sensor_id, exp_ns // 1000,
+        "Phase 4 — WB sweep  (sensor %d, exposure %d µs, gain %.1fx)",
+        sensor_id, exp_ns // 1000, gain,
     )
     output_dir.mkdir(parents=True, exist_ok=True)
 
@@ -449,7 +671,7 @@ def wb_sweep(
             # for AUTO mode leave AWB free so it settles naturally.
             awblock=(wb_val != WBMode.AUTO),
             exposuretimerange=(exp_ns, exp_ns),
-            gainrange=(1.0, 1.0),
+            gainrange=(gain, gain),
             ispdigitalgainrange=(1.0, 1.0),
         )
 
@@ -459,9 +681,15 @@ def wb_sweep(
             log.warning("  Skipped WBMode.%s: %s", wb_name, exc)
             continue
 
-        _warmup(cam)
-        frame = _median_frame(cam)
-        cam.close()
+        try:
+            frame, settle_info = _wait_for_wb_settle(
+                cam,
+                wb_name,
+                min_seconds=wb_settle_min_seconds,
+                timeout_seconds=wb_settle_timeout_seconds,
+            )
+        finally:
+            cam.close()
 
         r, g, b  = _channel_means(frame)
         rg_ratio = r / g if g > 0 else 0.0
@@ -482,6 +710,7 @@ def wb_sweep(
                 r=r, g=g, b=b,
                 rg_ratio=rg_ratio, bg_ratio=bg_ratio,
                 balance_score=balance_score,
+                **settle_info,
             )
         )
 
@@ -511,7 +740,9 @@ _TOML_TEMPLATE = """\
 # Calibration summary
 #   Converged luminance  : {converged_lum:.1f} / 255
 #   Selected exposure    : {exp_us} µs  (lum={cal_lum:.1f}, sat={sat:.3f}%, score={score:.1f})
+#   Selected gain        : {gain:.1f}x  (lum={gain_lum:.1f}, sat={gain_sat:.3f}%, score={gain_score:.1f})
 #   Selected WB mode     : {wb_name} ({wb_val})
+#   WB settle check      : {wb_settle_status} after {wb_settle_s:.2f}s / {wb_settle_frames} frames
 #
 # Review the saved JPEGs in {out_dir} before committing these values.
 # Paste this block into config/config.toml, replacing any existing [camera-isp] section.
@@ -530,7 +761,7 @@ saturation           = 1.0
 fps                  = {fps}
 max_buffers          = 2
 exposuretimerange    = [{exp_ns}, {exp_ns}]
-gainrange            = [1.0, 1.0]
+gainrange            = [{gain:.1f}, {gain:.1f}]
 ispdigitalgainrange  = [1.0, 1.0]
 """
 
@@ -543,12 +774,16 @@ def write_report(
     fps: int,
     converged_lum: float,
     best_exp: dict,
+    best_gain: dict,
+    gain_results: list[dict],
     wb_name: str,
     wb_val: int,
     wb_results: list[dict],
 ) -> None:
     exp_ns = best_exp["exp_ns"]
     exp_us = exp_ns // 1000
+    gain = best_gain["gain"]
+    selected_wb = next((wb for wb in wb_results if wb["val"] == wb_val), {})
 
     toml_str = _TOML_TEMPLATE.format(
         sensor_id=sensor_id,
@@ -561,8 +796,19 @@ def write_report(
         cal_lum=best_exp["lum"],
         sat=best_exp["sat_pct"],
         score=best_exp["score"],
+        gain=gain,
+        gain_lum=best_gain["lum"],
+        gain_sat=best_gain["sat_pct"],
+        gain_score=best_gain["score"],
         wb_name=wb_name,
         wb_val=wb_val,
+        wb_settle_status=(
+            "settled"
+            if selected_wb.get("settled")
+            else selected_wb.get("settle_reason", "unknown")
+        ),
+        wb_settle_s=float(selected_wb.get("settle_s", 0.0)),
+        wb_settle_frames=int(selected_wb.get("settle_frames", 0)),
         exp_ns=exp_ns,
         out_dir=output_dir,
     )
@@ -571,15 +817,34 @@ def write_report(
     result_path.write_text(toml_str)
     log.info("Written: %s", result_path)
 
+    # Gain comparison table
+    if gain_results:
+        print("\n--- Gain comparison ---")
+        print(f"  {'Gain':>6}  {'Lum':>6}  {'Sat %':>7}  {'Dark %':>7}  {'Score':>7}")
+        for gain_result in gain_results:
+            marker = "  <-- selected" if gain_result["gain"] == gain else ""
+            print(
+                f"  {gain_result['gain']:5.1f}x"
+                f"  {gain_result['lum']:6.1f}"
+                f"  {gain_result['sat_pct']:7.2f}"
+                f"  {gain_result['dark_pct']:7.2f}"
+                f"  {gain_result['score']:7.1f}{marker}"
+            )
+
     # WB comparison table
     if wb_results:
         print("\n--- White-balance comparison ---")
-        print(f"  {'Mode':<16}  {'R':>6}  {'G':>6}  {'B':>6}  {'R/G':>6}  {'B/G':>6}")
+        print(
+            f"  {'Mode':<16}  {'R':>6}  {'G':>6}  {'B':>6}  {'R/G':>6}  {'B/G':>6}"
+            f"  {'settle':>8}  {'frames':>6}"
+        )
         for wb in wb_results:
             marker = "  <-- selected" if wb["val"] == wb_val else ""
+            settle = f"{wb['settle_s']:.2f}s" if wb["settled"] else "timeout"
             print(
                 f"  {wb['name']:<16}  {wb['r']:6.1f}  {wb['g']:6.1f}  {wb['b']:6.1f}"
-                f"  {wb['rg_ratio']:6.3f}  {wb['bg_ratio']:6.3f}{marker}"
+                f"  {wb['rg_ratio']:6.3f}  {wb['bg_ratio']:6.3f}"
+                f"  {settle:>8}  {wb['settle_frames']:6d}{marker}"
             )
 
     print("\n--- Recommended [camera-isp] block ---")
@@ -609,7 +874,20 @@ def _parse_args() -> argparse.Namespace:
                    help="Root output directory")
     p.add_argument("--skip-convergence", action="store_true",
                    help="Skip Phase 1 (AE convergence check)")
-    return p.parse_args()
+    p.add_argument("--wb-settle-min-seconds", type=float,
+                   default=WB_SETTLE_MIN_SECONDS,
+                   help="Minimum time to observe each new WB mode before accepting stability")
+    p.add_argument("--wb-settle-timeout", type=float,
+                   default=WB_SETTLE_TIMEOUT_SECONDS,
+                   help="Maximum time to wait for each WB mode to settle")
+    args = p.parse_args()
+    if args.wb_settle_min_seconds < 0:
+        p.error("--wb-settle-min-seconds must be >= 0")
+    if args.wb_settle_timeout <= 0:
+        p.error("--wb-settle-timeout must be > 0")
+    if args.wb_settle_timeout < args.wb_settle_min_seconds:
+        p.error("--wb-settle-timeout must be >= --wb-settle-min-seconds")
+    return args
 
 
 if __name__ == "__main__":
@@ -646,16 +924,23 @@ if __name__ == "__main__":
     )
 
     # Phase 3
+    best_gain, all_gain = gain_sweep(
+        args.sensor_id, args.width, args.height, args.fps,
+        best_exp["exp_ns"], output_dir, args.target_luminance,
+    )
+
+    # Phase 4
     wb_name, wb_val, wb_results = wb_sweep(
         args.sensor_id, args.width, args.height, args.fps,
-        best_exp["exp_ns"], output_dir,
+        best_exp["exp_ns"], best_gain["gain"], output_dir,
+        args.wb_settle_min_seconds, args.wb_settle_timeout,
     )
 
     # Report
     write_report(
         output_dir,
         args.sensor_id, args.width, args.height, args.fps,
-        converged_lum, best_exp, wb_name, wb_val, wb_results,
+        converged_lum, best_exp, best_gain, all_gain, wb_name, wb_val, wb_results,
     )
 
     log.info("=== Calibration complete ===")

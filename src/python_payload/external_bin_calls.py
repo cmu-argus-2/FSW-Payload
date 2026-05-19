@@ -60,22 +60,21 @@ def run_dataset_collection(camera_bit_flag, capture_rate, imu_hz, duration):
     to pass the parameters I will be writting to the dataset_config.toml    
     """
     
-    timeout = duration + 10
+    timeout = duration + 20
     run_path = "."
     bin_name = "./bin/run_dataset"
     
     
+    config_file_path = os.path.join("config", "dataset_config.toml")
+    toml_dict = toml.load(config_file_path)
     # write the config file
-    toml_dict = {
-        "imu_sample_rate_hz": imu_hz,
-        "image_capture_rate": capture_rate,
-        "maximum_period": duration,
-        "active_cameras": [bool(camera_bit_flag & (1 << i)) for i in range(4)]
-    }
+    toml_dict["imu_sample_rate_hz"] = imu_hz
+    toml_dict["image_capture_rate"] = capture_rate
+    toml_dict["maximum_period"] = duration
+    toml_dict["active_cameras"] = [bool(camera_bit_flag & (1 << i)) for i in range(4)]
     
-    with open(os.path.join("config", "dataset_config.toml"), 'w') as f:
+    with open(config_file_path, 'w') as f:
         toml.dump(toml_dict, f)
-    
     
     # TODO: do I need to cast to string?
     try:
@@ -124,7 +123,11 @@ def run_dataset_processing(dataset_path, level_processing, rc_version, ld_versio
     print(f"RC version: {rc_version}")
     print(f"LD version: {ld_version}")
     
-    result = subprocess.run([bin_name, dataset_path, str(level_processing), "1", str(rc_version), str(ld_version)],
+    result = subprocess.run([bin_name, dataset_path, 
+                             "--target-stage", str(level_processing), 
+                             "--overwrite", 
+                             "--rc-version", str(rc_version), 
+                             "--ld-version", str(ld_version)],
         cwd=run_path,
         # capture_output=True,
         text=True
@@ -156,13 +159,15 @@ def run_orbit_determination(dataset_path, max_iter, max_runtime):
     here we do not need to write the toml file because they are read arguments
     """
     
-    timeout = max_runtime + 10
+    timeout = max_runtime + 20
     run_path = "."
     bin_name = "./bin/RUN_OD_ON_DATASET"
     
     
     try:
-        result = subprocess.run([bin_name, dataset_path, "--max-iterations", str(max_iter), "--max-run-time", str(max_runtime)],
+        result = subprocess.run([bin_name, dataset_path, 
+                                 "--max-iterations", str(max_iter), 
+                                 "--max-run-time", str(max_runtime)],
             cwd=run_path,
             # capture_output=True,
             timeout=timeout,
@@ -181,8 +186,14 @@ def run_orbit_determination(dataset_path, max_iter, max_runtime):
     
     # TODO: it is writing to path.out, but  I am actually not going to use it
     # i will be assuming the dataset_path that was sent as argument
+    path_out_file = Path("path.out")
+    if not path_out_file.exists():
+        print("Error: path.out file not created")
+        return None
     
-    json_path = os.path.join(dataset_path, "results.json")
+    od_result_path = path_out_file.read_text().strip()
+    print(f"Test dataset generated at: {od_result_path}")
+    json_path = os.path.join(od_result_path, "od_result.json")
     
     # for now we will just return the same path
     return json_path

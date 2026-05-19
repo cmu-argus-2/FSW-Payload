@@ -245,3 +245,7 @@ deps/install/
 deps/mumps/
 
 workspace/
+
+telemetry_logs/
+
+experiments/

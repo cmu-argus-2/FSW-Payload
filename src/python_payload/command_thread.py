@@ -2,6 +2,7 @@ import queue
 import threading
 import json
 import time
+import subprocess
 
 from splat.splat.telemetry_codec import Ack, Command, Report, pack, unpack
 from splat.splat.telemetry_definition import COMMAND_IDS
@@ -192,6 +193,40 @@ class CommandThread(threading.Thread):
         self._send_ack(command, ack_args={"handled": True, "shutdown": True})
         self._drain_tx_then_shutdown(timeout_s=5.0)
 
+    def _handle_synchronize_time(self, command: Command):
+        log.info("Received command to sync time")
+        try:
+            timestamp = command.arguments.get("rtc_time")
+            if timestamp is None:
+                log.warning("SYNCHRONIZE_TIME: no timestamp provided")
+                self._send_ack(command, ack_args={"error": "no_timestamp"})
+                return
+
+            date_result = subprocess.run(
+                ["sudo", "/bin/date", "-s", f"@{timestamp}"],
+                capture_output=True, text=True, timeout=5
+            )
+            if date_result.returncode != 0:
+                log.error("Failed to set system time: %s", date_result.stderr)
+                self._send_ack(command, ack_args={"error": "date_failed"})
+                return
+
+            hwclock_result = subprocess.run(
+                ["sudo", "/sbin/hwclock", "--systohc"],
+                capture_output=True, text=True, timeout=5
+            )
+
+            if hwclock_result.returncode == 0:
+                log.info("RTC synced from mainboard")
+                self._send_ack(command, ack_args={"status": "synced"})
+            else:
+                log.warning("hwclock sync failed: %s", hwclock_result.stderr)
+                self._send_ack(command, ack_args={"status": "time_set"})
+
+        except Exception as exc:
+            log.error("Error syncing RTC: %s", exc)
+            self._send_ack(command, ack_args={"error": str(exc)})
+        
     def _drain_tx_then_shutdown(self, timeout_s: float = 5.0) -> None:
         """Wait for outbound queue drain, then request process shutdown."""
         deadline = time.monotonic() + timeout_s
@@ -233,6 +268,7 @@ class CommandThread(threading.Thread):
         
         "REQUEST_TM_PAYLOAD": _handle_request_tm_payload,
         "CONFIRM_LAST_BATCH": _handle_update_last_batch,
-        "TURN_OFF_PAYLOAD": _handle_turn_off_payload
+        "TURN_OFF_PAYLOAD": _handle_turn_off_payload,
+        "SYNCHRONIZE_TIME": _handle_synchronize_time, 
         # "CREATE_TRANS": _handle_create_trans
     }

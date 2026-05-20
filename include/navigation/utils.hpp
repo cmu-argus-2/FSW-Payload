@@ -3,11 +3,6 @@
 
 #include <cstdint>
 
-// Seconds between the Unix epoch (1970-01-01) and J2000 (2000-01-01 11:58:55.816 UTC).
-// Use this to convert a Unix timestamp in seconds to J2000 seconds with sub-second
-// precision: t_J2000 = unix_seconds - J2000_EPOCH_UNIX_S
-inline constexpr int64_t J2000_EPOCH_UNIX_S = 946727936LL;
-
 #include <eigen3/Eigen/Core>
 #include <eigen3/Eigen/Dense>
 #include <opencv2/calib3d.hpp>
@@ -16,11 +11,13 @@ inline constexpr int64_t J2000_EPOCH_UNIX_S = 946727936LL;
 using namespace Eigen;
 
 /**
- * @brief Converts seconds since the unix epoch to seconds since J2000 epoch
+ * @brief Converts Unix UTC seconds to SPICE ET/TDB seconds past J2000.
  *
- * @param unixSeconds # of seconds past the unix epoch (Jan 1, 1970 0:0:0)
- * @return int64_t # of seconds past the J2000 epoch (Jan 1, 2000 11:58:55.816
- * AM)
+ * This is the time scale expected by CSPICE frame transform routines such as
+ * pxform_c and sxform_c.
+ *
+ * @param unixSeconds seconds past the Unix epoch (1970-01-01T00:00:00 UTC)
+ * @return SPICE ET/TDB seconds past J2000
  */
 double unixToJ2000(double unixSeconds);
 

@@ -122,8 +122,8 @@ region_ids = [ '10S', '10T', '11R', '12R', '16T', '17R', '17T', '18S', '32S', '3
 resolution = 224
 
 [inference]
-rc_version = 2
-ld_version = 2
+rc_version = 5
+ld_version = 3
 
 [inference.ldnet]
 weight_quant = 1 # 0=FP32, 1=FP16, 2=INT8

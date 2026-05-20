@@ -11,9 +11,14 @@ from pathlib import Path
 import toml
 
 
+def _dataset_folder_path(dataset_path):
+    path = Path(dataset_path)
+    if path.name in ("dataset.json", "processing.json"):
+        return str(path.parent)
+    return str(path)
 
 
-def run_inference(img_path, output_folder_path):
+def run_inference(img_path, output_folder_path, level_processing=3, rc_version=2, ld_version=2):
     """
     will run the inference on a given image
     it will also give a path for the generated data to be saved
@@ -23,17 +28,24 @@ def run_inference(img_path, output_folder_path):
     
     # run_path = "/home/argus-payload/Documents/FSW-Payload"
     run_path = "."
-    bin_name = "./bin/RUN_INFERENCE"
-    
-    rc_model = "models/trained-rc/V2/rc_model_weights.trt"
-    ld_model = "models/trained-ld/V2"
+    bin_name = "./bin/reprocess_image"
+    output_folder = Path(output_folder_path) if output_folder_path else Path(".")
+    output_folder.mkdir(parents=True, exist_ok=True)
+    out_path = output_folder / "reprocess_image_path.out"
     
     print(f"Running inference on {img_path}")
     print(f"Output folder: {output_folder_path}")
-    print(f"RC model: {rc_model}")
-    print(f"LD model: {ld_model}")
+    print(f"Level of processing: {level_processing}")
+    print(f"RC version: {rc_version}")
+    print(f"LD version: {ld_version}")
     
-    result = subprocess.run([bin_name, rc_model, ld_model, img_path, output_folder_path],
+    result = subprocess.run([bin_name, img_path,
+                             "--target-stage", str(level_processing),
+                             "--overwrite",
+                             "--rc-version", str(rc_version),
+                             "--ld-version", str(ld_version),
+                             "--bypass-prefilter-rejection",
+                             "--out", str(out_path)],
         cwd=run_path,
         # capture_output=True,
         text=True
@@ -47,7 +59,20 @@ def run_inference(img_path, output_folder_path):
         print(f"Error capturing return code: {e}")
         return_code = -1
     
-    return return_code
+    if return_code != 0:
+        return None
+
+    if not out_path.exists():
+        print(f"Error: reprocess_image output file not created: {out_path}")
+        return None
+
+    frame_json_path = out_path.read_text().strip()
+    if not frame_json_path:
+        print(f"Error: reprocess_image output file is empty: {out_path}")
+        return None
+
+    print(f"Frame metadata generated at: {frame_json_path}")
+    return frame_json_path
 
 
 def run_dataset_collection(camera_bit_flag, capture_rate, imu_hz, duration):
@@ -106,7 +131,7 @@ def run_dataset_collection(camera_bit_flag, capture_rate, imu_hz, duration):
     print(f"Test dataset generated at: {dataset_path}")
     return dataset_path
 
-def run_dataset_processing(dataset_path, level_processing, rc_version, ld_version):
+def run_dataset_processing(dataset_path, level_processing, rc_version, ld_version, bypass_prefilter_rejection=False):
     """
     This will call the binary to perform the dataset processing
     it will generate a processing.json that will be send to the mainboard
@@ -119,16 +144,22 @@ def run_dataset_processing(dataset_path, level_processing, rc_version, ld_versio
     run_path = "."
     bin_name = "./bin/reprocess_dataset"
     
-    print(f"Running dataset processing on {dataset_path}")
+    dataset_folder = _dataset_folder_path(dataset_path)
+
+    print(f"Running dataset processing on {dataset_folder}")
     print(f"Level of processing: {level_processing}")
     print(f"RC version: {rc_version}")
     print(f"LD version: {ld_version}")
     
-    result = subprocess.run([bin_name, dataset_path, 
-                             "--target-stage", str(level_processing), 
-                             "--overwrite", 
-                             "--rc-version", str(rc_version), 
-                             "--ld-version", str(ld_version)],
+    cmd = [bin_name, dataset_folder,
+           "--target-stage", str(level_processing),
+           "--overwrite",
+           "--rc-version", str(rc_version),
+           "--ld-version", str(ld_version)]
+    if bypass_prefilter_rejection:
+        cmd.append("--bypass-prefilter-rejection")
+
+    result = subprocess.run(cmd,
         cwd=run_path,
         # capture_output=True,
         text=True
@@ -144,7 +175,10 @@ def run_dataset_processing(dataset_path, level_processing, rc_version, ld_versio
     # TODO: it is writing to path.out, but  I am actually not going to use it
     # i will be assuming the dataset_path that was sent as argument
     
-    json_path = os.path.join(dataset_path, "processing.json")
+    if return_code != 0:
+        return None
+
+    json_path = os.path.join(dataset_folder, "processing.json")
     
     # for now we will just return the same path
     return json_path
@@ -193,13 +227,14 @@ def run_orbit_determination(dataset_path, max_iter, max_runtime):
     here we do not need to write the toml file because they are read arguments
     """
     
+    dataset_folder = _dataset_folder_path(dataset_path)
     timeout = max_runtime + 20
     run_path = "."
     bin_name = "./bin/RUN_OD_ON_DATASET"
     
     
     try:
-        result = subprocess.run([bin_name, dataset_path, 
+        result = subprocess.run([bin_name, dataset_folder,
                                  "--max-iterations", str(max_iter), 
                                  "--max-run-time", str(max_runtime)],
             cwd=run_path,
@@ -216,6 +251,9 @@ def run_orbit_determination(dataset_path, max_iter, max_runtime):
         print(f"Return code: {return_code}")
     except Exception as e:
         print(f"Error capturing return code: {e}")
+        return None
+
+    if return_code != 0:
         return None
     
     # it is writing to path.out, but  I am actually not going to use it

@@ -310,17 +310,21 @@ class ExperimentRunner:
         output_folder.mkdir(parents=True, exist_ok=True)
 
         last_return_code = 0
+        generated_results = []
 
         log.info("Running inference on images...")
         for image_path in file_manifest.get("raw", []):
             log.info("Running inference on %s and %s", image_path, output_folder)
-            return_code = run_inference(str(image_path), f"{str(output_folder)}/")
-            last_return_code = int(return_code)
+            frame_json_path = run_inference(str(image_path), f"{str(output_folder)}/")
+            last_return_code = 0 if frame_json_path else -1
             set_inference_return_code(last_return_code)
+            if frame_json_path:
+                generated_results.append(frame_json_path)
 
         log.info("Latest inference return code: %s", last_return_code)
 
         result_paths = [str(p) for p in sorted(output_folder.rglob("*")) if p.is_file()]
+        result_paths.extend(generated_results)
         if file_manifest is not None:
             file_manifest["results"].extend(result_paths)
         return result_paths

@@ -1,5 +1,6 @@
 #include "vision/reprocessing.hpp"
 #include "core/data_handling.hpp"
+#include "core/timing.hpp"
 #include "spdlog/spdlog.h"
 
 #include <filesystem>
@@ -30,35 +31,52 @@ bool ParseRawImageFilename(const fs::path& path, uint64_t& timestamp_out, int& c
     return true;
 }
 
-// Load a frame from disk (image pixels + JSON metadata) into frame_out.
-// Returns false if either the image or metadata cannot be loaded.
-bool LoadFrameFromFolder(uint64_t timestamp, int cam_id,
-                         const std::string& folder, Frame& frame_out)
+std::string FrameMetadataPath(const std::string& folder, uint64_t timestamp, int cam_id)
 {
+    fs::path folder_path(folder.empty() ? "." : folder);
+    return (folder_path / ("frame_" + std::to_string(timestamp) + "_" +
+                           std::to_string(cam_id) + ".json")).string();
+}
+
+// Load a dataset-style frame from disk. Missing metadata is reported separately
+// so callers can decide whether to treat the image as a fresh frame.
+bool LoadFrameFromFolder(uint64_t timestamp, int cam_id,
+                         const std::string& folder, Frame& frame_out,
+                         bool& loaded_metadata_out)
+{
+    loaded_metadata_out = false;
     if (!DH::ReadImageFromDisk(timestamp, cam_id, frame_out, folder))
         return false;
 
     Json metadata = DH::LoadFrameMetadataFromDisk(timestamp, cam_id, folder);
-    if (!metadata.empty())
+    if (!metadata.empty()) {
         frame_out.fromJson(metadata);
+        loaded_metadata_out = true;
+    }
 
     return true;
 }
 
 // Run the full processing pipeline on frame_ptr up to target_stage.
 EC RunPipeline(std::shared_ptr<Frame> frame_ptr, InferenceManager& im,
-               ProcessingStage target)
+               ProcessingStage target, bool bypass_prefilter_rejection)
 {
     frame_ptr->RunPrefiltering();
 
     if (target == ProcessingStage::Prefiltered)
         return EC::OK;
 
-    if (frame_ptr->GetImageState() < ImageState::Earth)
+    if (!bypass_prefilter_rejection && frame_ptr->GetImageState() < ImageState::Earth)
     {
         SPDLOG_INFO("Reprocessing: frame ({}, {}) rejected by prefiltering",
                     frame_ptr->GetCamID(), frame_ptr->GetTimestamp());
         return EC::OK;
+    }
+
+    if (bypass_prefilter_rejection && frame_ptr->GetImageState() < ImageState::Earth)
+    {
+        SPDLOG_INFO("Reprocessing: frame ({}, {}) bypassing prefilter rejection",
+                    frame_ptr->GetCamID(), frame_ptr->GetTimestamp());
     }
 
     return im.ProcessFrame(frame_ptr, target);
@@ -68,7 +86,8 @@ EC RunPipeline(std::shared_ptr<Frame> frame_ptr, InferenceManager& im,
 
 namespace Reprocessing {
 
-EC Dataset(::Dataset& dataset, InferenceManager& im, ProcessingStage target, bool overwrite)
+EC Dataset(::Dataset& dataset, InferenceManager& im, ProcessingStage target, bool overwrite,
+           bool bypass_prefilter_rejection)
 {
     const std::string folder  = dataset.GetFolderPath();
     const int    rc_ver       = im.GetRCVersion();
@@ -124,7 +143,7 @@ EC Dataset(::Dataset& dataset, InferenceManager& im, ProcessingStage target, boo
         frame.ResetProcessing();
         auto frame_ptr = std::make_shared<Frame>(frame);
 
-        EC status = RunPipeline(frame_ptr, im, target);
+        EC status = RunPipeline(frame_ptr, im, target, bypass_prefilter_rejection);
         if (status != EC::OK)
         {
             SPDLOG_ERROR("Reprocessing::Dataset: pipeline failed for frame ({}, {}): error {}",
@@ -161,7 +180,9 @@ EC Dataset(::Dataset& dataset, InferenceManager& im, ProcessingStage target, boo
 }
 
 EC Image(const std::string& raw_image_path, InferenceManager& im,
-         ProcessingStage target, bool overwrite)
+         ProcessingStage target, bool overwrite,
+         bool bypass_prefilter_rejection,
+         std::string* metadata_path_out)
 {
     const fs::path p(raw_image_path);
     if (!fs::is_regular_file(p))
@@ -170,28 +191,47 @@ EC Image(const std::string& raw_image_path, InferenceManager& im,
         return EC::FILE_DOES_NOT_EXIST;
     }
 
-    uint64_t timestamp;
-    int cam_id;
-    if (!ParseRawImageFilename(p, timestamp, cam_id))
-    {
-        SPDLOG_ERROR("Reprocessing::Image: filename does not match raw_<ts>_<cam>.{{jpg|png}}: {}",
-                     raw_image_path);
-        return EC::INVALID_COMMAND_ARGUMENTS;
-    }
-
-    const std::string folder  = p.parent_path().string();
+    const std::string folder  = p.parent_path().empty() ? "." : p.parent_path().string();
     const int    rc_ver       = im.GetRCVersion();
     const int    ld_ver       = im.GetLDVersion();
     const LDNetConfig& ld_cfg = im.GetLDNetConfig();
 
+    uint64_t timestamp = 0;
+    int cam_id = 0;
+    const bool parsed_raw_name = ParseRawImageFilename(p, timestamp, cam_id);
+
     Frame frame;
-    if (!LoadFrameFromFolder(timestamp, cam_id, folder, frame))
-    {
-        SPDLOG_ERROR("Reprocessing::Image: failed to load frame ({}, {})", cam_id, timestamp);
-        return EC::FILE_NOT_FOUND;
+    bool loaded_existing_metadata = false;
+    bool loaded_frame = false;
+
+    if (parsed_raw_name) {
+        loaded_frame = LoadFrameFromFolder(timestamp, cam_id, folder, frame, loaded_existing_metadata);
     }
 
-    if (!frame.ShouldReprocess(target, overwrite, rc_ver, ld_ver, ld_cfg))
+    if (!loaded_frame || !loaded_existing_metadata)
+    {
+        if (!parsed_raw_name) {
+            timestamp = static_cast<uint64_t>(timing::GetCurrentTimeMs());
+            cam_id = 0;
+            SPDLOG_INFO("Reprocessing::Image: '{}' is not named raw_<ts>_<cam>; creating fresh frame ({}, {})",
+                        raw_image_path, cam_id, timestamp);
+        } else {
+            SPDLOG_INFO("Reprocessing::Image: no frame metadata found for ({}, {}); creating fresh frame",
+                        cam_id, timestamp);
+        }
+
+        if (!DH::ReadImageFromDisk(raw_image_path, frame, cam_id, timestamp))
+        {
+            SPDLOG_ERROR("Reprocessing::Image: failed to load image: {}", raw_image_path);
+            return EC::FILE_NOT_FOUND;
+        }
+        loaded_existing_metadata = false;
+    }
+
+    const std::string metadata_path = FrameMetadataPath(folder, frame.GetTimestamp(), frame.GetCamID());
+    if (metadata_path_out) *metadata_path_out = metadata_path;
+
+    if (loaded_existing_metadata && !frame.ShouldReprocess(target, overwrite, rc_ver, ld_ver, ld_cfg))
     {
         SPDLOG_INFO("Reprocessing::Image: skipping ({}, {}) — conditions match or overwrite=false",
                     cam_id, timestamp);
@@ -201,7 +241,7 @@ EC Image(const std::string& raw_image_path, InferenceManager& im,
     frame.ResetProcessing();
     auto frame_ptr = std::make_shared<Frame>(frame);
 
-    EC status = RunPipeline(frame_ptr, im, target);
+    EC status = RunPipeline(frame_ptr, im, target, bypass_prefilter_rejection);
     if (status != EC::OK)
     {
         SPDLOG_ERROR("Reprocessing::Image: pipeline failed for ({}, {}): error {}",
@@ -210,7 +250,10 @@ EC Image(const std::string& raw_image_path, InferenceManager& im,
     }
 
     DH::StoreFrameMetadataToDisk(*frame_ptr, folder);
-    SPDLOG_INFO("Reprocessing::Image: reprocessed frame ({}, {})", cam_id, timestamp);
+    if (metadata_path_out) {
+        *metadata_path_out = FrameMetadataPath(folder, frame_ptr->GetTimestamp(), frame_ptr->GetCamID());
+    }
+    SPDLOG_INFO("Reprocessing::Image: reprocessed frame ({}, {})", frame_ptr->GetCamID(), frame_ptr->GetTimestamp());
     return EC::OK;
 }
 

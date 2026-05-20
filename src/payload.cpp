@@ -1,4 +1,5 @@
 #include <filesystem>
+#include <stdexcept>
 #include "payload.hpp"
 #include "core/data_handling.hpp"
 #include "core/timing.hpp"
@@ -38,6 +39,12 @@ imu_manager(config->GetIMUConfig()),
 state(PayloadState::STARTUP),
 thread_pool(std::make_unique<ThreadPool>(5))
 {   
+    const EC inference_config_status = config->ApplyInferenceConfig(inference_manager);
+    if (inference_config_status != EC::OK) {
+        SPDLOG_CRITICAL("Failed to apply inference configuration: {}",
+                        to_uint8(inference_config_status));
+        throw std::runtime_error("Failed to apply inference configuration.");
+    }
 
     timing::InitializeBootTime(); // Just in case
     SPDLOG_INFO("Configuration read successfully");

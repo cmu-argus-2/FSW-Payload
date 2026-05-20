@@ -70,7 +70,7 @@ add_executable(reprocess_dataset reprocess_dataset.cpp)
 target_link_libraries(reprocess_dataset PRIVATE PAYLOAD_LIB CLI11::CLI11)
 
 add_executable(reprocess_image reprocess_image.cpp)
-target_link_libraries(reprocess_image PRIVATE PAYLOAD_LIB)
+target_link_libraries(reprocess_image PRIVATE PAYLOAD_LIB CLI11::CLI11)
 
 ##### LANDMARK MEASUREMENTS
 

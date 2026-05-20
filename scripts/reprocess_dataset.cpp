@@ -10,6 +10,7 @@
                     [--ld-embedded-nms | --no-ld-embedded-nms]
                     [--ld-use-trt | --no-ld-use-trt]
                     [--system-config <path>]
+                    [--bypass-prefilter-rejection]
                     [--out <out_path>]
 
   Reprocesses all frames in a dataset through the full pipeline
@@ -135,6 +136,7 @@ int main(int argc, char** argv)
     std::optional<int> ld_input_height;
     bool ld_embedded_nms = false;
     bool ld_use_trt = false;
+    bool bypass_prefilter_rejection = false;
     std::string system_config_path = kDefaultSystemConfigPath;
     std::string out_path = kDefaultOutPath;
 
@@ -160,6 +162,8 @@ int main(int argc, char** argv)
         app.add_flag("--ld-use-trt,--no-ld-use-trt{false}", ld_use_trt,
                      "Use TensorRT LDNet engines instead of ONNX");
     app.add_option("--system-config", system_config_path, "System config TOML");
+    app.add_flag("--bypass-prefilter-rejection", bypass_prefilter_rejection,
+                 "Run prefiltering but continue to inference when prefiltering rejects a frame");
     app.add_option("--out", out_path, "File to write the processing metadata path into");
 
     CLI11_PARSE(app, argc, argv);
@@ -199,7 +203,7 @@ int main(int argc, char** argv)
                                     ld_use_trt_override);
     if (ec != EC::OK) return to_uint8(ec);
 
-    ec = Reprocessing::Dataset(dataset, im, target, overwrite);
+    ec = Reprocessing::Dataset(dataset, im, target, overwrite, bypass_prefilter_rejection);
     if (ec != EC::OK)
     {
         spdlog::error("Reprocessing::Dataset returned error {}", to_uint8(ec));

@@ -80,7 +80,7 @@ class DatasetProcessingRunner:
         level_processing = args.get("level_processing", 1)
         rc_version = args.get("rc_version", 1)
         ld_version = args.get("ld_version", 1)
-        bypass_prefilter_rejection = args.get("bypass_prefilter_rejection", True)
+        bypass_prefilter_rejection = args.get("bypass_preflt_rej", True)
         
         state_manager.set(PayloadState.CAPTURING)
         dataset_json_path = run_dataset_processing(dataset_json_path,

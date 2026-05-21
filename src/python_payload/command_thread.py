@@ -181,8 +181,6 @@ class CommandThread(threading.Thread):
         
         # wait for tx_queue to be empty and after that shutdown
         # timeout after 5 seconds and shutdown anyway
-        
-        
     
     def _handle_turn_off_payload(self, command: Command):
         """

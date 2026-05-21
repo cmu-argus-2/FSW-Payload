@@ -62,20 +62,21 @@ def run_inference(img_path, output_folder_path, level_processing=3, rc_version=2
     if return_code != 0:
         return None
 
-    if not out_path.exists():
-        print(f"Error: reprocess_image output file not created: {out_path}")
+    path_out_file = Path(out_path)
+    if not path_out_file.exists():
+        print(f"Error: {path_out_file} file not created")
         return None
 
-    frame_json_path = out_path.read_text().strip()
+    frame_json_path = path_out_file.read_text().strip()
     if not frame_json_path:
-        print(f"Error: reprocess_image output file is empty: {out_path}")
+        print(f"Error: reprocess_image output file is empty: {path_out_file}")
         return None
 
     print(f"Frame metadata generated at: {frame_json_path}")
     return frame_json_path
 
 
-def run_dataset_collection(camera_bit_flag, capture_rate, imu_hz, duration):
+def run_dataset_collection(camera_bit_flag, capture_rate, imu_hz, duration, camera_params):
     """
     This will call the binary to perform the dataset collection
     it will generate a dataset.json file that will be send to the mainboard
@@ -98,9 +99,19 @@ def run_dataset_collection(camera_bit_flag, capture_rate, imu_hz, duration):
     toml_dict["image_capture_rate"] = capture_rate
     toml_dict["maximum_period"] = duration
     toml_dict["active_cameras"] = [bool(camera_bit_flag & (1 << i)) for i in range(4)]
-    
+
     with open(config_file_path, 'w') as f:
         toml.dump(toml_dict, f)
+
+    if camera_params:
+        main_config_path = os.path.join("config", "config.toml")
+        main_config = toml.load(main_config_path)
+        isp = main_config.setdefault("camera-isp", {})
+        for key, value in camera_params.items():
+            if value is not None:
+                isp[key] = value
+        with open(main_config_path, 'w') as f:
+            toml.dump(main_config, f)
     
     # TODO: do I need to cast to string?
     try:
@@ -124,7 +135,7 @@ def run_dataset_collection(camera_bit_flag, capture_rate, imu_hz, duration):
     # lets read the json path from the output file
     path_out_file = Path("path.out")
     if not path_out_file.exists():
-        print("Error: path.out file not created")
+        print(f"Error: {path_out_file} file not created")
         return None
     
     dataset_path = path_out_file.read_text().strip()

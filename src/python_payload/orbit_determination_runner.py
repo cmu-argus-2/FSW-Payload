@@ -6,6 +6,7 @@ not sure if I will make a different file for the other od commands or not
 
 import threading
 from file_downlink_manager import FileDownlinkManager
+from experiment_runner import ExperimentRunner
 from external_bin_calls import run_dataset_collection, run_dataset_processing, run_orbit_determination
 from splat.splat.telemetry_codec import Command, pack
 from thread_shared import (
@@ -33,9 +34,12 @@ class DatasetCollectionRunner:
         imu_hz = args.get("imu_hz", 100)
         capture_rate = args.get("capture_rate", 10)
         duration = args.get("duration", 60)
+        camera_defaults_selector = args.get("camera_defaults_selector", ExperimentRunner.USE_PROGRAM_CAMERA_DEFAULTS)
+        camera_params = ExperimentRunner._build_camera_params_from_request(args, camera_defaults_selector)
         
         state_manager.set(PayloadState.CAPTURING)
-        dataset_json_path = run_dataset_collection(camera_bit_flag, capture_rate, imu_hz, duration)
+        dataset_json_path = run_dataset_collection(camera_bit_flag, capture_rate, imu_hz, 
+                                                   duration, camera_params)
         
         # check teh return value
         if dataset_json_path is None or dataset_json_path == -1:
@@ -76,9 +80,12 @@ class DatasetProcessingRunner:
         level_processing = args.get("level_processing", 1)
         rc_version = args.get("rc_version", 1)
         ld_version = args.get("ld_version", 1)
+        bypass_prefilter_rejection = args.get("bypass_prefilter_rejection", True)
         
         state_manager.set(PayloadState.CAPTURING)
-        dataset_json_path = run_dataset_processing(dataset_json_path, level_processing, rc_version, ld_version)
+        dataset_json_path = run_dataset_processing(dataset_json_path,
+                                                   level_processing, rc_version, ld_version,
+                                                   bypass_prefilter_rejection)
         
         # check teh return value
         if dataset_json_path is None or dataset_json_path == -1:

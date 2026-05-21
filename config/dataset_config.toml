@@ -8,7 +8,7 @@ dataset_capture_mode = 2 # PERIODIC
 
 imu_collection_mode = 1
 
-image_capture_rate = 10
+image_capture_rate = 15
 
 imu_sample_rate_hz = 1.0
 

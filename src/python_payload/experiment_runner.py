@@ -76,6 +76,8 @@ class ExperimentRunner:
         self,
         camera_bit_flag: int,
         level_processing: int = 0,
+        rc_version: int = 2,
+        ld_version: int = 2,
         width: int = 4608,
         height: int = 2592,
         downscale_factor: float = 2.0,
@@ -117,18 +119,14 @@ class ExperimentRunner:
             )
         log.debug("After downscaling: %s", file_manifest)
 
-        if level_processing & self.PROCESS_PREFILTER_BIT:
-            state_manager.set(PayloadState.PREFILTERING)
-            self._prefilter_images(
-                file_manifest,
-            )
-        log.debug("After prefiltering: %s", file_manifest)
-
         if level_processing & self.PROCESS_INFERENCE_BIT:
             state_manager.set(PayloadState.INFERENCE)
             self._run_inference(
                 experiment_dir,
                 file_manifest,
+                level_processing=level_processing,
+                rc_version=rc_version,
+                ld_version=ld_version,
             )
         log.debug("After inference: %s", file_manifest)
 
@@ -300,6 +298,9 @@ class ExperimentRunner:
         self,
         experiment_dir: Path,
         file_manifest: dict | None = None,
+        level_processing: int = 3,
+        rc_version: int = 2,
+        ld_version: int = 2,
     ) -> list[str]:
         """
         Receive a list with the file path to the images it should run inference on
@@ -315,7 +316,10 @@ class ExperimentRunner:
         log.info("Running inference on images...")
         for image_path in file_manifest.get("raw", []):
             log.info("Running inference on %s and %s", image_path, output_folder)
-            frame_json_path = run_inference(str(image_path), f"{str(output_folder)}/")
+            frame_json_path = run_inference(str(image_path), f"{str(output_folder)}/", 
+                                            level_processing=level_processing,
+                                            rc_version=rc_version,
+                                            ld_version=ld_version)
             last_return_code = 0 if frame_json_path else -1
             set_inference_return_code(last_return_code)
             if frame_json_path:

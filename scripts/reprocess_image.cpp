@@ -130,7 +130,7 @@ int main(int argc, char** argv)
     std::optional<int> ld_input_width;
     std::optional<int> ld_input_height;
     bool ld_embedded_nms = false;
-    bool ld_use_trt = false;
+    bool ld_use_trt = true;
     bool bypass_prefilter_rejection = false;
     std::string system_config_path = kDefaultSystemConfigPath;
     std::string out_path = kDefaultOutPath;

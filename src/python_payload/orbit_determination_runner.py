@@ -78,8 +78,8 @@ class DatasetProcessingRunner:
         # call the binary to perform the dataset processing
         dataset_json_path = args.get("string_command", "").rstrip("\x00")  # remove trailing 0s
         level_processing = args.get("level_processing", 1)
-        rc_version = args.get("rc_version", 1)
-        ld_version = args.get("ld_version", 1)
+        rc_version = args.get("rc_version", 5)
+        ld_version = args.get("ld_version", 3)
         bypass_prefilter_rejection = args.get("bypass_preflt_rej", True)
         
         state_manager.set(PayloadState.CAPTURING)

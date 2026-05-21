@@ -207,24 +207,24 @@ TEST_F(OrchestratorTest, SetLDNetEngineFolderPath_NonStandardPath_SetsVersionSen
     std::filesystem::remove(tmp);
 }
 
-TEST_F(OrchestratorTest, DefaultRCPath_IsVersion2)
+TEST_F(OrchestratorTest, DefaultRCPath_IsVersion5)
 {
-    EXPECT_EQ(im.rc_engine_path_, Inference::RCEnginePath(2));
+    EXPECT_EQ(im.rc_engine_path_, Inference::RCEnginePath(5));
 }
 
-TEST_F(OrchestratorTest, DefaultLDPath_IsVersion2)
+TEST_F(OrchestratorTest, DefaultLDPath_IsVersion3)
 {
-    EXPECT_EQ(im.ld_engine_folder_path_, Inference::LDFolderPath(2));
+    EXPECT_EQ(im.ld_engine_folder_path_, Inference::LDFolderPath(3));
 }
 
-TEST_F(OrchestratorTest, DefaultRCVersion_Is2)
+TEST_F(OrchestratorTest, DefaultRCVersion_Is5)
 {
-    EXPECT_EQ(im.rc_version_, 2);
+    EXPECT_EQ(im.rc_version_, 5);
 }
 
-TEST_F(OrchestratorTest, DefaultLDVersion_Is2)
+TEST_F(OrchestratorTest, DefaultLDVersion_Is3)
 {
-    EXPECT_EQ(im.ld_version_, 2);
+    EXPECT_EQ(im.ld_version_, 3);
 }
 
 // --- Zero / negative versions must be rejected before any filesystem access ---

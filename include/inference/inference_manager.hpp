@@ -55,10 +55,10 @@ private:
     std::mutex mtx_;
 
     // Configuration (CUDA-free, always present)
-    std::string rc_engine_path_        = Inference::RCEnginePath(2);
-    std::string ld_engine_folder_path_ = Inference::LDFolderPath(2);
-    int rc_version_ = 2;
-    int ld_version_ = 2;
+    std::string rc_engine_path_        = Inference::RCEnginePath(5);
+    std::string ld_engine_folder_path_ = Inference::LDFolderPath(3);
+    int rc_version_ = 5;
+    int ld_version_ = 3;
     LDNetConfig ldnet_config_ = {NET_QUANTIZATION::FP16, 4608, 2592, false, true};
     bool preload_rc_engine_ = true;
     bool preload_ld_engines_ = false;

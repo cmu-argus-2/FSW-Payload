@@ -18,7 +18,7 @@ def _dataset_folder_path(dataset_path):
     return str(path)
 
 
-def run_inference(img_path, output_folder_path, level_processing=3, rc_version=2, ld_version=2):
+def run_inference(img_path, output_folder_path, level_processing=3, rc_version=5, ld_version=3):
     """
     will run the inference on a given image
     it will also give a path for the generated data to be saved

@@ -7,6 +7,7 @@ import cv2
 from camera_driver import JetsonCamera
 from external_bin_calls import run_inference
 from file_downlink_manager import FileDownlinkManager
+from external_bin_calls import run_dataset_collection
 from splat.splat.telemetry_codec import Command, pack
 from thread_shared import (
     PayloadState,
@@ -30,8 +31,12 @@ class ExperimentRunner:
         return self.run(request)
 
     def run(self, request: dict):
+        mode_id = int(request.get("mode_id", 0))
         ts = int(request.get("ts", 0))
         camera_bit_flag = int(request.get("camera_bit_flag", 0))
+        imu_hz = int(request.get("imu_hz", 1))
+        capture_rate = int(request.get("capture_rate", 15))
+        duration = int(request.get("duration", 130))
         level_processing = int(request.get("level_processing", 0))
         width = int(request.get("width", 4608))
         height = int(request.get("height", 2592))
@@ -43,34 +48,58 @@ class ExperimentRunner:
             request,
             camera_defaults_selector,
         )
+        if mode_id == 0:
 
-        log.info(
-            (
-                "Starting experiment ts=%s camera_mask=%s level=%s width=%s height=%s "
-                "downscale_factor=%s camera_defaults_selector=%s"
-            ),
-            ts,
-            camera_bit_flag,
-            level_processing,
-            width,
-            height,
-            downscale_factor,
-            camera_defaults_selector,
-        )
-
-        try:
-            self.experiment(
+            log.info(
+                (
+                    "Starting experiment ts=%s camera_mask=%s level=%s width=%s height=%s "
+                    "downscale_factor=%s camera_defaults_selector=%s"
+                ),
+                ts,
                 camera_bit_flag,
-                level_processing=level_processing,
-                width=width,
-                height=height,
-                downscale_factor=downscale_factor,
-                camera_params=camera_params,
+                level_processing,
+                width,
+                height,
+                downscale_factor,
+                camera_defaults_selector,
             )
-            log.info("Experiment completed")
-        except Exception as exc:
-            log.error("Experiment failed: %s", exc)
-            state_manager.set(PayloadState.FAIL)
+
+            try:
+                self.experiment(
+                    camera_bit_flag,
+                    level_processing=level_processing,
+                    width=width,
+                    height=height,
+                    downscale_factor=downscale_factor,
+                    camera_params=camera_params,
+                )
+                log.info("Experiment completed")
+            except Exception as exc:
+                log.error("Experiment failed: %s", exc)
+                state_manager.set(PayloadState.FAIL)
+        if mode_id == 1:
+            log.info(
+                (
+                    "Starting dataset collection with parameters ts=%s camera_mask=%s imu_hz=%s capture_rate=%s "
+                    "duration=%s width=%s height=%s downscale_factor=%s camera_defaults_selector=%s"
+                ),
+                ts,
+                camera_bit_flag,
+                imu_hz,
+                capture_rate,
+                duration,
+                width,
+                height,
+                downscale_factor,
+                camera_defaults_selector,
+            )
+            try:
+                self.dataset_collection(camera_bit_flag, capture_rate, imu_hz, duration, camera_params)
+                log.info("Dataset collection completed")
+            except Exception as exc:
+                log.error("Dataset collection failed: %s", exc)
+                state_manager.set(PayloadState.FAIL)  
+        log.error("Unknown mode_id=%s in experiment request", mode_id)
 
     def experiment(
         self,
@@ -146,6 +175,35 @@ class ExperimentRunner:
 
         state_manager.set(PayloadState.DOWNLOAD)
         self.send_results(final_file_list)
+        
+    def dataset_collection(self, camera_bit_flag: int, capture_rate: int, imu_hz: int, duration: int, camera_params: dict | None = None):
+        state_manager.set(PayloadState.TURNING_ON)
+        
+        state_manager.set(PayloadState.CAPTURING)
+        dataset_json_path = run_dataset_collection(camera_bit_flag, capture_rate, imu_hz, 
+                                                duration, camera_params)
+        
+        # check teh return value
+        if dataset_json_path is None or dataset_json_path == -1:
+            log.error("Dataset collection failed")
+            state_manager.set(PayloadState.FAIL)
+            return
+        
+        # Send the command finished command
+        log.info("Dataset collection completed, dataset path: %s", dataset_json_path)
+        command = Command("EXPERIMENT_FINISHED")
+        tx_queue.put(pack(command))
+        log.info("Sending EXPERIMENT_FINISHED command (experiment finished)")
+        
+        # send the files to the mainboard for downlink
+        state_manager.set(PayloadState.DOWNLOAD)
+        
+        ok = self.downlink_manager.send_files([dataset_json_path])
+        if not ok:
+            log.error("Downlink sequence failed")
+            state_manager.set(PayloadState.FAIL)
+        else:
+            log.info(f"Downlink sequence completed for {dataset_json_path}")
 
     def send_results(self, final_file_list: list[str]):
         """

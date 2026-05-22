@@ -260,7 +260,7 @@ class CommandThread(threading.Thread):
         # these are the commands for the orbit determination experiment
         # They are similar to experiment command
         # command thread will be responsible for distinguishing them
-        "DATASET_COLLECTION": _handle_experiment, 
+        # "DATASET_COLLECTION": _handle_experiment, 
         "DATASET_PROCESSING": _handle_experiment,
         "DATASET_OD": _handle_experiment,
         

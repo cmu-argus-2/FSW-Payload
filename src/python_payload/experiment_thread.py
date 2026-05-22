@@ -17,13 +17,13 @@ class ExperimentThread(threading.Thread):
         self.stop_event = stop_event
         
         self.experiment_runner = ExperimentRunner(stop_event=stop_event)
-        self.dataset_collection_runner = DatasetCollectionRunner(stop_event=stop_event)
+        # self.dataset_collection_runner = DatasetCollectionRunner(stop_event=stop_event)
         self.dataset_processing_runner = DatasetProcessingRunner(stop_event=stop_event)
         self.orbit_determination_runner = DatasetODRunner(stop_event=stop_event)
         
         self._experiment_handlers = {
             "EXPERIMENT": self.experiment_runner.run_experiment,
-            "DATASET_COLLECTION": self.dataset_collection_runner.run,
+            # "DATASET_COLLECTION": self.dataset_collection_runner.run,
             "DATASET_PROCESSING": self.dataset_processing_runner.run,
             "DATASET_OD": self.orbit_determination_runner.run,
         }

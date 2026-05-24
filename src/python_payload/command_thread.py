@@ -201,7 +201,7 @@ class CommandThread(threading.Thread):
                 return
 
             date_result = subprocess.run(
-                ["sudo", "/bin/date", "-s", f"@{timestamp}"],
+                ["sudo", "-n", "/usr/bin/date", "-s", f"@{timestamp}"],
                 capture_output=True, text=True, timeout=5
             )
             if date_result.returncode != 0:
@@ -210,7 +210,7 @@ class CommandThread(threading.Thread):
                 return
 
             hwclock_result = subprocess.run(
-                ["sudo", "/sbin/hwclock", "--systohc"],
+                ["sudo", "-n", "/usr/sbin/hwclock", "--systohc", "--utc"],
                 capture_output=True, text=True, timeout=5
             )
 

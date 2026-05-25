@@ -1,3 +1,4 @@
+import json
 import time
 from datetime import datetime
 from pathlib import Path
@@ -94,7 +95,10 @@ class ExperimentRunner:
                 camera_defaults_selector,
             )
             try:
-                self.dataset_collection(camera_bit_flag, capture_rate, imu_hz, duration, camera_params)
+                self.dataset_collection(
+                    camera_bit_flag, capture_rate, imu_hz, duration, camera_params,
+                    n_thumbnails=level_processing, thumb_width=width, thumb_height=height,
+                )
                 log.info("Dataset collection completed")
             except Exception as exc:
                 log.error("Dataset collection failed: %s", exc)
@@ -176,34 +180,71 @@ class ExperimentRunner:
         state_manager.set(PayloadState.DOWNLOAD)
         self.send_results(final_file_list)
         
-    def dataset_collection(self, camera_bit_flag: int, capture_rate: int, imu_hz: int, duration: int, camera_params: dict | None = None):
+    def dataset_collection(
+        self,
+        camera_bit_flag: int,
+        capture_rate: int,
+        imu_hz: int,
+        duration: int,
+        camera_params: dict | None = None,
+        # For mode_id=1, level_processing is repurposed as N thumbnails to generate for downlink
+        # at processing time. width/height are repurposed as the target thumbnail dimensions.
+        # These parameters have no effect on the capture itself.
+        n_thumbnails: int = 0,
+        thumb_width: int = 640,
+        thumb_height: int = 480,
+    ):
         state_manager.set(PayloadState.TURNING_ON)
-        
+
         state_manager.set(PayloadState.CAPTURING)
-        dataset_json_path = run_dataset_collection(camera_bit_flag, capture_rate, imu_hz, 
-                                                duration, camera_params)
-        
-        # check teh return value
+        dataset_json_path = run_dataset_collection(camera_bit_flag, capture_rate, imu_hz,
+                                                   duration, camera_params)
+
         if dataset_json_path is None or dataset_json_path == -1:
             log.error("Dataset collection failed")
             state_manager.set(PayloadState.FAIL)
             return
-        
-        # Send the command finished command
+
         log.info("Dataset collection completed, dataset path: %s", dataset_json_path)
+
+        dataset_folder = Path(dataset_json_path).parent
+
+        # Read imu path from dataset.json
+        imu_path = None
+        try:
+            with open(dataset_json_path) as f:
+                dataset_info = json.load(f)
+            imu_path = dataset_info.get("imu_log_file_path", "")
+        except Exception as exc:
+            log.warning("Could not read imu_log_file_path from dataset.json: %s", exc)
+
+        # Persist thumbnail config for DATASET_PROCESSING to consume later
+        if n_thumbnails > 0:
+            config = {"n_thumbnails": n_thumbnails, "thumb_width": thumb_width, "thumb_height": thumb_height}
+            try:
+                with open(dataset_folder / "downlink_config.json", "w") as f:
+                    json.dump(config, f)
+                log.info("Wrote downlink_config.json: n_thumbnails=%s %sx%s", n_thumbnails, thumb_width, thumb_height)
+            except Exception as exc:
+                log.error("Failed to write downlink_config.json: %s", exc)
+
+        downlink_list = [dataset_json_path]
+        if imu_path and Path(imu_path).exists():
+            downlink_list.append(imu_path)
+        else:
+            log.warning("IMU file not found or unreadable, skipping: %s", imu_path)
+
         command = Command("EXPERIMENT_FINISHED")
         tx_queue.put(pack(command))
         log.info("Sending EXPERIMENT_FINISHED command (experiment finished)")
-        
-        # send the files to the mainboard for downlink
+
         state_manager.set(PayloadState.DOWNLOAD)
-        
-        ok = self.downlink_manager.send_files([dataset_json_path])
+        ok = self.downlink_manager.send_files(downlink_list)
         if not ok:
             log.error("Downlink sequence failed")
             state_manager.set(PayloadState.FAIL)
         else:
-            log.info(f"Downlink sequence completed for {dataset_json_path}")
+            log.info("Downlink sequence completed for %s files", len(downlink_list))
 
     def send_results(self, final_file_list: list[str]):
         """

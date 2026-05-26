@@ -176,13 +176,13 @@ int main(int argc, char** argv)
     request.od_config_override = od_config;
 
     const ODResult result = RunODOnDataset(request);
+    spdlog::info("OD complete. Results in {}", result.results_dir);
+    WriteResult(ResolveOutPath(out_path), result.results_dir);
     if (result.code != ErrorCode::OK) {
         spdlog::error("OD pipeline failed at stage {} with error code {}.",
                       static_cast<int>(result.stage), static_cast<int>(result.code));
         return 1;
     }
 
-    spdlog::info("OD complete. Results in {}", result.results_dir);
-    WriteResult(ResolveOutPath(out_path), result.results_dir);
     return 0;
 }

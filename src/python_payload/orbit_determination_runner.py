@@ -1,5 +1,5 @@
 """
-This is hte folder that will contain the logic for the orbit determination experiment
+This is the folder that will contain the logic for the orbit determination experiment
 for now it will implement the dataset collection command
 not sure if I will make a different file for the other od commands or not
 """
@@ -194,13 +194,21 @@ class DatasetODRunner:
         try:
             path_out = Path("path.out")
             if not path_out.exists():
+                log.warning("_find_partial_od_result: path.out does not exist — binary did not write output path on failure")
                 return None
             od_result_dir = path_out.read_text().strip()
+            log.info("_find_partial_od_result: path.out contents: %r", od_result_dir)
             if not od_result_dir:
+                log.warning("_find_partial_od_result: path.out is empty")
                 return None
             candidate = Path(od_result_dir) / "od_result.json"
-            return str(candidate) if candidate.exists() else None
-        except Exception:
+            if not candidate.exists():
+                log.warning("_find_partial_od_result: od_result.json not found at %s", candidate)
+                return None
+            log.info("_find_partial_od_result: found partial result at %s", candidate)
+            return str(candidate)
+        except Exception as exc:
+            log.error("_find_partial_od_result: unexpected error: %s", exc)
             return None
 
     def run(self, args: dict):

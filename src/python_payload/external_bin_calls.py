@@ -242,8 +242,9 @@ def run_orbit_determination(dataset_path, max_iter, max_runtime):
     timeout = max_runtime + 20
     run_path = "."
     bin_name = "./bin/RUN_OD_ON_DATASET"
-    
-    
+
+    Path("path.out").unlink(missing_ok=True)
+
     try:
         result = subprocess.run([bin_name, dataset_folder,
                                  "--max-iterations", str(max_iter), 

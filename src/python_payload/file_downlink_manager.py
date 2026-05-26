@@ -30,11 +30,12 @@ class FileDownlinkManager:
         self,
         stop_event=None,
         burst_size: int = 40,
-        ack_timeout_s: float = 10.0,
+        ack_timeout_s: float = 30.0,
         ack_retry_interval_s: float = 3.0,
         confirm_timeout_s: float = 20.0,
         max_stalled_rounds: int = 5,
         completion_command_name: str = "DOWNLOAD_FINISH",
+        inter_file_delay_s: float = 2.0,
     ):
         self.stop_event = stop_event
         self.burst_size = max(1, int(burst_size))
@@ -43,6 +44,7 @@ class FileDownlinkManager:
         self.confirm_timeout_s = max(0.1, float(confirm_timeout_s))
         self.max_stalled_rounds = max(1, int(max_stalled_rounds))
         self.completion_command_name = completion_command_name
+        self.inter_file_delay_s = max(0.0, float(inter_file_delay_s))
 
     def send_files(self, file_paths: list[str], stop_on_failure: bool = True) -> bool:
         """Send all files sequentially. Returns True only if all succeeded."""
@@ -55,6 +57,8 @@ class FileDownlinkManager:
 
             if result.success:
                 log.info("Downlink completed for %s (%s bursts)", file_path, result.bursts_sent)
+                if idx < total and self.inter_file_delay_s > 0:
+                    time.sleep(self.inter_file_delay_s)
                 continue
 
             all_ok = False

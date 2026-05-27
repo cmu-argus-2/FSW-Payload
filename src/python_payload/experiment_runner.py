@@ -78,6 +78,7 @@ class ExperimentRunner:
             except Exception as exc:
                 log.error("Experiment failed: %s", exc)
                 state_manager.set(PayloadState.FAIL)
+            return
         if mode_id == 1:
             log.info(
                 (
@@ -102,7 +103,8 @@ class ExperimentRunner:
                 log.info("Dataset collection completed")
             except Exception as exc:
                 log.error("Dataset collection failed: %s", exc)
-                state_manager.set(PayloadState.FAIL)  
+                state_manager.set(PayloadState.FAIL)
+            return
         log.error("Unknown mode_id=%s in experiment request", mode_id)
 
     def experiment(

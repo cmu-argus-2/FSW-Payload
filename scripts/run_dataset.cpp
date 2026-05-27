@@ -261,7 +261,8 @@ int run(int argc, char** argv)
         const std::string dataset_folder = ds->GetDatasetFolder();
         ds->StopDatasetManager(DATASET_KEY_CMD);
         SPDLOG_INFO("Dataset collection completed. Dataset stored in folder: {}. Dataset Folder Path stored in {}", dataset_folder, out_path);
-        WriteResult(out_path, dataset_folder + "/dataset.json");
+        const std::string dataset_json_path = dataset_folder + (dataset_folder.back() == '/' ? "" : "/") + "dataset.json";
+        WriteResult(out_path, dataset_json_path);
     }
     catch (...)
     {

@@ -198,12 +198,12 @@ def _collect_od_run_result(succeeded: bool):
     path_out_file = Path("path.out")
     if not path_out_file.exists():
         print("Error: path.out file not created")
-        return None, [], succeeded
+        return None, succeeded
 
     od_result_path = path_out_file.read_text().strip()
     if not od_result_path:
         print("Error: path.out file is empty")
-        return None, [], succeeded
+        return None, succeeded
 
     print(f"OD results directory generated at: {od_result_path}")
     json_path = os.path.join(od_result_path, "od_result.json")
@@ -211,7 +211,7 @@ def _collect_od_run_result(succeeded: bool):
         print(f"Error: OD result JSON not found: {json_path}")
         json_path = None
 
-    return json_path, [], succeeded
+    return json_path, succeeded
 
 
 def run_orbit_determination(dataset_path, max_iter, max_runtime):
@@ -249,6 +249,6 @@ def run_orbit_determination(dataset_path, max_iter, max_runtime):
         print(f"Return code: {return_code}")
     except Exception as e:
         print(f"Error capturing return code: {e}")
-        return None, [], False
+        return None, False
 
     return _collect_od_run_result(succeeded=(return_code == 0))

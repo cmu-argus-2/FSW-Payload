@@ -25,11 +25,14 @@
 
 #include "navigation/od.hpp"
 
+#include <chrono>
+#include <filesystem>
 #include <fstream>
 #include <optional>
 #include <string>
 
 #include <CLI/CLI.hpp>
+#include <nlohmann/json.hpp>
 #include <spdlog/spdlog.h>
 
 static constexpr const char* kDefaultOutPath = "path.out";
@@ -48,6 +51,39 @@ static void WriteResult(const std::string& out_file, const std::string& content)
     std::ofstream f(out_file, std::ios::trunc);
     if (!f.is_open()) { spdlog::error("Failed to write result to '{}'", out_file); return; }
     f << content << '\n';
+}
+
+// Creates a timestamped results directory and writes a minimal od_result.json.
+// Used when RunODOnDataset exits before establishing its own results_dir.
+// Returns the created directory path, or "" on failure.
+static std::string CreateFailureJson(const std::string& dataset_folder, int error_code, int stage)
+{
+    namespace fs = std::filesystem;
+    const int64_t ts = std::chrono::duration_cast<std::chrono::milliseconds>(
+        std::chrono::system_clock::now().time_since_epoch()).count();
+    const std::string results_dir = "data/results/" + std::to_string(ts);
+
+    std::error_code ec;
+    fs::create_directories(results_dir, ec);
+    if (ec) {
+        spdlog::error("CreateFailureJson: could not create {}: {}", results_dir, ec.message());
+        return "";
+    }
+
+    nlohmann::json meta;
+    meta["dataset_folder"] = dataset_folder;
+    meta["error_code"]     = error_code;
+    meta["stage"]          = stage;
+    meta["succeeded"]      = false;
+
+    const std::string json_path = results_dir + "/od_result.json";
+    std::ofstream jf(json_path);
+    if (!jf.is_open()) {
+        spdlog::error("CreateFailureJson: could not write {}", json_path);
+        return "";
+    }
+    jf << meta.dump(2) << '\n';
+    return results_dir;
 }
 
 int main(int argc, char** argv)
@@ -108,6 +144,10 @@ int main(int argc, char** argv)
     const ODConfigResult file_result = ReadODConfig(od_config_path);
     if (file_result.code != ErrorCode::OK) {
         spdlog::error("Failed to load OD config from '{}'", od_config_path);
+        const std::string fd = CreateFailureJson(dataset_folder,
+                                                 static_cast<int>(file_result.code),
+                                                 static_cast<int>(ODStage::FAILED));
+        WriteResult(ResolveOutPath(out_path), fd);
         return 1;
     }
     OD_Config od_config = file_result.config;
@@ -176,8 +216,17 @@ int main(int argc, char** argv)
     request.od_config_override = od_config;
 
     const ODResult result = RunODOnDataset(request);
-    spdlog::info("OD complete. Results in {}", result.results_dir);
-    WriteResult(ResolveOutPath(out_path), result.results_dir);
+    if (result.results_dir.empty()) {
+        spdlog::warn("RunODOnDataset produced no results directory (stage={}, code={}), writing failure JSON",
+                     static_cast<int>(result.stage), static_cast<int>(result.code));
+        const std::string fd = CreateFailureJson(dataset_folder,
+                                                 static_cast<int>(result.code),
+                                                 static_cast<int>(result.stage));
+        WriteResult(ResolveOutPath(out_path), fd);
+    } else {
+        spdlog::info("OD complete. Results in {}", result.results_dir);
+        WriteResult(ResolveOutPath(out_path), result.results_dir);
+    }
     if (result.code != ErrorCode::OK) {
         spdlog::error("OD pipeline failed at stage {} with error code {}.",
                       static_cast<int>(result.stage), static_cast<int>(result.code));

@@ -222,7 +222,7 @@ class DatasetODRunner:
         max_runtime = args.get("max_runtime", 300)
         
         state_manager.set(PayloadState.CAPTURING)
-        results_json_path, extra_downlink_paths, od_succeeded = run_orbit_determination(
+        results_json_path, od_succeeded = run_orbit_determination(
             dataset_json_path,
             max_iter,
             max_runtime,
@@ -235,6 +235,9 @@ class DatasetODRunner:
             state_manager.set(PayloadState.FAIL)
             results_json_path = self._find_partial_od_result()
             if results_json_path is None:
+                log.error("No OD results to downlink, sending EXPERIMENT_FINISHED")
+                command = Command("EXPERIMENT_FINISHED")
+                tx_queue.put(pack(command))
                 return
             log.warning("Partial od_result.json found, will attempt downlink: %s", results_json_path)
 

@@ -6,7 +6,6 @@ like record a dataset, or run inference...
 import os
 import subprocess
 import sys
-import zipfile
 from pathlib import Path
 import toml
 
@@ -195,39 +194,6 @@ def run_dataset_processing(dataset_path, level_processing, rc_version, ld_versio
     return json_path
 
 
-def package_od_csv_downlink(results_dir):
-    """
-    Create a zip containing only CSV products from an OD results directory.
-
-    The od_result.json is intentionally handled separately and is not included
-    in this archive.
-    """
-
-    results_path = Path(results_dir)
-    if not results_path.exists():
-        print(f"Error: OD results directory does not exist: {results_path}")
-        return None
-
-    csv_paths = sorted(path for path in results_path.glob("*.csv") if path.is_file())
-    if not csv_paths:
-        print(f"Warning: no CSV files found to package in {results_path}")
-        return None
-
-    timestamp = results_path.name
-    zip_path = results_path / f"od_{timestamp}.zip"
-
-    try:
-        with zipfile.ZipFile(zip_path, "w", compression=zipfile.ZIP_DEFLATED) as zf:
-            for csv_path in csv_paths:
-                zf.write(csv_path, arcname=csv_path.name)
-    except Exception as e:
-        print(f"Error creating OD CSV downlink zip: {e}")
-        return None
-
-    print(f"OD CSV downlink zip generated at: {zip_path}")
-    return str(zip_path)
-
-
 def _collect_od_run_result(succeeded: bool):
     path_out_file = Path("path.out")
     if not path_out_file.exists():
@@ -245,12 +211,7 @@ def _collect_od_run_result(succeeded: bool):
         print(f"Error: OD result JSON not found: {json_path}")
         json_path = None
 
-    extra_downlink_paths = []
-    zip_path = package_od_csv_downlink(od_result_path)
-    if zip_path is not None:
-        extra_downlink_paths.append(zip_path)
-
-    return json_path, extra_downlink_paths, succeeded
+    return json_path, [], succeeded
 
 
 def run_orbit_determination(dataset_path, max_iter, max_runtime):

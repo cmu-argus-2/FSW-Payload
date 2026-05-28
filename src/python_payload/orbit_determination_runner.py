@@ -32,7 +32,7 @@ class DatasetProcessingRunner:
 
         dataset_json_path = args.get("string_command", "").rstrip("\x00")
         level_processing = args.get("level_processing", 1)
-        rc_version = args.get("rc_version", 5)
+        rc_version = args.get("rc_version", 2)
         ld_version = args.get("ld_version", 3)
         bypass_prefilter_rejection = args.get("bypass_preflt_rej", True)
 
@@ -218,15 +218,19 @@ class DatasetODRunner:
         
         # call the binary to perform the dataset processing
         dataset_json_path = args.get("string_command", "").rstrip("\x00")  # remove trailing 0s
-        max_iter = args.get("max_iterations", 1)
+        max_iter = args.get("max_iteration", 1)
         max_runtime = args.get("max_runtime", 1)
         
         state_manager.set(PayloadState.CAPTURING)
-        results_json_path = run_orbit_determination(dataset_json_path, max_iter, max_runtime)
+        results_json_path, extra_downlink_paths, od_succeeded = run_orbit_determination(
+            dataset_json_path,
+            max_iter,
+            max_runtime,
+        )
 
-        od_succeeded = results_json_path is not None and results_json_path != -1
+        od_succeeded = od_succeeded and results_json_path is not None and results_json_path != -1
 
-        if not od_succeeded:
+        if results_json_path is None or results_json_path == -1:
             log.error("Orbit determination failed")
             state_manager.set(PayloadState.FAIL)
             results_json_path = self._find_partial_od_result()
@@ -248,6 +252,15 @@ class DatasetODRunner:
                 downlink_list.append(str(state_estimates_path))
             else:
                 log.warning("state_estimates.csv not found in results folder, skipping")
+
+        for extra_path in extra_downlink_paths:
+            if not extra_path:
+                continue
+            if not Path(extra_path).exists():
+                log.warning("Extra OD downlink product not found, skipping: %s", extra_path)
+                continue
+            if extra_path not in downlink_list:
+                downlink_list.append(extra_path)
 
         ok = self.downlink_manager.send_files(downlink_list)
         if not ok:

@@ -228,6 +228,31 @@ def package_od_csv_downlink(results_dir):
     return str(zip_path)
 
 
+def _collect_od_run_result(succeeded: bool):
+    path_out_file = Path("path.out")
+    if not path_out_file.exists():
+        print("Error: path.out file not created")
+        return None, [], succeeded
+
+    od_result_path = path_out_file.read_text().strip()
+    if not od_result_path:
+        print("Error: path.out file is empty")
+        return None, [], succeeded
+
+    print(f"OD results directory generated at: {od_result_path}")
+    json_path = os.path.join(od_result_path, "od_result.json")
+    if not Path(json_path).exists():
+        print(f"Error: OD result JSON not found: {json_path}")
+        json_path = None
+
+    extra_downlink_paths = []
+    zip_path = package_od_csv_downlink(od_result_path)
+    if zip_path is not None:
+        extra_downlink_paths.append(zip_path)
+
+    return json_path, extra_downlink_paths, succeeded
+
+
 def run_orbit_determination(dataset_path, max_iter, max_runtime):
     """
     This will call the binary to perform the orbit determination
@@ -256,28 +281,13 @@ def run_orbit_determination(dataset_path, max_iter, max_runtime):
         )
     except subprocess.TimeoutExpired:
         print(f"Orbit determination timed out after {timeout} seconds")
-        return None
+        return _collect_od_run_result(succeeded=False)
     
     try:
         return_code = result.returncode
         print(f"Return code: {return_code}")
     except Exception as e:
         print(f"Error capturing return code: {e}")
-        return None
+        return None, [], False
 
-    if return_code != 0:
-        return None
-    
-    # it is writing to path.out, but  I am actually not going to use it
-    path_out_file = Path("path.out")
-    if not path_out_file.exists():
-        print("Error: path.out file not created")
-        return None
-    
-    od_result_path = path_out_file.read_text().strip()
-    print(f"Test dataset generated at: {od_result_path}")
-    json_path = os.path.join(od_result_path, "od_result.json")
-    package_od_csv_downlink(od_result_path)
-    
-    # for now we will just return the same path
-    return json_path
+    return _collect_od_run_result(succeeded=(return_code == 0))

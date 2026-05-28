@@ -478,7 +478,7 @@ EC InferenceManager::ExecRCInference()
     InferenceResults rc_results;
     rc_results.rc_version = rc_version_;
 
-    static constexpr float RC_THRESHOLD = 0.5f;
+    static constexpr float RC_THRESHOLD = 0.35f;
     for (uint8_t i = 0; i < rc_num_classes; i++)
     {
         if (host_output[i] > RC_THRESHOLD)

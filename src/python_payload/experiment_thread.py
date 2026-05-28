@@ -11,7 +11,7 @@ from splat.splat.telemetry_codec import Command
 
 # Commands subject to repeat-detection. EXPERIMENT is excluded because back-to-back
 # experiments with identical params are legitimate (e.g. repeated captures).
-_DEDUP_COMMANDS = {"DATASET_PROCESSING", "DATASET_OD"}
+_DEDUP_COMMANDS = {"EXPERIMENT", "DATASET_PROCESSING", "DATASET_OD"}
 
 # How long after completion to still reject an identical command (covers mainboard retransmit lag).
 _DEDUP_GRACE_SECONDS = 60

@@ -89,6 +89,8 @@ def run_dataset_collection(camera_bit_flag, capture_rate, imu_hz, duration, came
     timeout = duration + 20
     run_path = "."
     bin_name = "./bin/run_dataset"
+    path_out_file = Path("path.out")
+    path_out_file.unlink(missing_ok=True) # Remove old path out to prevent using stale path out from previous run
     
     
     config_file_path = os.path.join("config", "dataset_config.toml")
@@ -130,14 +132,22 @@ def run_dataset_collection(camera_bit_flag, capture_rate, imu_hz, duration, came
     except Exception as e:
         print(f"Error capturing return code: {e}")
         return None
+
+    # If the result failed to write the outout, don't read it, run_dataset only writes output if successful
+    if return_code != 0:
+        return None
     
     # lets read the json path from the output file
-    path_out_file = Path("path.out")
     if not path_out_file.exists():
         print(f"Error: {path_out_file} file not created")
         return None
     
     dataset_path = path_out_file.read_text().strip()
+    # Another check to make sure the file exists and is non empty
+    if not dataset_path:
+        print(f"Error: {path_out_file} file is empty")
+        return None
+
     print(f"Test dataset generated at: {dataset_path}")
     return dataset_path
 

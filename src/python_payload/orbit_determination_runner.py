@@ -219,7 +219,7 @@ class DatasetODRunner:
         # call the binary to perform the dataset processing
         dataset_json_path = args.get("string_command", "").rstrip("\x00")  # remove trailing 0s
         max_iter = args.get("max_iteration", 1000)
-        max_runtime = args.get("max_runtime", 300)
+        max_runtime = args.get("duration", 300)
         
         state_manager.set(PayloadState.CAPTURING)
         results_json_path, od_succeeded = run_orbit_determination(

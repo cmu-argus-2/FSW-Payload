@@ -3,7 +3,6 @@ import threading
 import json
 import time
 import subprocess
-import os
 
 from splat.splat.telemetry_codec import Ack, Command, Report, pack, unpack
 from splat.splat.telemetry_definition import COMMAND_IDS
@@ -122,17 +121,6 @@ class CommandThread(threading.Thread):
 
         self._send_ack(command, ack_args=True)
 
-    def _handle_get_file_size(self, command: Command):
-        file_path = command.arguments.get("string_command", "").rstrip("\x00")
-        try:
-            file_size = os.path.getsize(file_path)
-        except Exception as exc:
-            log.error("GET_FILE_SIZE failed for %s: %s", file_path, exc)
-            self._send_ack(command, ack_args=f"error: {exc}")
-            return
-
-        self._send_ack(command, ack_args=str(file_size))
-    
     # def _handle_create_trans(self, command: Command):
     #     """
     #     Received a command to create a transaction
@@ -277,7 +265,6 @@ class CommandThread(threading.Thread):
         "DATASET_OD": _handle_experiment,
         
         "REQUEST_TM_PAYLOAD": _handle_request_tm_payload,
-        "GET_FILE_SIZE": _handle_get_file_size,
         "CONFIRM_LAST_BATCH": _handle_update_last_batch,
         "TURN_OFF_PAYLOAD": _handle_turn_off_payload,
         "SYNCHRONIZE_TIME": _handle_synchronize_time, 

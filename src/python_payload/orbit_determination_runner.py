@@ -32,7 +32,7 @@ class DatasetProcessingRunner:
 
         dataset_json_path = args.get("string_command", "").rstrip("\x00")
         level_processing = args.get("level_processing", 1)
-        rc_version = args.get("rc_version", 2)
+        rc_version = args.get("rc_version", 5)
         ld_version = args.get("ld_version", 3)
         bypass_prefilter_rejection = args.get("bypass_preflt_rej", True)
 

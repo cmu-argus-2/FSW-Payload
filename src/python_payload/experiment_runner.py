@@ -50,11 +50,13 @@ class ExperimentRunner:
             camera_defaults_selector,
         )
         if mode_id == 0:
+            rc_version = capture_rate
+            ld_version = imu_hz
 
             log.info(
                 (
                     "Starting experiment ts=%s camera_mask=%s level=%s width=%s height=%s "
-                    "downscale_factor=%s camera_defaults_selector=%s"
+                    "downscale_factor=%s rc_version=%s ld_version=%s camera_defaults_selector=%s"
                 ),
                 ts,
                 camera_bit_flag,
@@ -62,6 +64,8 @@ class ExperimentRunner:
                 width,
                 height,
                 downscale_factor,
+                rc_version,
+                ld_version,
                 camera_defaults_selector,
             )
 
@@ -72,6 +76,8 @@ class ExperimentRunner:
                     width=width,
                     height=height,
                     downscale_factor=downscale_factor,
+                    rc_version=rc_version,
+                    ld_version=ld_version,
                     camera_params=camera_params,
                 )
                 log.info("Experiment completed")
@@ -111,8 +117,8 @@ class ExperimentRunner:
         self,
         camera_bit_flag: int,
         level_processing: int = 0,
-        rc_version: int = 2,
-        ld_version: int = 2,
+        rc_version: int = 5,
+        ld_version: int = 3,
         width: int = 4608,
         height: int = 2592,
         downscale_factor: float = 2.0,
@@ -154,12 +160,22 @@ class ExperimentRunner:
             )
         log.debug("After downscaling: %s", file_manifest)
 
-        if level_processing & self.PROCESS_INFERENCE_BIT:
+        prefilter_only = (level_processing & self.PROCESS_PREFILTER_BIT) and not (level_processing & self.PROCESS_INFERENCE_BIT)
+        if prefilter_only:
             state_manager.set(PayloadState.INFERENCE)
             self._run_inference(
                 experiment_dir,
                 file_manifest,
-                level_processing=level_processing,
+                target_stage=1,
+                rc_version=rc_version,
+                ld_version=ld_version,
+            )
+        elif level_processing & self.PROCESS_INFERENCE_BIT:
+            state_manager.set(PayloadState.INFERENCE)
+            self._run_inference(
+                experiment_dir,
+                file_manifest,
+                target_stage=3,
                 rc_version=rc_version,
                 ld_version=ld_version,
             )
@@ -399,9 +415,9 @@ class ExperimentRunner:
         self,
         experiment_dir: Path,
         file_manifest: dict | None = None,
-        level_processing: int = 3,
-        rc_version: int = 2,
-        ld_version: int = 2,
+        target_stage: int = 3,
+        rc_version: int = 5,
+        ld_version: int = 3,
     ) -> list[str]:
         """
         Receive a list with the file path to the images it should run inference on
@@ -414,11 +430,11 @@ class ExperimentRunner:
         last_return_code = 0
         generated_results = []
 
-        log.info("Running inference on images...")
+        log.info("Running inference on images (target_stage=%d)...", target_stage)
         for image_path in file_manifest.get("raw", []):
             log.info("Running inference on %s and %s", image_path, output_folder)
-            frame_json_path = run_inference(str(image_path), f"{str(output_folder)}/", 
-                                            level_processing=level_processing,
+            frame_json_path = run_inference(str(image_path), f"{str(output_folder)}/",
+                                            target_stage=target_stage,
                                             rc_version=rc_version,
                                             ld_version=ld_version)
             last_return_code = 0 if frame_json_path else -1

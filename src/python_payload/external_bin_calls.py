@@ -18,34 +18,37 @@ def _dataset_folder_path(dataset_path):
     return str(path)
 
 
-def run_inference(img_path, output_folder_path, level_processing=3, rc_version=5, ld_version=3):
+def run_inference(img_path, output_folder_path, target_stage=3, rc_version=5, ld_version=3):
     """
     will run the inference on a given image
     it will also give a path for the generated data to be saved
     for now this will be running on the payload folder that is on Documents
-    will move to the run path and run the binary from there 
+    will move to the run path and run the binary from there
     """
-    
+
     # run_path = "/home/argus-payload/Documents/FSW-Payload"
     run_path = "."
     bin_name = "./bin/reprocess_image"
     output_folder = Path(output_folder_path) if output_folder_path else Path(".")
     output_folder.mkdir(parents=True, exist_ok=True)
     out_path = output_folder / "reprocess_image_path.out"
-    
+
+    cmd = [bin_name, img_path,
+           "--target-stage", str(target_stage),
+           "--overwrite",
+           "--rc-version", str(rc_version),
+           "--ld-version", str(ld_version),
+           "--out", str(out_path)]
+    if target_stage >= 2:
+        cmd.append("--bypass-prefilter-rejection")
+
     print(f"Running inference on {img_path}")
     print(f"Output folder: {output_folder_path}")
-    print(f"Level of processing: {level_processing}")
+    print(f"Target stage: {target_stage}")
     print(f"RC version: {rc_version}")
     print(f"LD version: {ld_version}")
-    
-    result = subprocess.run([bin_name, img_path,
-                             "--target-stage", str(level_processing),
-                             "--overwrite",
-                             "--rc-version", str(rc_version),
-                             "--ld-version", str(ld_version),
-                             "--bypass-prefilter-rejection",
-                             "--out", str(out_path)],
+
+    result = subprocess.run(cmd,
         cwd=run_path,
         # capture_output=True,
         text=True

@@ -2,13 +2,17 @@
     Test file to replicate what should happen in FSW when the command to start
     dataset collection is received.
 
-    Usage: run_dataset [--config <dataset_config.toml>] [--out <out_path>]
+    Usage: run_dataset [--config <dataset_config.toml>]
+                       [--system-config <config.toml>]
+                       [--out <out_path>]
                        [inference override options]
 
-      --config  Path to dataset config TOML. Falls back to the default if not
-                provided or the file cannot be opened.
-      --out     File to write the generated dataset folder path into. Falls back
-                to path.out if not provided or not writable.
+      --config         Path to dataset config TOML. Falls back to the default if not
+                       provided or the file cannot be opened.
+      --system-config  Path to system config TOML. Falls back to config/config.toml
+                       if not provided.
+      --out            File to write the generated dataset folder path into. Falls back
+                       to path.out if not provided or not writable.
 */
 #include "spdlog/spdlog.h"
 #include "vision/dataset_manager.hpp"
@@ -26,8 +30,9 @@
 
 #define DATASET_KEY_CMD "CMD"
 
-static constexpr const char* kDefaultDSConfigPath = "config/dataset_config.toml";
-static constexpr const char* kDefaultOutPath      = "path.out";
+static constexpr const char* kDefaultDSConfigPath     = "config/dataset_config.toml";
+static constexpr const char* kDefaultSystemConfigPath = "config/config.toml";
+static constexpr const char* kDefaultOutPath          = "path.out";
 
 // Returns the provided path if openable, otherwise falls back to kDefaultDSConfigPath.
 static std::string ResolveConfigPath(const std::string& path)
@@ -116,8 +121,9 @@ int run(int argc, char** argv)
     CLI::App app{"Collect a dataset from the configured cameras."};
     app.allow_extras(false);
 
-    std::string ds_config_arg = kDefaultDSConfigPath;
-    std::string out_arg = kDefaultOutPath;
+    std::string ds_config_arg     = kDefaultDSConfigPath;
+    std::string system_config_arg = kDefaultSystemConfigPath;
+    std::string out_arg           = kDefaultOutPath;
     std::optional<int> rc_version;
     std::optional<int> ld_version;
     std::optional<int> ld_weight_quant;
@@ -126,8 +132,9 @@ int run(int argc, char** argv)
     bool ld_embedded_nms = false;
     bool ld_use_trt = false;
 
-    app.add_option("--config", ds_config_arg, "Dataset config TOML");
-    app.add_option("--out", out_arg, "File to write the generated dataset path into");
+    app.add_option("--config",        ds_config_arg,     "Dataset config TOML");
+    app.add_option("--system-config", system_config_arg, "System config TOML (default: " + std::string(kDefaultSystemConfigPath) + ")");
+    app.add_option("--out",           out_arg,           "File to write the generated dataset path into");
     app.add_option("--rc-version", rc_version, "RCNet model version");
     app.add_option("--ld-version", ld_version, "LDNet model version");
     app.add_option("--ld-weight-quant", ld_weight_quant, "LDNet weight quantization: 0=FP32 1=FP16 2=INT8")
@@ -148,15 +155,14 @@ int run(int argc, char** argv)
     const std::string ds_config_path = ResolveConfigPath(ds_config_arg);
     const std::string out_path = ResolveOutPath(out_arg);
 
-    std::string config_file_path = "config/config.toml";
     auto config = std::make_unique<Configuration>();
     try {
-        config->LoadConfiguration(config_file_path);
+        config->LoadConfiguration(system_config_arg);
     } catch (const toml::parse_error& err) {
         spdlog::error("Parsing configuration file failed: {}", err.description());
         return to_uint8(EC::PLACEHOLDER);
     }
-    SPDLOG_INFO("Configuration file {} loaded.", config_file_path);
+    SPDLOG_INFO("Configuration file {} loaded.", system_config_arg);
 
     DatasetConfig ds_config;
     try {

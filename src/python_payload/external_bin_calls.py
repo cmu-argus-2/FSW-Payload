@@ -6,6 +6,7 @@ like record a dataset, or run inference...
 import os
 import subprocess
 import sys
+import tempfile
 from pathlib import Path
 import toml
 
@@ -83,73 +84,81 @@ def run_dataset_collection(camera_bit_flag, capture_rate, imu_hz, duration, came
 
     it will have a timeout of duration + 20 seconds to make sure it does not run indefinitely
 
-    to pass the parameters I will be writting to the dataset_config.toml    
+    Parameters are passed to the binary via temporary config files so the committed
+    dataset_config.toml and config.toml are never modified.
     """
-    
+
     timeout = duration + 20
     run_path = "."
     bin_name = "./bin/run_dataset"
     path_out_file = Path("path.out")
-    path_out_file.unlink(missing_ok=True) # Remove old path out to prevent using stale path out from previous run
-    
-    
-    config_file_path = os.path.join("config", "dataset_config.toml")
-    toml_dict = toml.load(config_file_path)
-    # write the config file
-    toml_dict["imu_sample_rate_hz"] = imu_hz
-    toml_dict["image_capture_rate"] = capture_rate
-    toml_dict["maximum_period"] = duration
-    toml_dict["active_cameras"] = [bool(camera_bit_flag & (1 << i)) for i in range(4)]
+    path_out_file.unlink(missing_ok=True)
 
-    with open(config_file_path, 'w') as f:
-        toml.dump(toml_dict, f)
-
-    if camera_params:
-        main_config_path = os.path.join("config", "config.toml")
-        main_config = toml.load(main_config_path)
-        isp = main_config.setdefault("camera-isp", {})
-        for key, value in camera_params.items():
-            if value is not None:
-                isp[key] = value
-        with open(main_config_path, 'w') as f:
-            toml.dump(main_config, f)
-    
-    # TODO: do I need to cast to string?
+    ds_config_tmp = None
+    system_config_tmp = None
     try:
-        result = subprocess.run([bin_name],
-            cwd=run_path,
-            # capture_output=True,
-            timeout=timeout,
-            text=True
-        )
-    except subprocess.TimeoutExpired:
-        print(f"Dataset collection timed out after {timeout} seconds")
-        return None
-    
-    try:
-        return_code = result.returncode
-        print(f"Return code: {return_code}")
-    except Exception as e:
-        print(f"Error capturing return code: {e}")
-        return None
+        ds_toml = toml.load(os.path.join("config", "dataset_config.toml"))
+        ds_toml["imu_sample_rate_hz"] = imu_hz
+        ds_toml["image_capture_rate"] = capture_rate
+        ds_toml["maximum_period"] = duration
+        ds_toml["active_cameras"] = [bool(camera_bit_flag & (1 << i)) for i in range(4)]
 
-    # If the result failed to write the outout, don't read it, run_dataset only writes output if successful
-    if return_code != 0:
-        return None
-    
-    # lets read the json path from the output file
-    if not path_out_file.exists():
-        print(f"Error: {path_out_file} file not created")
-        return None
-    
-    dataset_path = path_out_file.read_text().strip()
-    # Another check to make sure the file exists and is non empty
-    if not dataset_path:
-        print(f"Error: {path_out_file} file is empty")
-        return None
+        with tempfile.NamedTemporaryFile(suffix=".toml", delete=False, mode="w") as f:
+            toml.dump(ds_toml, f)
+            ds_config_tmp = f.name
 
-    print(f"Test dataset generated at: {dataset_path}")
-    return dataset_path
+        cmd = [bin_name, "--config", ds_config_tmp]
+
+        if camera_params:
+            main_config = toml.load(os.path.join("config", "config.toml"))
+            isp = main_config.setdefault("camera-isp", {})
+            for key, value in camera_params.items():
+                if value is not None:
+                    isp[key] = value
+            with tempfile.NamedTemporaryFile(suffix=".toml", delete=False, mode="w") as f:
+                toml.dump(main_config, f)
+                system_config_tmp = f.name
+            cmd += ["--system-config", system_config_tmp]
+
+        try:
+            result = subprocess.run(cmd,
+                cwd=run_path,
+                # capture_output=True,
+                timeout=timeout,
+                text=True
+            )
+        except subprocess.TimeoutExpired:
+            print(f"Dataset collection timed out after {timeout} seconds")
+            return None
+
+        try:
+            return_code = result.returncode
+            print(f"Return code: {return_code}")
+        except Exception as e:
+            print(f"Error capturing return code: {e}")
+            return None
+
+        # If the result failed to write the output, don't read it, run_dataset only writes output if successful
+        if return_code != 0:
+            return None
+
+        if not path_out_file.exists():
+            print(f"Error: {path_out_file} file not created")
+            return None
+
+        dataset_path = path_out_file.read_text().strip()
+        if not dataset_path:
+            print(f"Error: {path_out_file} file is empty")
+            return None
+
+        print(f"Test dataset generated at: {dataset_path}")
+        return dataset_path
+
+    finally:
+        if ds_config_tmp:
+            Path(ds_config_tmp).unlink(missing_ok=True)
+        if system_config_tmp:
+            Path(system_config_tmp).unlink(missing_ok=True)
 
 def run_dataset_processing(dataset_path, level_processing, rc_version, ld_version, bypass_prefilter_rejection=False):
     """

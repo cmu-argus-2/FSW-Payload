@@ -73,7 +73,6 @@ void IMUManager::RunLoop() {
     auto last_point = std::chrono::high_resolution_clock::now();
     auto now_point = std::chrono::high_resolution_clock::now();
     auto elapsed = now_point - last_point;
-    auto samp_period = std::chrono::duration<double>(1.0 / sample_rate_hz);
 
     BMI160::SensorData gyroData{};
     BMI160::SensorData magData{};
@@ -133,7 +132,7 @@ void IMUManager::RunLoop() {
         }
         now_point = std::chrono::high_resolution_clock::now();
         elapsed = now_point - last_point;
-        
+        auto samp_period = std::chrono::duration<double>(1.0 / sample_rate_hz);
         if (elapsed < samp_period) {
             std::this_thread::sleep_for(samp_period - elapsed);
         }

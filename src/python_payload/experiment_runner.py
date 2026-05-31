@@ -86,14 +86,16 @@ class ExperimentRunner:
                 state_manager.set(PayloadState.FAIL)
             return
         if mode_id == 1:
+            imu_sample_rate_hz = imu_hz / 10.0
             log.info(
                 (
-                    "Starting dataset collection with parameters ts=%s camera_mask=%s imu_hz=%s capture_rate=%s "
+                    "Starting dataset collection with parameters ts=%s camera_mask=%s imu_hz=%s (%.1f Hz) capture_rate=%s "
                     "duration=%s width=%s height=%s downscale_factor=%s camera_defaults_selector=%s"
                 ),
                 ts,
                 camera_bit_flag,
                 imu_hz,
+                imu_sample_rate_hz,
                 capture_rate,
                 duration,
                 width,
@@ -103,7 +105,7 @@ class ExperimentRunner:
             )
             try:
                 self.dataset_collection(
-                    camera_bit_flag, capture_rate, imu_hz, duration, camera_params,
+                    camera_bit_flag, capture_rate, imu_sample_rate_hz, duration, camera_params,
                     n_thumbnails=level_processing, thumb_width=width, thumb_height=height,
                 )
                 log.info("Dataset collection completed")

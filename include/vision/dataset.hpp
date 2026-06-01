@@ -5,6 +5,7 @@
 #include <imu/imu_manager.hpp>
 #include <vision/frame.hpp>
 
+#include <array>
 #include <vector>
 #include <string>
 #include <cstdint>

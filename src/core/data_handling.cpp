@@ -152,10 +152,8 @@ std::string StoreDatasetToDisk(Dataset& dataset)
     return dataset_file_path;
 }
 
-// Store a separate processing.json that is a copy of dataset.json minus
-// the frame IDs, plus a list of the frame jsonfiles that were reprocessed in this run. 
-// For easier downloading
-// Write a processing.json file with all the dataset and frame metadata for downloading
+// Write a processing.json file with all dataset and frame metadata for downloading.
+// Contains all frames in the dataset (not just those processed in this run).
 std::string StoreProcessingMetadataToDisk(Dataset& dataset) {
     std::string processing_file_path = dataset.GetFolderPath() + "processing.json";
 

@@ -8,8 +8,6 @@
 #include <opencv2/calib3d.hpp>
 #include "SpiceUsr.h"
 
-using namespace Eigen;
-
 /**
  * @brief Converts Unix UTC seconds to SPICE ET/TDB seconds past J2000.
  *
@@ -28,7 +26,7 @@ double unixToJ2000(double unixSeconds);
  * @param v vector on the left side of the hypothetical cross product
  * @return Matrix_3x3 3x3 skew symmetric matrix
  */
-Matrix3d toSkew(const Vector3d &v);
+Eigen::Matrix3d toSkew(const Eigen::Vector3d &v);
 
 
 // CSPICE COORDINATE TRANSFORMS
@@ -46,7 +44,7 @@ void loadAllKernels();
  * @param M SpiceDouble 3x3 matrix
  * @return R Eigen 3x3 matrix
  */
-Matrix3d Cspice2Eigen(SpiceDouble M[3][3]);
+Eigen::Matrix3d Cspice2Eigen(SpiceDouble M[3][3]);
 
 /**
  * @brief Computes the rotation matrix from ECI to ECEF at a given time
@@ -54,7 +52,7 @@ Matrix3d Cspice2Eigen(SpiceDouble M[3][3]);
  * @param t_J2000 - seconds past J2000 i.e., seconds past Jan 1st 2000, 12:00:00 PM
  * @return R Eigen 3x3 matrix representing roation from ECI to ECEF
  */
-Matrix3d ECI2ECEF(double t_J2000);
+Eigen::Matrix3d ECI2ECEF(double t_J2000);
 
 /**
  * @brief Computes the rotation matrix from ECEF to ECI at a given time
@@ -62,7 +60,7 @@ Matrix3d ECI2ECEF(double t_J2000);
  * @param t_J2000 - seconds past J2000 i.e., seconds past Jan 1st 2000, 12:00:00 PM
  * @return R Eigen 3x3 matrix representing roation from ECEF to ECI
  */
-Matrix3d ECEF2ECI(double t_J2000);
+Eigen::Matrix3d ECEF2ECI(double t_J2000);
 
 /**
  * @brief Transforms a vector in ECEF frame to latitudinal coordinates
@@ -72,7 +70,7 @@ Matrix3d ECEF2ECI(double t_J2000);
  * @return vector in latitudinal coordinates (r, lon, lat) [m, rad, rad] if geocentric
                                            (alt, lon, lat) [m, rad, rad] if geodetic
  */
-Vector3d ECEF2LAT(Vector3d v_ecef, bool geoc);
+Eigen::Vector3d ECEF2LAT(Eigen::Vector3d v_ecef, bool geoc);
 
 /**
  * @brief Transforms a vector in latitudinal coordinates to ECEF frame
@@ -82,7 +80,7 @@ Vector3d ECEF2LAT(Vector3d v_ecef, bool geoc);
  * @param geoc - If true, the latitudinal coordinates will be geocentric, if not, geodetic
  * @return vector in ECEF frame [UNITS : m]
  */
-Vector3d LAT2ECEF(Vector3d v_lat, bool geoc);
+Eigen::Vector3d LAT2ECEF(Eigen::Vector3d v_lat, bool geoc);
 
 /**
  * @brief Transforms a vector in ECI frame to latitudinal coordinates
@@ -93,7 +91,7 @@ Vector3d LAT2ECEF(Vector3d v_lat, bool geoc);
  * @return vector in latitudinal coordinates (r, lon, lat) [m, rad, rad] if geocentric
                                            (alt, lon, lat) [m, rad, rad] if geodetic
  */
-Vector3d ECI2LAT(Vector3d v_eci, double t_J2000, bool geoc);
+Eigen::Vector3d ECI2LAT(Eigen::Vector3d v_eci, double t_J2000, bool geoc);
 
 /**
  * @brief Transforms a vector in latitudinal coordinates to ECI frame
@@ -104,7 +102,7 @@ Vector3d ECI2LAT(Vector3d v_eci, double t_J2000, bool geoc);
  * @param geoc - If true, the latitudinal coordinates will be geocentric, if not, geodetic
  * @return vector in ECI frame [UNITS : m]
  */
-Vector3d LAT2ECI(Vector3d v_lat, double t_J2000, bool geoc);
+Eigen::Vector3d LAT2ECI(Eigen::Vector3d v_lat, double t_J2000, bool geoc);
 
 /**
  * @brief Computes a unit bearing vector in the camera body frame from a pixel coordinate
@@ -115,6 +113,6 @@ Vector3d LAT2ECI(Vector3d v_lat, double t_J2000, bool geoc);
  * @param dist_coeffs - distortion coefficients (CV_64F)
  * @return unit bearing vector in camera body frame
  */
-Vector3d PixelToBodyBearing(float px, float py, const cv::Mat& camera_matrix, const cv::Mat& dist_coeffs);
+Eigen::Vector3d PixelToBodyBearing(float px, float py, const cv::Mat& camera_matrix, const cv::Mat& dist_coeffs);
 
 #endif // UTILS_HPP

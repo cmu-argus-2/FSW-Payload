@@ -71,7 +71,7 @@ class DatasetProcessingRunner:
         """
         Generate thumbnails for the top-N unsent ranked frames and return (thumb_path, raw_filename) pairs.
         Reads downlink_config.json for N and target dimensions. Returns [] if config absent or N==0.
-        Skips any thumbnail that exceeds 100 KB after writing.
+        Skips any thumbnail that exceeds 250 KB after writing.
         """
         config_path = dataset_folder / "downlink_config.json"
         if not config_path.exists():

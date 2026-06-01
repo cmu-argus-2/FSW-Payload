@@ -37,6 +37,14 @@ double unixToJ2000(double unixSeconds) {
     return static_cast<double>(et);
 }
 
+Eigen::Matrix3d toSkew(const Eigen::Vector3d &v) {
+    Eigen::Matrix3d S;
+    S <<     0, -v(2),  v(1),
+          v(2),     0, -v(0),
+         -v(1),  v(0),     0;
+    return S;
+}
+
 // Basic Utility functions
 void loadAllKernels() {
     std::filesystem::path path(__FILE__);

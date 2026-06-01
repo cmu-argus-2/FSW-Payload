@@ -5,7 +5,6 @@ like record a dataset, or run inference...
 
 import os
 import subprocess
-import sys
 import tempfile
 from pathlib import Path
 import toml
@@ -216,15 +215,15 @@ def run_dataset_processing(dataset_path, level_processing, rc_version, ld_versio
     return json_path
 
 
-def _collect_od_run_result(succeeded: bool):
-    path_out_file = Path("path.out")
+def _collect_od_run_result(out_file: str, succeeded: bool):
+    path_out_file = Path(out_file)
     if not path_out_file.exists():
-        print("Error: path.out file not created")
+        print(f"Error: OD output file not created: {out_file}")
         return None, succeeded
 
     od_result_path = path_out_file.read_text().strip()
     if not od_result_path:
-        print("Error: path.out file is empty")
+        print(f"Error: OD output file is empty: {out_file}")
         return None, succeeded
 
     print(f"OD results directory generated at: {od_result_path}")
@@ -238,39 +237,44 @@ def _collect_od_run_result(succeeded: bool):
 
 def run_orbit_determination(dataset_path, max_iter, max_runtime):
     """
-    This will call the binary to perform the orbit determination
-    it will generate a results.json that will be send to the mainboard
+    Calls the RUN_OD_ON_DATASET binary to perform orbit determination.
+    Returns (od_result_json_path_or_None, succeeded).
 
-    for now this will just be a placeholder that will return the same path
-
-    here we do not need to write the toml file because they are read arguments
+    A per-run temporary file is used as the output path so back-to-back runs
+    never share state through a global path.out.
     """
-    
+
     dataset_folder = _dataset_folder_path(dataset_path)
     timeout = max_runtime + 20
     run_path = "."
     bin_name = "./bin/RUN_OD_ON_DATASET"
 
-    Path("path.out").unlink(missing_ok=True)
+    fd, out_path = tempfile.mkstemp(suffix=".out", prefix="od_run_")
+    os.close(fd)
 
     try:
-        result = subprocess.run([bin_name, dataset_folder,
-                                 "--max-iterations", str(max_iter), 
-                                 "--max-run-time", str(max_runtime)],
-            cwd=run_path,
-            # capture_output=True,
-            timeout=timeout,
-            text=True
-        )
-    except subprocess.TimeoutExpired:
-        print(f"Orbit determination timed out after {timeout} seconds")
-        return _collect_od_run_result(succeeded=False)
-    
-    try:
-        return_code = result.returncode
-        print(f"Return code: {return_code}")
-    except Exception as e:
-        print(f"Error capturing return code: {e}")
-        return None, False
+        try:
+            result = subprocess.run(
+                [bin_name, dataset_folder,
+                 "--max-iterations", str(max_iter),
+                 "--max-run-time", str(max_runtime),
+                 "--out", out_path],
+                cwd=run_path,
+                # capture_output=True,
+                timeout=timeout,
+                text=True,
+            )
+        except subprocess.TimeoutExpired:
+            print(f"Orbit determination timed out after {timeout} seconds")
+            return _collect_od_run_result(out_path, succeeded=False)
 
-    return _collect_od_run_result(succeeded=(return_code == 0))
+        try:
+            return_code = result.returncode
+            print(f"Return code: {return_code}")
+        except Exception as e:
+            print(f"Error capturing return code: {e}")
+            return None, False
+
+        return _collect_od_run_result(out_path, succeeded=(return_code == 0))
+    finally:
+        Path(out_path).unlink(missing_ok=True)

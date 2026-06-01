@@ -188,39 +188,14 @@ class DatasetODRunner:
         self.stop_event = stop_event
         self.downlink_manager = FileDownlinkManager(stop_event=stop_event)
 
-    @staticmethod
-    def _find_partial_od_result() -> str | None:
-        """Return od_result.json path from path.out if it exists, else None."""
-        try:
-            path_out = Path("path.out")
-            if not path_out.exists():
-                log.warning("_find_partial_od_result: path.out does not exist — binary did not write output path on failure")
-                return None
-            od_result_dir = path_out.read_text().strip()
-            log.info("_find_partial_od_result: path.out contents: %r", od_result_dir)
-            if not od_result_dir:
-                log.warning("_find_partial_od_result: path.out is empty")
-                return None
-            candidate = Path(od_result_dir) / "od_result.json"
-            if not candidate.exists():
-                log.warning("_find_partial_od_result: od_result.json not found at %s", candidate)
-                return None
-            log.info("_find_partial_od_result: found partial result at %s", candidate)
-            return str(candidate)
-        except Exception as exc:
-            log.error("_find_partial_od_result: unexpected error: %s", exc)
-            return None
-
     def run(self, args: dict):
-        
         log.info("Running dataset orbit determination with args: %s", args)
         state_manager.set(PayloadState.TURNING_ON)
-        
-        # call the binary to perform the dataset processing
-        dataset_json_path = args.get("string_command", "").rstrip("\x00")  # remove trailing 0s
+
+        dataset_json_path = args.get("string_command", "").rstrip("\x00")
         max_iter = args.get("max_iteration", 1000)
         max_runtime = args.get("duration", 300)
-        
+
         state_manager.set(PayloadState.CAPTURING)
         results_json_path, od_succeeded = run_orbit_determination(
             dataset_json_path,
@@ -230,38 +205,32 @@ class DatasetODRunner:
 
         od_succeeded = od_succeeded and results_json_path is not None and results_json_path != -1
 
-        if results_json_path is None or results_json_path == -1:
-            log.error("Orbit determination failed")
-            state_manager.set(PayloadState.FAIL)
-            results_json_path = self._find_partial_od_result()
-            if results_json_path is None:
-                log.error("No OD results to downlink, sending EXPERIMENT_FINISHED")
-                command = Command("EXPERIMENT_FINISHED")
-                tx_queue.put(pack(command))
-                return
-            log.warning("Partial od_result.json found, will attempt downlink: %s", results_json_path)
+        downlink_list = []
+        if results_json_path is not None and results_json_path != -1:
+            downlink_list.append(results_json_path)
+            if od_succeeded:
+                state_estimates_path = Path(results_json_path).parent / "state_estimates.csv"
+                if state_estimates_path.exists():
+                    downlink_list.append(str(state_estimates_path))
+                else:
+                    log.warning("state_estimates.csv not found in results folder, skipping")
 
-        log.info("Dataset OD results json path: %s", results_json_path)
+        log.info("OD status: succeeded=%s, downlink_files=%d", od_succeeded, len(downlink_list))
         command = Command("EXPERIMENT_FINISHED")
         tx_queue.put(pack(command))
-        log.info("Sending EXPERIMENT_FINISHED command (experiment finished)")
+        log.info("Sending EXPERIMENT_FINISHED command")
 
-        state_manager.set(PayloadState.DOWNLOAD)
-
-        downlink_list = [results_json_path]
-        if od_succeeded:
-            state_estimates_path = Path(results_json_path).parent / "state_estimates.csv"
-            if state_estimates_path.exists():
-                downlink_list.append(str(state_estimates_path))
+        if downlink_list:
+            state_manager.set(PayloadState.DOWNLOAD)
+            ok = self.downlink_manager.send_files(downlink_list)
+            if not ok:
+                log.error("Downlink sequence failed")
+                state_manager.set(PayloadState.FAIL)
+            elif od_succeeded:
+                log.info("Downlink sequence completed for %s files", len(downlink_list))
             else:
-                log.warning("state_estimates.csv not found in results folder, skipping")
-
-        ok = self.downlink_manager.send_files(downlink_list)
-        if not ok:
-            log.error("Downlink sequence failed")
-            state_manager.set(PayloadState.FAIL)
-        elif not od_succeeded:
-            log.info("Partial OD result downlinked (%s files)", len(downlink_list))
-            state_manager.set(PayloadState.FAIL)
+                log.info("Partial OD result downlinked (%s files)", len(downlink_list))
+                state_manager.set(PayloadState.FAIL)
         else:
-            log.info("Downlink sequence completed for %s files", len(downlink_list))
+            log.error("No OD results to downlink")
+            state_manager.set(PayloadState.FAIL)

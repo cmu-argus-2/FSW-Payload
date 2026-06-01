@@ -236,7 +236,16 @@ data/
 bin/
 logs/
 
-# ignore install folder
-deps/
+# ignore build artifacts inside dep submodules
+deps/spdlog/build/
+deps/googletest/build/
+deps/Ipopt/ipopt_build/
+deps/casadi/casadi_build/
+deps/install/
+deps/mumps/
 
 workspace/
+
+telemetry_logs/
+
+experiments/

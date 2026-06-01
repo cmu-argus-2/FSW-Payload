@@ -1,7 +1,8 @@
 #include "navigation/od.hpp"
-#include "payload.hpp"
 #include "spdlog/spdlog.h"
 #include "toml.hpp"
+#include <filesystem>
+#include <stdexcept>
 
 
 INIT_config::INIT_config()
@@ -18,8 +19,14 @@ BATCH_OPT_config::BATCH_OPT_config()
 solver_function_tolerance(1e-6),
 solver_parameter_tolerance(1e-10),
 max_iterations(10000),
+max_run_time_sec(120.0),
 bias_mode(BIAS_MODE::FIX_BIAS),
-max_dt(60.0)
+compute_covariance(false),
+use_j2(true),
+use_drag(false),
+cd_nominal(2.2),
+cd_std(1.0),
+integrator(Integrator::EULER)
 {
 }
 
@@ -30,98 +37,24 @@ OD_Config::OD_Config()
 
 
 OD::OD(const std::string& config_path)
-: 
-process_state(OD_STATE::IDLE)
 {
     SPDLOG_INFO("Will read OD configuration file...");
-    ReadConfig(config_path);
+    (void)ReadConfig(config_path);
 }
 
-
-void OD::RunLoop()
+OD::~OD()
 {
-    loop_flag = true;
-
-    while (loop_flag.load())
-    {
-        {
-            std::unique_lock<std::mutex> lock(mtx_active);
-            cv_active.wait(lock, [this] { return !loop_flag.load() || process_state != OD_STATE::IDLE; });
-            SPDLOG_DEBUG("OD loop - Waking up");
-        }
-
-        if (!loop_flag.load())
-        {
-            break;
-        }
-
-        switch (process_state)
-        {
-            case OD_STATE::IDLE:
-            {
-                SPDLOG_INFO("OD: IDLE");
-                break;
-            }
-
-            case OD_STATE::INIT:
-            {
-                SPDLOG_INFO("OD: INIT");
-                _DoInit();
-                break;
-            }
-
-            case OD_STATE::BATCH_OPT:
-            {
-                SPDLOG_INFO("OD: BATCH_OPT");
-                _DoBatchOptimization();
-                break;
-            }
-
-            default:
-                SPDLOG_WARN("OD: Unknown process state");
-                break;
-        }
-
-    }
-
-    SPDLOG_INFO("OD Loop Stopped");
-}
-
-void OD::StopLoop()
-{
-    {
-        std::lock_guard<std::mutex> lock(mtx_active);
-        loop_flag.store(false);
-    }
-    cv_active.notify_all(); 
 }
 
 
-OD_STATE OD::GetState() const
-{
-    return process_state;
-}
-
-void OD::StartExperiment()
-{
-    experiment_done.store(false);
-    process_state.store(OD_STATE::INIT);
-}
-
-bool OD::IsExperimentDone() const
-{
-    return experiment_done.load();
-}
-
-void OD::SwitchState(OD_STATE new_od_state)
-{
-    process_state.store(new_od_state);
-}
-
-
-void OD::ReadConfig(const std::string& config_path)
+ErrorCode OD::ReadConfig(const std::string& config_path)
 {
     toml::table params;
+    if (!std::filesystem::exists(config_path)) {
+        SPDLOG_ERROR("OD config file does not exist: {}", config_path);
+        return ErrorCode::FILE_DOES_NOT_EXIST;
+    }
+
     try
     {
         params = toml::parse_file(config_path);
@@ -129,7 +62,7 @@ void OD::ReadConfig(const std::string& config_path)
     catch (const toml::parse_error& err)
     { 
         SPDLOG_ERROR("Failed to parse config file: {}", err.what());
-        return;
+        return ErrorCode::FILE_NOT_AVAILABLE;
     }
 
     // Helper to get parameter as double (supports int64_t and double)
@@ -145,21 +78,36 @@ void OD::ReadConfig(const std::string& config_path)
     
     // INIT
     auto INIT_params = params["INIT"].as_table();
+    auto BATCH_OPT_params = params["BATCH_OPT"].as_table();
+    if (!INIT_params || !BATCH_OPT_params) {
+        SPDLOG_ERROR("OD config file missing required [INIT] or [BATCH_OPT] section: {}",
+                     config_path);
+        return ErrorCode::FILE_NOT_AVAILABLE;
+    }
     config.init.collection_period = INIT_params->get_as<int64_t>("collection_period")->value_or(config.init.collection_period);
     config.init.target_samples = INIT_params->get_as<int64_t>("target_samples")->value_or(config.init.target_samples);
     config.init.max_collection_time = INIT_params->get_as<int64_t>("max_collection_time")->value_or(config.init.max_collection_time);
     config.init.max_downtime_for_restart = INIT_params->get_as<int64_t>("max_downtime_for_restart_in_minutes")->value_or(config.init.max_downtime_for_restart);
 
     // BATCH_OPT
-    auto BATCH_OPT_params = params["BATCH_OPT"].as_table();
     config.batch_opt.solver_function_tolerance = get_param_as_double(BATCH_OPT_params, "solver_function_tolerance", config.batch_opt.solver_function_tolerance);
     config.batch_opt.solver_parameter_tolerance = get_param_as_double(BATCH_OPT_params, "solver_parameter_tolerance", config.batch_opt.solver_parameter_tolerance);
     config.batch_opt.max_iterations = BATCH_OPT_params->get_as<int64_t>("max_iterations")->value_or(config.batch_opt.max_iterations);
-    config.batch_opt.max_dt = get_param_as_double(BATCH_OPT_params, "max_dt", config.batch_opt.max_dt);
+    config.batch_opt.max_run_time_sec = get_param_as_double(BATCH_OPT_params, "max_run_time_sec", config.batch_opt.max_run_time_sec);
     config.batch_opt.bias_mode = static_cast<BIAS_MODE>(BATCH_OPT_params->get_as<int64_t>("bias_mode")->value_or(static_cast<int64_t>(config.batch_opt.bias_mode)));
+    config.batch_opt.compute_covariance = BATCH_OPT_params->get_as<bool>("compute_covariance")->value_or(config.batch_opt.compute_covariance);
+    config.batch_opt.use_j2   = BATCH_OPT_params->get_as<bool>("use_j2")->value_or(config.batch_opt.use_j2);
+    config.batch_opt.use_drag = BATCH_OPT_params->get_as<bool>("use_drag")->value_or(config.batch_opt.use_drag);
+    config.batch_opt.cd_nominal = get_param_as_double(BATCH_OPT_params, "cd_nominal", config.batch_opt.cd_nominal);
+    config.batch_opt.cd_std     = get_param_as_double(BATCH_OPT_params, "cd_std",     config.batch_opt.cd_std);
+    config.batch_opt.integrator          = static_cast<Integrator>(BATCH_OPT_params->get_as<int64_t>("integrator")->value_or(static_cast<int64_t>(config.batch_opt.integrator)));
+    config.batch_opt.landmark_huber_delta = get_param_as_double(BATCH_OPT_params, "landmark_huber_delta", config.batch_opt.landmark_huber_delta);
+    config.batch_opt.mahal_threshold      = get_param_as_double(BATCH_OPT_params, "mahal_threshold",      config.batch_opt.mahal_threshold);
+    config.batch_opt.max_od_iterations    = static_cast<int>(BATCH_OPT_params->get_as<int64_t>("max_od_iterations")->value_or(static_cast<int64_t>(config.batch_opt.max_od_iterations)));
     // TODO: safe value checking on each params
-    
+
     LogConfig();
+    return ErrorCode::OK;
 
 }
 
@@ -177,62 +125,39 @@ void OD::LogConfig()
     SPDLOG_INFO("  solver_function_tolerance: {}", config.batch_opt.solver_function_tolerance);
     SPDLOG_INFO("  solver_parameter_tolerance: {}", config.batch_opt.solver_parameter_tolerance);
     SPDLOG_INFO("  max_iterations: {}", config.batch_opt.max_iterations);
-    SPDLOG_INFO("  max_dt: {}", config.batch_opt.max_dt);
+    SPDLOG_INFO("  max_run_time_sec: {}", config.batch_opt.max_run_time_sec);
     SPDLOG_INFO("  bias_mode: {}", static_cast<int>(config.batch_opt.bias_mode));
+    SPDLOG_INFO("  compute_covariance: {}", config.batch_opt.compute_covariance);
+    SPDLOG_INFO("  use_j2: {}", config.batch_opt.use_j2);
+    SPDLOG_INFO("  use_drag: {}", config.batch_opt.use_drag);
+    SPDLOG_INFO("  cd_nominal: {}", config.batch_opt.cd_nominal);
+    SPDLOG_INFO("  cd_std: {}", config.batch_opt.cd_std);
+    SPDLOG_INFO("  integrator: {} ({})", static_cast<int>(config.batch_opt.integrator),
+                config.batch_opt.integrator == Integrator::RK4 ? "RK4" : "Euler");
+    SPDLOG_INFO("  landmark_huber_delta: {}", config.batch_opt.landmark_huber_delta);
+    SPDLOG_INFO("  mahal_threshold: {}", config.batch_opt.mahal_threshold);
+    SPDLOG_INFO("  max_od_iterations: {}", config.batch_opt.max_od_iterations);
 
-} 
-
-bool OD::PingRunningStatus()
-{
-    return loop_flag.load();
 }
 
-bool OD::HandleStop()
+ODConfigResult ReadODConfig(const std::string& config_path)
 {
-    bool return_status = false;
-
-    if (!PingRunningStatus())
-    {
-        // Need to save some data and states for the next run
-        return_status = true;
-
-        switch (process_state)
-        {
-
-            case OD_STATE::INIT:
-            {
-                SPDLOG_INFO("Stopping in INIT");
-                // Stop the data collection process 
-                break;
-            }
-
-            case OD_STATE::BATCH_OPT:
-            {
-                SPDLOG_INFO("Stopping in BATCH_OPT");
-                // At this point might be better to just cancel the run (should be fairly fast that we shouldn't need to cache stuff)
-                break;
-            }
-
-
-        }
+    ODConfigResult result;
+    toml::table params;
+    if (!std::filesystem::exists(config_path)) {
+        SPDLOG_WARN("OD config file not found, using defaults: {}", config_path);
+        return result;
     }
 
-    return return_status;
-
-}
-
-// TODO: To be removed once run batch opt is updated to use the OD class
-OD_Config ReadODConfig(const std::string& config_path)
-{
-    toml::table params;
     try
     {
         params = toml::parse_file(config_path);
     }
     catch (const toml::parse_error& err)
-    { 
-        SPDLOG_ERROR("Failed to parse config file: {}", err.what());
-        return OD_Config{};
+    {
+        SPDLOG_ERROR("Failed to parse OD config file: {}", err.what());
+        result.code = ErrorCode::FILE_NOT_AVAILABLE;
+        return result;
     }
 
     // Helper to get parameter as double (supports int64_t and double)
@@ -245,26 +170,41 @@ OD_Config ReadODConfig(const std::string& config_path)
         }
         return default_value;
     };
-    
-    OD_Config od_config;
 
-    // INIT
-    auto INIT_params = params["INIT"].as_table();
-    od_config.init.collection_period = INIT_params->get_as<int64_t>("collection_period")->value_or(od_config.init.collection_period);
-    od_config.init.target_samples = INIT_params->get_as<int64_t>("target_samples")->value_or(od_config.init.target_samples);
-    od_config.init.max_collection_time = INIT_params->get_as<int64_t>("max_collection_time")->value_or(od_config.init.max_collection_time);
-    od_config.init.max_downtime_for_restart = INIT_params->get_as<int64_t>("max_downtime_for_restart_in_minutes")->value_or(od_config.init.max_downtime_for_restart);
+    OD_Config& od_config = result.config;
 
-    // BATCH_OPT
+    auto INIT_params      = params["INIT"].as_table();
     auto BATCH_OPT_params = params["BATCH_OPT"].as_table();
-    od_config.batch_opt.solver_parameter_tolerance = get_param_as_double(BATCH_OPT_params, "solver_parameter_tolerance", od_config.batch_opt.solver_parameter_tolerance);
-    od_config.batch_opt.solver_function_tolerance = get_param_as_double(BATCH_OPT_params, "solver_function_tolerance", od_config.batch_opt.solver_function_tolerance);
-    od_config.batch_opt.max_iterations = BATCH_OPT_params->get_as<int64_t>("max_iterations")->value_or(od_config.batch_opt.max_iterations);
-    od_config.batch_opt.max_dt = get_param_as_double(BATCH_OPT_params, "max_dt", od_config.batch_opt.max_dt);
-    od_config.batch_opt.bias_mode = static_cast<BIAS_MODE>(BATCH_OPT_params->get_as<int64_t>("bias_mode")->value_or(static_cast<int64_t>(od_config.batch_opt.bias_mode)));
+    if (!INIT_params)      SPDLOG_WARN("OD config missing [INIT] section, using defaults");
+    if (!BATCH_OPT_params) SPDLOG_WARN("OD config missing [BATCH_OPT] section, using defaults");
+
+    if (INIT_params) {
+        od_config.init.collection_period        = INIT_params->get_as<int64_t>("collection_period")->value_or(od_config.init.collection_period);
+        od_config.init.target_samples           = INIT_params->get_as<int64_t>("target_samples")->value_or(od_config.init.target_samples);
+        od_config.init.max_collection_time      = INIT_params->get_as<int64_t>("max_collection_time")->value_or(od_config.init.max_collection_time);
+        od_config.init.max_downtime_for_restart = INIT_params->get_as<int64_t>("max_downtime_for_restart_in_minutes")->value_or(od_config.init.max_downtime_for_restart);
+    }
+
+    if (BATCH_OPT_params) {
+        od_config.batch_opt.solver_parameter_tolerance = get_param_as_double(BATCH_OPT_params, "solver_parameter_tolerance", od_config.batch_opt.solver_parameter_tolerance);
+        od_config.batch_opt.solver_function_tolerance  = get_param_as_double(BATCH_OPT_params, "solver_function_tolerance",  od_config.batch_opt.solver_function_tolerance);
+        od_config.batch_opt.max_iterations    = BATCH_OPT_params->get_as<int64_t>("max_iterations")->value_or(od_config.batch_opt.max_iterations);
+        od_config.batch_opt.max_run_time_sec  = get_param_as_double(BATCH_OPT_params, "max_run_time_sec", od_config.batch_opt.max_run_time_sec);
+        od_config.batch_opt.bias_mode         = static_cast<BIAS_MODE>(BATCH_OPT_params->get_as<int64_t>("bias_mode")->value_or(static_cast<int64_t>(od_config.batch_opt.bias_mode)));
+        od_config.batch_opt.compute_covariance = BATCH_OPT_params->get_as<bool>("compute_covariance")->value_or(od_config.batch_opt.compute_covariance);
+        od_config.batch_opt.use_j2            = BATCH_OPT_params->get_as<bool>("use_j2")->value_or(od_config.batch_opt.use_j2);
+        od_config.batch_opt.use_drag          = BATCH_OPT_params->get_as<bool>("use_drag")->value_or(od_config.batch_opt.use_drag);
+        od_config.batch_opt.cd_nominal        = get_param_as_double(BATCH_OPT_params, "cd_nominal", od_config.batch_opt.cd_nominal);
+        od_config.batch_opt.cd_std            = get_param_as_double(BATCH_OPT_params, "cd_std",     od_config.batch_opt.cd_std);
+        od_config.batch_opt.integrator           = static_cast<Integrator>(BATCH_OPT_params->get_as<int64_t>("integrator")->value_or(static_cast<int64_t>(od_config.batch_opt.integrator)));
+        od_config.batch_opt.landmark_huber_delta = get_param_as_double(BATCH_OPT_params, "landmark_huber_delta", od_config.batch_opt.landmark_huber_delta);
+        od_config.batch_opt.mahal_threshold      = get_param_as_double(BATCH_OPT_params, "mahal_threshold",      od_config.batch_opt.mahal_threshold);
+        od_config.batch_opt.max_od_iterations    = static_cast<int>(BATCH_OPT_params->get_as<int64_t>("max_od_iterations")->value_or(static_cast<int64_t>(od_config.batch_opt.max_od_iterations)));
+    }
 
     // Print the configuration
     SPDLOG_INFO("OD Configuration parameters set");
 
-    return od_config;
+    result.code = ErrorCode::OK;
+    return result;
 }

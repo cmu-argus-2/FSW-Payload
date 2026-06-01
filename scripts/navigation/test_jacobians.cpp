@@ -1,12 +1,7 @@
 #include "navigation/batch_optimization.hpp"
 #include "navigation/pose_dynamics.hpp"
-#include "navigation/measurement_residuals.hpp"
-#include <ceres/ceres.h>
-#include <ceres/internal/eigen.h>
-// #include <xtensor/xtensor.hpp>
+#include "navigation/od_measurements.hpp"
 #include <Eigen/Eigen>
-#include <highfive/H5Easy.hpp>
-#include <highfive/highfive.hpp>
 #include <iostream>
 #include <chrono>
 #include <iomanip>

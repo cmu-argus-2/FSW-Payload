@@ -5,15 +5,11 @@
 #include <imu/imu_manager.hpp>
 #include <vision/frame.hpp>
 
+#include <array>
 #include <vector>
 #include <string>
 #include <cstdint>
-#include <atomic>
-#include <mutex>
-#include <condition_variable>
-#include <thread>
-#include <memory>
-#include <unordered_map>
+#include <tuple>
 
 // Move all that to contexpr
 #define DATASET_CONFIG_FILE_NAME "dataset_config.toml"
@@ -23,6 +19,19 @@
 #define ABSOLUTE_MAXIMUM_PERIOD 10800 // 3h
 
 // Error codes TODO with framework
+
+struct DatasetConfig
+{
+    double maximum_period = DEFAULT_COLLECTION_PERIOD;
+    uint8_t target_frame_nb = MAX_SAMPLES;
+    CAPTURE_MODE capture_mode = CAPTURE_MODE::PERIODIC;
+    uint64_t capture_start_time = 0;
+    IMU_COLLECTION_MODE imu_collection_mode = IMU_COLLECTION_MODE::GYRO_ONLY;
+    uint8_t image_capture_rate = 60;
+    float imu_sample_rate_hz = 1.0f;
+    ProcessingStage target_processing_stage = ProcessingStage::NotPrefiltered;
+    std::array<bool, NUM_CAMERAS> active_cameras = {true, true, true, true};
+};
 
 inline bool IsValidCaptureMode(CAPTURE_MODE value)
 {
@@ -50,6 +59,8 @@ public:
     uint8_t GetImageCaptureRate() const { return image_capture_rate; }
     float GetIMUSampleRateHz() const { return imu_sample_rate_hz; }
     ProcessingStage GetTargetProcessingStage() const { return target_processing_stage; }
+    void SetTargetProcessingStage(ProcessingStage stage) { target_processing_stage = stage; }
+    std::array<bool, NUM_CAMERAS> GetActiveCameras() const { return active_cameras; }
     std::string GetFolderPath() const { return folder_path; }
     std::string GetIMUFilePath() const { return imu_log_file_path; }
     std::vector<std::tuple<uint8_t, uint64_t>> GetStoredFrameIDs() const { return stored_frame_ids; }
@@ -66,6 +77,7 @@ public:
     Dataset(double max_period, uint8_t nb_frames, CAPTURE_MODE capture_mode, IMU_COLLECTION_MODE imu_collection_mode,
             uint8_t image_capture_rate, float imu_sample_rate_hz, ProcessingStage target_processing_stage,
             uint64_t capture_start_time=0);
+    Dataset(const DatasetConfig& config);
 
     // TODO: Rethink if function below is truly needed, seems redundant with json
     Dataset(const std::string& folder_path);
@@ -85,6 +97,7 @@ private:
     float imu_sample_rate_hz; // [hz]
     ProcessingStage target_processing_stage;
 
+    std::array<bool, NUM_CAMERAS> active_cameras = {true, true, true, true};
     std::vector<std::tuple<uint8_t, uint64_t>> stored_frame_ids; // for statistics, not intended to be used for loading frames (too heavy)
 
     bool CreateConfigurationFile();

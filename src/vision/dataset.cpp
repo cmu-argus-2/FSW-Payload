@@ -82,29 +82,45 @@ bool Dataset::isValidConfigurationFile(const std::string& config_file_path)
         return false;
     }
 
-    // Read all fields and verify they are present with the right type.
-    std::optional<double>   max_period              = config["maximum_period"].value<double>();
-    std::optional<uint64_t> target_frames           = config["target_frame_nb"].value<uint64_t>();
-    std::optional<uint64_t> dataset_capture_mode_val= config["dataset_capture_mode"].value<uint64_t>();
-    std::optional<uint64_t> imu_collection_mode_val = config["imu_collection_mode"].value<uint64_t>();
-    std::optional<uint64_t> image_capture_rate_val  = config["image_capture_rate"].value<uint64_t>();
-    std::optional<double>   imu_sample_rate_hz_val  = config["imu_sample_rate_hz"].value<double>();
-    std::optional<uint64_t> target_processing_stage_val = config["target_processing_stage"].value<uint64_t>();
-    std::optional<int64_t>  capture_start_time_val  = config["capture_start_time"].value<int64_t>();
+    // All fields are optional; absent keys use DatasetConfig defaults.
+    // A key that is present but has the wrong type is still an error.
+    const DatasetConfig defaults;
 
-    if (!max_period)             { SPDLOG_ERROR("Missing or invalid 'maximum_period'.");           return false; }
-    if (!target_frames)          { SPDLOG_ERROR("Missing or invalid 'target_frame_nb'.");          return false; }
-    if (!dataset_capture_mode_val){ SPDLOG_ERROR("Missing or invalid 'dataset_capture_mode'.");    return false; }
-    if (!imu_collection_mode_val){ SPDLOG_ERROR("Missing or invalid 'imu_collection_mode'.");      return false; }
-    if (!image_capture_rate_val) { SPDLOG_ERROR("Missing or invalid 'image_capture_rate'.");       return false; }
-    if (!imu_sample_rate_hz_val) { SPDLOG_ERROR("Missing or invalid 'imu_sample_rate_hz'.");       return false; }
-    if (!target_processing_stage_val){ SPDLOG_ERROR("Missing or invalid 'target_processing_stage'."); return false; }
-    if (!capture_start_time_val) { SPDLOG_ERROR("Missing or invalid 'capture_start_time'.");       return false; }
+    auto max_period_opt            = config["maximum_period"].value<double>();
+    auto target_frames_opt         = config["target_frame_nb"].value<uint64_t>();
+    auto capture_mode_opt          = config["dataset_capture_mode"].value<uint64_t>();
+    auto imu_mode_opt              = config["imu_collection_mode"].value<uint64_t>();
+    auto image_rate_opt            = config["image_capture_rate"].value<uint64_t>();
+    auto imu_rate_opt              = config["imu_sample_rate_hz"].value<double>();
+    auto proc_stage_opt            = config["target_processing_stage"].value<uint64_t>();
+    auto capture_start_time_opt    = config["capture_start_time"].value<int64_t>();
 
-    return validateRawParams(*max_period, *target_frames, *dataset_capture_mode_val,
-                             *imu_collection_mode_val, *image_capture_rate_val,
-                             static_cast<float>(*imu_sample_rate_hz_val),
-                             *target_processing_stage_val);
+    if (config.contains("maximum_period")          && !max_period_opt)         { SPDLOG_ERROR("Invalid type for 'maximum_period'.");           return false; }
+    if (config.contains("target_frame_nb")         && !target_frames_opt)      { SPDLOG_ERROR("Invalid type for 'target_frame_nb'.");          return false; }
+    if (config.contains("dataset_capture_mode")    && !capture_mode_opt)       { SPDLOG_ERROR("Invalid type for 'dataset_capture_mode'.");     return false; }
+    if (config.contains("imu_collection_mode")     && !imu_mode_opt)           { SPDLOG_ERROR("Invalid type for 'imu_collection_mode'.");      return false; }
+    if (config.contains("image_capture_rate")      && !image_rate_opt)         { SPDLOG_ERROR("Invalid type for 'image_capture_rate'.");       return false; }
+    if (config.contains("imu_sample_rate_hz")      && !imu_rate_opt)           { SPDLOG_ERROR("Invalid type for 'imu_sample_rate_hz'.");       return false; }
+    if (config.contains("target_processing_stage") && !proc_stage_opt)         { SPDLOG_ERROR("Invalid type for 'target_processing_stage'."); return false; }
+    if (config.contains("capture_start_time")      && !capture_start_time_opt) { SPDLOG_ERROR("Invalid type for 'capture_start_time'.");       return false; }
+
+    if (const auto* arr = config["active_cameras"].as_array())
+    {
+        if (arr->size() != NUM_CAMERAS)
+        {
+            SPDLOG_ERROR("'active_cameras' must have exactly {} elements", NUM_CAMERAS);
+            return false;
+        }
+    }
+
+    return validateRawParams(
+        max_period_opt.value_or(defaults.maximum_period),
+        target_frames_opt.value_or(defaults.target_frame_nb),
+        capture_mode_opt.value_or(static_cast<uint64_t>(defaults.capture_mode)),
+        imu_mode_opt.value_or(static_cast<uint64_t>(defaults.imu_collection_mode)),
+        image_rate_opt.value_or(defaults.image_capture_rate),
+        static_cast<float>(imu_rate_opt.value_or(defaults.imu_sample_rate_hz)),
+        proc_stage_opt.value_or(static_cast<uint64_t>(defaults.target_processing_stage)));
 }
 
 bool Dataset::isValidConfiguration(double max_period, uint8_t nb_frames, CAPTURE_MODE capture_mode, IMU_COLLECTION_MODE imu_collection_mode,
@@ -191,6 +207,20 @@ target_processing_stage(target_processing_stage)
     imu_log_file_path = folder_path + "imu_data.csv";
 }
 
+Dataset::Dataset(const DatasetConfig& config)
+:
+Dataset(config.maximum_period,
+        config.target_frame_nb,
+        config.capture_mode,
+        config.imu_collection_mode,
+        config.image_capture_rate,
+        config.imu_sample_rate_hz,
+        config.target_processing_stage,
+        config.capture_start_time)
+{
+    active_cameras = config.active_cameras;
+}
+
 void Dataset::InitializeOnDisk()
 {
     bool res = DH::MakeNewDirectory(folder_path);
@@ -245,17 +275,32 @@ imu_log_file_path(folder_path_in + "/imu_data.csv")
     // but then this constructor should receive the toml path, not the folder
     toml::table config = toml::parse_file(candidate_folder + DATASET_CONFIG_FILE_NAME);
 
-    // If not available, default value is kept
-    if (config.contains("maximum_period")) {
+    // Missing keys keep the default values set in the member initializer list.
+    if (config.contains("maximum_period"))
         maximum_period      = *(config["maximum_period"].value<double>());
+    if (config.contains("target_frame_nb"))
+        target_frame_nb     = static_cast<uint8_t>(*(config["target_frame_nb"].value<uint64_t>()));
+    if (config.contains("dataset_capture_mode"))
+        dataset_capture_mode = static_cast<CAPTURE_MODE>(*(config["dataset_capture_mode"].value<uint64_t>()));
+    if (config.contains("imu_collection_mode"))
+        imu_collection_mode  = static_cast<IMU_COLLECTION_MODE>(*(config["imu_collection_mode"].value<uint64_t>()));
+    if (config.contains("image_capture_rate"))
+        image_capture_rate   = static_cast<uint8_t>(*(config["image_capture_rate"].value<uint64_t>()));
+    if (config.contains("imu_sample_rate_hz"))
+        imu_sample_rate_hz   = static_cast<float>(*(config["imu_sample_rate_hz"].value<double>()));
+    if (config.contains("target_processing_stage"))
+        target_processing_stage = static_cast<ProcessingStage>(*(config["target_processing_stage"].value<uint64_t>()));
+    if (config.contains("capture_start_time"))
+        capture_start_time   = static_cast<uint64_t>(*(config["capture_start_time"].value<int64_t>()));
+
+    if (const auto* arr = config["active_cameras"].as_array())
+    {
+        for (size_t i = 0; i < NUM_CAMERAS && i < arr->size(); ++i)
+        {
+            if (auto val = (*arr)[i].value<bool>())
+                active_cameras[i] = *val;
+        }
     }
-    target_frame_nb = static_cast<uint8_t>(*(config["target_frame_nb"].value<uint64_t>()));
-    dataset_capture_mode    = static_cast<CAPTURE_MODE>(*(config["dataset_capture_mode"].value<uint64_t>()));
-    imu_collection_mode     = static_cast<IMU_COLLECTION_MODE>(*(config["imu_collection_mode"].value<uint64_t>()));
-    image_capture_rate      = static_cast<uint8_t>(*(config["image_capture_rate"].value<uint64_t>()));
-    imu_sample_rate_hz      = static_cast<float>(*(config["imu_sample_rate_hz"].value<double>()));
-    target_processing_stage = static_cast<ProcessingStage>(*(config["target_processing_stage"].value<uint64_t>())); // Use uint64_t to match the value type in config
-    capture_start_time = static_cast<uint64_t>(*(config["capture_start_time"].value<int64_t>()));
 }
 
 Dataset& Dataset::operator=(const Dataset& other)
@@ -271,6 +316,7 @@ Dataset& Dataset::operator=(const Dataset& other)
         image_capture_rate      = other.image_capture_rate;
         imu_sample_rate_hz      = other.imu_sample_rate_hz;
         target_processing_stage = other.target_processing_stage;
+        active_cameras          = other.active_cameras;
         stored_frame_ids        = other.stored_frame_ids;
     }
     return *this;
@@ -296,14 +342,15 @@ void Dataset::AddStoredFrameIDs(const std::vector<std::tuple<uint8_t, uint64_t>>
 bool Dataset::CreateConfigurationFile()
 {
     auto tbl = toml::table{
-        {"capture_start_time", static_cast<int64_t>(capture_start_time)}, 
+        {"capture_start_time", static_cast<int64_t>(capture_start_time)},
         {"maximum_period", maximum_period},
         {"target_frame_nb", target_frame_nb},
         {"dataset_capture_mode", dataset_capture_mode},
         {"imu_collection_mode", imu_collection_mode},
         {"image_capture_rate", image_capture_rate},
         {"imu_sample_rate_hz", imu_sample_rate_hz},
-        {"target_processing_stage", target_processing_stage}
+        {"target_processing_stage", target_processing_stage},
+        {"active_cameras", toml::array{active_cameras[0], active_cameras[1], active_cameras[2], active_cameras[3]}}
     };
 
     // Write to file
@@ -336,6 +383,7 @@ Json Dataset::toJson() const
     j["image_capture_rate"] = image_capture_rate;
     j["imu_sample_rate_hz"] = imu_sample_rate_hz;
     j["target_processing_stage"] = target_processing_stage;
+    j["active_cameras"] = active_cameras;
     // IMU
     j["imu_log_file_path"] = imu_log_file_path;
     // IMU number of timestamps collected

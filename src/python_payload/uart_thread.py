@@ -6,6 +6,8 @@ import serial
 
 from thread_shared import BAUD, PORT, MAX_PACKET_SIZE, TIMEOUT, log, rx_queue, tx_queue
 
+IDLE_SLEEP_S = 0.001
+
 
 class UartThread(threading.Thread):
     """Owns the serial port. Reads packets into rx_queue; drains tx_queue."""
@@ -21,19 +23,23 @@ class UartThread(threading.Thread):
         try:
             with serial.Serial(PORT, BAUD, timeout=0) as ser:  # non-blocking
                 while not self.stop_event.is_set():
-                    self._read(ser)
-                    self._write(ser)
+                    did_work = self._read(ser)
+                    did_work = self._write(ser) or did_work
+                    if not did_work:
+                        time.sleep(IDLE_SLEEP_S)
         except serial.SerialException as exc:
             log.error("Serial error: %s", exc)
             self.stop_event.set()
 
     def _read(self, ser: serial.Serial, max_packet_size=MAX_PACKET_SIZE):
+        did_work = False
         available = ser.in_waiting
         if available > 0:
             chunk = ser.read(available)
             if chunk:
                 self._rx_buffer.extend(chunk)
                 self._last_rx_time = time.monotonic()
+                did_work = True
 
         while len(self._rx_buffer) >= max_packet_size:
             data = bytes(self._rx_buffer[:max_packet_size])
@@ -41,6 +47,7 @@ class UartThread(threading.Thread):
 
             log.debug("RX %d bytes: %s", len(data), data.hex()[:20])
             rx_queue.put(data)
+            did_work = True
 
             if len(self._rx_buffer) > 0:
                 self._last_rx_time = time.monotonic()
@@ -54,8 +61,12 @@ class UartThread(threading.Thread):
                 )
                 self._rx_buffer.clear()
                 self._last_rx_time = None
+                did_work = True
+
+        return did_work
 
     def _write(self, ser: serial.Serial):
+        did_work = False
         while not tx_queue.empty():
             try:
                 packet = tx_queue.get_nowait()
@@ -68,3 +79,6 @@ class UartThread(threading.Thread):
 
             ser.write(packet)
             log.debug("TX %d bytes: %s", len(packet), packet.hex()[:20])
+            did_work = True
+
+        return did_work

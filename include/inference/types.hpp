@@ -34,6 +34,10 @@ inline std::string LDFolderPath(int version) {
     return "./models/trained-ld/V" + std::to_string(version);
 }
 
+inline std::string LDBoundingBoxesPath(int version, const std::string& region) {
+    return LDFolderPath(version) + "/" + region + "/bounding_boxes.csv";
+}
+
 // Parameters used to define the LD model file name (from region + config)
 struct LDNetConfig {
     NET_QUANTIZATION weight_quant;
@@ -41,6 +45,15 @@ struct LDNetConfig {
     int input_height;
     bool embedded_nms;
     bool use_trt;
+
+    bool operator==(const LDNetConfig& other) const {
+        return weight_quant  == other.weight_quant  &&
+               input_width   == other.input_width   &&
+               input_height  == other.input_height  &&
+               embedded_nms  == other.embedded_nms  &&
+               use_trt       == other.use_trt;
+    }
+    bool operator!=(const LDNetConfig& other) const { return !(*this == other); }
 
     std::string GetFileNameAppendix() {
         std::string fp16_string = GetQuantString(weight_quant);

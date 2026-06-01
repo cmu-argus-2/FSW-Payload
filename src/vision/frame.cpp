@@ -3,7 +3,6 @@
 #include <opencv2/opencv.hpp>
 #include <nlohmann/json.hpp>
 #include <algorithm>
-#include <numeric>
 using Json = nlohmann::json;
 
 
@@ -261,6 +260,44 @@ void Frame::RunPrefiltering()
     _processing_stage = ProcessingStage::Prefiltered;
     UpdateAnnotationState();
     UpdateRank();
+}
+
+void Frame::ResetProcessing()
+{
+    _processing_stage = ProcessingStage::NotPrefiltered;
+    _inference_results.reset();
+    _prefilter_result.reset();
+    UpdateAnnotationState();
+    UpdateRank();
+}
+
+bool Frame::ShouldReprocess(ProcessingStage target, bool overwrite,
+                             int rc_version, int ld_version,
+                             const LDNetConfig& ldnet_config) const
+{
+    // Stage not yet reached — always run regardless of overwrite
+    if (!IsAtLeast(_processing_stage, target))
+        return true;
+
+    // Prefiltering has no versioning — deterministic result, always reuse
+    if (target == ProcessingStage::Prefiltered)
+        return false;
+
+    // Stage reached but results are absent — inconsistent state, reprocess
+    if (!_inference_results.has_value())
+        return true;
+
+    // Check whether the stored results match the requested conditions
+    bool conditions_match = true;
+    if (IsAtLeast(target, ProcessingStage::RCNeted))
+        conditions_match = conditions_match && (_inference_results->rc_version == rc_version);
+    if (IsAtLeast(target, ProcessingStage::LDNeted))
+        conditions_match = conditions_match &&
+                           (_inference_results->ld_version == ld_version) &&
+                           (_inference_results->ldnet_config == ldnet_config);
+
+    // Same conditions → always reuse; different conditions → overwrite flag decides
+    return conditions_match ? false : overwrite;
 }
 
 bool Frame::IsBlurred()

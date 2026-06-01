@@ -19,11 +19,25 @@ solver_parameter_tolerance = 1e-10
 solver_gradient_check_relative_precision = 1e-6 # TODO: implement parsing
 # INT
 max_iterations = 10000 # iterations
+# INT or floating
+max_run_time_sec = 300.0 # seconds
 # INT
 bias_mode = 1 # 0: no gyro bias; 1: fixed/constant gyro bias; 2: time-varying bias
-# INT or floating
-max_dt = 60.0 # largest time interval between states
-
-
-# TODO
-
+# BOOL
+compute_covariance = true # set true to compute covariance.csv; expensive for large batches
+# BOOL
+use_j2 = true # include J2 zonal harmonic gravity perturbation in batch dynamics
+# BOOL
+use_drag = false # include atmospheric drag in batch dynamics (Vallado Table 8-4, 300-700 km)
+# FLOAT - drag coefficient nominal [-]
+cd_nominal = 2.2
+# FLOAT - Cd prior std dev [-]
+cd_std = 1.0
+# INT — integrator for orbital dynamics: 0 = forward-Euler, 1 = RK4
+integrator = 1
+# FLOAT — Pseudo-Huber transition point for landmark bearing cost [sigma units]
+landmark_huber_delta = 3.0
+# FLOAT — Mahalanobis distance threshold for landmark outlier rejection [sigma units]
+mahal_threshold = 5.0
+# INT — Maximum outlier-rejection loop iterations (excludes covariance solve)
+max_od_iterations = 10

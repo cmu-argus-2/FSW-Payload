@@ -121,6 +121,16 @@ public:
 
     void RunPrefiltering();
 
+    // Resets the full processing pipeline: clears inference results, prefilter result,
+    // and stage back to NotPrefiltered so the frame can be run through the pipeline again.
+    void ResetProcessing();
+
+    // Returns true if the frame should be run through the processing pipeline up to
+    // target_stage. Same conditions always reuse; different conditions defer to overwrite.
+    bool ShouldReprocess(ProcessingStage target, bool overwrite,
+                         int rc_version, int ld_version,
+                         const LDNetConfig& ldnet_config) const;
+
     bool HasRegion()   const { return _annotation_state >= ImageState::HasRegion; }
     bool HasLandmark() const { return _annotation_state >= ImageState::HasLandmark; }
 

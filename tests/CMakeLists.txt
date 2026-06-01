@@ -3,10 +3,12 @@ set(PAYLOAD_TEST_SOURCES
     test_thread_pool.cpp
     test_errors.cpp
     navigation/test_quaternion.cpp
+    navigation/test_frame_conversions.cpp
     test_tilepack_dh.cpp
     test_data_handling.cpp
     test_imu.cpp
     test_dataset.cpp
+    test_od.cpp
     test_commands.cpp
     test_camera.cpp
 )
@@ -23,6 +25,8 @@ target_link_libraries(PAYLOAD_TESTS
         GTest::gtest
         GTest::gtest_main
         PAYLOAD_LIB
+        Eigen3::Eigen
+        spice
 )
 
 if(CUDA_ENABLED)

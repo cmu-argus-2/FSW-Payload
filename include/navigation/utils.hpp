@@ -1,10 +1,118 @@
 #ifndef UTILS_HPP
 #define UTILS_HPP
 
+#include <cstdint>
+
+#include <eigen3/Eigen/Core>
+#include <eigen3/Eigen/Dense>
+#include <opencv2/calib3d.hpp>
+#include "SpiceUsr.h"
+
+/**
+ * @brief Converts Unix UTC seconds to SPICE ET/TDB seconds past J2000.
+ *
+ * This is the time scale expected by CSPICE frame transform routines such as
+ * pxform_c and sxform_c.
+ *
+ * @param unixSeconds seconds past the Unix epoch (1970-01-01T00:00:00 UTC)
+ * @return SPICE ET/TDB seconds past J2000
+ */
+double unixToJ2000(double unixSeconds);
+
+/**
+ * @brief Compute the skew-symmetric, 3x3 matrix corresponding to
+ * cross product with v
+ *
+ * @param v vector on the left side of the hypothetical cross product
+ * @return Matrix_3x3 3x3 skew symmetric matrix
+ */
+Eigen::Matrix3d toSkew(const Eigen::Vector3d &v);
 
 
+// CSPICE COORDINATE TRANSFORMS
 
+/**
+ * @brief Load all kernels from datapaths necessary for SPICE
+ *
+ * TOREAD : types of kernel according to SPICE [read https://naif.jpl.nasa.gov/pub/naif/toolkit_docs/C/req/kernel.html#Kernel%20Types]
+ */
+void loadAllKernels();
 
+/**
+ * @brief Cast a double[3][3] into an Eigen <double, 3, 3> matrix
+ *
+ * @param M SpiceDouble 3x3 matrix
+ * @return R Eigen 3x3 matrix
+ */
+Eigen::Matrix3d Cspice2Eigen(SpiceDouble M[3][3]);
 
+/**
+ * @brief Computes the rotation matrix from ECI to ECEF at a given time
+ *
+ * @param t_J2000 - seconds past J2000 i.e., seconds past Jan 1st 2000, 12:00:00 PM
+ * @return R Eigen 3x3 matrix representing roation from ECI to ECEF
+ */
+Eigen::Matrix3d ECI2ECEF(double t_J2000);
+
+/**
+ * @brief Computes the rotation matrix from ECEF to ECI at a given time
+ *
+ * @param t_J2000 - seconds past J2000 i.e., seconds past Jan 1st 2000, 12:00:00 PM
+ * @return R Eigen 3x3 matrix representing roation from ECEF to ECI
+ */
+Eigen::Matrix3d ECEF2ECI(double t_J2000);
+
+/**
+ * @brief Transforms a vector in ECEF frame to latitudinal coordinates
+ *
+ * @param v_ecef - vector in ECEF frame [UNITS : m]
+ * @param geoc - If true, the latitudinal coordinates will be geocentric, if not, geodetic
+ * @return vector in latitudinal coordinates (r, lon, lat) [m, rad, rad] if geocentric
+                                           (alt, lon, lat) [m, rad, rad] if geodetic
+ */
+Eigen::Vector3d ECEF2LAT(Eigen::Vector3d v_ecef, bool geoc);
+
+/**
+ * @brief Transforms a vector in latitudinal coordinates to ECEF frame
+ *
+ * @param v_lat - vector in latitudinal coordinates (r, lon, lat) [m, rad, rad] if geocentric
+                                                  (alt, lon, lat) [m, rad, rad] if geodetic
+ * @param geoc - If true, the latitudinal coordinates will be geocentric, if not, geodetic
+ * @return vector in ECEF frame [UNITS : m]
+ */
+Eigen::Vector3d LAT2ECEF(Eigen::Vector3d v_lat, bool geoc);
+
+/**
+ * @brief Transforms a vector in ECI frame to latitudinal coordinates
+ *
+ * @param v_eci - vector in ECI frame [UNITS : m]
+ * @param geoc - If true, the latitudinal coordinates will be geocentric, if not, geodetic
+ * @param t_J2000 - seconds past J2000
+ * @return vector in latitudinal coordinates (r, lon, lat) [m, rad, rad] if geocentric
+                                           (alt, lon, lat) [m, rad, rad] if geodetic
+ */
+Eigen::Vector3d ECI2LAT(Eigen::Vector3d v_eci, double t_J2000, bool geoc);
+
+/**
+ * @brief Transforms a vector in latitudinal coordinates to ECI frame
+ *
+ * @param v_lat - vector in latitudinal coordinates (r, lon, lat) [m, rad, rad] if geocentric
+                                                  (alt, lon, lat) [m, rad, rad] if geodetic
+ * @param t_J2000 - seconds past J2000
+ * @param geoc - If true, the latitudinal coordinates will be geocentric, if not, geodetic
+ * @return vector in ECI frame [UNITS : m]
+ */
+Eigen::Vector3d LAT2ECI(Eigen::Vector3d v_lat, double t_J2000, bool geoc);
+
+/**
+ * @brief Computes a unit bearing vector in the camera body frame from a pixel coordinate
+ *
+ * @param px - pixel x coordinate
+ * @param py - pixel y coordinate
+ * @param camera_matrix - 3x3 intrinsic camera matrix (CV_64F)
+ * @param dist_coeffs - distortion coefficients (CV_64F)
+ * @return unit bearing vector in camera body frame
+ */
+Eigen::Vector3d PixelToBodyBearing(float px, float py, const cv::Mat& camera_matrix, const cv::Mat& dist_coeffs);
 
 #endif // UTILS_HPP

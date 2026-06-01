@@ -76,6 +76,11 @@ enum class ErrorCode // Error codes
 
 
     // OD
+    ODMEAS_NOT_VALID,          // ODMeasurements::Validate() failed; see spdlog output for details
+    BATCH_OPT_BUILD_FAILED,    // could not construct a valid Ceres problem (bad gyro span, group mismatch)
+    BATCH_OPT_NO_CONVERGENCE,  // solver hit iteration/time limit without satisfying tolerances
+    BATCH_OPT_SOLVER_FAILED,   // Ceres returned FAILURE (numerical breakdown)
+    BATCH_OPT_INVALID_OUTPUT,  // state estimates contain NaN/inf or denormalized quaternions
 
 
     UNDEFINED // Last error for checking (Sentinel value)

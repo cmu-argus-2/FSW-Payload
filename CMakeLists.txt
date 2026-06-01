@@ -37,15 +37,14 @@ else()
     set(PAYLOAD_SPDLOG_TARGET spdlog::spdlog)
 endif()
 find_package(Eigen3 3.3 REQUIRED NO_MODULE)
-include_directories(${EIGEN_INCLUDE_DIR})
+get_target_property(_eigen3_inc Eigen3::Eigen INTERFACE_INCLUDE_DIRECTORIES)
+include_directories(${_eigen3_inc})
 link_directories(${EIGEN_LIBRARY_DIRS})
-find_package(Ceres 2.2.0 REQUIRED)
 find_package(OpenCV REQUIRED COMPONENTS core dnn imgcodecs imgproc highgui)
 
 enable_language(C)
 find_package(HDF5 REQUIRED COMPONENTS C CXX HL)
 list(APPEND CMAKE_PREFIX_PATH "${PWD}/depsbuild/install")
-find_package(HighFive REQUIRED)
 
 find_package(CUDA)
 if(CUDA_FOUND)
@@ -62,6 +61,30 @@ if(CUDA_ENABLED)
     find_library(NVINFER_PLUGIN_LIBRARY nvinfer_plugin REQUIRED)
 endif()
 find_package(nlohmann_json REQUIRED)
+find_package(CLI11 REQUIRED)
+
+# CasADi (with IPOPT backend) — built from source by install_deps.sh into deps/install/.
+set(CASADI_INSTALL_PREFIX "${CMAKE_SOURCE_DIR}/deps/install")
+list(APPEND CMAKE_PREFIX_PATH "${CASADI_INSTALL_PREFIX}")
+find_package(casadi REQUIRED)
+
+# CasADi cmake configs (both the source-built and pip-wheel variants) may propagate
+# _GLIBCXX_USE_CXX11_ABI=0 to consumers.  The library itself is always compiled with
+# the new ABI, so force the override here regardless of which casadi was found.
+if(TARGET casadi::casadi)
+    set_property(TARGET casadi::casadi PROPERTY
+        INTERFACE_COMPILE_DEFINITIONS "_GLIBCXX_USE_CXX11_ABI=1")
+endif()
+
+# Determine where libcasadi.so actually lives so we can embed it in RPATH.
+get_target_property(_casadi_lib casadi::casadi IMPORTED_LOCATION)
+if(NOT _casadi_lib)
+    get_target_property(_casadi_lib casadi::casadi IMPORTED_LOCATION_RELEASE)
+endif()
+get_filename_component(CASADI_LIB_DIR "${_casadi_lib}" DIRECTORY)
+
+list(APPEND CMAKE_BUILD_RPATH   "${CASADI_LIB_DIR}")
+list(APPEND CMAKE_INSTALL_RPATH "${CASADI_LIB_DIR}")
 
 
 # Include OpenCV directories
@@ -76,6 +99,8 @@ endif()
 # Add the source files subdirectory
 set(CMAKE_POSITION_INDEPENDENT_CODE ON)
 add_subdirectory(src)
+# Add the dependencies subdirectory
+add_subdirectory(deps)
 
 
 ##### MAIN FLIGHT SOFTWARE PROCESS
@@ -129,8 +154,15 @@ endif()
 option(BUILD_TESTS "Build tests" ON)
 
 if(BUILD_TESTS)
-    enable_testing()    
-    find_package(GTest REQUIRED)
+    enable_testing()
+    include(FetchContent)
+    FetchContent_Declare(
+        googletest
+        SOURCE_DIR ${CMAKE_SOURCE_DIR}/deps/googletest
+    )
+    set(INSTALL_GTEST OFF CACHE BOOL "" FORCE)
+    set(BUILD_GMOCK   OFF CACHE BOOL "" FORCE)
+    FetchContent_MakeAvailable(googletest)
     add_subdirectory(tests)
 endif()
 

@@ -1,4 +1,5 @@
 #include <filesystem>
+#include <stdexcept>
 #include "payload.hpp"
 #include "core/data_handling.hpp"
 #include "core/timing.hpp"
@@ -38,6 +39,12 @@ imu_manager(config->GetIMUConfig()),
 state(PayloadState::STARTUP),
 thread_pool(std::make_unique<ThreadPool>(5))
 {   
+    const EC inference_config_status = config->ApplyInferenceConfig(inference_manager);
+    if (inference_config_status != EC::OK) {
+        SPDLOG_CRITICAL("Failed to apply inference configuration: {}",
+                        to_uint8(inference_config_status));
+        throw std::runtime_error("Failed to apply inference configuration.");
+    }
 
     timing::InitializeBootTime(); // Just in case
     SPDLOG_INFO("Configuration read successfully");
@@ -141,9 +148,6 @@ void Payload::Run()
     // Launch IMU system
     StartIMUThread();
 
-    // Launch OD system
-    StartODThread();
-
     // Launch telemetry service
     StartTelemetryService();
 
@@ -184,9 +188,6 @@ void Payload::Stop()
 
     // Stop the telemetry service
     StopTelemetryService();
-
-    // Stop OD system
-    StopODThread();
 
     // Stop camera system
     StopCameraThread();
@@ -333,34 +334,6 @@ const Telemetry& Payload::GetTelemetry() const
 Telemetry& Payload::GetTelemetry()
 {
     return telemetry;
-}
-
-void Payload::StartODThread()
-{
-    // Launch OD thread
-    od_thread = std::thread(&OD::RunLoop, &od);
-    SPDLOG_INFO("OD thread started");
-}
-
-void Payload::StopODThread()
-{
-    od.StopLoop();
-    if (od_thread.joinable())
-    {
-        SPDLOG_INFO("Joining OD thread...");
-        od_thread.join();
-    }
-    SPDLOG_INFO("OD thread stopped");
-}
-
-const OD& Payload::GetOD() const
-{
-    return od;
-}
-
-OD& Payload::GetOD()
-{
-    return od;
 }
 
 const InferenceManager& Payload::GetInferenceManager() const

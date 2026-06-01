@@ -23,7 +23,13 @@ int main(int argc, char** argv) {
 
       // Load OD configuration file
       std::string config_filename = "config/od.toml";
-      OD_Config od_config = ReadODConfig(config_filename);
+      ODConfigResult od_config_result = ReadODConfig(config_filename);
+      if (od_config_result.code != ErrorCode::OK) {
+        std::cerr << "Failed to load OD config " << config_filename
+                  << " with error code " << static_cast<int>(od_config_result.code) << std::endl;
+        return 1;
+      }
+      const OD_Config& od_config = od_config_result.config;
 
       std::cout << "Loaded OD configuration from: " << config_filename << std::endl;
 

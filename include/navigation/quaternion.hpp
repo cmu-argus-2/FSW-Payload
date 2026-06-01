@@ -1,6 +1,7 @@
 #ifndef QUATERNION_HPP
 #define QUATERNION_HPP
 
+#include <casadi/casadi.hpp>
 #include <eigen3/Eigen/Dense>
 
 typedef Eigen::Vector3d Vector;
@@ -109,5 +110,13 @@ Quaternion Slerp(const Quaternion& q1, const Quaternion& q2, double t);
  *       expressed in the same coordinate frame as the quaternion.
  */
 Quaternion QuaternionKinematics(const Quaternion& q, const Vector& angvel);
+
+// CasADi quaternion helpers use the batch-optimization convention [x, y, z, w].
+casadi::MX quat_product_xyzw(const casadi::MX& p, const casadi::MX& q);
+casadi::MX quat_conjugate_xyzw(const casadi::MX& q);
+casadi::MX angle_axis_to_quat_xyzw(const casadi::MX& angle_axis);
+casadi::MX quat_inv_rotate_xyzw(const casadi::MX& q, const casadi::MX& v);
+Eigen::Matrix<double, 4, 3> quat_tangent_basis_xyzw(double qx, double qy,
+                                                    double qz, double qw);
 
 #endif

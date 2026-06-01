@@ -249,7 +249,10 @@ TEST(IMUManagerTest, ThreadSafeStartStopCycles)
     imuManager.SetLogFile("test_imu_cycles.csv");
     imuManager.SetCollectionMode(IMU_COLLECTION_MODE::GYRO_MAG_TEMP);
 
-    for (int i = 0; i < 3; ++i) {
+    // 10 cycles (up from 3) to give the scheduler more opportunities to interleave
+    // RunLoop reads with Suspend() calls — a higher count makes this test a better
+    // regression detector if the i2c_mutex is ever removed or misused.
+    for (int i = 0; i < 10; ++i) {
         int startRet = imuManager.StartCollection();
         EXPECT_EQ(startRet, 0);
         EXPECT_EQ(imuManager.GetIMUManagerStatus(), static_cast<uint8_t>(IMU_STATE::COLLECT));
@@ -264,12 +267,35 @@ TEST(IMUManagerTest, ThreadSafeStartStopCycles)
         imuThread.join();
     }
 
-    // Final log file (from last StartCollection) must have a valid header
+    // Validate the final log file (written during the last StartCollection).
+    // Key invariant of i2c_mutex: RunLoop must never read from a suspended sensor.
+    // If it did, ReadSensorData() would return a non-zero error and RunLoop would
+    // write "ts ms, ERROR code" — so the absence of ERROR lines directly tests
+    // whether the mutex kept the two threads correctly serialised.
     std::ifstream logFile("test_imu_cycles.csv");
     ASSERT_TRUE(logFile.is_open());
-    std::string header;
-    ASSERT_TRUE(std::getline(logFile, header));
-    EXPECT_EQ(header, "Timestamp_ms, Gyro_X_dps, Gyro_Y_dps, Gyro_Z_dps, Mag_X_uT, Mag_Y_uT, Mag_Z_uT, Temperature_C");
+
+    std::string line;
+    int lineCount = 0;
+    while (std::getline(logFile, line)) {
+        if (lineCount == 0) {
+            EXPECT_EQ(line, "Timestamp_ms, Gyro_X_dps, Gyro_Y_dps, Gyro_Z_dps, Mag_X_uT, Mag_Y_uT, Mag_Z_uT, Temperature_C");
+            lineCount++;
+            continue;
+        }
+        EXPECT_EQ(line.find("ERROR"), std::string::npos)
+            << "RunLoop wrote an error line — possible read after suspend: " << line;
+        std::istringstream iss(line);
+        uint64_t timestamp;
+        float gyroX, gyroY, gyroZ, magX, magY, magZ, temperature;
+        char comma;
+        EXPECT_TRUE(iss >> timestamp >> comma >> gyroX >> comma >> gyroY >> comma >> gyroZ
+                        >> comma >> magX >> comma >> magY >> comma >> magZ >> comma >> temperature)
+            << "Malformed data line: " << line;
+        lineCount++;
+    }
+    EXPECT_GT(lineCount, 1) << "Expected at least one data line after header";
+
     logFile.close();
     std::remove("test_imu_cycles.csv");
 }

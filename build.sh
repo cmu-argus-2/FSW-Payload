@@ -54,7 +54,11 @@ mkdir -p bin
 # Create log directory
 mkdir -p logs
 
-# Create build directory and build
+# Create build directory and build.
+if [ -f build/CMakeCache.txt ] && ! grep -q "CMAKE_GENERATOR:INTERNAL=Ninja" build/CMakeCache.txt; then
+  echo "Build directory was configured for a different generator — cleaning for Ninja."
+  rm -rf build
+fi
 mkdir -p build
 cd build/
 
@@ -63,7 +67,8 @@ cmake -DCMAKE_BUILD_TYPE=${BUILD_TYPE} \
       -DBUILD_TESTS=ON \
       -DNN_ENABLED=${ENABLE_VISION_NN} \
       -DCUDA_ENABLED=${ENABLE_VISION_NN} \
+      -GNinja \
       ..
 
 # Build the project with multiple cores
-make -j$(nproc)
+ninja -j$(nproc)

@@ -10,29 +10,21 @@ endif()
 
 ##### BATCH OPTIMIZATION
 
-add_executable(RUN_BATCH_OPT run_batch_opt.cpp)
-target_link_libraries(RUN_BATCH_OPT
+add_executable(RUN_OD_ON_DATASET run_od_on_dataset.cpp)
+target_link_libraries(RUN_OD_ON_DATASET
     PRIVATE
     spdlog::spdlog
     PAYLOAD_LIB
-    HDF5::HDF5           
-    HighFive::HighFive
-    Ceres::ceres
     Eigen3::Eigen
+    CLI11::CLI11
 )
 
-# temporary executable to test jacobians
-add_executable(test_jacobians
-    navigation/test_jacobians.cpp
-)
-target_link_libraries(test_jacobians
+add_executable(RUN_OD_PIPELINE run_od_pipeline.cpp)
+target_link_libraries(RUN_OD_PIPELINE
     PRIVATE
     spdlog::spdlog
     PAYLOAD_LIB
-    HDF5::HDF5           
-    HighFive::HighFive
-    Ceres::ceres
-    Eigen3::Eigen
+    CLI11::CLI11
 )
 
 ##### DATASETS
@@ -44,6 +36,7 @@ target_link_libraries(run_dataset
     PRIVATE
     spdlog::spdlog
     PAYLOAD_LIB
+    CLI11::CLI11
 )
 
 ##### CAMERAS
@@ -70,6 +63,19 @@ target_link_libraries(RUN_PREFILTER
     vision
     ${OpenCV_LIBS}
 )
+
+##### REPROCESSING
+
+add_executable(reprocess_dataset reprocess_dataset.cpp)
+target_link_libraries(reprocess_dataset PRIVATE PAYLOAD_LIB CLI11::CLI11)
+
+add_executable(reprocess_image reprocess_image.cpp)
+target_link_libraries(reprocess_image PRIVATE PAYLOAD_LIB CLI11::CLI11)
+
+##### LANDMARK MEASUREMENTS
+
+add_executable(prepare_ldmeas prepare_ldmeas.cpp)
+target_link_libraries(prepare_ldmeas PRIVATE PAYLOAD_LIB)
 
 ##### IMU
 

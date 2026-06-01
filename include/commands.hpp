@@ -31,14 +31,13 @@ namespace CommandID {
         REQUEST_IMAGE = 9,
         REQUEST_NEXT_FILE_PACKET = 10,
         CLEAR_STORAGE = 11,
-        PING_OD_STATUS = 12,
-        RUN_OD = 13,
-        REQUEST_OD_RESULT = 14,
-        SYNCHRONIZE_TIME = 15,
-        FULL_RESET = 16,
-        DEBUG_DISPLAY_CAMERA = 17,
-        DEBUG_STOP_DISPLAY = 18,
-        REQUEST_NEXT_FILE_PACKETS = 19
+        RUN_OD = 12,
+        REQUEST_OD_RESULT = 13,
+        SYNCHRONIZE_TIME = 14,
+        FULL_RESET = 15,
+        DEBUG_DISPLAY_CAMERA = 16,
+        DEBUG_STOP_DISPLAY = 17,
+        REQUEST_NEXT_FILE_PACKETS = 18
     };
 }
 
@@ -57,7 +56,6 @@ inline constexpr CommandID::Type ALL_COMMAND_IDS[] =
     CommandID::REQUEST_IMAGE,
     CommandID::REQUEST_NEXT_FILE_PACKET,
     CommandID::CLEAR_STORAGE,
-    CommandID::PING_OD_STATUS,
     CommandID::RUN_OD,
     CommandID::REQUEST_OD_RESULT,
     CommandID::SYNCHRONIZE_TIME,
@@ -82,7 +80,6 @@ void request_storage_info(std::vector<uint8_t>& data);
 void request_image(std::vector<uint8_t>& data);
 void request_next_file_packet(std::vector<uint8_t>& data);
 void clear_storage(std::vector<uint8_t>& data);
-void ping_od_status(std::vector<uint8_t>& data);
 void run_od(std::vector<uint8_t>& data);
 void request_od_result(std::vector<uint8_t>& data);
 void synchronize_time(std::vector<uint8_t>& data);

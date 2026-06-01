@@ -38,11 +38,23 @@ std::shared_ptr<DatasetManager> DatasetManager::Create(double max_period, uint8_
                             CameraManager& cam_manager = sys::cameraManager(), IMUManager& imu_manager = sys::imuManager(),
                             InferenceManager& inference_manager = sys::inferenceManager())
 {
+    DatasetConfig config;
+    config.maximum_period = max_period;
+    config.target_frame_nb = target_frame_nb;
+    config.capture_mode = capture_mode;
+    config.capture_start_time = capture_start_time;
+    config.imu_collection_mode = imu_collection_mode;
+    config.image_capture_rate = image_capture_rate;
+    config.imu_sample_rate_hz = imu_sample_rate_hz;
+    config.target_processing_stage = target_processing_stage;
+    return Create(config, ds_key, cam_manager, imu_manager, inference_manager);
+}
 
-    Dataset dataset = Dataset(max_period, target_frame_nb, capture_mode, imu_collection_mode,
-                                image_capture_rate, imu_sample_rate_hz, target_processing_stage,
-                                capture_start_time);
-
+std::shared_ptr<DatasetManager> DatasetManager::Create(const DatasetConfig& config, std::string ds_key = DEFAULT_DS_KEY,
+                            CameraManager& cam_manager = sys::cameraManager(), IMUManager& imu_manager = sys::imuManager(),
+                            InferenceManager& inference_manager = sys::inferenceManager())
+{
+    Dataset dataset(config);
     auto instance = std::make_shared<DatasetManager>(dataset, cam_manager, imu_manager, inference_manager);
     std::lock_guard<std::mutex> lock(datasets_mtx);
 
@@ -194,6 +206,7 @@ void DatasetManager::StopCollection()
 
     cameraManager.SetCaptureMode(CAPTURE_MODE::IDLE);
     cameraManager.ResetCaptureState();
+    cameraManager.ClearDatasetCamerasMask();
     cameraManager.SetStorageFolder(IMAGES_FOLDER);
     imuManager.Suspend();
 }
@@ -325,10 +338,15 @@ void DatasetManager::CollectionLoop()
 
     cameraManager.ResetCaptureState();
 
+    // Apply dataset mask before PrepareForCapture so the check only considers
+    // cameras that are actually needed for this dataset.
+    cameraManager.SetDatasetCamerasMask(current_dataset.GetActiveCameras());
+
     // configure the camera manager for the dataset collection
     if (!cameraManager.PrepareForCapture())
     {
         loop_flag.store(false);
+        cameraManager.ClearDatasetCamerasMask();
         SPDLOG_ERROR("Failed to enable cameras for dataset collection.");
         return;
     }

@@ -48,9 +48,9 @@ int ParseLDVersion(const std::string& path)
 #include <algorithm>
 #include <filesystem>
 #include <opencv2/opencv.hpp>
-#include <opencv2/core/cuda.hpp>
-#include <opencv2/cudaarithm.hpp>
-#include <opencv2/cudaimgproc.hpp>
+// #include <opencv2/core/cuda.hpp>
+// #include <opencv2/cudaarithm.hpp>
+// #include <opencv2/cudaimgproc.hpp>
 
 using namespace cv;
 using namespace cv::dnn;
@@ -118,12 +118,14 @@ EC InferenceManager::SetLDNetVersion(int version)
 void InferenceManager::SetLDNetConfig(NET_QUANTIZATION weight_quant, int input_width,
                                       int input_height, bool embedded_nms, bool use_trt_for_ld)
 {
+    std::lock_guard<std::mutex> lock(mtx_);
     ldnet_config_ = {weight_quant, input_width, input_height, embedded_nms, use_trt_for_ld};
     // If already initialized, rebuild the ld_nets_ map with the new config.
     if (initialized_)
     {
-        std::lock_guard<std::mutex> lock(mtx_);
-        InitializeLDNetRuntimes();
+        int runtime_count = InitializeLDNetRuntimes();
+        if (runtime_count == 0)
+            SPDLOG_ERROR("InferenceManager::SetLDNetConfig: no LDNet runtimes after reconfiguration — LD inference will produce zero landmarks.");
     }
 }
 
@@ -144,7 +146,9 @@ EC InferenceManager::ProcessFrame(std::shared_ptr<Frame> frame_ptr, ProcessingSt
     if (frame_ptr->GetProcessingStage() >= target_stage)
         return EC::OK;
 
-    EnsureInitialized();
+    EC init_status = EnsureInitialized();
+    if (init_status != EC::OK)
+        return init_status;
 
     const ProcessingStage current_stage = frame_ptr->GetProcessingStage();
     GrabNewImage(frame_ptr);
@@ -186,10 +190,10 @@ void InferenceManager::FreeEngines()
 // Private: initialization
 // ---------------------------------------------------------------------------
 
-void InferenceManager::EnsureInitialized()
+EC InferenceManager::EnsureInitialized()
 {
     if (initialized_)
-        return;
+        return EC::OK;
 
     // Must be called once before any deserializeCudaEngine().
     initLibNvInferPlugins(nullptr, "");
@@ -204,7 +208,13 @@ void InferenceManager::EnsureInitialized()
         SPDLOG_ERROR("InferenceManager: LD engine folder not found: {}", ld_engine_folder_path_);
     }
 
-    InitializeLDNetRuntimes();
+    int runtime_count = InitializeLDNetRuntimes();
+    if (runtime_count == 0)
+    {
+        SPDLOG_ERROR("InferenceManager: no LDNet runtimes could be initialized — "
+                     "engine files missing or misconfigured for path: {}", ld_engine_folder_path_);
+        return EC::NN_ENGINE_NOT_INITIALIZED;
+    }
 
     if (preload_rc_engine_)
     {
@@ -212,7 +222,8 @@ void InferenceManager::EnsureInitialized()
     }
 
     initialized_ = true;
-    SPDLOG_INFO("InferenceManager initialized.");
+    SPDLOG_INFO("InferenceManager initialized with {} LDNet runtime(s).", runtime_count);
+    return EC::OK;
 }
 
 // ---------------------------------------------------------------------------
@@ -284,10 +295,11 @@ EC InferenceManager::LoadLDNetEngineForRegion(RegionID region_id)
     return status;
 }
 
-void InferenceManager::InitializeLDNetRuntimes()
+int InferenceManager::InitializeLDNetRuntimes()
 {
     FreeLDNets();
     ld_nets_.clear();
+    int runtime_count = 0;
 
     for (const auto& region_id : GetAllRegionIDs())
     {
@@ -309,12 +321,15 @@ void InferenceManager::InitializeLDNetRuntimes()
         ld_nets_[region_id] = std::make_unique<Inference::LDNet>(region_id, csv_path);
         spdlog::info("InferenceManager: LDNet runtime created for region {}: engine={}, csv={}",
                      region_str, engine_path, csv_path);
+        runtime_count++;
     }
 
     if (preload_ld_engines_)
     {
         LoadLDNetEngines();
     }
+
+    return runtime_count;
 }
 
 // ---------------------------------------------------------------------------
@@ -478,7 +493,7 @@ EC InferenceManager::ExecRCInference()
     InferenceResults rc_results;
     rc_results.rc_version = rc_version_;
 
-    static constexpr float RC_THRESHOLD = 0.5f;
+    static constexpr float RC_THRESHOLD = 0.35f;
     for (uint8_t i = 0; i < rc_num_classes; i++)
     {
         if (host_output[i] > RC_THRESHOLD)

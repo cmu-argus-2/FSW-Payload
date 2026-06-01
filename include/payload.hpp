@@ -13,7 +13,6 @@
 #include "core/thread_pool.hpp"
 #include "vision/camera_manager.hpp"
 #include "imu/imu_manager.hpp"
-#include "navigation/od.hpp"
 #include "communication/named_pipe.hpp"
 #include "communication/uart.hpp"
 #include "telemetry/telemetry.hpp"
@@ -56,9 +55,6 @@ public:
 
     const Telemetry& GetTelemetry() const;
     Telemetry& GetTelemetry();
-
-    const OD& GetOD() const;
-    OD& GetOD();
 
     const IMUManager& GetIMUManager() const;
     IMUManager& GetIMUManager();
@@ -118,12 +114,6 @@ private:
     void StartIMUThread();
     void StopIMUThread();
 
-    // OD interface
-    OD od;
-    std::thread od_thread;
-    void StartODThread();
-    void StopODThread();
-
     // Thread Pool
     std::unique_ptr<ThreadPool> thread_pool;
     void StopThreadPool();
@@ -147,7 +137,6 @@ namespace sys
     inline Payload& payload() { return Payload::GetInstance(); }
     inline CameraManager& cameraManager() { return payload().GetCameraManager(); }
     inline IMUManager& imuManager() { return payload().GetIMUManager(); }
-    inline OD& od() { return payload().GetOD(); }
     inline Telemetry& telemetry() { return payload().GetTelemetry(); }
     inline InferenceManager& inferenceManager() { return payload().GetInferenceManager(); }
 }

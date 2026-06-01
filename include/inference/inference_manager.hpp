@@ -46,14 +46,19 @@ public:
     void SetPreloadRCEngine(bool preload) { preload_rc_engine_ = preload; }
     void SetPreloadLDEngines(bool preload) { preload_ld_engines_ = preload; }
 
+    // Current configuration — used by reprocessing logic to compare against stored results
+    int GetRCVersion()              const { return rc_version_; }
+    int GetLDVersion()              const { return ld_version_; }
+    const LDNetConfig& GetLDNetConfig() const { return ldnet_config_; }
+
 private:
     std::mutex mtx_;
 
     // Configuration (CUDA-free, always present)
-    std::string rc_engine_path_        = Inference::RCEnginePath(2);
-    std::string ld_engine_folder_path_ = Inference::LDFolderPath(2);
-    int rc_version_ = 2;
-    int ld_version_ = 2;
+    std::string rc_engine_path_        = Inference::RCEnginePath(5);
+    std::string ld_engine_folder_path_ = Inference::LDFolderPath(3);
+    int rc_version_ = 5;
+    int ld_version_ = 3;
     LDNetConfig ldnet_config_ = {NET_QUANTIZATION::FP16, 4608, 2592, false, true};
     bool preload_rc_engine_ = true;
     bool preload_ld_engines_ = false;
@@ -75,14 +80,17 @@ private:
     void GrabNewImage(std::shared_ptr<Frame> frame);
 
     // Initialize TRT plugins, build ld_nets_ map, and optionally preload engines.
+    // Returns EC::OK on success, EC::NN_ENGINE_NOT_INITIALIZED if no LD runtimes could be created.
+    // Does NOT set initialized_=true on failure — the next ProcessFrame call will retry.
     // Called once from ProcessFrame under the lock.
-    void EnsureInitialized();
+    EC EnsureInitialized();
 
     // Engine loading (private — callers use ProcessFrame or FreeEngines)
     EC LoadRCEngine();
     void LoadLDNetEngines();
     EC LoadLDNetEngineForRegion(RegionID region_id);
-    void InitializeLDNetRuntimes();
+    // Returns the number of LDNet runtimes successfully created.
+    int InitializeLDNetRuntimes();
 
     // Engine freeing (private)
     void FreeRCNet();

@@ -1,0 +1,41 @@
+{
+    "timestamp": 1700000000000000,
+    "cam_id": 0,
+    "annotation_state": 3,
+    "processing_stage": 3,
+    "rank": 3.0,
+    "detected_regions_count": 1,
+    "detected_landmarks_count": 2,
+    "regions": [
+        {
+            "region_0": {
+                "id": 0,
+                "confidence": 0.95
+            }
+        }
+    ],
+    "landmarks": [
+        {
+            "landmark_0": {
+                "x": 1234.5,
+                "y": 678.9,
+                "height": 52.0,
+                "width": 61.0,
+                "confidence": 0.87,
+                "class_id": 0,
+                "region_id": 0
+            }
+        },
+        {
+            "landmark_1": {
+                "x": 2100.0,
+                "y": 1300.0,
+                "height": 45.0,
+                "width": 55.0,
+                "confidence": 0.72,
+                "class_id": 1,
+                "region_id": 0
+            }
+        }
+    ]
+}

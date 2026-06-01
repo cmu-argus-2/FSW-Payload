@@ -335,7 +335,6 @@ class ExperimentRunner:
 
         output_dir = experiment_dir / "raw"
         output_dir.mkdir(parents=True, exist_ok=True)
-        timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
 
         saved_paths: list[str] = []
 
@@ -343,7 +342,8 @@ class ExperimentRunner:
             camera = cameras[sensor_id]
             log.info("Capturing image from camera sensor-id=%d", sensor_id)
             frame = camera.capture()
-            output_path = output_dir / f"{sensor_id}_{timestamp}.jpeg"
+            timestamp_ms = int(time.time() * 1000)
+            output_path = output_dir / f"raw_{timestamp_ms}_{sensor_id}.jpeg"
             camera.save(frame, str(output_path))
             saved_paths.append(str(output_path))
 

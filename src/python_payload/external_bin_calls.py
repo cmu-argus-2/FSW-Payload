@@ -30,52 +30,57 @@ def run_inference(img_path, output_folder_path, target_stage=3, rc_version=5, ld
     bin_name = "./bin/reprocess_image"
     output_folder = Path(output_folder_path) if output_folder_path else Path(".")
     output_folder.mkdir(parents=True, exist_ok=True)
-    out_path = output_folder / "reprocess_image_path.out"
 
-    cmd = [bin_name, img_path,
-           "--target-stage", str(target_stage),
-           "--overwrite",
-           "--rc-version", str(rc_version),
-           "--ld-version", str(ld_version),
-           "--out", str(out_path)]
-    if target_stage >= 2:
-        cmd.append("--bypass-prefilter-rejection")
+    fd, out_path = tempfile.mkstemp(suffix=".out", prefix="reprocess_image_")
+    os.close(fd)
 
-    print(f"Running inference on {img_path}")
-    print(f"Output folder: {output_folder_path}")
-    print(f"Target stage: {target_stage}")
-    print(f"RC version: {rc_version}")
-    print(f"LD version: {ld_version}")
-
-    result = subprocess.run(cmd,
-        cwd=run_path,
-        # capture_output=True,
-        text=True
-    )
-    
-    # capture result code
     try:
-        return_code = result.returncode
-        print(f"Return code: {return_code}")
-    except Exception as e:
-        print(f"Error capturing return code: {e}")
-        return_code = -1
-    
-    if return_code != 0:
-        return None
+        cmd = [bin_name, img_path,
+               "--target-stage", str(target_stage),
+               "--overwrite",
+               "--rc-version", str(rc_version),
+               "--ld-version", str(ld_version),
+               "--out", out_path]
+        if target_stage >= 2:
+            cmd.append("--bypass-prefilter-rejection")
 
-    path_out_file = Path(out_path)
-    if not path_out_file.exists():
-        print(f"Error: {path_out_file} file not created")
-        return None
+        print(f"Running inference on {img_path}")
+        print(f"Output folder: {output_folder_path}")
+        print(f"Target stage: {target_stage}")
+        print(f"RC version: {rc_version}")
+        print(f"LD version: {ld_version}")
 
-    frame_json_path = path_out_file.read_text().strip()
-    if not frame_json_path:
-        print(f"Error: reprocess_image output file is empty: {path_out_file}")
-        return None
+        result = subprocess.run(cmd,
+            cwd=run_path,
+            # capture_output=True,
+            text=True
+        )
 
-    print(f"Frame metadata generated at: {frame_json_path}")
-    return frame_json_path
+        # capture result code
+        try:
+            return_code = result.returncode
+            print(f"Return code: {return_code}")
+        except Exception as e:
+            print(f"Error capturing return code: {e}")
+            return_code = -1
+
+        if return_code != 0:
+            return None
+
+        path_out_file = Path(out_path)
+        if not path_out_file.exists():
+            print(f"Error: {path_out_file} file not created")
+            return None
+
+        frame_json_path = path_out_file.read_text().strip()
+        if not frame_json_path:
+            print(f"Error: reprocess_image output file is empty: {path_out_file}")
+            return None
+
+        print(f"Frame metadata generated at: {frame_json_path}")
+        return frame_json_path
+    finally:
+        Path(out_path).unlink(missing_ok=True)
 
 
 def run_dataset_collection(camera_bit_flag, capture_rate, imu_hz, duration, camera_params):
